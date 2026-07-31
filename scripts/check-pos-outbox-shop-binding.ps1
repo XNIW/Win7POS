@@ -109,7 +109,8 @@ if ($shopState -notmatch "pos\.catalog\.bound_shop_id" -or $shopState -notmatch 
 if ($transition -notmatch "product_image_operation_outbox" -or
     $transition -notmatch "pending_finalize" -or
     $transition -notmatch "cleanup_pending" -or
-    $shopTransitionTests -notmatch "Evaluate_BlocksDifferentShopWhenProductImageOutboxIsUnresolved") { Fail "shop transition does not preserve unresolved product image work" } else { Pass "shop transition preserves unresolved product image work" }
+    $shopTransitionTests -notmatch "Evaluate_BlocksDifferentShopForEveryUnresolvedProductImageState" -or
+    $shopTransitionTests -notmatch "ApplyAuthorizedTransition_RechecksEveryProductImageState") { Fail "shop transition does not preserve unresolved product image work" } else { Pass "shop transition preserves unresolved product image work" }
 if ($initializer -notmatch "legacy_origin_ambiguous" -or $initializer -notmatch "TryReadLegacySalesOriginShopCode" -or $initializer -match "origin_shop_code\s*=\s*@shopCode") { Fail "legacy backfill must require per-row proof and block ambiguity" } else { Pass "legacy backfill is per-row proven or fail-closed" }
 if (-not $enqueueFacadeDelegates -or
     $salesOutboxRepository -notmatch "payload_json IS @payloadJson" -or

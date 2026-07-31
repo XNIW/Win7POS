@@ -37,6 +37,25 @@ namespace Win7POS.Wpf.Products.Images
         private static readonly ConcurrentDictionary<string, long>
             ProductCacheGenerations =
                 new ConcurrentDictionary<string, long>(StringComparer.Ordinal);
+        private static readonly AsyncLocal<AcceptanceRuntimeContext>
+            AcceptanceRuntimeOverride =
+                new AsyncLocal<AcceptanceRuntimeContext>();
+
+        internal static IDisposable UseTrustedProfileForAcceptance(
+            string profileName,
+            string cacheRoot)
+        {
+            if (!PosTrustedDeviceStore.IsValidProfileName(profileName))
+                throw new ArgumentException(
+                    "A valid trusted profile is required.",
+                    nameof(profileName));
+            var previous = AcceptanceRuntimeOverride.Value;
+            var context = new AcceptanceRuntimeContext(
+                profileName,
+                cacheRoot);
+            AcceptanceRuntimeOverride.Value = context;
+            return new TrustedProfileScope(previous, context);
+        }
 
         public static async Task LoadAsync(
             ProductDetailsRow product,
@@ -54,7 +73,7 @@ namespace Win7POS.Wpf.Products.Images
             }
 
             PosTrustedDeviceSession session;
-            var store = new PosTrustedDeviceStore();
+            var store = CreateTrustedStore();
             if (store.TryRead(out session) &&
                 PosProductImageContractV1.IsCanonicalUuid(session.ShopId) &&
                 PosProductImageContractV1.IsCanonicalUuid(session.StaffId))
@@ -109,7 +128,7 @@ namespace Win7POS.Wpf.Products.Images
                         cancellationToken).ConfigureAwait(false);
                     if (!string.IsNullOrEmpty(purgeScope))
                     {
-                        await DiskCache.PurgeProductAsync(
+                        await ActiveDiskCache.PurgeProductAsync(
                             purgeScope,
                             purgeShopId,
                             purgeProductId,
@@ -164,7 +183,7 @@ namespace Win7POS.Wpf.Products.Images
                     display.SetUnavailable();
                     return;
                 }
-                var fallback = await DiskCache.GetPromotedForProductAsync(
+                var fallback = await ActiveDiskCache.GetPromotedForProductAsync(
                     accountScope,
                     shopId,
                     productId,
@@ -172,7 +191,7 @@ namespace Win7POS.Wpf.Products.Images
                     cancellationToken).ConfigureAwait(false);
                 if (fallback != null)
                 {
-                    var decodedFallback = await Decoder.DecodeAsync(
+                    var decodedFallback = await ActiveDecoder.DecodeAsync(
                         fallback.Reference,
                         profile,
                         cancellationToken).ConfigureAwait(false);
@@ -286,9 +305,9 @@ namespace Win7POS.Wpf.Products.Images
                             if (!string.IsNullOrEmpty(scopeBinding.PurgeToken))
                             {
                                 Interlocked.Increment(ref _cacheBindingGeneration);
-                                await DiskCache.PurgeAllAsync(cancellationToken)
+                                await ActiveDiskCache.PurgeAllAsync(cancellationToken)
                                     .ConfigureAwait(false);
-                                Decoder.TrimMemoryCache();
+                                ActiveDecoder.TrimMemoryCache();
                                 if (!await scopeStore.AcknowledgePurgeAsync(
                                         session.StaffId,
                                         session.ShopId,
@@ -362,7 +381,7 @@ namespace Win7POS.Wpf.Products.Images
                         ref _cacheBindingGeneration);
                     try
                     {
-                        cached = await DiskCache.GetOrAddAsync(
+                        cached = await ActiveDiskCache.GetOrAddAsync(
                             reference,
                             async producerCancellation =>
                             {
@@ -483,23 +502,23 @@ namespace Win7POS.Wpf.Products.Images
                                 completedAccountScope,
                                 StringComparison.Ordinal))
                         {
-                            await DiskCache.PurgeAccountAsync(
+                            await ActiveDiskCache.PurgeAccountAsync(
                                 accountScope,
                                 CancellationToken.None).ConfigureAwait(false);
-                            Decoder.TrimMemoryCache();
+                            ActiveDecoder.TrimMemoryCache();
                             display.SetUnavailable(offline: true);
                             return;
                         }
                     }
                     catch
                     {
-                        await DiskCache.PurgeAccountAsync(
+                        await ActiveDiskCache.PurgeAccountAsync(
                             accountScope,
                             CancellationToken.None).ConfigureAwait(false);
-                        Decoder.TrimMemoryCache();
+                        ActiveDecoder.TrimMemoryCache();
                         throw;
                     }
-                    var decoded = await Decoder.DecodeAsync(
+                    var decoded = await ActiveDecoder.DecodeAsync(
                         reference,
                         profile,
                         cancellationToken).ConfigureAwait(false);
@@ -508,7 +527,7 @@ namespace Win7POS.Wpf.Products.Images
                         if (!fallbackLoaded) display.Apply(decoded);
                         return;
                     }
-                    await DiskCache.PromoteVariantAsync(reference, cancellationToken)
+                    await ActiveDiskCache.PromoteVariantAsync(reference, cancellationToken)
                         .ConfigureAwait(false);
                     display.Apply(decoded);
                 }
@@ -536,7 +555,7 @@ namespace Win7POS.Wpf.Products.Images
                 return;
             IncrementProductCacheGeneration(product.RemoteProductId);
             PosTrustedDeviceSession session;
-            if (!new PosTrustedDeviceStore().TryRead(out session) ||
+            if (!CreateTrustedStore().TryRead(out session) ||
                 !Guid.TryParse(session.ShopId, out var shopId) ||
                 !Guid.TryParse(product.RemoteProductId, out var productId))
                 return;
@@ -548,20 +567,20 @@ namespace Win7POS.Wpf.Products.Images
                     cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrEmpty(accountScope))
             {
-                await DiskCache.PurgeProductAsync(
+                await ActiveDiskCache.PurgeProductAsync(
                     accountScope,
                     shopId,
                     productId,
                     null,
                     cancellationToken).ConfigureAwait(false);
             }
-            Decoder.TrimMemoryCache();
+            ActiveDecoder.TrimMemoryCache();
         }
 
         public static Task<ProductImageCacheSnapshot> GetCacheSnapshotAsync(
             CancellationToken cancellationToken = default)
         {
-            return DiskCache.GetSnapshotAsync(cancellationToken);
+            return ActiveDiskCache.GetSnapshotAsync(cancellationToken);
         }
 
         public static async Task ReconcileTrustedIdentityAsync(
@@ -587,8 +606,9 @@ namespace Win7POS.Wpf.Products.Images
                     cancellationToken).ConfigureAwait(false);
                 if (string.IsNullOrEmpty(purgeToken) && !forcePurge) return;
                 Interlocked.Increment(ref _cacheBindingGeneration);
-                await DiskCache.PurgeAllAsync(cancellationToken).ConfigureAwait(false);
-                Decoder.TrimMemoryCache();
+                await ActiveDiskCache.PurgeAllAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                ActiveDecoder.TrimMemoryCache();
                 if (!string.IsNullOrEmpty(purgeToken) &&
                     !await scopeStore.AcknowledgePurgeAsync(
                         staffId,
@@ -640,6 +660,71 @@ namespace Win7POS.Wpf.Products.Images
                    left.ShopDeviceId == right.ShopDeviceId &&
                    left.StaffId == right.StaffId &&
                    left.StaffCredentialVersion == right.StaffCredentialVersion;
+        }
+
+        private static PosTrustedDeviceStore CreateTrustedStore()
+        {
+            var profileName = AcceptanceRuntimeOverride.Value?.ProfileName;
+            return string.IsNullOrEmpty(profileName)
+                ? new PosTrustedDeviceStore()
+                : new PosTrustedDeviceStore(profileName);
+        }
+
+        private static ProductImageDiskCache ActiveDiskCache =>
+            AcceptanceRuntimeOverride.Value?.DiskCache ?? DiskCache;
+
+        private static ProductImageDecodeService ActiveDecoder =>
+            AcceptanceRuntimeOverride.Value?.Decoder ?? Decoder;
+
+        private sealed class AcceptanceRuntimeContext : IDisposable
+        {
+            internal AcceptanceRuntimeContext(
+                string profileName,
+                string cacheRoot)
+            {
+                ProfileName = profileName;
+                DiskCache = new ProductImageDiskCache(
+                    new ProductImageCacheOptions(
+                        cacheRoot,
+                        maximumBytes: 8 * 1024 * 1024,
+                        maximumEntries: 32,
+                        maximumConcurrentProducers: 2));
+                Decoder = new ProductImageDecodeService(
+                    new ProductImageDiskCacheStreamProvider(DiskCache));
+            }
+
+            internal string ProfileName { get; }
+            internal ProductImageDiskCache DiskCache { get; }
+            internal ProductImageDecodeService Decoder { get; }
+
+            public void Dispose()
+            {
+                Decoder.TrimMemoryCache();
+                DiskCache.Dispose();
+            }
+        }
+
+        private sealed class TrustedProfileScope : IDisposable
+        {
+            private readonly AcceptanceRuntimeContext _previous;
+            private readonly AcceptanceRuntimeContext _current;
+            private bool _disposed;
+
+            internal TrustedProfileScope(
+                AcceptanceRuntimeContext previous,
+                AcceptanceRuntimeContext current)
+            {
+                _previous = previous;
+                _current = current;
+            }
+
+            public void Dispose()
+            {
+                if (_disposed) return;
+                _disposed = true;
+                AcceptanceRuntimeOverride.Value = _previous;
+                _current.Dispose();
+            }
         }
 
         private static bool SameMetadata(

@@ -62,6 +62,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             if (string.IsNullOrWhiteSpace(outputDirectory))
                 throw new InvalidOperationException("product_image_acceptance_output_required");
+            EnsureIsolatedDataRoot();
             Directory.CreateDirectory(outputDirectory);
             switch ((phase ?? string.Empty).Trim().ToLowerInvariant())
             {
@@ -113,14 +114,27 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
 
             var runMarker = "ASUSPIB_" + RandomHex(16).ToUpperInvariant();
+            var beginRequestId = RequestId("begin");
             BoundaryResponse armed;
             BoundaryResponse provisioned;
+            var state = new AcceptanceState
+            {
+                BaseUrl = qaProfile.BaseUrl,
+                BeginRequestId = beginRequestId,
+                CacheRoot = CacheRoot(),
+                FenceUntil = CanonicalTimestamp(
+                    started.AddHours(2).AddMinutes(21)),
+                RunMarker = runMarker,
+                StartedAt = CanonicalTimestamp(started),
+                Phase = "begin_pending"
+            };
+            SaveState(state);
             using (var boundary = new BoundaryClient(qaProfile.BaseUri))
             {
                 armed = await boundary.PostTrustedAsync(
                     TrustedRequest.Begin(
                         sharedSession,
-                        RequestId("begin"),
+                        beginRequestId,
                         runMarker),
                     CancellationToken.None).ConfigureAwait(true);
                 Require(armed.Ok &&
@@ -131,42 +145,59 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         IsCapability(armed.CleanupCapability, "cleanup") &&
                         IsCapability(armed.ResultCapability, "result"),
                     "boundary_begin_failed");
+                var runProfileName =
+                    "asus-staging-image-phase-b-" + armed.RunHmac.Substring(0, 24);
+                Require(PosTrustedDeviceStore.IsValidProfileName(runProfileName),
+                    "run_profile_name_invalid");
+                state.CleanupCapability = armed.CleanupCapability;
+                state.ManifestHmac = armed.ManifestHmac;
+                state.ResultCapability = armed.ResultCapability;
+                state.RunHmac = armed.RunHmac;
+                state.RunProfileName = runProfileName;
+                state.Phase = "armed";
+                SaveState(state);
+                WriteSafeReport(outputDirectory, state, report =>
+                {
+                    report.CleanupPending = true;
+                });
                 provisioned = await boundary.PostCapabilityAsync(
                     CapabilityRequest.Provision(
                         armed,
                         RequestId("provision")),
                     CancellationToken.None).ConfigureAwait(true);
             }
+            Uri bootstrapUri = null;
             Require(provisioned.Ok && provisioned.Code == "provisioned" &&
                     provisioned.CredentialsReissued &&
                     provisioned.BootstrapEnvelope != null &&
-                    Guid.TryParse(provisioned.ProductId, out _),
+                    Guid.TryParse(provisioned.ProductId, out _) &&
+                    Guid.TryParse(provisioned.ShopId, out _) &&
+                    Guid.TryParse(provisioned.StaffId, out _) &&
+                    Uri.TryCreate(
+                        provisioned.BootstrapEnvelope.BaseUrl,
+                        UriKind.Absolute,
+                        out bootstrapUri) &&
+                    IsAllowedBaseUri(bootstrapUri) &&
+                    IsBoundedValue(provisioned.BootstrapEnvelope.ShopCode, 80) &&
+                    IsBoundedValue(provisioned.BootstrapEnvelope.StaffCode, 80) &&
+                    IsBoundedValue(
+                        provisioned.BootstrapEnvelope.DeviceIdentifier,
+                        160) &&
+                    IsBoundedValue(
+                        provisioned.BootstrapEnvelope.StaffCredential,
+                        4096),
                 "boundary_provision_failed");
-
-            var runProfileName =
-                "asus-staging-image-phase-b-" + armed.RunHmac.Substring(0, 24);
-            Require(PosTrustedDeviceStore.IsValidProfileName(runProfileName),
-                "run_profile_name_invalid");
-            var runStore = new PosTrustedDeviceStore(runProfileName);
-            Require(!runStore.HasStoredState(), "run_profile_already_exists");
-            var state = new AcceptanceState
-            {
-                BaseUrl = qaProfile.BaseUrl,
-                CacheRoot = CacheRoot(),
-                CleanupCapability = armed.CleanupCapability,
-                FenceUntil = CanonicalTimestamp(
-                    started.AddHours(2).AddMinutes(21)),
-                ManifestHmac = armed.ManifestHmac,
-                ProductId = provisioned.ProductId,
-                ResultCapability = armed.ResultCapability,
-                RunHmac = armed.RunHmac,
-                RunProfileName = runProfileName,
-                ShopId = provisioned.ShopId,
-                StartedAt = CanonicalTimestamp(started),
-                Phase = "provisioned"
-            };
+            state.ProductId = provisioned.ProductId;
+            state.ShopId = provisioned.ShopId;
+            state.Phase = "provisioned";
             SaveState(state);
-            WriteSafeReport(outputDirectory, state, _ => { });
+            WriteSafeReport(outputDirectory, state, report =>
+            {
+                report.CleanupPending = true;
+            });
+
+            var runStore = new PosTrustedDeviceStore(state.RunProfileName);
+            Require(!runStore.HasStoredState(), "run_profile_already_exists");
             PosTrustedDeviceSession runSession;
             using (var runHost = new PosOnlineSyncSupervisorHost(
                 factory,
@@ -177,7 +208,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     factory,
                     runStore,
                     runHost,
-                    new Uri(provisioned.BootstrapEnvelope.BaseUrl),
+                    bootstrapUri,
                     provisioned.BootstrapEnvelope.ShopCode,
                     provisioned.BootstrapEnvelope.StaffCode,
                     provisioned.BootstrapEnvelope.StaffCredential,
@@ -187,7 +218,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         runBootstrap.CatalogCompleted &&
                         runBootstrap.CatalogSaleSafe,
                     "run_bootstrap_catalog_failed");
-                Require(runStore.TryRead(out runSession), "run_trust_missing");
+                Require(runStore.TryRead(out runSession) &&
+                        string.Equals(
+                            runSession.ShopId,
+                            provisioned.ShopId,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            runSession.StaffId,
+                            provisioned.StaffId,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            runSession.ShopCode,
+                            provisioned.BootstrapEnvelope.ShopCode,
+                            StringComparison.Ordinal) &&
+                        string.Equals(
+                            runSession.StaffCode,
+                            provisioned.BootstrapEnvelope.StaffCode,
+                            StringComparison.Ordinal),
+                    "run_trust_identity_mismatch");
                 await runHost.StopAsync().ConfigureAwait(true);
             }
 
@@ -537,7 +585,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var persistenceCount = CountForbiddenPersistenceMarkers();
             Require(persistenceCount == 0,
                 "signed_url_persistence_detected");
-            CaptureNoImageScreenshots(removedProduct, outputDirectory);
+            await CaptureNoImageScreenshotsAsync(
+                removedProduct,
+                outputDirectory,
+                state.RunProfileName).ConfigureAwait(true);
             state.Phase = "cleanup_fence_armed";
             SaveState(state);
             WriteSafeReport(outputDirectory, state, report =>
@@ -573,11 +624,61 @@ namespace Win7POS.Wpf.UiSmokeHarness
             EnsureIsolatedDataRoot();
             var state = LoadState();
             Require(state.Phase != "terminal_clean", "cleanup_state_invalid");
-            BoundaryResponse cleanup;
-            BoundaryResponse terminal;
             var sharedStore = new PosTrustedDeviceStore();
             Require(sharedStore.TryRead(out var sharedSession),
-                "shared_trust_missing_for_result_issue");
+                "shared_trust_missing_for_cleanup");
+            if (state.Phase == "begin_pending")
+            {
+                BoundaryResponse recovered;
+                using (var boundary = new BoundaryClient(new Uri(state.BaseUrl)))
+                {
+                    recovered = await boundary.PostTrustedAsync(
+                        TrustedRequest.Begin(
+                            sharedSession,
+                            state.BeginRequestId,
+                            state.RunMarker),
+                        CancellationToken.None).ConfigureAwait(true);
+                }
+                Require(recovered.Ok &&
+                        (recovered.Code == "armed" ||
+                         recovered.Code == "begin_replayed") &&
+                        IsLowerHex64(recovered.RunHmac) &&
+                        IsLowerHex64(recovered.ManifestHmac) &&
+                        IsCapability(
+                            recovered.ProvisionCapability,
+                            "provision") &&
+                        IsCapability(recovered.CleanupCapability, "cleanup") &&
+                        IsCapability(recovered.ResultCapability, "result"),
+                    "boundary_begin_recovery_failed");
+                state.CleanupCapability = recovered.CleanupCapability;
+                state.ManifestHmac = recovered.ManifestHmac;
+                state.ResultCapability = recovered.ResultCapability;
+                state.RunHmac = recovered.RunHmac;
+                state.RunProfileName = "asus-staging-image-phase-b-" +
+                    recovered.RunHmac.Substring(0, 24);
+                Require(PosTrustedDeviceStore.IsValidProfileName(
+                        state.RunProfileName),
+                    "recovered_run_profile_name_invalid");
+                state.Phase = "armed";
+                SaveState(state);
+                WriteSafeReport(outputDirectory, state, report =>
+                {
+                    report.CleanupPending = true;
+                });
+            }
+            var phaseAtCleanup = state.Phase;
+            var cleanupAt = ParseRequiredTimestamp(state.FenceUntil)
+                .AddSeconds(15);
+            if (DateTimeOffset.UtcNow < cleanupAt)
+            {
+                WriteSafeReport(outputDirectory, state, report =>
+                {
+                    report.CleanupPending = true;
+                });
+                return CleanupFenceArmed;
+            }
+            BoundaryResponse cleanup;
+            BoundaryResponse terminal;
             using (var boundary = new BoundaryClient(new Uri(state.BaseUrl)))
             {
                 var issued = await boundary.PostTrustedAsync(
@@ -601,13 +702,25 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     CapabilityRequest.Result(state, RequestId("result")),
                     CancellationToken.None).ConfigureAwait(true);
             }
+            var productCountValid = phaseAtCleanup == "armed"
+                ? terminal?.Receipt?.Counts != null &&
+                  terminal.Receipt.Counts.Products >= 0 &&
+                  terminal.Receipt.Counts.Products <= 1
+                : terminal?.Receipt?.Counts != null &&
+                  terminal.Receipt.Counts.Products == 1;
+            var minimumImageVersions =
+                phaseAtCleanup == "first_cache_ready" ||
+                phaseAtCleanup == "cleanup_fence_armed"
+                    ? 1
+                    : 0;
             Require(terminal.Ok && terminal.Code == "terminal" &&
                     terminal.Receipt != null &&
                     terminal.Receipt.Counts != null &&
                     terminal.Receipt.Counts.StorageObjects == 0 &&
                     terminal.Receipt.Counts.ActiveRunOwnedSessions == 0 &&
-                    terminal.Receipt.Counts.Products == 1 &&
-                    terminal.Receipt.Counts.ImageVersions >= 1 &&
+                    productCountValid &&
+                    terminal.Receipt.Counts.ImageVersions >=
+                        minimumImageVersions &&
                     terminal.Receipt.SchemaVersion ==
                         "task-150-win7pos-image-qa-cleanup-v1" &&
                     terminal.Receipt.Code == "cleanup_complete" &&
@@ -626,6 +739,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             WriteSafeReport(outputDirectory, state, report =>
             {
                 report.CleanupComplete = true;
+                report.CleanupPending = false;
                 report.DbResiduals = 0;
                 report.StorageResiduals = 0;
                 report.ActiveActorSessionResiduals = 0;
@@ -901,7 +1015,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             variant,
                             metadata,
                             ParseTimestamp(product.PrimaryImageUpdatedAt));
-                        var entry = await cache.GetOrAddAsync(
+                        await cache.GetOrAddAsync(
                             reference,
                             async token =>
                             {
@@ -932,25 +1046,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         if (variant == ProductImageVariant.Main)
                         {
                             evidence.Main = variantEvidence;
-                            CaptureEditorImageScreenshot(
-                                product,
-                                entry.CopyBytes(),
-                                Path.Combine(
-                                    outputDirectory,
-                                    "product-image-" + label + "-editor-main-1024x768.png"));
                         }
                         else
                         {
                             evidence.Thumb = variantEvidence;
-                            CaptureListImageScreenshot(
-                                product,
-                                entry.CopyBytes(),
-                                Path.Combine(
-                                    outputDirectory,
-                                    "product-image-" + label + "-list-thumb-1024x768.png"));
                         }
                     }
                 }
+                await CaptureLoadedUiScreenshotsAsync(
+                    product,
+                    outputDirectory,
+                    label,
+                    state.RunProfileName).ConfigureAwait(true);
                 return evidence;
             }
         }
@@ -1263,6 +1370,11 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
 
         private static ProductImageDiskCache IsolatedCache(AcceptanceState state)
         {
+            Require(string.Equals(
+                    state.CacheRoot,
+                    CacheRoot(),
+                    StringComparison.OrdinalIgnoreCase),
+                "product_image_cache_root_invalid");
             return new ProductImageDiskCache(new ProductImageCacheOptions(
                 state.CacheRoot,
                 maximumBytes: 8 * 1024 * 1024,
@@ -1315,12 +1427,12 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             }
         }
 
-        private static void CaptureListImageScreenshot(
+        private static async Task CaptureLoadedUiScreenshotsAsync(
             ProductDetailsRow product,
-            byte[] bytes,
-            string path)
+            string outputDirectory,
+            string label,
+            string runProfileName)
         {
-            var image = DecodeScreenshotImage(bytes);
             var model = new ProductsViewModel();
             model.Items.Add(product);
             var window = new Window
@@ -1334,46 +1446,71 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             };
             try
             {
-                window.Show();
-                window.UpdateLayout();
-                foreach (var loader in Descendants<ProductImageListPresenter>(window))
-                    loader.Product = null;
-                var presenter = Descendants<ProductImagePresenter>(window)
-                    .FirstOrDefault();
-                var display = presenter?.DataContext as ProductImageDisplayViewModel;
-                Require(display != null, "staging_list_presenter_missing");
-                display.SetLoaded(image);
-                window.UpdateLayout();
-                Require(display.IsLoaded, "staging_list_image_not_loaded");
-                CaptureWindow(window, path);
+                using (ProductImageRuntime.UseTrustedProfileForAcceptance(
+                    runProfileName,
+                    CacheRoot()))
+                {
+                    window.Show();
+                    ProductImageDisplayViewModel display = null;
+                    ProductImageListPresenter loader = null;
+                    for (var attempt = 0; attempt < 600; attempt++)
+                    {
+                        window.UpdateLayout();
+                        loader = Descendants<ProductImageListPresenter>(window)
+                            .FirstOrDefault();
+                        display = Descendants<ProductImagePresenter>(window)
+                            .Select(item => item.DataContext)
+                            .OfType<ProductImageDisplayViewModel>()
+                            .FirstOrDefault();
+                        if (loader?.Product != null && display?.IsLoaded == true)
+                            break;
+                        await Task.Delay(100).ConfigureAwait(true);
+                    }
+                    Require(loader?.Product != null && display?.IsLoaded == true,
+                        "staging_list_runtime_image_not_loaded");
+                    CaptureWindow(
+                        window,
+                        Path.Combine(
+                            outputDirectory,
+                            "product-image-" + label +
+                            "-list-thumb-1024x768.png"));
+                }
             }
             finally
             {
                 window.Close();
             }
-        }
 
-        private static void CaptureEditorImageScreenshot(
-            ProductDetailsRow product,
-            byte[] bytes,
-            string path)
-        {
-            var image = DecodeScreenshotImage(bytes);
-            var model = new ProductEditViewModel(
+            var editorModel = new ProductEditViewModel(
                 ProductEditMode.Edit,
                 product,
                 ProductsWorkflowService.CreateDefault());
-            var dialog = new ProductEditDialog(model);
+            var dialog = new ProductEditDialog(editorModel);
             try
             {
-                dialog.Show();
-                dialog.UpdateLayout();
-                model.ImageDisplay.SetLoaded(image);
-                dialog.UpdateLayout();
-                Require(model.ImageDisplay.IsLoaded &&
-                        dialog.ActualWidth <= 1024 && dialog.ActualHeight <= 768,
-                    "staging_editor_image_not_loaded");
-                CaptureWindow(dialog, path);
+                using (ProductImageRuntime.UseTrustedProfileForAcceptance(
+                    runProfileName,
+                    CacheRoot()))
+                {
+                    dialog.Show();
+                    for (var attempt = 0;
+                         attempt < 600 && !editorModel.ImageDisplay.IsLoaded;
+                         attempt++)
+                    {
+                        dialog.UpdateLayout();
+                        await Task.Delay(100).ConfigureAwait(true);
+                    }
+                    Require(editorModel.ImageDisplay.IsLoaded &&
+                            dialog.ActualWidth <= 1024 &&
+                            dialog.ActualHeight <= 768,
+                        "staging_editor_runtime_image_not_loaded");
+                    CaptureWindow(
+                        dialog,
+                        Path.Combine(
+                            outputDirectory,
+                            "product-image-" + label +
+                            "-editor-main-1024x768.png"));
+                }
             }
             finally
             {
@@ -1381,30 +1518,10 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             }
         }
 
-        private static BitmapImage DecodeScreenshotImage(byte[] bytes)
-        {
-            try
-            {
-                using (var input = new MemoryStream(bytes, writable: false))
-                {
-                    var image = new BitmapImage();
-                    image.BeginInit();
-                    image.CacheOption = BitmapCacheOption.OnLoad;
-                    image.StreamSource = input;
-                    image.EndInit();
-                    image.Freeze();
-                    return image;
-                }
-            }
-            finally
-            {
-                Clear(bytes);
-            }
-        }
-
-        private static void CaptureNoImageScreenshots(
+        private static async Task CaptureNoImageScreenshotsAsync(
             ProductDetailsRow product,
-            string outputDirectory)
+            string outputDirectory,
+            string runProfileName)
         {
             var listModel = new ProductsViewModel();
             listModel.Items.Add(product);
@@ -1419,22 +1536,38 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             };
             try
             {
-                list.Show();
-                list.UpdateLayout();
-                foreach (var loader in Descendants<ProductImageListPresenter>(list))
-                    loader.Product = null;
-                var listDisplay = Descendants<ProductImagePresenter>(list)
-                    .Select(item => item.DataContext)
-                    .OfType<ProductImageDisplayViewModel>()
-                    .FirstOrDefault();
-                Require(listDisplay != null, "removed_list_presenter_missing");
-                listDisplay.SetNoImage();
-                list.UpdateLayout();
-                CaptureWindow(
-                    list,
-                    Path.Combine(
-                        outputDirectory,
-                        "product-image-removed-list-no-image-1024x768.png"));
+                using (ProductImageRuntime.UseTrustedProfileForAcceptance(
+                    runProfileName,
+                    CacheRoot()))
+                {
+                    list.Show();
+                    ProductImageDisplayViewModel listDisplay = null;
+                    ProductImageListPresenter loader = null;
+                    for (var attempt = 0; attempt < 600; attempt++)
+                    {
+                        list.UpdateLayout();
+                        loader = Descendants<ProductImageListPresenter>(list)
+                            .FirstOrDefault();
+                        listDisplay = Descendants<ProductImagePresenter>(list)
+                            .Select(item => item.DataContext)
+                            .OfType<ProductImageDisplayViewModel>()
+                            .FirstOrDefault();
+                        if (loader?.Product != null &&
+                            listDisplay?.State == ProductImageDisplayState.NoImage)
+                        {
+                            break;
+                        }
+                        await Task.Delay(100).ConfigureAwait(true);
+                    }
+                    Require(loader?.Product != null &&
+                            listDisplay?.State == ProductImageDisplayState.NoImage,
+                        "removed_list_runtime_no_image_missing");
+                    CaptureWindow(
+                        list,
+                        Path.Combine(
+                            outputDirectory,
+                            "product-image-removed-list-no-image-1024x768.png"));
+                }
             }
             finally
             {
@@ -1448,15 +1581,30 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             var editor = new ProductEditDialog(editorModel);
             try
             {
-                editor.Show();
-                editor.UpdateLayout();
-                editorModel.ImageDisplay.SetNoImage();
-                editor.UpdateLayout();
-                CaptureWindow(
-                    editor,
-                    Path.Combine(
-                        outputDirectory,
-                        "product-image-removed-editor-no-image-1024x768.png"));
+                using (ProductImageRuntime.UseTrustedProfileForAcceptance(
+                    runProfileName,
+                    CacheRoot()))
+                {
+                    editor.Show();
+                    for (var attempt = 0;
+                         attempt < 600 &&
+                         editorModel.ImageDisplay.State !=
+                            ProductImageDisplayState.NoImage;
+                         attempt++)
+                    {
+                        editor.UpdateLayout();
+                        await Task.Delay(100).ConfigureAwait(true);
+                    }
+                    Require(
+                        editorModel.ImageDisplay.State ==
+                            ProductImageDisplayState.NoImage,
+                        "removed_editor_runtime_no_image_missing");
+                    CaptureWindow(
+                        editor,
+                        Path.Combine(
+                            outputDirectory,
+                            "product-image-removed-editor-no-image-1024x768.png"));
+                }
             }
             finally
             {
@@ -1637,6 +1785,8 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             {
                 state.CleanupCapability,
                 state.ResultCapability,
+                state.RunMarker,
+                state.BeginRequestId,
                 "task150_provision_",
                 "token=",
                 "/storage/v1/object/sign/",
@@ -1780,9 +1930,52 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
                 Path.AltDirectorySeparatorChar);
             Require(string.Equals(
                     root,
-                    @"C:\POSData\Win7POSProductImagePhaseBAcceptance",
+                    @"C:\POSData\Win7POS-QA\ProductImagePhaseBAcceptance",
                     StringComparison.OrdinalIgnoreCase),
                 "product_image_data_root_not_isolated");
+            var existing = root;
+            while (!Directory.Exists(existing))
+            {
+                Require(!File.Exists(existing),
+                    "product_image_data_root_non_directory_ancestor");
+                existing = Path.GetDirectoryName(existing);
+                Require(!string.IsNullOrWhiteSpace(existing),
+                    "product_image_data_root_missing_ancestor");
+            }
+            for (var current = new DirectoryInfo(existing);
+                 current != null;
+                 current = current.Parent)
+            {
+                Require(
+                    (current.Attributes & FileAttributes.ReparsePoint) == 0,
+                    "product_image_data_root_reparse_point");
+            }
+            if (Directory.Exists(root))
+            {
+                var pending = new Stack<string>();
+                pending.Push(root);
+                while (pending.Count > 0)
+                {
+                    foreach (var entry in Directory.EnumerateFileSystemEntries(
+                        pending.Pop(),
+                        "*",
+                        SearchOption.TopDirectoryOnly))
+                    {
+                        var attributes = File.GetAttributes(entry);
+                        Require(
+                            (attributes & FileAttributes.ReparsePoint) == 0,
+                            "product_image_data_root_reparse_point");
+                        if ((attributes & FileAttributes.Directory) != 0)
+                            pending.Push(entry);
+                    }
+                }
+            }
+        }
+
+        private static bool IsBoundedValue(string value, int maximumCharacters)
+        {
+            return !string.IsNullOrWhiteSpace(value) &&
+                value.Length <= maximumCharacters;
         }
 
         private static string RequestId(string action)
@@ -1886,9 +2079,19 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
         private static bool IsLowerHex(string value, int length)
         {
             return value != null && value.Length == length &&
-                   value.All(character =>
-                       (character >= '0' && character <= '9') ||
-                       (character >= 'a' && character <= 'f'));
+                   value.All(IsLowerHexCharacter);
+        }
+
+        private static bool IsLowerHexCharacter(char character)
+        {
+            return (character >= '0' && character <= '9') ||
+                   (character >= 'a' && character <= 'f');
+        }
+
+        private static bool IsUpperHexCharacter(char character)
+        {
+            return (character >= '0' && character <= '9') ||
+                   (character >= 'A' && character <= 'F');
         }
 
         private static bool IsCapability(string value, string kind)
@@ -2436,6 +2639,8 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             public string AccountScope { get; set; }
             [DataMember(Name = "baseUrl")]
             public string BaseUrl { get; set; }
+            [DataMember(Name = "beginRequestId")]
+            public string BeginRequestId { get; set; }
             [DataMember(Name = "cacheRoot")]
             public string CacheRoot { get; set; }
             [DataMember(Name = "cleanupCapability")]
@@ -2462,6 +2667,8 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             public string ResultCapability { get; set; }
             [DataMember(Name = "runHmac")]
             public string RunHmac { get; set; }
+            [DataMember(Name = "runMarker")]
+            public string RunMarker { get; set; }
             [DataMember(Name = "runProfileName")]
             public string RunProfileName { get; set; }
             [DataMember(Name = "secondImageUpdatedAt")]
@@ -2479,17 +2686,51 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
 
             internal bool IsValid()
             {
+                var beginPending = Phase == "begin_pending";
+                var validPhase = beginPending || Phase == "armed" ||
+                    Phase == "provisioned" ||
+                    Phase == "offline_queued" ||
+                    Phase == "first_cache_ready" ||
+                    Phase == "cleanup_fence_armed";
+                var fixtureIdentityValid = beginPending || Phase == "armed"
+                    ? string.IsNullOrEmpty(ProductId) &&
+                      string.IsNullOrEmpty(ShopId)
+                    : Guid.TryParse(ProductId, out _) &&
+                      Guid.TryParse(ShopId, out _);
+                var recoveredIdentityValid = beginPending
+                    ? string.IsNullOrEmpty(RunHmac) &&
+                      string.IsNullOrEmpty(ManifestHmac) &&
+                      string.IsNullOrEmpty(CleanupCapability) &&
+                      string.IsNullOrEmpty(ResultCapability) &&
+                      string.IsNullOrEmpty(RunProfileName)
+                    : IsLowerHex64(RunHmac) &&
+                      IsLowerHex64(ManifestHmac) &&
+                      IsCapability(CleanupCapability, "cleanup") &&
+                      IsCapability(ResultCapability, "result") &&
+                      PosTrustedDeviceStore.IsValidProfileName(RunProfileName);
                 return Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri) &&
                     IsAllowedBaseUri(uri) &&
-                    IsLowerHex64(RunHmac) &&
-                    IsLowerHex64(ManifestHmac) &&
-                    IsCapability(CleanupCapability, "cleanup") &&
-                    IsCapability(ResultCapability, "result") &&
-                    PosTrustedDeviceStore.IsValidProfileName(RunProfileName) &&
-                    Guid.TryParse(ProductId, out _) &&
-                    Guid.TryParse(ShopId, out _) &&
-                    !string.IsNullOrWhiteSpace(Phase) &&
-                    IsCanonicalTimestamp(FenceUntil);
+                    BeginRequestId != null &&
+                    BeginRequestId.StartsWith(
+                        "asus-pib-begin-",
+                        StringComparison.Ordinal) &&
+                    BeginRequestId.Length == 39 &&
+                    BeginRequestId.Substring(15).All(IsLowerHexCharacter) &&
+                    RunMarker != null &&
+                    RunMarker.StartsWith("ASUSPIB_", StringComparison.Ordinal) &&
+                    RunMarker.Length == 40 &&
+                    RunMarker.Substring(8).All(IsUpperHexCharacter) &&
+                    recoveredIdentityValid &&
+                    fixtureIdentityValid &&
+                    validPhase &&
+                    IsCanonicalTimestamp(FenceUntil) &&
+                    IsCanonicalTimestamp(StartedAt) &&
+                    string.Equals(
+                        Path.GetFullPath(CacheRoot ?? string.Empty).TrimEnd(
+                            Path.DirectorySeparatorChar,
+                            Path.AltDirectorySeparatorChar),
+                        ProductImageStagingAcceptance.CacheRoot(),
+                        StringComparison.OrdinalIgnoreCase);
             }
         }
 

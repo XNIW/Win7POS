@@ -87,44 +87,21 @@ public sealed class PosShopTransitionGuardTests
     }
 
     [TestMethod]
-    public async Task Evaluate_BlocksDifferentShopWhenProductImageOutboxIsUnresolved()
+    [DataRow("waiting_dependency")]
+    [DataRow("pending_intent")]
+    [DataRow("pending_upload")]
+    [DataRow("pending_finalize")]
+    [DataRow("pending_remove")]
+    [DataRow("in_progress")]
+    [DataRow("retry_wait")]
+    [DataRow("failed_blocked")]
+    [DataRow("cleanup_pending")]
+    public async Task Evaluate_BlocksDifferentShopForEveryUnresolvedProductImageState(
+        string state)
     {
         using var db = TestDb.Create();
         await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
-        long productId;
-        using (var connection = db.Factory.Open())
-        {
-            await connection.ExecuteAsync(@"
-INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
-VALUES('SHOP-IMAGE-001', 'Pending image', 100, '10000000-0000-4000-8000-000000000150', 1);");
-            productId = await connection.ExecuteScalarAsync<long>(
-                "SELECT id FROM products WHERE barcode = 'SHOP-IMAGE-001';");
-        }
-        await new ProductImageOperationOutboxRepository(db.Factory)
-            .EnqueueReplaceAsync(
-                new ProductImageReplaceEnqueueRequest
-                {
-                    LocalProductId = productId,
-                    IntendedLocalVersionIdentity = "local-image-shop-transition",
-                    PayloadHash = "sha256:" + new string('a', 64),
-                    Main = new ProductImageStagedVariant
-                    {
-                        Bytes = 10,
-                        Height = 2,
-                        Identity = "stage-shop-transition-main.jpg",
-                        Sha256 = new string('b', 64),
-                        Width = 2
-                    },
-                    Thumb = new ProductImageStagedVariant
-                    {
-                        Bytes = 10,
-                        Height = 2,
-                        Identity = "stage-shop-transition-thumb.jpg",
-                        Sha256 = new string('c', 64),
-                        Width = 2
-                    }
-                },
-                (_, _) => "sha256:" + new string('d', 64));
+        await EnqueueProductImageAsync(db.Factory, state);
 
         var decision = await new PosShopTransitionGuard(db.Factory)
             .EvaluateAsync("shop-a", "SHOP-A", "shop-b", "SHOP-B");
@@ -134,6 +111,32 @@ VALUES('SHOP-IMAGE-001', 'Pending image', 100, '10000000-0000-4000-8000-00000000
         Assert.AreEqual(
             "shop_switch_blocked_unresolved_outbox",
             decision.Code);
+    }
+
+    [TestMethod]
+    [DataRow("waiting_dependency")]
+    [DataRow("pending_intent")]
+    [DataRow("pending_upload")]
+    [DataRow("pending_finalize")]
+    [DataRow("pending_remove")]
+    [DataRow("in_progress")]
+    [DataRow("retry_wait")]
+    [DataRow("failed_blocked")]
+    [DataRow("cleanup_pending")]
+    public async Task ApplyAuthorizedTransition_RechecksEveryProductImageState(
+        string state)
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var guard = new PosShopTransitionGuard(db.Factory);
+        var decision = await guard.EvaluateAsync(
+            "shop-a", "SHOP-A", "shop-b", "SHOP-B");
+        Assert.IsTrue(decision.Allowed);
+
+        await EnqueueProductImageAsync(db.Factory, state);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => guard.ApplyAuthorizedTransitionAsync(decision));
     }
 
     [TestMethod]
@@ -218,6 +221,51 @@ VALUES('SHOP-IMAGE-001', 'Pending image', 100, '10000000-0000-4000-8000-00000000
             SchemaVersion = "pos-catalog-import-v1",
             Source = "supplier_excel"
         });
+    }
+
+    private static async Task EnqueueProductImageAsync(
+        SqliteConnectionFactory factory,
+        string state)
+    {
+        long productId;
+        using (var connection = factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
+VALUES('SHOP-IMAGE-001', 'Pending image', 100, '10000000-0000-4000-8000-000000000150', 1);");
+            productId = await connection.ExecuteScalarAsync<long>(
+                "SELECT id FROM products WHERE barcode = 'SHOP-IMAGE-001';");
+        }
+        var operation = await new ProductImageOperationOutboxRepository(factory)
+            .EnqueueReplaceAsync(
+                new ProductImageReplaceEnqueueRequest
+                {
+                    LocalProductId = productId,
+                    IntendedLocalVersionIdentity = "local-image-shop-transition",
+                    PayloadHash = "sha256:" + new string('a', 64),
+                    Main = new ProductImageStagedVariant
+                    {
+                        Bytes = 10,
+                        Height = 2,
+                        Identity = "stage-shop-transition-main.jpg",
+                        Sha256 = new string('b', 64),
+                        Width = 2
+                    },
+                    Thumb = new ProductImageStagedVariant
+                    {
+                        Bytes = 10,
+                        Height = 2,
+                        Identity = "stage-shop-transition-thumb.jpg",
+                        Sha256 = new string('c', 64),
+                        Width = 2
+                    }
+                },
+                (_, _) => "sha256:" + new string('d', 64));
+        using var update = factory.Open();
+        await update.ExecuteAsync(
+            "UPDATE product_image_operation_outbox SET state = @state " +
+            "WHERE operation_id = @operationId;",
+            new { state, operationId = operation.OperationId });
     }
 
     private static async Task InsertAmbiguousLegacyCatalogImportAsync(SqliteConnectionFactory factory)

@@ -114,13 +114,34 @@ Require ($stagingAcceptance -match 'DataProtectionScope\.CurrentUser' -and
          $stagingAcceptance -match 'VerifyExpiredCapabilitiesAsync' -and
          $stagingAcceptance -match 'result_issue' -and
          $stagingAcceptance -match 'CountForbiddenPersistenceMarkers' -and
+         $stagingAcceptance -match 'UseTrustedProfileForAcceptance' -and
+         $stagingAcceptance -match 'Phase = "begin_pending"' -and
+         $stagingAcceptance -match 'state\.BeginRequestId' -and
+         $stagingAcceptance -match 'state\.RunMarker' -and
+         $stagingAcceptance -match 'boundary_begin_recovery_failed' -and
+         $stagingAcceptance -match 'staging_list_runtime_image_not_loaded' -and
+         $stagingAcceptance -match 'staging_editor_runtime_image_not_loaded' -and
+         $stagingAcceptance -notmatch '\.SetLoaded\(' -and
+         $stagingAcceptance -notmatch 'Product\s*=\s*null' -and
          $stagingAcceptance -match 'new ProductsView' -and
          $stagingAcceptance -match 'new ProductEditDialog' -and
          $stagingAcceptance -notmatch 'runMarker[^\r\n]*DataMember[^\r\n]*SafeReport') `
     "Real staging acceptance must preserve DPAPI, no-redirect, restart and capability-expiry coverage."
+Require ($stagingAcceptance.IndexOf('Phase = "begin_pending"') -lt
+             $stagingAcceptance.IndexOf(
+                 'armed = await boundary.PostTrustedAsync') -and
+         $stagingAcceptance -match
+             'TrustedRequest\.Begin\(\s*sharedSession,\s*state\.BeginRequestId,\s*state\.RunMarker\)' -and
+         $stagingAcceptance -match
+             'state\.Phase = "armed";\s*SaveState\(state\)') `
+    "Begin response-loss recovery must be checkpointed before the remote call and replayable during cleanup."
 Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
          $stagingRunner -match 'rev-parse origin/main' -and
          $stagingRunner -match 'AddHours\(2\)\.AddMinutes\(5\)' -and
+         $stagingRunner -match 'AddHours\(3\)' -and
+         $stagingRunner -match 'priorCheckpoint' -and
+         $stagingRunner -match 'Invoke-CheckpointCleanup' -and
+         $stagingRunner -match 'evidence_overlaps_(data|repo)' -and
          $stagingRunner -match "Phase 'cleanup'" -and
          $stagingRunner -notmatch 'TASK150_QA_HMAC_KEY|SUPABASE_SERVICE_ROLE_KEY') `
     "Staging runner must require exact main, wait the fence and avoid server secrets."

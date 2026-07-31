@@ -138,8 +138,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "Restart verification must reuse prepared state without --seed-trusted-session.");
             }
 
+            var productImageStagingAcceptance =
+                HasArg(args, "--product-image-staging-acceptance");
             var restrictedQaData = physicalPrinterQa ||
                                    authorizationLeaseMode ||
+                                   productImageStagingAcceptance ||
                                    HasArg(args, "--offline-sales-sandbox") ||
                                    (HasArg(args, "--seed") &&
                                     seedTrustedSession);
@@ -166,8 +169,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var authoritativeDrainLoopback =
                 HasArg(args, "--authoritative-drain-loopback");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
-            var productImageStagingAcceptance =
-                HasArg(args, "--product-image-staging-acceptance");
             var productImageProfileSmoke =
                 HasArg(args, "--product-image-profile-smoke");
             var productImageUiSmoke =

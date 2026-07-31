@@ -6,7 +6,7 @@ param(
     [string]$Profile = 'asus-staging',
 
     [string]$DataDirectory =
-        'C:\POSData\Win7POSProductImagePhaseBAcceptance',
+        'C:\POSData\Win7POS-QA\ProductImagePhaseBAcceptance',
 
     [string]$DotnetPath = 'C:\Dev\dotnet10\dotnet.exe'
 )
@@ -18,7 +18,7 @@ function Assert-ExactSafeDataDirectory {
     param([string]$Path)
 
     $expected = [System.IO.Path]::GetFullPath(
-        'C:\POSData\Win7POSProductImagePhaseBAcceptance').TrimEnd('\')
+        'C:\POSData\Win7POS-QA\ProductImagePhaseBAcceptance').TrimEnd('\')
     $resolved = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
     if (-not [string]::Equals(
             $resolved,
@@ -29,41 +29,106 @@ function Assert-ExactSafeDataDirectory {
     return $resolved
 }
 
+function Assert-NoReparsePath {
+    param(
+        [string]$Path,
+        [string]$FailureCode
+    )
+
+    $candidate = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $existing = $candidate
+    while (-not (Test-Path -LiteralPath $existing -PathType Container)) {
+        if (Test-Path -LiteralPath $existing) { throw $FailureCode }
+        $existing = [System.IO.Path]::GetDirectoryName($existing)
+        if ([string]::IsNullOrWhiteSpace($existing)) { throw $FailureCode }
+    }
+    $current = [System.IO.DirectoryInfo]::new($existing)
+    while ($null -ne $current) {
+        if (($current.Attributes -band
+                [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw $FailureCode
+        }
+        $current = $current.Parent
+    }
+    if (Test-Path -LiteralPath $candidate -PathType Container) {
+        $pending = [System.Collections.Generic.Stack[string]]::new()
+        $pending.Push($candidate)
+        while ($pending.Count -gt 0) {
+            Get-ChildItem -LiteralPath $pending.Pop() -Force |
+                ForEach-Object {
+                    if (($_.Attributes -band
+                            [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                        throw $FailureCode
+                    }
+                    if ($_.PSIsContainer) {
+                        $pending.Push($_.FullName)
+                    }
+                }
+        }
+    }
+    return $candidate
+}
+
+function Test-PathOverlap {
+    param([string]$Left, [string]$Right)
+
+    $leftFull = [System.IO.Path]::GetFullPath($Left).TrimEnd('\')
+    $rightFull = [System.IO.Path]::GetFullPath($Right).TrimEnd('\')
+    return [string]::Equals(
+            $leftFull,
+            $rightFull,
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        $leftFull.StartsWith(
+            $rightFull + '\',
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        $rightFull.StartsWith(
+            $leftFull + '\',
+            [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 function Invoke-AcceptancePhase {
     param(
         [string]$Harness,
         [string]$Phase,
-        [int]$ExpectedExitCode
+        [int[]]$ExpectedExitCodes
     )
 
-    & $Harness `
+    $phaseOutput = & $Harness `
         --data-dir $script:SafeDataDirectory `
         --product-image-staging-acceptance `
         --profile $Profile `
         --acceptance-output $script:SafeEvidenceDirectory `
         --acceptance-phase $Phase
     $exitCode = $LASTEXITCODE
-    if ($exitCode -ne $ExpectedExitCode) {
+    $phaseOutput | ForEach-Object { Write-Host $_ }
+    if ($exitCode -notin $ExpectedExitCodes) {
         throw "product_image_acceptance_${Phase}_failed_${exitCode}"
     }
+    return $exitCode
 }
 
 function Wait-ForCleanupFence {
     param(
-        [string]$ReportPath,
-        [DateTimeOffset]$StartedAt
+        [string]$ReportPath
     )
 
     if (-not (Test-Path -LiteralPath $ReportPath -PathType Leaf)) {
         throw 'product_image_acceptance_report_missing'
     }
     $report = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
+    $runStartedAt = [DateTimeOffset]::Parse(
+        [string]$report.startedAt,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind)
     $fenceUntil = [DateTimeOffset]::Parse(
         [string]$report.fenceUntil,
         [Globalization.CultureInfo]::InvariantCulture,
         [Globalization.DateTimeStyles]::RoundtripKind)
-    if ($fenceUntil -lt $StartedAt.AddHours(2).AddMinutes(5)) {
+    if ($fenceUntil -lt $runStartedAt.AddHours(2).AddMinutes(5)) {
         throw 'product_image_acceptance_fence_too_short'
+    }
+    if ($fenceUntil -gt $runStartedAt.AddHours(3)) {
+        throw 'product_image_acceptance_fence_too_long'
     }
     $cleanupAt = $fenceUntil.AddSeconds(15)
     while ([DateTimeOffset]::UtcNow -lt $cleanupAt) {
@@ -78,11 +143,54 @@ function Wait-ForCleanupFence {
     }
 }
 
+function Assert-TerminalAcceptanceReport {
+    param(
+        [string]$ReportPath,
+        [string]$ExpectedSha
+    )
+
+    if (-not (Test-Path -LiteralPath $ReportPath -PathType Leaf)) {
+        throw 'product_image_acceptance_terminal_report_missing'
+    }
+    $terminal = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
+    if ($terminal.passed -ne $true -or
+        $terminal.cleanupComplete -ne $true -or
+        $terminal.cleanupPending -ne $false -or
+        -not [string]::Equals(
+            [string]$terminal.exactMainSha,
+            $ExpectedSha,
+            [System.StringComparison]::Ordinal) -or
+        [int]$terminal.dbResiduals -ne 0 -or
+        [int]$terminal.storageResiduals -ne 0 -or
+        [int]$terminal.activeActorSessionResiduals -ne 0 -or
+        [int]$terminal.signedUrlPersistenceCount -ne 0 -or
+        $terminal.sharedSnapshotUnchanged -ne $true -or
+        $terminal.immutableAuditPreserved -ne $true -or
+        $terminal.runProfileRemoved -ne $true) {
+        throw 'product_image_acceptance_terminal_result_invalid'
+    }
+    return $terminal
+}
+
 $script:SafeDataDirectory = Assert-ExactSafeDataDirectory -Path $DataDirectory
-$script:SafeEvidenceDirectory = [System.IO.Path]::GetFullPath(
-    $EvidenceDirectory)
 $repoRoot = [System.IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot '..\..'))
+$script:SafeDataDirectory = Assert-NoReparsePath `
+    -Path $script:SafeDataDirectory `
+    -FailureCode 'product_image_acceptance_data_reparse_point'
+$script:SafeEvidenceDirectory = Assert-NoReparsePath `
+    -Path $EvidenceDirectory `
+    -FailureCode 'product_image_acceptance_evidence_reparse_point'
+if (Test-PathOverlap `
+        -Left $script:SafeEvidenceDirectory `
+        -Right $script:SafeDataDirectory) {
+    throw 'product_image_acceptance_evidence_overlaps_data'
+}
+if (Test-PathOverlap `
+        -Left $script:SafeEvidenceDirectory `
+        -Right $repoRoot) {
+    throw 'product_image_acceptance_evidence_overlaps_repo'
+}
 
 if (-not (Test-Path -LiteralPath $DotnetPath -PathType Leaf)) {
     throw 'product_image_acceptance_dotnet_missing'
@@ -102,7 +210,14 @@ if ($head -notmatch '^[0-9a-f]{40}$') {
     throw 'product_image_acceptance_sha_invalid'
 }
 
-if (Test-Path -LiteralPath $script:SafeDataDirectory) {
+$statePath = Join-Path $script:SafeDataDirectory (
+    'product-image-acceptance-state.dpapi')
+$priorCheckpoint = Test-Path -LiteralPath $statePath -PathType Leaf
+if ((Test-Path -LiteralPath $script:SafeDataDirectory) -and
+    -not $priorCheckpoint) {
+    [void](Assert-NoReparsePath `
+        -Path $script:SafeDataDirectory `
+        -FailureCode 'product_image_acceptance_data_reparse_point')
     Remove-Item -LiteralPath $script:SafeDataDirectory -Recurse -Force
 }
 New-Item -ItemType Directory -Path $script:SafeDataDirectory -Force | Out-Null
@@ -142,45 +257,75 @@ if (-not (Test-Path -LiteralPath $harness -PathType Leaf)) {
 
 $reportPath = Join-Path $script:SafeEvidenceDirectory (
     'product-image-staging-result.json')
-$startedAt = [DateTimeOffset]::UtcNow
+
+function Invoke-CheckpointCleanup {
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+        return $false
+    }
+    $cleanupExit = Invoke-AcceptancePhase `
+        -Harness $harness `
+        -Phase 'cleanup' `
+        -ExpectedExitCodes @(0, 77)
+    if ($cleanupExit -eq 77) {
+        Wait-ForCleanupFence -ReportPath $reportPath
+        $cleanupExit = Invoke-AcceptancePhase `
+            -Harness $harness `
+            -Phase 'cleanup' `
+            -ExpectedExitCodes @(0)
+    }
+    if ($cleanupExit -ne 0) {
+        throw 'product_image_acceptance_checkpoint_cleanup_incomplete'
+    }
+    return $true
+}
+
+if ($priorCheckpoint) {
+    try {
+        [void](Invoke-CheckpointCleanup)
+    }
+    catch {
+        throw (
+            'product_image_acceptance_prior_checkpoint_recovery_failed: ' +
+            $_.Exception.Message)
+    }
+    [void](Assert-TerminalAcceptanceReport `
+        -ReportPath $reportPath `
+        -ExpectedSha $head)
+    [void](Assert-NoReparsePath `
+        -Path $script:SafeDataDirectory `
+        -FailureCode 'product_image_acceptance_data_reparse_point')
+    Remove-Item -LiteralPath $script:SafeDataDirectory -Recurse -Force
+    throw 'product_image_acceptance_prior_checkpoint_recovered_rerun_required'
+}
+
 try {
     Invoke-AcceptancePhase `
         -Harness $harness `
         -Phase 'prepare' `
-        -ExpectedExitCode 75
+        -ExpectedExitCodes @(75)
     Invoke-AcceptancePhase `
         -Harness $harness `
         -Phase 'resume' `
-        -ExpectedExitCode 76
+        -ExpectedExitCodes @(76)
     Invoke-AcceptancePhase `
         -Harness $harness `
         -Phase 'cache-restart' `
-        -ExpectedExitCode 77
-    Wait-ForCleanupFence -ReportPath $reportPath -StartedAt $startedAt
+        -ExpectedExitCodes @(77)
+    Wait-ForCleanupFence -ReportPath $reportPath
     Invoke-AcceptancePhase `
         -Harness $harness `
         -Phase 'cleanup' `
-        -ExpectedExitCode 0
+        -ExpectedExitCodes @(0)
 }
 catch {
     $phaseFailure = $_
     $cleanupFailure = $null
-    if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
-        $checkpoint = Get-Content -Raw -LiteralPath $reportPath |
-            ConvertFrom-Json
-        if ($checkpoint.cleanupComplete -ne $true) {
-            try {
-                Wait-ForCleanupFence `
-                    -ReportPath $reportPath `
-                    -StartedAt $startedAt
-                Invoke-AcceptancePhase `
-                    -Harness $harness `
-                    -Phase 'cleanup' `
-                    -ExpectedExitCode 0
-            }
-            catch {
-                $cleanupFailure = $_
-            }
+    if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+        try {
+            [void](Invoke-CheckpointCleanup)
+        }
+        catch {
+            $cleanupFailure = $_
         }
     }
     if ($null -ne $cleanupFailure) {
@@ -192,18 +337,12 @@ catch {
     throw $phaseFailure
 }
 
-$final = Get-Content -Raw -LiteralPath $reportPath | ConvertFrom-Json
-if ($final.passed -ne $true -or
-    [int]$final.dbResiduals -ne 0 -or
-    [int]$final.storageResiduals -ne 0 -or
-    [int]$final.activeActorSessionResiduals -ne 0 -or
-    [int]$final.signedUrlPersistenceCount -ne 0 -or
-    $final.sharedSnapshotUnchanged -ne $true -or
-    $final.immutableAuditPreserved -ne $true -or
-    $final.runProfileRemoved -ne $true) {
-    throw 'product_image_acceptance_terminal_result_invalid'
-}
-
+[void](Assert-TerminalAcceptanceReport `
+    -ReportPath $reportPath `
+    -ExpectedSha $head)
+[void](Assert-NoReparsePath `
+    -Path $script:SafeDataDirectory `
+    -FailureCode 'product_image_acceptance_data_reparse_point')
 Remove-Item -LiteralPath $script:SafeDataDirectory -Recurse -Force
 if (Test-Path -LiteralPath $script:SafeDataDirectory) {
     throw 'product_image_acceptance_local_cleanup_failed'
