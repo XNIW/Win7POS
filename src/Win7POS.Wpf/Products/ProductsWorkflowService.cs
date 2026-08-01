@@ -13,6 +13,8 @@ using Win7POS.Core.Products;
 using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.ImportDb;
+using Win7POS.Data.Images;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using System.Linq;
 using Win7POS.Wpf.Infrastructure;
@@ -520,10 +522,28 @@ namespace Win7POS.Wpf.Products
             var current = await _products.GetDetailsByBarcodeAsync(barcode.Trim())
                 .ConfigureAwait(false);
             if (current == null) return false;
-            await _products.SetLocalArticleActiveAsync(
+            var write = await _products.SetLocalArticleActiveAsync(
                 current.Id,
                 false,
                 ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+            var staging = new ProductImageStagingStore();
+            foreach (var pair in write.CancelledProductImages)
+            {
+                try
+                {
+                    await staging.DeletePairAsync(
+                        pair.MainIdentity,
+                        pair.ThumbIdentity,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (
+                    exception is IOException ||
+                    exception is UnauthorizedAccessException)
+                {
+                    // DB state is already atomic and authoritative. The image
+                    // lane's orphan sweep retries this filesystem cleanup.
+                }
+            }
             CatalogEvents.RaiseCatalogChanged(barcode.Trim());
             SignalArticleMutationSync();
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductDelete, AuditDetails.Kv(("barcode", barcode))).ConfigureAwait(false);

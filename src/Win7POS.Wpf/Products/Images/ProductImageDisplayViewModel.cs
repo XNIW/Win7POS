@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
+using System.Windows;
 using Win7POS.Core.Images;
 using Win7POS.Wpf.Localization;
 
@@ -14,6 +15,7 @@ namespace Win7POS.Wpf.Products.Images
     {
         private ProductImageDisplayState _state;
         private ImageSource _image;
+        private string _statusOverride;
 
         public ProductImageDisplayViewModel()
         {
@@ -27,7 +29,9 @@ namespace Win7POS.Wpf.Products.Images
             _state == ProductImageDisplayState.Loaded &&
             _image != null;
         public bool ShowsStatus => !IsLoaded;
-        public string StatusText => GetStatusText(_state);
+        public string StatusText => string.IsNullOrWhiteSpace(_statusOverride)
+            ? GetStatusText(_state)
+            : _statusOverride;
         public string AccessibleName =>
             IsLoaded
                 ? PosLocalization.T("productImage.preview")
@@ -43,6 +47,28 @@ namespace Win7POS.Wpf.Products.Images
             SetState(ProductImageDisplayState.NoImage, null);
         }
 
+        public void SetUnavailable(bool offline = false)
+        {
+            SetState(
+                ProductImageDisplayState.Unavailable,
+                null,
+                offline ? PosLocalization.T("productImage.offline") : null);
+        }
+
+        public void SetCorrupt()
+        {
+            SetState(ProductImageDisplayState.Corrupt, null);
+        }
+
+        public void SetLoaded(ImageSource image)
+        {
+            SetState(
+                image == null
+                    ? ProductImageDisplayState.Error
+                    : ProductImageDisplayState.Loaded,
+                image);
+        }
+
         public void Apply(ProductImageDecodeResult result)
         {
             if (result == null)
@@ -54,10 +80,20 @@ namespace Win7POS.Wpf.Products.Images
             SetState(result.State, result.Image);
         }
 
-        private void SetState(ProductImageDisplayState state, ImageSource image)
+        private void SetState(
+            ProductImageDisplayState state,
+            ImageSource image,
+            string statusOverride = null)
         {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.Invoke(() => SetState(state, image, statusOverride));
+                return;
+            }
             _state = state;
             _image = state == ProductImageDisplayState.Loaded ? image : null;
+            _statusOverride = statusOverride;
             OnPropertyChanged(nameof(State));
             OnPropertyChanged(nameof(Image));
             OnPropertyChanged(nameof(IsLoading));

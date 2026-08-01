@@ -8,6 +8,17 @@ namespace Win7POS.Core.Tests.Online;
 public sealed class OnlineSyncSupervisorTests
 {
     [TestMethod]
+    public void StartOfDayTreatsProductImageAuthenticationDenialAsGlobalAuthStop()
+    {
+        var result = new OnlineSyncStartOfDayResult
+        {
+            ProductImages = OnlineSyncLaneOutcome.AuthDenied("auth_denied")
+        };
+
+        Assert.IsTrue(result.AuthenticationDenied);
+    }
+
+    [TestMethod]
     public async Task TwentySameLaneTriggers_CoalesceToOneRunAndOneRerun()
     {
         var firstStarted = NewSignal();

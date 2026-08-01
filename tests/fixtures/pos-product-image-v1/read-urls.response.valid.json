@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "pos-product-image-v1",
+  "operation": "read-urls",
+  "ok": true,
+  "code": "success",
+  "serverTime": "2026-07-30T16:56:03.123456Z",
+  "cacheScope": "fixture-pos-image-scope-149",
+  "items": [
+    {
+      "productId": "20000000-0000-4000-8000-000000000149",
+      "status": "not_found",
+      "variant": "thumb",
+      "versionId": "40000000-0000-4000-8000-000000000149"
+    }
+  ]
+}

@@ -227,6 +227,41 @@ WHERE key GLOB 'pos.catalog.full_stage.*';"));
             () => repository.LoadPageAsync(generation, 1));
     }
 
+    [TestMethod]
+    public async Task Stage_RoundTripPreservesOmittedVersusExplicitNullImageFields()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogFullResponseStageRepository(db.Factory);
+        var generation = Guid.NewGuid().ToString("N");
+        await repository.BeginAsync(generation);
+        var response = Response("cursor-image-presence", false, "P-OMITTED");
+        var explicitNull = new PosCatalogProductResponse
+        {
+            Barcode = "P-EXPLICIT-NULL",
+            ProductId = "P-EXPLICIT-NULL",
+            ProductName = "P-EXPLICIT-NULL",
+            PrimaryImageUpdatedAt = null,
+            PrimaryImageVersionId = null
+        };
+        response.Catalog.Products = response.Catalog.Products
+            .Concat(new[] { explicitNull })
+            .ToArray();
+
+        await repository.AppendAsync(
+            generation,
+            1,
+            Fingerprint(response.SyncCursor),
+            response,
+            0,
+            Budget());
+        var loaded = await repository.LoadPageAsync(generation, 1);
+
+        Assert.IsFalse(loaded.Catalog.Products[0].PrimaryImageVersionIdPresent);
+        Assert.IsFalse(loaded.Catalog.Products[0].PrimaryImageUpdatedAtPresent);
+        Assert.IsTrue(loaded.Catalog.Products[1].PrimaryImageVersionIdPresent);
+        Assert.IsTrue(loaded.Catalog.Products[1].PrimaryImageUpdatedAtPresent);
+    }
+
     private static CatalogFullResponseStageResourceBudget Budget()
     {
         return new CatalogFullResponseStageResourceBudget(

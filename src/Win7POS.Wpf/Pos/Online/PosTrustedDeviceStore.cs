@@ -24,6 +24,8 @@ namespace Win7POS.Wpf.Pos.Online
         private const int MaximumBindingMaterialCharacters = 128 * 1024;
         private const int MaximumProcessClockScopes = 16;
         private const int MaximumMonotonicClockDomainCharacters = 128;
+        private const int MaximumProfileNameCharacters = 80;
+        private const int MinimumProfileNameCharacters = 8;
         private static readonly object StateGate = new object();
         private static readonly string ProcessAuthorizationScope =
             CreateProcessAuthorizationScope();
@@ -35,12 +37,23 @@ namespace Win7POS.Wpf.Pos.Online
         private readonly Func<long> _monotonicTimestamp;
         private readonly long _monotonicFrequency;
         private readonly string _monotonicClockDomain;
+        private readonly string _profileName;
 
         public PosTrustedDeviceStore()
             : this(
                 Stopwatch.GetTimestamp,
                 Stopwatch.Frequency,
-                DefaultMonotonicClockDomain)
+                DefaultMonotonicClockDomain,
+                null)
+        {
+        }
+
+        public PosTrustedDeviceStore(string profileName)
+            : this(
+                Stopwatch.GetTimestamp,
+                Stopwatch.Frequency,
+                DefaultMonotonicClockDomain,
+                NormalizeProfileName(profileName))
         {
         }
 
@@ -48,6 +61,19 @@ namespace Win7POS.Wpf.Pos.Online
             Func<long> monotonicTimestamp,
             long monotonicFrequency,
             string monotonicClockDomain)
+            : this(
+                monotonicTimestamp,
+                monotonicFrequency,
+                monotonicClockDomain,
+                null)
+        {
+        }
+
+        private PosTrustedDeviceStore(
+            Func<long> monotonicTimestamp,
+            long monotonicFrequency,
+            string monotonicClockDomain,
+            string profileName)
         {
             _monotonicTimestamp = monotonicTimestamp ??
                 throw new ArgumentNullException(nameof(monotonicTimestamp));
@@ -59,14 +85,85 @@ namespace Win7POS.Wpf.Pos.Online
                     MaximumMonotonicClockDomainCharacters
                     ? rawMonotonicClockDomain.Trim()
                     : string.Empty;
+            _profileName = profileName;
         }
 
-        public string TrustedDeviceFilePath => Path.Combine(AppPaths.DataDirectory, "pos-trusted-device.json");
+        public string TrustedDeviceFilePath => string.IsNullOrEmpty(_profileName)
+            ? Path.Combine(AppPaths.DataDirectory, "pos-trusted-device.json")
+            : Path.Combine(
+                AppPaths.DataDirectory,
+                "trusted-profiles",
+                _profileName + ".json");
+
+        public string ProfileName => _profileName ?? string.Empty;
+
+        public static bool IsValidProfileName(string profileName)
+        {
+            if (string.IsNullOrWhiteSpace(profileName))
+                return false;
+            var candidate = profileName.Trim();
+            if (candidate.Length < MinimumProfileNameCharacters ||
+                candidate.Length > MaximumProfileNameCharacters)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < candidate.Length; index++)
+            {
+                var character = candidate[index];
+                if ((character < 'a' || character > 'z') &&
+                    (character < '0' || character > '9') &&
+                    character != '-')
+                {
+                    return false;
+                }
+            }
+
+            return candidate[0] != '-' &&
+                candidate[candidate.Length - 1] != '-';
+        }
+
+        public PosTrustedDeviceStore CreateIsolatedProfileFromCurrentTrust(
+            string profileName)
+        {
+            var normalizedProfileName = NormalizeProfileName(profileName);
+            if (!string.IsNullOrEmpty(_profileName))
+            {
+                throw new InvalidOperationException(
+                    "Only the shared trusted-device profile can bootstrap an isolated profile.");
+            }
+
+            lock (StateGate)
+            {
+                if (!TryReadState(out _, out var currentSession))
+                {
+                    throw new InvalidOperationException(
+                        "The shared trusted-device profile is unavailable or invalid.");
+                }
+
+                var isolatedStore = new PosTrustedDeviceStore(
+                    Stopwatch.GetTimestamp,
+                    Stopwatch.Frequency,
+                    DefaultMonotonicClockDomain,
+                    normalizedProfileName);
+                isolatedStore.EnsureProfilePathSafe(createDirectory: false);
+                if (File.Exists(isolatedStore.TrustedDeviceFilePath))
+                {
+                    throw new IOException(
+                        "The isolated trusted-device profile already exists.");
+                }
+
+                var isolatedSession = CloneForIsolatedProfile(currentSession);
+                isolatedStore.SaveState(CreateStoredState(isolatedSession));
+                return isolatedStore;
+            }
+        }
 
         public bool HasStoredState()
         {
             lock (StateGate)
             {
+                EnsureProfilePathSafe(createDirectory: false);
                 return File.Exists(TrustedDeviceFilePath);
             }
         }
@@ -703,6 +800,7 @@ namespace Win7POS.Wpf.Pos.Online
         {
             try
             {
+                EnsureProfilePathSafe(createDirectory: false);
                 if (File.Exists(TrustedDeviceFilePath))
                     File.Delete(TrustedDeviceFilePath);
                 return !File.Exists(TrustedDeviceFilePath);
@@ -722,6 +820,7 @@ namespace Win7POS.Wpf.Pos.Online
             session = null;
             try
             {
+                EnsureProfilePathSafe(createDirectory: false);
                 if (!File.Exists(TrustedDeviceFilePath))
                     return false;
 
@@ -920,6 +1019,45 @@ namespace Win7POS.Wpf.Pos.Online
                     ComputeOfflineAuthorizationBinding(session));
             }
             return state;
+        }
+
+        private static PosTrustedDeviceSession CloneForIsolatedProfile(
+            PosTrustedDeviceSession source)
+        {
+            return new PosTrustedDeviceSession
+            {
+                DeviceToken = source.DeviceToken,
+                EffectiveOfflineAuthorizationExpiresAt = null,
+                GenerationId = OnlineSyncGeneration.CreateGenerationId(),
+                LastOkLocalAt = source.LastOkLocalAt,
+                LastOkServerAt = source.LastOkServerAt,
+                OfflineAuthorizationAttested = false,
+                PosSessionId = source.PosSessionId,
+                SessionExpiresAt = source.SessionExpiresAt,
+                SessionToken = source.SessionToken,
+                ShopCode = source.ShopCode,
+                ShopId = source.ShopId,
+                ShopName = source.ShopName,
+                ShopDeviceId = source.ShopDeviceId,
+                StaffCode = source.StaffCode,
+                StaffCredentialVersion = source.StaffCredentialVersion,
+                StaffDisplayName = source.StaffDisplayName,
+                StaffId = source.StaffId,
+                StaffRoleKey = source.StaffRoleKey,
+                TrustedStateFormatVersion = CurrentFormatVersion,
+            };
+        }
+
+        private static string NormalizeProfileName(string profileName)
+        {
+            var candidate = (profileName ?? string.Empty).Trim();
+            if (!IsValidProfileName(candidate))
+            {
+                throw new ArgumentException(
+                    "Profile names must contain 8-80 lowercase ASCII letters, digits, or hyphens and cannot start or end with a hyphen.",
+                    nameof(profileName));
+            }
+            return candidate;
         }
 
         private static bool HasValidOfflineAuthorizationBinding(
@@ -1157,6 +1295,7 @@ namespace Win7POS.Wpf.Pos.Online
         private void SaveState(StoredTrustedDeviceState state)
         {
             AppPaths.EnsureDataDirectories();
+            EnsureProfilePathSafe(createDirectory: true);
             var serialized = Serialize(state);
             if (Encoding.UTF8.GetByteCount(serialized) >
                 MaximumTrustedDeviceStateBytes)
@@ -1165,6 +1304,50 @@ namespace Win7POS.Wpf.Pos.Online
                     "Trusted-device state exceeds the supported size.");
             }
             WriteAllTextAtomic(TrustedDeviceFilePath, serialized);
+        }
+
+        private void EnsureProfilePathSafe(bool createDirectory)
+        {
+            if (string.IsNullOrEmpty(_profileName)) return;
+            var dataRoot = Path.GetFullPath(AppPaths.DataDirectory).TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
+            var profileDirectory = Path.GetFullPath(Path.Combine(
+                dataRoot,
+                "trusted-profiles"));
+            if (!profileDirectory.StartsWith(
+                    dataRoot + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new IOException("trusted_profile_path_escape");
+            }
+            var dataInfo = new DirectoryInfo(dataRoot);
+            if (dataInfo.Exists &&
+                (dataInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new IOException("trusted_profile_data_root_reparse");
+            }
+            var profileInfo = new DirectoryInfo(profileDirectory);
+            if (profileInfo.Exists &&
+                (profileInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new IOException("trusted_profile_directory_reparse");
+            }
+            if (createDirectory)
+            {
+                Directory.CreateDirectory(profileDirectory);
+                profileInfo.Refresh();
+                if ((profileInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new IOException("trusted_profile_directory_reparse");
+                }
+            }
+            var fileInfo = new FileInfo(TrustedDeviceFilePath);
+            if (fileInfo.Exists &&
+                (fileInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new IOException("trusted_profile_file_reparse");
+            }
         }
 
         private static bool TryReadBoundedUtf8(

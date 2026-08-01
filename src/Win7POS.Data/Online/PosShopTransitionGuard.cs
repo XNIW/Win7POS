@@ -178,7 +178,20 @@ SELECT
      'pending',
      'in_progress',
      'retry_wait',
-     'failed_blocked'));",
+     'failed_blocked'))
+  +
+  (SELECT COUNT(1)
+   FROM product_image_operation_outbox
+   WHERE state IN (
+     'waiting_dependency',
+     'pending_intent',
+     'pending_upload',
+     'pending_finalize',
+     'pending_remove',
+     'in_progress',
+     'retry_wait',
+     'failed_blocked',
+     'cleanup_pending'));",
                         transaction: tx).ConfigureAwait(false);
                     if (unresolved > 0)
                     {
@@ -269,7 +282,20 @@ SELECT
      'pending',
      'in_progress',
      'retry_wait',
-     'failed_blocked'));"
+     'failed_blocked'))
+  +
+  (SELECT COUNT(1)
+   FROM product_image_operation_outbox
+   WHERE state IN (
+     'waiting_dependency',
+     'pending_intent',
+     'pending_upload',
+     'pending_finalize',
+     'pending_remove',
+     'in_progress',
+     'retry_wait',
+     'failed_blocked',
+     'cleanup_pending'));"
                 ).ConfigureAwait(false);
                 return count > 0;
             }

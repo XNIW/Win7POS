@@ -840,6 +840,8 @@ namespace Win7POS.Core.Online
     [DataContract]
     public sealed class PosCatalogProductResponse
     {
+        private string _primaryImageUpdatedAt;
+        private string _primaryImageVersionId;
         [DataMember(Name = "barcode")]
         public string Barcode { get; set; }
 
@@ -854,6 +856,34 @@ namespace Win7POS.Core.Online
 
         [DataMember(Name = "productName")]
         public string ProductName { get; set; }
+
+        [DataMember(Name = "primaryImageUpdatedAt")]
+        public string PrimaryImageUpdatedAt
+        {
+            get { return _primaryImageUpdatedAt; }
+            set
+            {
+                _primaryImageUpdatedAt = value;
+                PrimaryImageUpdatedAtPresent = true;
+            }
+        }
+
+        [DataMember(Name = "primaryImageVersionId")]
+        public string PrimaryImageVersionId
+        {
+            get { return _primaryImageVersionId; }
+            set
+            {
+                _primaryImageVersionId = value;
+                PrimaryImageVersionIdPresent = true;
+            }
+        }
+
+        [IgnoreDataMember]
+        public bool PrimaryImageUpdatedAtPresent { get; private set; }
+
+        [IgnoreDataMember]
+        public bool PrimaryImageVersionIdPresent { get; private set; }
 
         [DataMember(Name = "purchasePrice")]
         public double? PurchasePrice { get; set; }

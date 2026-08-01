@@ -20,5 +20,8 @@ namespace Win7POS.Core.Models
         public string SupplierName { get; set; } = string.Empty;
         public int? CategoryId { get; set; }
         public string CategoryName { get; set; } = string.Empty;
+        public string RemoteProductId { get; set; }
+        public string PrimaryImageVersionId { get; set; }
+        public string PrimaryImageUpdatedAt { get; set; }
     }
 }

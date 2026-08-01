@@ -128,20 +128,57 @@
                              Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
 
-                    <!-- Phase A: static editor preview, deliberately disabled. -->
+                    <!-- Product image operations remain independent from field Save. -->
                     <TextBlock Grid.Row="10" Grid.Column="0" Margin="0,10,0,0"
                                VerticalAlignment="Center"
                                Text="{loc:Loc productImage.preview}"
                                Visibility="{Binding ProductImagesPhaseAEnabled, Converter={StaticResource BoolToVis}}"/>
-                    <images:ProductImagePresenter Grid.Row="10" Grid.Column="1"
-                                                  Width="160"
-                                                  Height="160"
-                                                  Margin="8,10,0,0"
-                                                  HorizontalAlignment="Left"
-                                                  DataContext="{Binding ImageDisplay}"
-                                                  Visibility="{Binding DataContext.ProductImagesPhaseAEnabled,
-                                                                       RelativeSource={RelativeSource AncestorType={x:Type chrome:DialogShellWindow}},
-                                                                       Converter={StaticResource BoolToVis}}"/>
+                    <Grid Grid.Row="10" Grid.Column="1"
+                          Margin="8,10,0,0"
+                          Visibility="{Binding CanManageImages, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <images:ProductImagePresenter Width="160"
+                                                      Height="160"
+                                                      HorizontalAlignment="Left"
+                                                      DataContext="{Binding ImageDisplay}"/>
+                        <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                            <Button MinWidth="126" MinHeight="34" Margin="0,0,0,8"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding ChooseImageCommand}"
+                                    IsEnabled="{Binding CanUseImageCommands}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    AutomationProperties.Name="{Binding ImageChooseActionText}">
+                                <TextBlock Text="{Binding ImageChooseActionText}"/>
+                            </Button>
+                            <Button MinWidth="126" MinHeight="34" Margin="0,0,0,8"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding RemoveImageCommand}"
+                                    IsEnabled="{Binding CanRemoveImage}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    AutomationProperties.Name="{loc:Loc productImage.remove}">
+                                <TextBlock Text="{loc:Loc productImage.remove}"/>
+                            </Button>
+                            <Button MinWidth="126" MinHeight="34"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding RetryImageCommand}"
+                                    IsEnabled="{Binding CanUseImageCommands}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    AutomationProperties.Name="{loc:Loc productImage.retry}">
+                                <TextBlock Text="{loc:Loc productImage.retry}"/>
+                            </Button>
+                            <ProgressBar Height="4" Margin="0,10,0,6"
+                                         IsIndeterminate="True"
+                                         Visibility="{Binding ImageBusy, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="{Binding ImageOperationStatus}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Visibility="{Binding ShowsImageOperationStatus, Converter={StaticResource BoolToVis}}"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </ScrollViewer>
         </Border>

@@ -41,6 +41,8 @@ namespace Win7POS.Data.Repositories
 
     public sealed class LocalArticleWriteResult
     {
+        public IReadOnlyList<ProductImageCancelledStaging> CancelledProductImages { get; internal set; } =
+            Array.Empty<ProductImageCancelledStaging>();
         public long ProductId { get; internal set; }
         public string ClientProductId { get; internal set; }
         public IReadOnlyList<ArticleMutationEnqueueResult> Mutations { get; internal set; } =

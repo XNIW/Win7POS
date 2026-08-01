@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "pos-product-image-v1",
+  "operation": "intent",
+  "ok": false,
+  "code": "validation_failed",
+  "message": "Request payload is invalid.",
+  "retryable": false,
+  "serverTime": "2026-07-30T12:00:00.000000Z",
+  "requestId": "posreq_fixture_task149",
+  "clientRequestId": "task149-fixture-client",
+  "terminal": true
+}

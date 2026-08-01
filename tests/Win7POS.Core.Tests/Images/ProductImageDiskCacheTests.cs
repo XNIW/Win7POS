@@ -8,6 +8,82 @@ namespace Win7POS.Core.Tests.Images;
 public sealed class ProductImageDiskCacheTests
 {
     [TestMethod]
+    public async Task PromotedLookupAndScopedPurge_RespectVersionAndVariant()
+    {
+        var root = ProductImageTestData.CreateTempDirectory();
+        try
+        {
+            using var cache = CreateCache(root);
+            var bytes = ProductImageTestData.CreateParserValidJpeg();
+            var oldVersion = Guid.Parse("09900000-0000-4000-8000-000000000001");
+            var newVersion = Guid.Parse("09900000-0000-4000-8000-000000000002");
+            var oldThumb = ProductImageTestData.CreateReference(
+                bytes,
+                ProductImageVariant.Thumb,
+                oldVersion);
+            var newMain = ProductImageTestData.CreateReference(
+                bytes,
+                ProductImageVariant.Main,
+                newVersion);
+            await AddAsync(cache, oldThumb, bytes);
+            await cache.PromoteVariantAsync(oldThumb);
+            await AddAsync(cache, newMain, bytes);
+            await cache.PromoteVariantAsync(newMain);
+
+            Assert.IsNotNull(await cache.GetPromotedForProductAsync(
+                ProductImageTestData.AccountScope,
+                ProductImageTestData.ShopId,
+                ProductImageTestData.ProductId,
+                ProductImageVariant.Thumb));
+            Assert.IsNotNull(await cache.GetPromotedAsync(
+                newMain.Identity,
+                ProductImageVariant.Main));
+
+            Assert.AreEqual(1, await cache.PurgeProductAsync(
+                ProductImageTestData.AccountScope,
+                ProductImageTestData.ShopId,
+                ProductImageTestData.ProductId,
+                newVersion));
+            Assert.IsNull(await cache.GetAsync(oldThumb));
+            Assert.IsNotNull(await cache.GetAsync(newMain));
+            Assert.AreEqual(1, await cache.PurgeAccountAsync(
+                ProductImageTestData.AccountScope));
+            Assert.IsNull(await cache.GetAsync(newMain));
+        }
+        finally
+        {
+            ProductImageTestData.DeleteTempDirectory(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task DurableMetadata_ContainsNoSignedUrlTokenOrStoragePath()
+    {
+        var root = ProductImageTestData.CreateTempDirectory();
+        try
+        {
+            using var cache = CreateCache(root);
+            var bytes = ProductImageTestData.CreateParserValidJpeg();
+            var reference = ProductImageTestData.CreateReference(bytes);
+            await AddAsync(cache, reference, bytes);
+            await cache.PromoteVariantAsync(reference);
+
+            var metadata = string.Join(
+                "\n",
+                Directory.EnumerateFiles(root, "*.json", SearchOption.AllDirectories)
+                    .Select(File.ReadAllText));
+            Assert.IsFalse(metadata.Contains("https://", StringComparison.Ordinal));
+            Assert.IsFalse(metadata.Contains("signedUrl", StringComparison.Ordinal));
+            Assert.IsFalse(metadata.Contains("token=", StringComparison.Ordinal));
+            Assert.IsFalse(metadata.Contains("/storage/v1/", StringComparison.Ordinal));
+        }
+        finally
+        {
+            ProductImageTestData.DeleteTempDirectory(root);
+        }
+    }
+
+    [TestMethod]
     public async Task SameKeyRequests_AreCoalesced()
     {
         var root = ProductImageTestData.CreateTempDirectory();
@@ -34,6 +110,49 @@ public sealed class ProductImageDiskCacheTests
 
             Assert.AreEqual(1, factoryCalls);
             CollectionAssert.AreEqual(results[0].CopyBytes(), results[1].CopyBytes());
+        }
+        finally
+        {
+            ProductImageTestData.DeleteTempDirectory(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task BindingGenerationChange_RejectsCommitBeforeDiskWrite()
+    {
+        var root = ProductImageTestData.CreateTempDirectory();
+        try
+        {
+            var bytes = ProductImageTestData.CreateParserValidJpeg();
+            var reference = ProductImageTestData.CreateReference(bytes);
+            using var cache = CreateCache(root);
+            var release = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var commitAllowed = true;
+
+            async Task<Stream> Factory(CancellationToken token)
+            {
+                await release.Task.WaitAsync(token);
+                return new MemoryStream(bytes, writable: false);
+            }
+
+            var request = cache.GetOrAddAsync(
+                reference,
+                Factory,
+                CancellationToken.None,
+                () => Volatile.Read(ref commitAllowed));
+            Volatile.Write(ref commitAllowed, false);
+            release.SetResult(true);
+
+            await Assert.ThrowsExactlyAsync<IOException>(async () => await request);
+            var snapshot = await cache.GetSnapshotAsync();
+            Assert.AreEqual(0, snapshot.EntryCount);
+            Assert.AreEqual(
+                0,
+                Directory.EnumerateFiles(root, "*.img", SearchOption.AllDirectories).Count());
+            Assert.AreEqual(
+                0,
+                Directory.EnumerateFiles(root, "*.meta", SearchOption.AllDirectories).Count());
         }
         finally
         {

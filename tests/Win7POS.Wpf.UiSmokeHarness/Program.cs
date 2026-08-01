@@ -138,8 +138,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "Restart verification must reuse prepared state without --seed-trusted-session.");
             }
 
+            var productImageStagingAcceptance =
+                HasArg(args, "--product-image-staging-acceptance");
+            var productImageAcceptanceRunnerToken =
+                Environment.GetEnvironmentVariable(
+                    ProductImageStagingAcceptance
+                        .AcceptanceRunnerTokenEnvironmentVariable);
             var restrictedQaData = physicalPrinterQa ||
                                    authorizationLeaseMode ||
+                                   productImageStagingAcceptance ||
                                    HasArg(args, "--offline-sales-sandbox") ||
                                    (HasArg(args, "--seed") &&
                                     seedTrustedSession);
@@ -166,6 +173,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var authoritativeDrainLoopback =
                 HasArg(args, "--authoritative-drain-loopback");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
+            var productImageProfileSmoke =
+                HasArg(args, "--product-image-profile-smoke");
+            var productImageUiSmoke =
+                HasArg(args, "--product-image-ui-smoke");
             var stagingProfile = ValueAfter(args, "--profile");
             var stagingRunId = ValueAfter(args, "--run-id");
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
@@ -181,6 +192,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 throw new InvalidOperationException(
                     "--staging-acceptance requires --profile, --run-id, " +
                     "--acceptance-output and --acceptance-phase prepare|resume.");
+            }
+            if (productImageStagingAcceptance &&
+                (string.IsNullOrWhiteSpace(stagingProfile) ||
+                 string.IsNullOrWhiteSpace(acceptanceOutput) ||
+                 (stagingAcceptancePhase != "prepare" &&
+                  stagingAcceptancePhase != "resume" &&
+                  stagingAcceptancePhase != "cache-restart" &&
+                  stagingAcceptancePhase != "cleanup")))
+            {
+                throw new InvalidOperationException(
+                    "--product-image-staging-acceptance requires --profile, " +
+                    "--acceptance-output and --acceptance-phase " +
+                    "prepare|resume|cache-restart|cleanup.");
             }
             if (authoritativeDrainLoopback &&
                 string.IsNullOrWhiteSpace(acceptanceOutput))
@@ -231,6 +255,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                bootstrapContractSmoke ||
                                bootstrapDiagnosticsMatrixSmoke ||
                                authoritativeDrainLoopback ||
+                               productImageProfileSmoke ||
+                               productImageUiSmoke ||
+                               productImageStagingAcceptance ||
                                stagingAcceptance ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
@@ -259,6 +286,41 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 try
                 {
+                    if (productImageUiSmoke)
+                    {
+                        DbInitializer.EnsureCreated(PosDbOptions.Default());
+                        var result = await ProductImageUiWpfSmoke
+                            .RunAsync(artifactDirectory)
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(
+                                artifactDirectory,
+                                "product-image-ui-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
+
+                    if (productImageProfileSmoke)
+                    {
+                        var result = ProductImageProfileWpfSmoke.Run();
+                        File.WriteAllText(
+                            Path.Combine(
+                                artifactDirectory,
+                                "product-image-profile-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
+
                     if (bootstrapContractSmoke)
                     {
                         var result = StagingAcceptanceWpfHarness.RunOfflineContractSmoke();
@@ -319,6 +381,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 stagingRunId,
                                 acceptanceOutput,
                                 stagingAcceptancePhase)
+                            .ConfigureAwait(true);
+                        app.Shutdown(exitCode);
+                        return;
+                    }
+
+                    if (productImageStagingAcceptance)
+                    {
+                        var exitCode = await RunProductImageStagingAcceptanceAsync(
+                                stagingProfile,
+                                acceptanceOutput,
+                                stagingAcceptancePhase,
+                                productImageAcceptanceRunnerToken)
                             .ConfigureAwait(true);
                         app.Shutdown(exitCode);
                         return;
@@ -835,6 +909,167 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Source = new Uri(baseUri + "Themes/DialogChrome.xaml", UriKind.Absolute)
             });
         }
+
+        private static async Task<int> RunProductImageStagingAcceptanceAsync(
+            string profile,
+            string outputDirectory,
+            string phase,
+            string runnerToken)
+        {
+            Mutex orchestratorMutex = null;
+            Mutex phaseMutex = null;
+            var orchestratorMutexHeld = false;
+            var phaseMutexHeld = false;
+            if (!string.IsNullOrWhiteSpace(runnerToken))
+            {
+                var parentProcessId = GetParentProcessId();
+                ProductImageStagingAcceptance.ValidateRunnerHandshake(
+                    runnerToken,
+                    parentProcessId);
+                using (var runnerLockProbe = new Mutex(
+                    false,
+                    ProductImageStagingAcceptance.AcceptanceMutexName))
+                {
+                    var runnerLockMissing = false;
+                    try
+                    {
+                        runnerLockMissing = runnerLockProbe.WaitOne(0);
+                    }
+                    catch (AbandonedMutexException)
+                    {
+                        runnerLockMissing = true;
+                    }
+                    if (runnerLockMissing)
+                    {
+                        runnerLockProbe.ReleaseMutex();
+                        throw new InvalidOperationException(
+                            "product_image_acceptance_runner_lock_missing");
+                    }
+                }
+            }
+            else
+            {
+                orchestratorMutex = new Mutex(
+                    false,
+                    ProductImageStagingAcceptance.AcceptanceMutexName);
+                orchestratorMutexHeld = TryAcquireMutex(orchestratorMutex);
+                if (!orchestratorMutexHeld)
+                {
+                    orchestratorMutex.Dispose();
+                    throw new InvalidOperationException(
+                        "product_image_acceptance_already_running");
+                }
+            }
+            try
+            {
+                phaseMutex = new Mutex(
+                    false,
+                    ProductImageStagingAcceptance.AcceptancePhaseMutexName);
+                phaseMutexHeld = TryAcquireMutex(phaseMutex);
+                if (!phaseMutexHeld)
+                {
+                    throw new InvalidOperationException(
+                        "product_image_acceptance_phase_already_running");
+                }
+                return await ProductImageStagingAcceptance.RunAsync(
+                    profile,
+                    outputDirectory,
+                    phase).ConfigureAwait(true);
+            }
+            finally
+            {
+                if (phaseMutexHeld) phaseMutex.ReleaseMutex();
+                phaseMutex?.Dispose();
+                if (orchestratorMutexHeld) orchestratorMutex.ReleaseMutex();
+                orchestratorMutex?.Dispose();
+            }
+        }
+
+        private static bool TryAcquireMutex(Mutex mutex)
+        {
+            try
+            {
+                return mutex.WaitOne(0);
+            }
+            catch (AbandonedMutexException)
+            {
+                return true;
+            }
+        }
+
+        private static int GetParentProcessId()
+        {
+            var snapshot = CreateToolhelp32Snapshot(0x00000002, 0);
+            if (snapshot == new IntPtr(-1))
+            {
+                throw new InvalidOperationException(
+                    "product_image_acceptance_parent_snapshot_failed");
+            }
+            try
+            {
+                var entry = new ProcessEntry32
+                {
+                    Size = (uint)Marshal.SizeOf(typeof(ProcessEntry32))
+                };
+                if (!Process32First(snapshot, ref entry))
+                {
+                    throw new InvalidOperationException(
+                        "product_image_acceptance_parent_lookup_failed");
+                }
+                var currentPid = (uint)Process.GetCurrentProcess().Id;
+                do
+                {
+                    if (entry.ProcessId == currentPid)
+                    {
+                        return checked((int)entry.ParentProcessId);
+                    }
+                }
+                while (Process32Next(snapshot, ref entry));
+                throw new InvalidOperationException(
+                    "product_image_acceptance_parent_not_found");
+            }
+            finally
+            {
+                CloseHandle(snapshot);
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct ProcessEntry32
+        {
+            public uint Size;
+            public uint Usage;
+            public uint ProcessId;
+            public IntPtr DefaultHeapId;
+            public uint ModuleId;
+            public uint Threads;
+            public uint ParentProcessId;
+            public int BasePriority;
+            public uint Flags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string ExecutableFile;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateToolhelp32Snapshot(
+            uint flags,
+            uint processId);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool Process32First(
+            IntPtr snapshot,
+            ref ProcessEntry32 entry);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool Process32Next(
+            IntPtr snapshot,
+            ref ProcessEntry32 entry);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
 
         private static bool HasArg(IEnumerable<string> args, string expected)
         {

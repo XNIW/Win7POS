@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Threading.Tasks;
 using Dapper;
@@ -242,27 +243,90 @@ ON CONFLICT(key) DO NOTHING;",
 
         private static byte[] Serialize(PosCatalogPullResponse response)
         {
-            var serializer = new DataContractJsonSerializer(typeof(PosCatalogPullResponse));
+            var products = response?.Catalog?.Products ??
+                Array.Empty<PosCatalogProductResponse>();
+            var presence = new char[products.Length];
+            for (var index = 0; index < products.Length; index++)
+            {
+                var product = products[index];
+                var bits = product == null
+                    ? 0
+                    : (product.PrimaryImageVersionIdPresent ? 1 : 0) |
+                      (product.PrimaryImageUpdatedAtPresent ? 2 : 0);
+                presence[index] = (char)('0' + bits);
+            }
+            var payload = new StagedPagePayload
+            {
+                ImagePresence = new string(presence),
+                Response = response
+            };
+            var serializer = new DataContractJsonSerializer(typeof(StagedPagePayload));
             using (var stream = new MemoryStream())
             {
-                serializer.WriteObject(stream, response);
+                serializer.WriteObject(stream, payload);
                 return stream.ToArray();
             }
         }
 
         private static PosCatalogPullResponse Deserialize(byte[] payload)
         {
-            var serializer = new DataContractJsonSerializer(typeof(PosCatalogPullResponse));
+            var serializer = new DataContractJsonSerializer(typeof(StagedPagePayload));
             using (var stream = new MemoryStream(payload, writable: false))
             {
-                var response = serializer.ReadObject(stream) as PosCatalogPullResponse;
-                if (response == null)
+                var staged = serializer.ReadObject(stream) as StagedPagePayload;
+                var response = staged?.Response;
+                var products = response?.Catalog?.Products ??
+                    Array.Empty<PosCatalogProductResponse>();
+                if (response == null || staged.ImagePresence == null ||
+                    staged.ImagePresence.Length != products.Length)
                 {
                     throw new InvalidOperationException("catalog_full_stage_page_invalid");
                 }
-
+                for (var index = 0; index < products.Length; index++)
+                {
+                    var bits = staged.ImagePresence[index] - '0';
+                    if (products[index] == null || bits < 0 || bits > 3)
+                        throw new InvalidOperationException("catalog_full_stage_page_invalid");
+                    products[index] = RestoreProductImageFieldPresence(
+                        products[index], bits);
+                }
                 return response;
             }
+        }
+
+        private static PosCatalogProductResponse RestoreProductImageFieldPresence(
+            PosCatalogProductResponse source,
+            int bits)
+        {
+            var restored = new PosCatalogProductResponse
+            {
+                Barcode = source.Barcode,
+                CategoryId = source.CategoryId,
+                ItemNumber = source.ItemNumber,
+                ProductId = source.ProductId,
+                ProductName = source.ProductName,
+                PurchasePrice = source.PurchasePrice,
+                RetailPrice = source.RetailPrice,
+                SecondProductName = source.SecondProductName,
+                StockQuantity = source.StockQuantity,
+                SupplierId = source.SupplierId,
+                UpdatedAt = source.UpdatedAt
+            };
+            if ((bits & 1) != 0)
+                restored.PrimaryImageVersionId = source.PrimaryImageVersionId;
+            if ((bits & 2) != 0)
+                restored.PrimaryImageUpdatedAt = source.PrimaryImageUpdatedAt;
+            return restored;
+        }
+
+        [DataContract]
+        private sealed class StagedPagePayload
+        {
+            [DataMember(Name = "response", Order = 1)]
+            public PosCatalogPullResponse Response { get; set; }
+
+            [DataMember(Name = "imagePresence", Order = 2)]
+            public string ImagePresence { get; set; }
         }
 
         private static string RunKey(string generationId)

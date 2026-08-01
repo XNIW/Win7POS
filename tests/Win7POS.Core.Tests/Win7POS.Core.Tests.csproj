@@ -24,4 +24,15 @@
              Link="WpfSource\PosOnlineSyncSignalBus.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\fixtures\pos-product-image-v1\*.json">
+      <Link>fixtures\pos-product-image-v1\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\fixtures\product-image-v1\product-image-v1.json">
+      <Link>fixtures\product-image-v1\product-image-v1.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

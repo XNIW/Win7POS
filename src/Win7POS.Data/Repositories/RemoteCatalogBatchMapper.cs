@@ -51,9 +51,18 @@ namespace Win7POS.Data.Repositories
                     })
                     .ToArray(),
                 Products = products
-                    .Select(row => row == null ? null : new RemoteCatalogProductWrite
+                    .Select(row =>
                     {
+                        if (row == null) return null;
+                        var image = PosCatalogProductImageProjection.Normalize(
+                            row.PrimaryImageVersionIdPresent,
+                            row.PrimaryImageVersionId,
+                            row.PrimaryImageUpdatedAtPresent,
+                            row.PrimaryImageUpdatedAt);
+                        return new RemoteCatalogProductWrite
+                        {
                         ArticleCode = Normalize(row.ItemNumber),
+                        ApplyImageProjection = image.Apply,
                         Barcode = Normalize(row.Barcode),
                         CategoryName = NameFor(categories, row.CategoryId),
                         Name = FirstNonEmpty(
@@ -61,6 +70,9 @@ namespace Win7POS.Data.Repositories
                             row.SecondProductName,
                             SafeBarcodeDisplayFallback(row.Barcode)),
                         PurchasePrice = ToInt(row.PurchasePrice),
+                        PrimaryImageUpdatedAt = image.PrimaryImageUpdatedAt,
+                        PrimaryImageVersionId = image.PrimaryImageVersionId,
+                        ImageWarningCode = image.WarningCode,
                         RemoteCategoryId = Normalize(row.CategoryId),
                         RemoteProductId = Normalize(row.ProductId),
                         RemoteSupplierId = Normalize(row.SupplierId),
@@ -69,6 +81,7 @@ namespace Win7POS.Data.Repositories
                         StockQuantity = ToInt(row.StockQuantity),
                         SupplierName = NameFor(suppliers, row.SupplierId),
                         UnitPrice = ToLong(row.RetailPrice)
+                        };
                     })
                     .ToArray(),
                 Prices = priceRows

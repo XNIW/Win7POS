@@ -80,6 +80,7 @@ $transition = Read-Text "src/Win7POS.Data/Online/PosShopTransitionGuard.cs"
 $barrier = Read-Text "src/Win7POS.Data/Online/CatalogShopTransitionBarrier.cs"
 $tests = Read-Text "tests/Win7POS.Core.Tests/Data/OutboxShopBindingTests.cs"
 $catalogSafetyTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogSafetyInvariantTests.cs"
+$shopTransitionTests = Read-Text "tests/Win7POS.Core.Tests/Data/PosShopTransitionGuardTests.cs"
 $enqueueFacadeDelegates = Test-SalesOutboxEnqueueThroughTransactionWriter $saleRepository $transactionWriter
 $prepareFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepository "PrepareSalesSyncAttemptAsync" "PrepareAttemptAsync" @(
     "outboxId\s*,\s*clientBatchId\s*,\s*payloadJson\s*,\s*payloadHash\s*,\s*nowMs\s*,\s*expectedAttemptCount",
@@ -105,6 +106,11 @@ if ($catalogRepository -notmatch "CatalogImportInProgressLeaseMilliseconds" -or
     $saleRepository -notmatch "SalesSyncInProgressLeaseMilliseconds" -or
     $salesOutboxRepository -notmatch "_inProgressLeaseMilliseconds") { Fail "stale in_progress recovery lease missing" } else { Pass "both outboxes have stale in_progress recovery leases" }
 if ($shopState -notmatch "pos\.catalog\.bound_shop_id" -or $shopState -notmatch "pos\.catalog\.bound_shop_code" -or $transition -notmatch "BoundShopIdKey" -or $transition -notmatch "BoundShopCodeKey") { Fail "catalog cursor/sale-safe shop binding or reset missing" } else { Pass "catalog cursor/sale-safe are persistently bound and reset on authorized transition" }
+if ($transition -notmatch "product_image_operation_outbox" -or
+    $transition -notmatch "pending_finalize" -or
+    $transition -notmatch "cleanup_pending" -or
+    $shopTransitionTests -notmatch "Evaluate_BlocksDifferentShopForEveryUnresolvedProductImageState" -or
+    $shopTransitionTests -notmatch "ApplyAuthorizedTransition_RechecksEveryProductImageState") { Fail "shop transition does not preserve unresolved product image work" } else { Pass "shop transition preserves unresolved product image work" }
 if ($initializer -notmatch "legacy_origin_ambiguous" -or $initializer -notmatch "TryReadLegacySalesOriginShopCode" -or $initializer -match "origin_shop_code\s*=\s*@shopCode") { Fail "legacy backfill must require per-row proof and block ambiguity" } else { Pass "legacy backfill is per-row proven or fail-closed" }
 if (-not $enqueueFacadeDelegates -or
     $salesOutboxRepository -notmatch "payload_json IS @payloadJson" -or

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "pos-product-image-v1",
+  "operation": "intent",
+  "operationId": "task149-fixture-intent-001",
+  "idempotencyKey": "task149-idem-intent-001",
+  "payloadHash": "sha256:6de2d21e8e0be186f33a385ab9d0970799c29922db8629c19e1a208758db9fcd",
+  "ok": true,
+  "code": "success",
+  "replayed": false,
+  "serverTime": "2026-07-30T16:55:57.123456Z",
+  "cacheScope": "fixture-pos-image-scope-149",
+  "status": "noop",
+  "versionId": "30000000-0000-4000-8000-000000000149"
+}

@@ -63,7 +63,11 @@ SELECT
      'pending',
      'in_progress',
      'retry_wait',
-     'failed_blocked'));"
+     'failed_blocked'))
+  +
+  (SELECT COUNT(1)
+   FROM product_image_operation_outbox
+   WHERE state <> 'completed');"
                 ).ConfigureAwait(false);
                 return unresolvedOutbox == 0
                     ? RestoreSafetyResult.Success()
@@ -144,10 +148,22 @@ WHERE state IN (
   'retry_wait',
   'failed_blocked');",
                         transaction: tx).ConfigureAwait(false);
-                return unresolvedArticleMutations == 0
+                if (unresolvedArticleMutations > 0)
+                {
+                    return RestoreSafetyResult.Failure(
+                        "restore_live_article_outbox_unresolved");
+                }
+
+                var unresolvedProductImages =
+                    await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_image_operation_outbox
+WHERE state <> 'completed';",
+                        transaction: tx).ConfigureAwait(false);
+                return unresolvedProductImages == 0
                     ? RestoreSafetyResult.Success()
                     : RestoreSafetyResult.Failure(
-                        "restore_live_article_outbox_unresolved");
+                        "restore_live_product_image_outbox_unresolved");
             }
         }
 
@@ -199,7 +215,10 @@ SELECT
      'pending',
      'in_progress',
      'retry_wait',
-     'failed_blocked'));",
+     'failed_blocked'))
+  +
+  (SELECT COUNT(1) FROM product_image_operation_outbox
+   WHERE state <> 'completed');",
                     transaction: tx).ConfigureAwait(false);
                 if (unresolved > 0)
                 {

@@ -398,6 +398,16 @@ namespace Win7POS.Wpf.Pos
                             "dbMaintenance.restoreBlockedUnresolvedArticleMutations"));
                 }
 
+                if (await new ProductImageOperationOutboxRepository(_factory)
+                    .CountUnresolvedAsync().ConfigureAwait(false) > 0)
+                {
+                    _logger.LogWarning(
+                        "POS DB restore blocked: unresolved product image outbox exists.");
+                    throw new InvalidOperationException(
+                        PosLocalization.T(
+                            "dbMaintenance.restoreBlockedUnresolvedProductImages"));
+                }
+
                 var restoredAt = DateTimeOffset.UtcNow;
 
                 var tempRestorePath = Path.Combine(
@@ -469,6 +479,16 @@ namespace Win7POS.Wpf.Pos
                                 throw new InvalidOperationException(
                                     PosLocalization.T(
                                         "dbMaintenance.restoreBlockedUnresolvedArticleMutations"));
+                            }
+
+                            if (string.Equals(
+                                livePreSwapSafety.Code,
+                                "restore_live_product_image_outbox_unresolved",
+                                StringComparison.Ordinal))
+                            {
+                                throw new InvalidOperationException(
+                                    PosLocalization.T(
+                                        "dbMaintenance.restoreBlockedUnresolvedProductImages"));
                             }
 
                             throw new InvalidOperationException(livePreSwapSafety.Code);

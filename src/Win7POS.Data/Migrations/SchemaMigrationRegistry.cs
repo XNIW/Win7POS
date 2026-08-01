@@ -188,8 +188,29 @@ postcondition=current-structural-schema",
                     "Additive tables and nullable columns; downgrade requires restoring the verified backup.",
                     true,
                     DbInitializer.EnsureArticleMutationSchema,
+                    IsPostArticleMutationSchemaStructurallyValid,
+                    IsRecognizedPostArticleMutationLedgerlessBaseline),
+                new SchemaMigration(
+                    "0011-product-image-outbox",
+                    "Persist the remote image projection and isolated durable image-operation lane.",
+                    @"0011-product-image-outbox/v1
+product-columns=primary_image_version_id,primary_image_updated_at
+tables=product_image_operation_outbox,product_image_remote_shadow
+states=waiting_dependency,pending_intent,pending_upload,pending_finalize,pending_remove,in_progress,retry_wait,failed_blocked,completed,cleanup_pending
+ephemeral-data=signed URLs,tokens,cookies,authorization headers,raw bodies and client-supplied storage paths are forbidden
+operation=DbInitializer.EnsureProductImageSchema
+column-definitions=" + DbInitializer.ProductImageColumnMaterial + @"
+alter-sql=" + DbInitializer.ProductImageAlterSql + @"
+schema-sql=" + DbInitializer.ProductImageSchemaSql + @"
+ledgerless-baseline=" + DbInitializer.PostProductImageLedgerlessKnownSchemaSql + @"
+postcondition=current-structural-schema",
+                    "59eff792775e9c2e65f15d158a75ab80430bed6d69c409e9bfb97a425e5f74d0",
+                    "1.0.0",
+                    "Additive nullable columns and tables; downgrade requires restoring the verified backup.",
+                    true,
+                    DbInitializer.EnsureProductImageSchema,
                     IsCurrentSchemaStructurallyValid,
-                    IsRecognizedPostArticleMutationLedgerlessBaseline)
+                    IsRecognizedPostProductImageLedgerlessBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -224,11 +245,28 @@ postcondition=current-structural-schema",
             return
                 HasBaseSchema(
                     detector,
-                    DbInitializer.PostArticleMutationLedgerlessKnownSchemaSql) &&
+                    DbInitializer.PostProductImageLedgerlessKnownSchemaSql) &&
                 HasSupportedLegacyColumns(detector) &&
                 HasDependentSchema(
                     detector,
-                    DbInitializer.PostArticleMutationLedgerlessKnownSchemaSql) &&
+                    DbInitializer.PostProductImageLedgerlessKnownSchemaSql) &&
+                HasCanonicalIndexes(detector) &&
+                detector.ColumnMatchesDefinition(DbInitializer.ReceiptShopSnapshotColumn) &&
+                HasOnlineSyncGenerationSchema(detector) &&
+                HasCatalogAuthoritativeIdStageSchema(detector) &&
+                HasArticleMutationSchema(detector) &&
+                HasProductImageSchema(detector);
+        }
+
+        private static bool IsPostArticleMutationSchemaStructurallyValid(
+            LegacySchemaDetector detector)
+        {
+            if (detector == null)
+                throw new ArgumentNullException(nameof(detector));
+            return
+                HasBaseSchema(detector, DbInitializer.PostArticleMutationLedgerlessKnownSchemaSql) &&
+                HasSupportedLegacyColumns(detector) &&
+                HasDependentSchema(detector, DbInitializer.PostArticleMutationLedgerlessKnownSchemaSql) &&
                 HasCanonicalIndexes(detector) &&
                 detector.ColumnMatchesDefinition(DbInitializer.ReceiptShopSnapshotColumn) &&
                 HasOnlineSyncGenerationSchema(detector) &&
@@ -388,6 +426,17 @@ LIMIT 1;");
                     DbInitializer.ArticleMutationIndexSql);
         }
 
+        private static bool HasProductImageSchema(LegacySchemaDetector detector)
+        {
+            return
+                detector.HasAllColumnDefinitions(DbInitializer.ProductImageColumns) &&
+                detector.HasCanonicalTableDefinitions(
+                    DbInitializer.ProductImageSchemaSql,
+                    "product_image_operation_outbox",
+                    "product_image_remote_shadow") &&
+                detector.HasAllIndexDefinitions(DbInitializer.ProductImageIndexSql);
+        }
+
         private static bool HasSafeOutboxBindings(LegacySchemaDetector detector)
         {
             return detector.NoRows(@"
@@ -499,6 +548,18 @@ LIMIT 1;");
         }
 
         private static bool IsRecognizedPostArticleMutationLedgerlessBaseline(
+            LegacySchemaDetector detector)
+        {
+            return
+                IsCurrentSchemaStructurallyValid(detector) &&
+                HasRemotePriceOwnership(detector) &&
+                HasSafeOutboxBindings(detector) &&
+                DbInitializer.IsSecuritySeedSatisfied(
+                    detector.Connection,
+                    detector.Transaction);
+        }
+
+        private static bool IsRecognizedPostProductImageLedgerlessBaseline(
             LegacySchemaDetector detector)
         {
             return

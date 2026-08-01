@@ -33,11 +33,22 @@ $preprocess = Read-Required "src/Win7POS.Wpf/Products/Images/ProductImagePreproc
 $flags = Read-Required "src/Win7POS.Wpf/Products/Images/ProductImageFeatureFlags.cs"
 $editor = Read-Required "src/Win7POS.Wpf/Products/ProductEditDialog.xaml"
 $wpfProject = Read-Required "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
+$phaseBActivated = $flags -match 'IsEnabled\s*=>\s*true'
 
-Require ($flags -match 'const\s+bool\s+IsPhaseAEnabled\s*=\s*false') `
-    "Phase A product image feature flag must remain compile-time false."
-Require ($editor -match 'DataContext\.ProductImagesPhaseAEnabled') `
-    "The editor preview must bind visibility to the parent feature flag."
+if ($phaseBActivated) {
+    Require ($flags -match 'IsPhaseAEnabled\s*=>\s*true') `
+        "Phase B activation must also expose the reviewed Phase A foundation."
+    Require (Test-Path -LiteralPath (Join-Path $repoRoot "scripts/check-product-image-phase-b.ps1") -PathType Leaf) `
+        "Phase B activation requires its dedicated static gate."
+}
+else {
+    Require ($flags -match 'const\s+bool\s+IsPhaseAEnabled\s*=\s*false') `
+        "Offline-only Phase A must keep its feature flag compile-time false."
+}
+if (-not $phaseBActivated) {
+    Require ($editor -match 'DataContext\.ProductImagesPhaseAEnabled') `
+        "The offline editor preview must bind visibility to the parent feature flag."
+}
 Require ($core -match 'interface\s+IProductImageStreamProvider') `
     "The offline stream-provider boundary is missing."
 Require ($cache -match 'SpecialFolder\.LocalApplicationData') `
@@ -97,9 +108,11 @@ $wpfImages = (Get-ChildItem `
 
 Reject-Match $coreImages 'System\.Windows|PresentationCore|Bitmap(Image|Source)' `
     "Core Images must not reference WPF types."
-Reject-Match ($coreImages + $dataImages + $wpfImages) `
-    'HttpClient|Supabase|Cloudflare|asus-staging|signed[_A-Za-z]*url|upload[_A-Za-z]*url' `
-    "Phase A image code must not contain network, staging, or signed/upload URL surfaces."
+if (-not $phaseBActivated) {
+    Reject-Match ($coreImages + $dataImages + $wpfImages) `
+        'HttpClient|Supabase|Cloudflare|asus-staging|signed[_A-Za-z]*url|upload[_A-Za-z]*url' `
+        "Offline-only Phase A image code must not contain network, staging, or signed/upload URL surfaces."
+}
 
 $changed = @(
     & git -C $repoRoot diff --name-only origin/main --
@@ -112,7 +125,7 @@ $forbiddenChanges = @($changed | Where-Object {
     $_ -eq 'src/Win7POS.Wpf/Products/ProductsWorkflowService.cs' -or
     $_ -match '^src/Win7POS\.Data/Repositories/Product'
 })
-if ($forbiddenChanges.Count -gt 0) {
+if (-not $phaseBActivated -and $forbiddenChanges.Count -gt 0) {
     $failures.Add(
         "Phase A changed schema, product persistence/workflow, or outbox files: " +
         ($forbiddenChanges -join ", "))
@@ -124,4 +137,4 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "Product image Phase A static gate passed."
-Write-Host ("Checked {0} changed paths; feature flag remains disabled." -f $changed.Count)
+Write-Host ("Checked {0} changed paths; Phase B activated: {1}." -f $changed.Count, $phaseBActivated)

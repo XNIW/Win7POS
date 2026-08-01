@@ -2105,6 +2105,12 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 CatalogEvents.AdvanceRevision();
             }
+            // A committed catalog page may have supplied the remote identity
+            // awaited by an offline-staged product image. Wake the image lane;
+            // its durable dependency query remains the source of truth.
+            PosOnlineSyncSignalBus.Signal(
+                OnlineSyncLane.ProductImageOutbox,
+                OnlineSyncLaneTrigger.RevisionChanged);
 
             if (tombstones > 0)
             {

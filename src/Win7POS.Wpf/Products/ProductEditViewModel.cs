@@ -1,15 +1,23 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Win32;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
+using Win7POS.Data.Online;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Products.Images;
+using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
@@ -29,6 +37,12 @@ namespace Win7POS.Wpf.Products
         private StockReasonOption _selectedStockReason;
         private CategoryListItem _selectedCategory;
         private SupplierListItem _selectedSupplier;
+        private readonly ProductDetailsRow _imageProduct;
+        private readonly ProductImageWorkflowService _imageWorkflow =
+            new ProductImageWorkflowService();
+        private bool _imageBusy;
+        private bool _hasLocalImagePreview;
+        private string _imageOperationStatus = string.Empty;
 
         public ProductEditMode Mode { get; }
         public long? ProductId { get; }
@@ -55,6 +69,38 @@ namespace Win7POS.Wpf.Products
 
         public bool ProductImagesPhaseAEnabled =>
             ProductImageFeatureFlags.IsPhaseAEnabled;
+        public bool CanManageImages => ProductImagesPhaseAEnabled && IsEditMode;
+        public bool ImageBusy
+        {
+            get => _imageBusy;
+            private set
+            {
+                _imageBusy = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanUseImageCommands));
+            }
+        }
+        public bool CanUseImageCommands => CanManageImages && !ImageBusy;
+        public bool CanRemoveImage => CanUseImageCommands &&
+            PosProductImageContractV1.IsCanonicalUuid(_imageProduct?.PrimaryImageVersionId);
+        public string ImageChooseActionText =>
+            _hasLocalImagePreview ||
+            PosProductImageContractV1.IsCanonicalUuid(
+                _imageProduct?.PrimaryImageVersionId)
+                ? PosLocalization.T("productImage.replace")
+                : PosLocalization.T("productImage.choose");
+        public string ImageOperationStatus
+        {
+            get => _imageOperationStatus;
+            private set
+            {
+                _imageOperationStatus = value ?? string.Empty;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ShowsImageOperationStatus));
+            }
+        }
+        public bool ShowsImageOperationStatus =>
+            !string.IsNullOrWhiteSpace(ImageOperationStatus);
 
         public ProductImageDisplayViewModel ImageDisplay { get; } =
             new ProductImageDisplayViewModel();
@@ -63,6 +109,7 @@ namespace Win7POS.Wpf.Products
         {
             Mode = mode;
             ProductId = source?.Id;
+            _imageProduct = source;
             _service = service ?? throw new ArgumentNullException(nameof(service));
             PopulateStockReasons();
             if (source != null)
@@ -77,6 +124,15 @@ namespace Win7POS.Wpf.Products
             }
             ConfirmCommand = new RelayCommand(_ => Confirm(), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
+            ChooseImageCommand = new RelayCommand(
+                _ => ChooseImage(),
+                _ => CanUseImageCommands);
+            RemoveImageCommand = new RelayCommand(
+                _ => RemoveImage(),
+                _ => CanRemoveImage);
+            RetryImageCommand = new RelayCommand(
+                _ => RetryImage(),
+                _ => CanUseImageCommands);
         }
 
         private void Confirm()
@@ -274,6 +330,181 @@ namespace Win7POS.Wpf.Products
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
+        public ICommand ChooseImageCommand { get; }
+        public ICommand RemoveImageCommand { get; }
+        public ICommand RetryImageCommand { get; }
+
+        public async Task InitializeImageAsync(CancellationToken cancellationToken)
+        {
+            if (!CanManageImages || _imageProduct == null)
+            {
+                ImageDisplay.SetNoImage();
+                return;
+            }
+            await _imageWorkflow.LoadEditorImageAsync(
+                _imageProduct,
+                ImageDisplay,
+                cancellationToken).ConfigureAwait(true);
+            var latest = await _imageWorkflow.GetLatestOperationAsync(_imageProduct.Id)
+                .ConfigureAwait(true);
+            if (latest != null && latest.State != ProductImageOperationStates.Completed)
+                ImageOperationStatus = StatusText(latest.State, latest.CompletionState);
+        }
+
+        private void ChooseImage()
+        {
+            _ = ChooseImageAsync();
+        }
+
+        private async Task ChooseImageAsync()
+        {
+            if (!CanUseImageCommands || _imageProduct == null) return;
+            var picker = new OpenFileDialog
+            {
+                CheckFileExists = true,
+                Multiselect = false,
+                Filter = PosLocalization.T("productImage.fileFilter"),
+                Title = PosLocalization.T("productImage.choose")
+            };
+            if (picker.ShowDialog(DialogOwnerHelper.GetSafeOwner()) != true) return;
+            ImageBusy = true;
+            ImageOperationStatus = PosLocalization.T("productImage.preprocessing");
+            try
+            {
+                var progress = new Progress<string>(code =>
+                    ImageOperationStatus = StatusText(code, null));
+                var result = await _imageWorkflow.ChooseOrReplaceAsync(
+                    _imageProduct,
+                    picker.FileName,
+                    progress,
+                    CancellationToken.None).ConfigureAwait(true);
+                var preview = await ProductImageWorkflowService.DecodeLocalPreviewAsync(
+                    result.PreviewBytes,
+                    CancellationToken.None).ConfigureAwait(true);
+                ImageDisplay.SetLoaded(preview);
+                _hasLocalImagePreview = true;
+                OnPropertyChanged(nameof(ImageChooseActionText));
+                ImageOperationStatus = StatusText(result.State, null);
+            }
+            catch (Exception error)
+            {
+                ImageOperationStatus = PosLocalization.T("productImage.corrupt");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("productImage.choose"),
+                    SafeImageError(error));
+            }
+            finally
+            {
+                ImageBusy = false;
+            }
+        }
+
+        private void RemoveImage()
+        {
+            _ = RemoveImageAsync();
+        }
+
+        private async Task RemoveImageAsync()
+        {
+            if (!CanRemoveImage || _imageProduct == null) return;
+            if (!ApplyConfirmDialog.ShowConfirm(
+                DialogOwnerHelper.GetSafeOwner(),
+                PosLocalization.T("productImage.remove"),
+                PosLocalization.T("productImage.removeConfirmation")))
+            {
+                return;
+            }
+            ImageBusy = true;
+            try
+            {
+                var result = await _imageWorkflow.RemoveAsync(
+                    _imageProduct,
+                    CancellationToken.None).ConfigureAwait(true);
+                // The current image remains visible until catalog confirms removal.
+                ImageOperationStatus = StatusText(result.State, null);
+            }
+            catch (Exception error)
+            {
+                ImageOperationStatus = PosLocalization.T("productImage.unavailable");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("productImage.remove"),
+                    SafeImageError(error));
+            }
+            finally
+            {
+                ImageBusy = false;
+            }
+        }
+
+        private void RetryImage()
+        {
+            _ = RetryImageAsync();
+        }
+
+        private async Task RetryImageAsync()
+        {
+            if (!CanUseImageCommands || _imageProduct == null) return;
+            ImageBusy = true;
+            ImageOperationStatus = PosLocalization.T("productImage.retrying");
+            try
+            {
+                var retried = await _imageWorkflow.RetryLatestBlockedAsync(
+                    _imageProduct,
+                    CancellationToken.None).ConfigureAwait(true);
+                ImageOperationStatus = retried
+                    ? PosLocalization.T("productImage.queued")
+                    : PosLocalization.T("productImage.unavailable");
+            }
+            catch (Exception error)
+            {
+                ImageOperationStatus = PosLocalization.T(
+                    "productImage.unavailable");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("productImage.retry"),
+                    SafeImageError(error));
+            }
+            finally
+            {
+                ImageBusy = false;
+            }
+        }
+
+        private static string StatusText(string state, string completionState)
+        {
+            switch ((state ?? string.Empty).Trim())
+            {
+                case "preprocessing": return PosLocalization.T("productImage.preprocessing");
+                case "staging": return PosLocalization.T("productImage.preprocessing");
+                case "pending_upload": return PosLocalization.T("productImage.uploading");
+                case "pending_finalize": return PosLocalization.T("productImage.finalizing");
+                case "retry_wait": return PosLocalization.T("productImage.retrying");
+                case "failed_blocked": return PosLocalization.T("productImage.conflict");
+                case "cleanup_pending": return PosLocalization.T("productImage.cleanupPending");
+                case "completed": return PosLocalization.T("productImage.completed");
+                case "waiting_dependency":
+                case "pending_intent":
+                case "pending_remove":
+                case "queued":
+                    return PosLocalization.T("productImage.queued");
+                default:
+                    return string.Equals(
+                        completionState,
+                        "operator_resolution_required",
+                        StringComparison.Ordinal)
+                        ? PosLocalization.T("productImage.conflict")
+                        : PosLocalization.T("productImage.queued");
+            }
+        }
+
+        private static string SafeImageError(Exception error)
+        {
+            if (error is InvalidDataException)
+                return PosLocalization.T("productImage.corrupt");
+            return PosLocalization.T("productImage.unavailable");
+        }
 
         public event Action<bool> RequestClose;
         public event PropertyChangedEventHandler PropertyChanged;

@@ -202,7 +202,7 @@ namespace Win7POS.Core.Online
                     (secondaryUsable || !string.IsNullOrWhiteSpace(row.Barcode));
                 var warnings = CombineWarnings(primary, secondary, fallback);
                 summary.RecordProduct(warnings);
-                result[index] = new PosCatalogProductResponse
+                var recovered = new PosCatalogProductResponse
                 {
                     Barcode = row.Barcode,
                     CategoryId = row.CategoryId,
@@ -216,6 +216,11 @@ namespace Win7POS.Core.Online
                     SupplierId = row.SupplierId,
                     UpdatedAt = row.UpdatedAt
                 };
+                if (row.PrimaryImageUpdatedAtPresent)
+                    recovered.PrimaryImageUpdatedAt = row.PrimaryImageUpdatedAt;
+                if (row.PrimaryImageVersionIdPresent)
+                    recovered.PrimaryImageVersionId = row.PrimaryImageVersionId;
+                result[index] = recovered;
             }
 
             return result;
