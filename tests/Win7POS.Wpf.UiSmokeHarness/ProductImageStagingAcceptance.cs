@@ -43,6 +43,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         internal const int RestartAfterOfflineQueue = 75;
         internal const int RestartAfterFirstCache = 76;
         internal const int CleanupFenceArmed = 77;
+        internal const string AcceptanceMutexName =
+            @"Global\Win7POS.ProductImagePhaseBAcceptance.v1";
 
         private const string AllowedHost =
             "merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev";
@@ -87,6 +89,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             string outputDirectory)
         {
             EnsureIsolatedDataRoot();
+            Require(!File.Exists(StatePath()),
+                "product_image_acceptance_checkpoint_exists");
             var started = DateTimeOffset.UtcNow;
             var qaProfile = LoadQaProfile(sharedProfileName);
             var factory = new SqliteConnectionFactory(PosDbOptions.Default());
@@ -122,8 +126,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 BaseUrl = qaProfile.BaseUrl,
                 BeginRequestId = beginRequestId,
                 CacheRoot = CacheRoot(),
+                CleanupRequestId = RequestId("cleanup"),
                 FenceUntil = CanonicalTimestamp(
                     started.AddHours(2).AddMinutes(21)),
+                ResultIssueRequestId = RequestId("result-issue"),
+                ResultRequestId = RequestId("result"),
                 RunMarker = runMarker,
                 StartedAt = CanonicalTimestamp(started),
                 Phase = "begin_pending"
@@ -402,6 +409,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 .ConfigureAwait(true);
             Require(product != null && product.PrimaryImageVersionId == state.FirstVersionId,
                 "replace_initial_version_changed");
+            await CaptureOfflineRestartScreenshotsAsync(
+                product,
+                outputDirectory,
+                state.RunProfileName).ConfigureAwait(true);
 
             var localOnlyId = await InsertFairnessProductAsync(factory)
                 .ConfigureAwait(true);
@@ -684,7 +695,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var issued = await boundary.PostTrustedAsync(
                     TrustedRequest.ResultIssue(
                         sharedSession,
-                        RequestId("result-issue"),
+                        state.ResultIssueRequestId,
                         state),
                     CancellationToken.None).ConfigureAwait(true);
                 Require(issued.Ok && issued.Code == "result_issued" &&
@@ -693,13 +704,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 state.ResultCapability = issued.ResultCapability;
                 SaveState(state);
                 cleanup = await boundary.PostCapabilityAsync(
-                    CapabilityRequest.Cleanup(state, RequestId("cleanup")),
+                    CapabilityRequest.Cleanup(
+                        state,
+                        state.CleanupRequestId),
                     CancellationToken.None).ConfigureAwait(true);
                 Require(cleanup.Ok && cleanup.Code == "cleanup_complete" &&
                         cleanup.Receipt != null,
                     "boundary_cleanup_failed_" + SafeCode(cleanup.Code));
                 terminal = await boundary.PostCapabilityAsync(
-                    CapabilityRequest.Result(state, RequestId("result")),
+                    CapabilityRequest.Result(
+                        state,
+                        state.ResultRequestId),
                     CancellationToken.None).ConfigureAwait(true);
             }
             var productCountValid = phaseAtCleanup == "armed"
@@ -746,10 +761,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 report.SharedSnapshotUnchanged = true;
                 report.ImmutableAuditPreserved = true;
                 report.RunProfileRemoved = !runStore.HasStoredState();
-                report.Passed = report.RunProfileRemoved;
+                report.Passed = false;
             });
             Require(ScanTextArtifacts(outputDirectory, state),
                 "evidence_redaction_failed");
+            WriteSafeReport(outputDirectory, state, report =>
+            {
+                report.Passed = IsFullMatrixComplete(report);
+            });
             DeleteState();
             return 0;
         }
@@ -981,19 +1000,46 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     CancellationToken.None).ConfigureAwait(true);
                 Require(response.IsSuccess && response.Value.Items.Length == 2,
                     "read_urls_failed");
+                var accountScope =
+                    ProductImageCacheScopeStore.DeriveAccountScope(
+                        response.Value.CacheScope);
                 var evidence = new CacheEvidence
                 {
-                    AccountScope = response.Value.CacheScope
+                    AccountScope = accountScope
                 };
                 using (var cache = IsolatedCache(state))
                 {
+                    var scopeStore = new ProductImageCacheScopeStore(
+                        new SqliteConnectionFactory(PosDbOptions.Default()));
+                    var binding = await scopeStore.BindWithTransitionAsync(
+                        session.StaffId,
+                        session.ShopId,
+                        response.Value.CacheScope,
+                        CancellationToken.None).ConfigureAwait(true);
+                    Require(string.Equals(
+                            binding.AccountScope,
+                            accountScope,
+                            StringComparison.Ordinal),
+                        "cache_scope_binding_invalid");
+                    if (!string.IsNullOrEmpty(binding.PurgeToken))
+                    {
+                        await cache.PurgeAllAsync(CancellationToken.None)
+                            .ConfigureAwait(true);
+                        Require(await scopeStore.AcknowledgePurgeAsync(
+                                session.StaffId,
+                                session.ShopId,
+                                accountScope,
+                                binding.PurgeToken,
+                                CancellationToken.None).ConfigureAwait(true),
+                            "cache_scope_purge_ack_failed");
+                    }
                     foreach (var item in response.Value.Items)
                     {
                         var variant = item.Variant == "main"
                             ? ProductImageVariant.Main
                             : ProductImageVariant.Thumb;
                         Require(ProductImageIdentity.TryCreate(
-                                response.Value.CacheScope,
+                                accountScope,
                                 session.ShopId,
                                 item.ProductId,
                                 item.VersionId,
@@ -1474,11 +1520,13 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
                             outputDirectory,
                             "product-image-" + label +
                             "-list-thumb-1024x768.png"));
+                    window.Close();
+                    await Task.Delay(250).ConfigureAwait(true);
                 }
             }
             finally
             {
-                window.Close();
+                if (window.IsVisible) window.Close();
             }
 
             var editorModel = new ProductEditViewModel(
@@ -1510,11 +1558,37 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
                             outputDirectory,
                             "product-image-" + label +
                             "-editor-main-1024x768.png"));
+                    dialog.Close();
+                    await Task.Delay(250).ConfigureAwait(true);
                 }
             }
             finally
             {
-                dialog.Close();
+                if (dialog.IsVisible) dialog.Close();
+            }
+        }
+
+        private static async Task CaptureOfflineRestartScreenshotsAsync(
+            ProductDetailsRow product,
+            string outputDirectory,
+            string runProfileName)
+        {
+            var variable = PosAdminWebOptions.BaseUrlEnvironmentVariable;
+            var previous = Environment.GetEnvironmentVariable(variable);
+            Environment.SetEnvironmentVariable(
+                variable,
+                "https://127.0.0.1:1/");
+            try
+            {
+                await CaptureLoadedUiScreenshotsAsync(
+                    product,
+                    outputDirectory,
+                    "offline-restart",
+                    runProfileName).ConfigureAwait(true);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(variable, previous);
             }
         }
 
@@ -1567,11 +1641,13 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
                         Path.Combine(
                             outputDirectory,
                             "product-image-removed-list-no-image-1024x768.png"));
+                    list.Close();
+                    await Task.Delay(250).ConfigureAwait(true);
                 }
             }
             finally
             {
-                list.Close();
+                if (list.IsVisible) list.Close();
             }
 
             var editorModel = new ProductEditViewModel(
@@ -1604,11 +1680,13 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
                         Path.Combine(
                             outputDirectory,
                             "product-image-removed-editor-no-image-1024x768.png"));
+                    editor.Close();
+                    await Task.Delay(250).ConfigureAwait(true);
                 }
             }
             finally
             {
-                editor.Close();
+                if (editor.IsVisible) editor.Close();
             }
         }
 
@@ -1758,14 +1836,35 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             Action<SafeReport> apply)
         {
             var path = Path.Combine(outputDirectory, SafeReportName);
-            SafeReport report = File.Exists(path)
-                ? Deserialize<SafeReport>(File.ReadAllBytes(path))
-                : new SafeReport
+            SafeReport report = null;
+            if (File.Exists(path))
+            {
+                try
+                {
+                    var candidate = Deserialize<SafeReport>(
+                        File.ReadAllBytes(path));
+                    if (candidate != null &&
+                        candidate.SchemaVersion ==
+                            "win7pos-product-image-staging-v1" &&
+                        candidate.RunHmac == state.RunHmac &&
+                        candidate.StartedAt == state.StartedAt)
+                    {
+                        report = candidate;
+                    }
+                }
+                catch (SerializationException)
+                {
+                }
+            }
+            if (report == null)
+            {
+                report = new SafeReport
                 {
                     SchemaVersion = "win7pos-product-image-staging-v1",
                     RunHmac = state.RunHmac,
                     StartedAt = state.StartedAt
                 };
+            }
             report.ExactMainSha = ReadExactMainSha();
             report.FenceUntil = state.FenceUntil;
             report.Phase = state.Phase;
@@ -1774,7 +1873,82 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
                 Process.GetCurrentProcess().PrivateMemorySize64);
             apply(report);
             report.CompletedAt = CanonicalTimestamp(DateTimeOffset.UtcNow);
-            File.WriteAllBytes(path, Serialize(report));
+            var bytes = Serialize(report);
+            var temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                using (var stream = new FileStream(
+                    temporary,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    4096,
+                    FileOptions.WriteThrough))
+                {
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(true);
+                }
+                if (File.Exists(path)) File.Replace(temporary, path, null);
+                else File.Move(temporary, path);
+            }
+            finally
+            {
+                if (File.Exists(temporary)) File.Delete(temporary);
+                Clear(bytes);
+            }
+        }
+
+        private static bool IsFullMatrixComplete(SafeReport report)
+        {
+            return report != null &&
+                report.AuthBootstrap &&
+                report.CachePromoted &&
+                report.CachePurged &&
+                report.CatalogDelta &&
+                report.CatalogFullDrain &&
+                report.CatalogNullAfterRemove &&
+                report.CleanupComplete &&
+                !report.CleanupPending &&
+                report.DbResiduals == 0 &&
+                report.DurableOutbox &&
+                report.EditorMain &&
+                report.ExactVersionReference &&
+                report.ExpiredReadRenewed &&
+                report.ExpiredUploadRejected &&
+                report.Finalize &&
+                report.FinalizeReplay &&
+                report.ImmutableAuditPreserved &&
+                report.Intent &&
+                report.IntentReplay &&
+                report.ListThumb &&
+                report.LocalPreview &&
+                report.NewCachePromoted &&
+                report.NoHardwareActions &&
+                report.NoImageInitial &&
+                report.NoSalesEffects &&
+                report.OfflineCacheRestart &&
+                report.OfflineChoose &&
+                report.OldCacheInvalidated &&
+                report.OldImageRetainedUntilFinalize &&
+                report.PayloadHashMismatchRejected &&
+                report.PreprocessPng &&
+                report.ReadBack &&
+                report.Remove &&
+                report.RemoveReplay &&
+                report.ReplaceJpeg &&
+                report.ResponseLossRecovery &&
+                report.RestartOutboxSurvived &&
+                report.RunProfileIsolated &&
+                report.RunProfileRemoved &&
+                report.SaleSafe &&
+                report.SharedSnapshotUnchanged &&
+                report.SignedUrlPersistenceCount == 0 &&
+                report.StaleConflictProtected &&
+                report.StorageResiduals == 0 &&
+                report.ActiveActorSessionResiduals == 0 &&
+                report.UnrelatedFairness &&
+                report.UploadMainThumb &&
+                report.VersionChanged;
         }
 
         private static bool ScanTextArtifacts(
@@ -1787,6 +1961,9 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
                 state.ResultCapability,
                 state.RunMarker,
                 state.BeginRequestId,
+                state.CleanupRequestId,
+                state.ResultIssueRequestId,
+                state.ResultRequestId,
                 "task150_provision_",
                 "token=",
                 "/storage/v1/object/sign/",
@@ -1981,6 +2158,17 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
         private static string RequestId(string action)
         {
             return "asus-pib-" + SafeCode(action) + "-" + RandomHex(12);
+        }
+
+        private static bool IsAcceptanceRequestId(
+            string value,
+            string action)
+        {
+            var prefix = "asus-pib-" + action + "-";
+            return value != null &&
+                value.StartsWith(prefix, StringComparison.Ordinal) &&
+                value.Length == prefix.Length + 24 &&
+                value.Substring(prefix.Length).All(IsLowerHexCharacter);
         }
 
         private static string RandomHex(int bytes)
@@ -2645,6 +2833,8 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             public string CacheRoot { get; set; }
             [DataMember(Name = "cleanupCapability")]
             public string CleanupCapability { get; set; }
+            [DataMember(Name = "cleanupRequestId")]
+            public string CleanupRequestId { get; set; }
             [DataMember(Name = "fenceUntil")]
             public string FenceUntil { get; set; }
             [DataMember(Name = "firstImageUpdatedAt")]
@@ -2665,6 +2855,10 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             public string ProductId { get; set; }
             [DataMember(Name = "resultCapability")]
             public string ResultCapability { get; set; }
+            [DataMember(Name = "resultIssueRequestId")]
+            public string ResultIssueRequestId { get; set; }
+            [DataMember(Name = "resultRequestId")]
+            public string ResultRequestId { get; set; }
             [DataMember(Name = "runHmac")]
             public string RunHmac { get; set; }
             [DataMember(Name = "runMarker")]
@@ -2710,12 +2904,12 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
                       PosTrustedDeviceStore.IsValidProfileName(RunProfileName);
                 return Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri) &&
                     IsAllowedBaseUri(uri) &&
-                    BeginRequestId != null &&
-                    BeginRequestId.StartsWith(
-                        "asus-pib-begin-",
-                        StringComparison.Ordinal) &&
-                    BeginRequestId.Length == 39 &&
-                    BeginRequestId.Substring(15).All(IsLowerHexCharacter) &&
+                    IsAcceptanceRequestId(BeginRequestId, "begin") &&
+                    IsAcceptanceRequestId(CleanupRequestId, "cleanup") &&
+                    IsAcceptanceRequestId(
+                        ResultIssueRequestId,
+                        "result-issue") &&
+                    IsAcceptanceRequestId(ResultRequestId, "result") &&
                     RunMarker != null &&
                     RunMarker.StartsWith("ASUSPIB_", StringComparison.Ordinal) &&
                     RunMarker.Length == 40 &&

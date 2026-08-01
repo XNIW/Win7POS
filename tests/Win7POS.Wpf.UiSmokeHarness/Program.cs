@@ -140,6 +140,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var productImageStagingAcceptance =
                 HasArg(args, "--product-image-staging-acceptance");
+            var productImageAcceptanceRunnerLockHeld =
+                HasArg(args, "--acceptance-runner-lock-held");
+            if (productImageAcceptanceRunnerLockHeld &&
+                !productImageStagingAcceptance)
+            {
+                throw new InvalidOperationException(
+                    "--acceptance-runner-lock-held is valid only for " +
+                    "product-image staging acceptance.");
+            }
             var restrictedQaData = physicalPrinterQa ||
                                    authorizationLeaseMode ||
                                    productImageStagingAcceptance ||
@@ -384,11 +393,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                     if (productImageStagingAcceptance)
                     {
-                        var exitCode = await ProductImageStagingAcceptance
-                            .RunAsync(
+                        var exitCode = await RunProductImageStagingAcceptanceAsync(
                                 stagingProfile,
                                 acceptanceOutput,
-                                stagingAcceptancePhase)
+                                stagingAcceptancePhase,
+                                productImageAcceptanceRunnerLockHeld)
                             .ConfigureAwait(true);
                         app.Shutdown(exitCode);
                         return;
@@ -904,6 +913,48 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 Source = new Uri(baseUri + "Themes/DialogChrome.xaml", UriKind.Absolute)
             });
+        }
+
+        private static async Task<int> RunProductImageStagingAcceptanceAsync(
+            string profile,
+            string outputDirectory,
+            string phase,
+            bool runnerLockHeld)
+        {
+            Mutex acceptanceMutex = null;
+            var mutexHeld = false;
+            if (!runnerLockHeld)
+            {
+                acceptanceMutex = new Mutex(
+                    false,
+                    ProductImageStagingAcceptance.AcceptanceMutexName);
+                try
+                {
+                    mutexHeld = acceptanceMutex.WaitOne(0);
+                }
+                catch (AbandonedMutexException)
+                {
+                    mutexHeld = true;
+                }
+                if (!mutexHeld)
+                {
+                    acceptanceMutex.Dispose();
+                    throw new InvalidOperationException(
+                        "product_image_acceptance_already_running");
+                }
+            }
+            try
+            {
+                return await ProductImageStagingAcceptance.RunAsync(
+                    profile,
+                    outputDirectory,
+                    phase).ConfigureAwait(true);
+            }
+            finally
+            {
+                if (mutexHeld) acceptanceMutex.ReleaseMutex();
+                acceptanceMutex?.Dispose();
+            }
         }
 
         private static bool HasArg(IEnumerable<string> args, string expected)

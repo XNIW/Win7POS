@@ -31,6 +31,7 @@ $translations = Read-Required "src/Win7POS.Wpf/Localization/PosTranslations.Seco
 $attributes = Read-Required ".gitattributes"
 $stagingAcceptance = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/ProductImageStagingAcceptance.cs"
 $stagingRunner = Read-Required "scripts/qa/Invoke-Win7PosProductImageStagingAcceptance.ps1"
+$stagingProgram = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $shopTransition = Read-Required "src/Win7POS.Data/Online/PosShopTransitionGuard.cs"
 
 Require ($flags -match 'IsPhaseAEnabled\s*=>\s*true') `
@@ -135,12 +136,66 @@ Require ($stagingAcceptance.IndexOf('Phase = "begin_pending"') -lt
          $stagingAcceptance -match
              'state\.Phase = "armed";\s*SaveState\(state\)') `
     "Begin response-loss recovery must be checkpointed before the remote call and replayable during cleanup."
+Require ($stagingAcceptance -match
+             'ProductImageCacheScopeStore\.DeriveAccountScope\(' -and
+         $stagingAcceptance -match 'BindWithTransitionAsync\(' -and
+         $stagingAcceptance -match 'PurgeAllAsync\(' -and
+         $stagingAcceptance -match 'AcknowledgePurgeAsync\(' -and
+         $stagingAcceptance -match
+             'AccountScope\s*=\s*accountScope') `
+    "Acceptance cache population must use the same opaque, transition-aware account scope as runtime loading."
+$terminalRequestIds = @{
+    CleanupRequestId = 'cleanupRequestId'
+    ResultIssueRequestId = 'resultIssueRequestId'
+    ResultRequestId = 'resultRequestId'
+}
+foreach ($requestId in $terminalRequestIds.Keys) {
+    Require ($stagingAcceptance -match
+                 ('DataMember\(Name = "' +
+                  $terminalRequestIds[$requestId] + '"\)') -and
+             @([regex]::Matches($stagingAcceptance, "state\.$requestId")).Count -ge 2) `
+        "Terminal response-loss recovery must persist and replay $requestId."
+}
+Require ($stagingAcceptance -match
+             'CaptureOfflineRestartScreenshotsAsync\(' -and
+         $stagingAcceptance -match 'https://127\.0\.0\.1:1/' -and
+         $stagingAcceptance -match
+             'CaptureLoadedUiScreenshotsAsync\([\s\S]{0,300}offline-restart') `
+    "Offline restart must exercise the real list/editor loaders with the network endpoint unavailable."
+Require ($stagingAcceptance -match 'FileOptions\.WriteThrough' -and
+         $stagingAcceptance -match 'stream\.Flush\(true\)' -and
+         $stagingAcceptance -match 'File\.Replace\(' -and
+         $stagingAcceptance -match
+             'candidate\.SchemaVersion\s*==[\s\S]{0,120}win7pos-product-image-staging-v1' -and
+         $stagingAcceptance -match
+             'candidate\.RunHmac\s*==\s*state\.RunHmac' -and
+         $stagingAcceptance -match
+             'candidate\.StartedAt\s*==\s*state\.StartedAt' -and
+         $stagingAcceptance -match 'IsFullMatrixComplete\(report\)' -and
+         $stagingAcceptance.IndexOf(
+             'Require(ScanTextArtifacts(outputDirectory, state)') -lt
+         $stagingAcceptance.IndexOf(
+             'report.Passed = IsFullMatrixComplete(report)')) `
+    "Safe evidence must be run-bound, atomically replaced, redaction-scanned and complete before passing."
+Require ($stagingAcceptance -match
+             'product_image_acceptance_checkpoint_exists' -and
+         $stagingAcceptance -match 'AcceptanceMutexName' -and
+         $stagingProgram -match 'acceptance-runner-lock-held' -and
+         $stagingProgram -match 'AcceptanceMutexName' -and
+         $stagingProgram -match 'product_image_acceptance_already_running') `
+    "Acceptance must fail closed on stale checkpoints and concurrent harness processes."
 Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
          $stagingRunner -match 'rev-parse origin/main' -and
+         $stagingRunner -match 'IsNullOrWhiteSpace\(\$branch\)' -and
          $stagingRunner -match 'AddHours\(2\)\.AddMinutes\(5\)' -and
          $stagingRunner -match 'AddHours\(3\)' -and
          $stagingRunner -match 'priorCheckpoint' -and
          $stagingRunner -match 'Invoke-CheckpointCleanup' -and
+         $stagingRunner -match 'AcceptanceMutex\.WaitOne\(0\)' -and
+         $stagingRunner -match 'product_image_acceptance_already_running' -and
+         $stagingRunner -match 'product_image_acceptance_evidence_not_empty' -and
+         $stagingRunner -match 'Assert-TerminalCleanupReport' -and
+         $stagingRunner -match 'Assert-TerminalAcceptanceReport' -and
          $stagingRunner -match 'evidence_overlaps_(data|repo)' -and
          $stagingRunner -match "Phase 'cleanup'" -and
          $stagingRunner -notmatch 'TASK150_QA_HMAC_KEY|SUPABASE_SERVICE_ROLE_KEY') `

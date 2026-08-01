@@ -13,6 +13,21 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$script:AcceptanceMutex = [System.Threading.Mutex]::new(
+    $false,
+    'Global\Win7POS.ProductImagePhaseBAcceptance.v1')
+$script:AcceptanceMutexHeld = $false
+
+try {
+    try {
+        $script:AcceptanceMutexHeld = $script:AcceptanceMutex.WaitOne(0)
+    }
+    catch [System.Threading.AbandonedMutexException] {
+        $script:AcceptanceMutexHeld = $true
+    }
+    if (-not $script:AcceptanceMutexHeld) {
+        throw 'product_image_acceptance_already_running'
+    }
 
 function Assert-ExactSafeDataDirectory {
     param([string]$Path)
@@ -98,7 +113,8 @@ function Invoke-AcceptancePhase {
         --product-image-staging-acceptance `
         --profile $Profile `
         --acceptance-output $script:SafeEvidenceDirectory `
-        --acceptance-phase $Phase
+        --acceptance-phase $Phase `
+        --acceptance-runner-lock-held
     $exitCode = $LASTEXITCODE
     $phaseOutput | ForEach-Object { Write-Host $_ }
     if ($exitCode -notin $ExpectedExitCodes) {
@@ -143,7 +159,7 @@ function Wait-ForCleanupFence {
     }
 }
 
-function Assert-TerminalAcceptanceReport {
+function Assert-TerminalCleanupReport {
     param(
         [string]$ReportPath,
         [string]$ExpectedSha
@@ -153,8 +169,7 @@ function Assert-TerminalAcceptanceReport {
         throw 'product_image_acceptance_terminal_report_missing'
     }
     $terminal = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
-    if ($terminal.passed -ne $true -or
-        $terminal.cleanupComplete -ne $true -or
+    if ($terminal.cleanupComplete -ne $true -or
         $terminal.cleanupPending -ne $false -or
         -not [string]::Equals(
             [string]$terminal.exactMainSha,
@@ -168,6 +183,21 @@ function Assert-TerminalAcceptanceReport {
         $terminal.immutableAuditPreserved -ne $true -or
         $terminal.runProfileRemoved -ne $true) {
         throw 'product_image_acceptance_terminal_result_invalid'
+    }
+    return $terminal
+}
+
+function Assert-TerminalAcceptanceReport {
+    param(
+        [string]$ReportPath,
+        [string]$ExpectedSha
+    )
+
+    $terminal = Assert-TerminalCleanupReport `
+        -ReportPath $ReportPath `
+        -ExpectedSha $ExpectedSha
+    if ($terminal.passed -ne $true) {
+        throw 'product_image_acceptance_matrix_incomplete'
     }
     return $terminal
 }
@@ -203,7 +233,9 @@ $branch = (git -C $repoRoot branch --show-current).Trim()
 $head = (git -C $repoRoot rev-parse HEAD).Trim()
 $originMain = (git -C $repoRoot rev-parse origin/main).Trim()
 $dirty = git -C $repoRoot status --porcelain
-if ($branch -ne 'main' -or $head -ne $originMain -or $dirty) {
+$isExactMainCheckout = $branch -eq 'main' -or
+    [string]::IsNullOrWhiteSpace($branch)
+if (-not $isExactMainCheckout -or $head -ne $originMain -or $dirty) {
     throw 'product_image_acceptance_exact_main_required'
 }
 if ($head -notmatch '^[0-9a-f]{40}$') {
@@ -213,6 +245,13 @@ if ($head -notmatch '^[0-9a-f]{40}$') {
 $statePath = Join-Path $script:SafeDataDirectory (
     'product-image-acceptance-state.dpapi')
 $priorCheckpoint = Test-Path -LiteralPath $statePath -PathType Leaf
+if (-not $priorCheckpoint -and
+    (Test-Path -LiteralPath $script:SafeEvidenceDirectory -PathType Container) -and
+    $null -ne (Get-ChildItem `
+        -LiteralPath $script:SafeEvidenceDirectory `
+        -Force | Select-Object -First 1)) {
+    throw 'product_image_acceptance_evidence_not_empty'
+}
 if ((Test-Path -LiteralPath $script:SafeDataDirectory) -and
     -not $priorCheckpoint) {
     [void](Assert-NoReparsePath `
@@ -276,6 +315,9 @@ function Invoke-CheckpointCleanup {
     if ($cleanupExit -ne 0) {
         throw 'product_image_acceptance_checkpoint_cleanup_incomplete'
     }
+    [void](Assert-TerminalCleanupReport `
+        -ReportPath $reportPath `
+        -ExpectedSha $head)
     return $true
 }
 
@@ -288,7 +330,7 @@ if ($priorCheckpoint) {
             'product_image_acceptance_prior_checkpoint_recovery_failed: ' +
             $_.Exception.Message)
     }
-    [void](Assert-TerminalAcceptanceReport `
+    [void](Assert-TerminalCleanupReport `
         -ReportPath $reportPath `
         -ExpectedSha $head)
     [void](Assert-NoReparsePath `
@@ -323,6 +365,13 @@ catch {
     if (Test-Path -LiteralPath $statePath -PathType Leaf) {
         try {
             [void](Invoke-CheckpointCleanup)
+            [void](Assert-NoReparsePath `
+                -Path $script:SafeDataDirectory `
+                -FailureCode 'product_image_acceptance_data_reparse_point')
+            Remove-Item `
+                -LiteralPath $script:SafeDataDirectory `
+                -Recurse `
+                -Force
         }
         catch {
             $cleanupFailure = $_
@@ -357,3 +406,10 @@ if (Test-Path -LiteralPath $script:SafeDataDirectory) {
     storageResiduals = 0
     activeActorSessionResiduals = 0
 } | ConvertTo-Json -Depth 4
+}
+finally {
+    if ($script:AcceptanceMutexHeld) {
+        $script:AcceptanceMutex.ReleaseMutex()
+    }
+    $script:AcceptanceMutex.Dispose()
+}
