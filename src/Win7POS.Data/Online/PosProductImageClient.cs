@@ -5,9 +5,12 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
 using Win7POS.Core.Images;
 using Win7POS.Core.Online;
 using ImageContract = Win7POS.Core.Images.ProductImageContractV1;
@@ -107,6 +110,14 @@ namespace Win7POS.Data.Online
 
         internal static PosProductImageUploadResult Success(int status) =>
             new PosProductImageUploadResult { IsSuccess = true, Code = "success", HttpStatus = status };
+
+        internal static PosProductImageUploadResult AlreadyUploaded(int status) =>
+            new PosProductImageUploadResult
+            {
+                IsSuccess = true,
+                Code = "already_uploaded",
+                HttpStatus = status
+            };
 
         internal static PosProductImageUploadResult Failure(string code, int? status, bool retryable) =>
             new PosProductImageUploadResult
@@ -432,20 +443,30 @@ namespace Win7POS.Data.Online
                             HttpCompletionOption.ResponseHeadersRead,
                             timeout.Token).ConfigureAwait(false))
                         {
-                            await ReadBoundedAsync(response.Content, UploadResponseMaximumBytes, timeout.Token)
-                                .ConfigureAwait(false);
+                            var responseBytes = await ReadBoundedAsync(
+                                response.Content,
+                                UploadResponseMaximumBytes,
+                                timeout.Token).ConfigureAwait(false);
                             var status = (int)response.StatusCode;
-                            return response.IsSuccessStatusCode
-                                ? PosProductImageUploadResult.Success(status)
-                                : PosProductImageUploadResult.Failure(
-                                    status == 401 || status == 403
-                                        ? "expired_capability"
-                                        : status >= 500
-                                            ? "retryable_upstream"
-                                            : "upload_rejected",
-                                    status,
-                                    status >= 500 || status == 429 ||
-                                    status == 401 || status == 403);
+                            var storageError = status == 400 || status == 409
+                                ? ReadStorageError(response.Content, responseBytes)
+                                : null;
+                            var expiredCapability = IsExpiredStorageCapability(
+                                status,
+                                storageError);
+                            if (response.IsSuccessStatusCode)
+                                return PosProductImageUploadResult.Success(status);
+                            if (IsAlreadyUploaded(status, storageError))
+                                return PosProductImageUploadResult.AlreadyUploaded(status);
+                            return PosProductImageUploadResult.Failure(
+                                expiredCapability
+                                    ? "expired_capability"
+                                    : status >= 500
+                                        ? "retryable_upstream"
+                                        : "upload_rejected",
+                                status,
+                                status >= 500 || status == 429 ||
+                                expiredCapability);
                         }
                     }
                 }
@@ -525,12 +546,18 @@ namespace Win7POS.Data.Online
                             var status = (int)response.StatusCode;
                             if (!response.IsSuccessStatusCode)
                             {
-                                await ReadBoundedAsync(
+                                var responseBytes = await ReadBoundedAsync(
                                     response.Content,
                                     UploadResponseMaximumBytes,
                                     timeout.Token).ConfigureAwait(false);
+                                var storageError = status == 400
+                                    ? ReadStorageError(response.Content, responseBytes)
+                                    : null;
+                                var expiredCapability = IsExpiredStorageCapability(
+                                    status,
+                                    storageError);
                                 return PosProductImageDownloadResult.Failure(
-                                    status == 401 || status == 403
+                                    expiredCapability
                                         ? "expired_capability"
                                         : status >= 500 || status == 429
                                             ? "retryable_upstream"
@@ -539,7 +566,7 @@ namespace Win7POS.Data.Online
                                                 : "download_rejected",
                                     status,
                                     status >= 500 || status == 429 ||
-                                    status == 401 || status == 403);
+                                    expiredCapability);
                             }
                             if (!string.Equals(
                                     response.Content?.Headers?.ContentType?.MediaType,
@@ -775,6 +802,67 @@ namespace Win7POS.Data.Online
                 content?.Headers?.ContentType?.MediaType,
                 "application/json",
                 StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsAlreadyUploaded(int status, StorageErrorBody error)
+        {
+            return (status == 400 || status == 409) &&
+                   string.Equals(
+                       error?.Code,
+                       "ResourceAlreadyExists",
+                       StringComparison.Ordinal);
+        }
+
+        private static bool IsExpiredStorageCapability(int status, StorageErrorBody error)
+        {
+            if (status == 401 || status == 403) return true;
+            var storageErrorCode = !string.IsNullOrEmpty(error?.Code)
+                ? error.Code
+                : error?.Error;
+            return status == 400 &&
+                   (string.Equals(storageErrorCode, "InvalidJWT", StringComparison.Ordinal) ||
+                    string.Equals(storageErrorCode, "ExpiredToken", StringComparison.Ordinal));
+        }
+
+        private static StorageErrorBody ReadStorageError(
+            HttpContent content,
+            byte[] responseBytes)
+        {
+            if (!IsJson(content) ||
+                responseBytes == null || responseBytes.Length == 0)
+            {
+                return null;
+            }
+
+            StorageErrorBody error;
+            try
+            {
+                using (var stream = new MemoryStream(responseBytes, writable: false))
+                {
+                    error = new DataContractJsonSerializer(typeof(StorageErrorBody))
+                        .ReadObject(stream) as StorageErrorBody;
+                }
+            }
+            catch (SerializationException)
+            {
+                return null;
+            }
+            catch (XmlException)
+            {
+                return null;
+            }
+
+            return error;
+        }
+
+        [DataContract]
+        private sealed class StorageErrorBody
+        {
+            [DataMember(Name = "code", EmitDefaultValue = false)]
+            public string Code { get; set; }
+
+            [DataMember(Name = "error", EmitDefaultValue = false)]
+            public string Error { get; set; }
         }
 
         private static bool MutationIdentityMatches(

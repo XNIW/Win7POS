@@ -64,8 +64,11 @@ try {
     if (-not $result.StartsWith("PASS", [StringComparison]::Ordinal) -or
         $result.IndexOf(
             "net48_request_serialization=true",
+            [StringComparison]::Ordinal) -lt 0 -or
+        $result.IndexOf(
+            "net48_storage_error_mapping=true",
             [StringComparison]::Ordinal) -lt 0) {
-        throw "Product-image profile smoke did not report the net48 serialization PASS marker."
+        throw "Product-image profile smoke did not report every net48 contract PASS marker."
     }
 
     Write-Host $result

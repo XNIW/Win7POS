@@ -1,9 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core;
+using Win7POS.Core.Images;
 using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Online;
@@ -18,6 +23,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
         internal static string Run()
         {
             VerifyMutationRequestSerialization();
+            Task.Run(VerifyStorageProviderErrorMappingAsync)
+                .GetAwaiter()
+                .GetResult();
             const string profileName =
                 "asus-staging-image-phase-b-0123456789abcdef01234567";
             const string deviceToken = "qa-profile-device-secret";
@@ -103,7 +111,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "shared_unchanged=true plaintext_secrets=false " +
                     "offline_authority_cloned=false " +
                     "supervisor_profile_injected=true cleanup_exact=true " +
-                    "net48_request_serialization=true";
+                    "net48_request_serialization=true " +
+                    "net48_storage_error_mapping=true";
             }
             finally
             {
@@ -211,6 +220,144 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 throw new InvalidOperationException(
                     "product_image_net48_serialization_invalid");
+            }
+        }
+
+        private static async Task VerifyStorageProviderErrorMappingAsync()
+        {
+            const string shopId =
+                "10000000-0000-4000-8000-000000000149";
+            const string productId =
+                "20000000-0000-4000-8000-000000000149";
+            const string versionId =
+                "40000000-0000-4000-8000-000000000149";
+            var storageOrigin = new Uri("https://storage.example.invalid/");
+            var responses = new Queue<HttpResponseMessage>(new[]
+            {
+                JsonStorageError("InvalidJWT", "InvalidJWT", "400"),
+                JsonStorageError(null, "ExpiredToken", "400"),
+                JsonStorageError("ResourceAlreadyExists", "Duplicate", "409"),
+                JsonStorageError(null, "ResourceAlreadyExists", "409")
+            });
+            using (var client = new PosProductImageClient(
+                new PosAdminWebOptions(new Uri("https://admin.example.invalid/")),
+                storageOrigin,
+                new QueueHttpMessageHandler(responses)))
+            {
+                var uploadUrl = storageOrigin +
+                    "storage/v1/object/upload/sign/product-images/shops/" +
+                    shopId + "/products/" + productId + "/primary/" +
+                    versionId + "/main.jpg?token=ephemeral";
+                var readUrl = storageOrigin +
+                    "storage/v1/object/sign/product-images/shops/" +
+                    shopId + "/products/" + productId + "/primary/" +
+                    versionId + "/main.jpg?token=ephemeral";
+
+                PosProductImageUploadResult expiredUpload;
+                using (var bytes = new MemoryStream(new byte[128]))
+                {
+                    expiredUpload = await client.UploadJpegAsync(
+                            uploadUrl,
+                            shopId,
+                            productId,
+                            versionId,
+                            "main",
+                            bytes,
+                            128,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                var expected = new PosProductImageUploadMetadata(
+                    128,
+                    8,
+                    ProductImageContractV1.WireMimeType,
+                    new string('a', 64),
+                    8);
+                var expiredDownload = await client.DownloadJpegAsync(
+                        readUrl,
+                        shopId,
+                        productId,
+                        versionId,
+                        "main",
+                        expected,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                PosProductImageUploadResult alreadyUploaded;
+                using (var bytes = new MemoryStream(new byte[128]))
+                {
+                    alreadyUploaded = await client.UploadJpegAsync(
+                            uploadUrl,
+                            shopId,
+                            productId,
+                            versionId,
+                            "main",
+                            bytes,
+                            128,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                PosProductImageUploadResult errorOnly;
+                using (var bytes = new MemoryStream(new byte[128]))
+                {
+                    errorOnly = await client.UploadJpegAsync(
+                            uploadUrl,
+                            shopId,
+                            productId,
+                            versionId,
+                            "main",
+                            bytes,
+                            128,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+
+                if (expiredUpload.Code != "expired_capability" ||
+                    !expiredUpload.Retryable ||
+                    expiredDownload.Code != "expired_capability" ||
+                    !expiredDownload.Retryable ||
+                    !alreadyUploaded.IsSuccess ||
+                    alreadyUploaded.Code != "already_uploaded" ||
+                    errorOnly.IsSuccess ||
+                    errorOnly.Code != "upload_rejected" ||
+                    responses.Count != 0)
+                {
+                    throw new InvalidOperationException(
+                        "product_image_net48_storage_error_mapping_invalid");
+                }
+            }
+        }
+
+        private static HttpResponseMessage JsonStorageError(
+            string code,
+            string error,
+            string statusCode)
+        {
+            var body = "{\"statusCode\":\"" + statusCode + "\"," +
+                (code == null ? string.Empty : "\"code\":\"" + code + "\",") +
+                "\"error\":\"" + error + "\"}";
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        }
+
+        private sealed class QueueHttpMessageHandler : HttpMessageHandler
+        {
+            private readonly Queue<HttpResponseMessage> _responses;
+
+            internal QueueHttpMessageHandler(Queue<HttpResponseMessage> responses)
+            {
+                _responses = responses;
+            }
+
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken)
+            {
+                if (_responses.Count == 0)
+                    throw new InvalidOperationException(
+                        "product_image_net48_storage_response_missing");
+                return Task.FromResult(_responses.Dequeue());
             }
         }
 

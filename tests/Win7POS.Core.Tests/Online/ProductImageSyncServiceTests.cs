@@ -72,6 +72,34 @@ public sealed class ProductImageSyncServiceTests
     }
 
     [TestMethod]
+    public async Task PartialUploadResponseLoss_ReplaysExistingObjectsAndFinalizesSameIdentity()
+    {
+        using var scope = await TestScope.CreateAsync();
+        var transport = new FakeTransport { LoseThumbUploadResponseOnce = true };
+        var service = scope.Service(transport);
+        var before = await scope.Outbox.GetLatestForProductAsync(scope.LocalProductId);
+
+        Assert.AreEqual("intent_ready", (await scope.SyncAsync(service)).Code);
+        var failed = await scope.SyncAsync(service);
+        var retryRow = await scope.Outbox.GetLatestForProductAsync(scope.LocalProductId);
+        scope.Now = scope.Now.AddMinutes(10);
+        var replay = await scope.SyncAsync(service);
+        var finalize = await scope.SyncAsync(service);
+
+        Assert.IsFalse(failed.Success);
+        Assert.AreEqual("network_error", failed.Code);
+        Assert.AreEqual(ProductImageOperationStates.RetryWait, retryRow.State);
+        Assert.AreEqual(before.OperationId, retryRow.OperationId);
+        Assert.AreEqual(before.IdempotencyKey, retryRow.IdempotencyKey);
+        Assert.AreEqual("upload_complete", replay.Code);
+        Assert.AreEqual("finalize_complete", finalize.Code);
+        Assert.AreEqual(4, transport.UploadCalls);
+        Assert.AreEqual(2, transport.AlreadyExistingUploadCalls);
+        Assert.AreEqual(1, transport.FinalizeCalls);
+        Assert.AreEqual(2, Directory.EnumerateFiles(scope.StagingRoot).Count());
+    }
+
+    [TestMethod]
     public async Task ExpiredUploadIntent_RotatesIdentityAndResealsPayload()
     {
         using var scope = await TestScope.CreateAsync();
@@ -194,11 +222,14 @@ public sealed class ProductImageSyncServiceTests
         internal bool DenyNextIntent { get; set; }
         internal bool ExpireNextIntent { get; set; }
         internal bool FailFinalizeOnce { get; set; }
+        internal bool LoseThumbUploadResponseOnce { get; set; }
+        internal int AlreadyExistingUploadCalls { get; private set; }
         internal int FinalizeCalls { get; private set; }
         internal int IntentCalls { get; private set; }
         internal int UploadCalls { get; private set; }
         internal PosProductImageIntentRequest? LastIntentRequest { get; private set; }
         internal PosProductImageRemoveRequest? LastRemoveRequest { get; private set; }
+        private HashSet<string> UploadedVariants { get; } = new(StringComparer.Ordinal);
 
         public Task<PosProductImageClientResult<PosProductImageIntentResponse>> IntentAsync(
             PosProductImageIntentRequest request,
@@ -309,6 +340,19 @@ public sealed class ProductImageSyncServiceTests
         {
             UploadCalls++;
             Assert.AreEqual(exactLength, jpeg.Length);
+            if (!UploadedVariants.Add(variant))
+            {
+                AlreadyExistingUploadCalls++;
+                return Task.FromResult(PosProductImageUploadResult.AlreadyUploaded(400));
+            }
+            if (variant == "thumb" && LoseThumbUploadResponseOnce)
+            {
+                LoseThumbUploadResponseOnce = false;
+                return Task.FromResult(PosProductImageUploadResult.Failure(
+                    "network_error",
+                    null,
+                    true));
+            }
             return Task.FromResult(PosProductImageUploadResult.Success(200));
         }
 
