@@ -215,8 +215,11 @@ Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
          $stagingRunner -match 'ProtectedData\]::Protect' -and
          $stagingRunner -match 'WIN7POS_PRODUCT_IMAGE_ACCEPTANCE_RUNNER_TOKEN' -and
          $stagingRunner -notmatch 'acceptance-runner-(pid|lock-held)' -and
-         $stagingRunner -match 'Start-Process[\s\S]{0,300}-Wait' -and
-         $stagingRunner -match 'Start-Process[\s\S]{0,300}-PassThru' -and
+         $stagingRunner -notmatch 'Start-Process' -and
+         $stagingRunner -match '\[Diagnostics\.ProcessStartInfo\]::new\(\)' -and
+         $stagingRunner -match 'UseShellExecute\s*=\s*\$false' -and
+         $stagingRunner -match '\$process\.Start\(\)' -and
+         $stagingRunner -match '\$process\.WaitForExit\(\)' -and
          $stagingRunner -match '\$process\.ExitCode' -and
          $stagingRunner -notmatch '\$phaseOutput\s*=\s*&\s*\$Harness' -and
          $stagingRunner.Contains(

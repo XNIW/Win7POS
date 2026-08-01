@@ -184,13 +184,18 @@ function Invoke-AcceptancePhase {
         '--profile', ('"' + $Profile + '"'),
         '--acceptance-output', ('"' + $script:SafeEvidenceDirectory + '"'),
         '--acceptance-phase', ('"' + $Phase + '"'))
-    $process = Start-Process `
-        -FilePath $Harness `
-        -ArgumentList $arguments `
-        -WindowStyle Hidden `
-        -Wait `
-        -PassThru
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Harness
+    $startInfo.Arguments = $arguments -join ' '
+    $startInfo.WorkingDirectory = $repoRoot
+    $startInfo.UseShellExecute = $false
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
     try {
+        if (-not $process.Start()) {
+            throw 'product_image_acceptance_harness_start_failed'
+        }
+        $process.WaitForExit()
         $exitCode = $process.ExitCode
     }
     finally {
