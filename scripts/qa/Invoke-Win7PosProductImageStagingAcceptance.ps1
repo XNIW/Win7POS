@@ -15,6 +15,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+if ($Profile -cnotmatch '^[A-Za-z0-9_-]{3,64}$') {
+    throw 'product_image_acceptance_profile_invalid'
+}
 $script:AcceptanceMutex = [System.Threading.Mutex]::new(
     $false,
     'Global\Win7POS.ProductImagePhaseBAcceptance.v1')
@@ -175,14 +178,24 @@ function Invoke-AcceptancePhase {
         [int[]]$ExpectedExitCodes
     )
 
-    $phaseOutput = & $Harness `
-        --data-dir $script:SafeDataDirectory `
-        --product-image-staging-acceptance `
-        --profile $Profile `
-        --acceptance-output $script:SafeEvidenceDirectory `
-        --acceptance-phase $Phase
-    $exitCode = $LASTEXITCODE
-    $phaseOutput | ForEach-Object { Write-Host $_ }
+    $arguments = @(
+        '--data-dir', ('"' + $script:SafeDataDirectory + '"'),
+        '--product-image-staging-acceptance',
+        '--profile', ('"' + $Profile + '"'),
+        '--acceptance-output', ('"' + $script:SafeEvidenceDirectory + '"'),
+        '--acceptance-phase', ('"' + $Phase + '"'))
+    $process = Start-Process `
+        -FilePath $Harness `
+        -ArgumentList $arguments `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    try {
+        $exitCode = $process.ExitCode
+    }
+    finally {
+        $process.Dispose()
+    }
     if ($exitCode -notin $ExpectedExitCodes) {
         throw "product_image_acceptance_${Phase}_failed_${exitCode}"
     }
@@ -452,6 +465,20 @@ catch {
     if (Test-Path -LiteralPath $statePath -PathType Leaf) {
         try {
             [void](Invoke-CheckpointCleanup)
+            [void](Assert-NoReparsePath `
+                -Path $script:SafeDataDirectory `
+                -FailureCode 'product_image_acceptance_data_reparse_point')
+            Remove-Item `
+                -LiteralPath $script:SafeDataDirectory `
+                -Recurse `
+                -Force
+        }
+        catch {
+            $cleanupFailure = $_
+        }
+    }
+    elseif (Test-Path -LiteralPath $script:SafeDataDirectory -PathType Container) {
+        try {
             [void](Assert-NoReparsePath `
                 -Path $script:SafeDataDirectory `
                 -FailureCode 'product_image_acceptance_data_reparse_point')
