@@ -32,6 +32,7 @@ $attributes = Read-Required ".gitattributes"
 $stagingAcceptance = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/ProductImageStagingAcceptance.cs"
 $stagingRunner = Read-Required "scripts/qa/Invoke-Win7PosProductImageStagingAcceptance.ps1"
 $stagingProgram = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
+$stagingLockTest = Read-Required "scripts/qa/Test-Win7PosProductImageAcceptanceLocks.ps1"
 $shopTransition = Read-Required "src/Win7POS.Data/Online/PosShopTransitionGuard.cs"
 
 Require ($flags -match 'IsPhaseAEnabled\s*=>\s*true') `
@@ -180,9 +181,22 @@ Require ($stagingAcceptance -match 'FileOptions\.WriteThrough' -and
 Require ($stagingAcceptance -match
              'product_image_acceptance_checkpoint_exists' -and
          $stagingAcceptance -match 'AcceptanceMutexName' -and
-         $stagingProgram -match 'acceptance-runner-lock-held' -and
+         $stagingAcceptance -match 'AcceptancePhaseMutexName' -and
+         $stagingAcceptance -match 'AcceptanceRunnerTokenEnvironmentVariable' -and
+         $stagingAcceptance -match 'ValidateRunnerHandshake\(' -and
+         $stagingAcceptance -match 'DataProtectionScope\.CurrentUser' -and
+         $stagingProgram -notmatch 'acceptance-runner-(pid|lock-held)' -and
          $stagingProgram -match 'AcceptanceMutexName' -and
-         $stagingProgram -match 'product_image_acceptance_already_running') `
+         $stagingProgram -match 'AcceptancePhaseMutexName' -and
+         $stagingProgram -match 'GetParentProcessId\(\)' -and
+         $stagingProgram -match 'product_image_acceptance_runner_lock_missing' -and
+         $stagingProgram -match 'product_image_acceptance_already_running' -and
+         $stagingProgram -match 'product_image_acceptance_phase_already_running' -and
+         $stagingLockTest -match 'acceptance lock probes passed \(4/4\)' -and
+         $stagingLockTest -match 'product_image_acceptance_runner_handshake_missing' -and
+         $stagingLockTest -match 'shared_profile_unavailable' -and
+         $stagingLockTest -match 'product_image_acceptance_already_running' -and
+         $stagingLockTest -match 'product_image_acceptance_phase_already_running') `
     "Acceptance must fail closed on stale checkpoints and concurrent harness processes."
 Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
          $stagingRunner -match 'rev-parse origin/main' -and
@@ -192,6 +206,10 @@ Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
          $stagingRunner -match 'priorCheckpoint' -and
          $stagingRunner -match 'Invoke-CheckpointCleanup' -and
          $stagingRunner -match 'AcceptanceMutex\.WaitOne\(0\)' -and
+         $stagingRunner -match 'Initialize-RunnerHandshake' -and
+         $stagingRunner -match 'ProtectedData\]::Protect' -and
+         $stagingRunner -match 'WIN7POS_PRODUCT_IMAGE_ACCEPTANCE_RUNNER_TOKEN' -and
+         $stagingRunner -notmatch 'acceptance-runner-(pid|lock-held)' -and
          $stagingRunner -match 'product_image_acceptance_already_running' -and
          $stagingRunner -match 'product_image_acceptance_evidence_not_empty' -and
          $stagingRunner -match 'Assert-TerminalCleanupReport' -and

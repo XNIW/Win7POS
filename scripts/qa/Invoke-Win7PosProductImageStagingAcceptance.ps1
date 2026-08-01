@@ -17,6 +17,12 @@ $script:AcceptanceMutex = [System.Threading.Mutex]::new(
     $false,
     'Global\Win7POS.ProductImagePhaseBAcceptance.v1')
 $script:AcceptanceMutexHeld = $false
+$script:RunnerTokenVariable =
+    'WIN7POS_PRODUCT_IMAGE_ACCEPTANCE_RUNNER_TOKEN'
+$script:PreviousRunnerToken =
+    [Environment]::GetEnvironmentVariable($script:RunnerTokenVariable)
+$script:RunnerTokenActive = $false
+$script:RunnerHandshakePath = $null
 
 try {
     try {
@@ -28,6 +34,65 @@ try {
     if (-not $script:AcceptanceMutexHeld) {
         throw 'product_image_acceptance_already_running'
     }
+
+function Initialize-RunnerHandshake {
+    $path = Join-Path $script:SafeDataDirectory (
+        'product-image-acceptance-runner.dpapi')
+    if (Test-Path -LiteralPath $path) {
+        [IO.File]::Delete($path)
+    }
+    $token = [byte[]]::new(32)
+    $payload = [byte[]]::new(40)
+    $protected = $null
+    $temporary = $path + '.tmp-' + [Guid]::NewGuid().ToString('N')
+    try {
+        $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try {
+            $generator.GetBytes($token)
+        }
+        finally {
+            $generator.Dispose()
+        }
+        [Text.Encoding]::ASCII.GetBytes('PIB1').CopyTo($payload, 0)
+        [BitConverter]::GetBytes([int]$PID).CopyTo($payload, 4)
+        $token.CopyTo($payload, 8)
+        $protected = [Security.Cryptography.ProtectedData]::Protect(
+            $payload,
+            $null,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser)
+        $stream = [IO.FileStream]::new(
+            $temporary,
+            [IO.FileMode]::CreateNew,
+            [IO.FileAccess]::Write,
+            [IO.FileShare]::None,
+            4096,
+            [IO.FileOptions]::WriteThrough)
+        try {
+            $stream.Write($protected, 0, $protected.Length)
+            $stream.Flush($true)
+        }
+        finally {
+            $stream.Dispose()
+        }
+        [IO.File]::Move($temporary, $path)
+        $tokenHex = -join ($token | ForEach-Object { $_.ToString('x2') })
+        [Environment]::SetEnvironmentVariable(
+            $script:RunnerTokenVariable,
+            $tokenHex)
+        $script:RunnerTokenActive = $true
+        $script:RunnerHandshakePath = $path
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporary) {
+            [IO.File]::Delete($temporary)
+        }
+        if ($null -ne $protected) {
+            [Array]::Clear($protected, 0, $protected.Length)
+        }
+        [Array]::Clear($payload, 0, $payload.Length)
+        [Array]::Clear($token, 0, $token.Length)
+    }
+}
 
 function Assert-ExactSafeDataDirectory {
     param([string]$Path)
@@ -113,8 +178,7 @@ function Invoke-AcceptancePhase {
         --product-image-staging-acceptance `
         --profile $Profile `
         --acceptance-output $script:SafeEvidenceDirectory `
-        --acceptance-phase $Phase `
-        --acceptance-runner-lock-held
+        --acceptance-phase $Phase
     $exitCode = $LASTEXITCODE
     $phaseOutput | ForEach-Object { Write-Host $_ }
     if ($exitCode -notin $ExpectedExitCodes) {
@@ -294,6 +358,8 @@ if (-not (Test-Path -LiteralPath $harness -PathType Leaf)) {
     throw 'product_image_acceptance_harness_missing'
 }
 
+Initialize-RunnerHandshake
+
 $reportPath = Join-Path $script:SafeEvidenceDirectory (
     'product-image-staging-result.json')
 
@@ -408,6 +474,15 @@ if (Test-Path -LiteralPath $script:SafeDataDirectory) {
 } | ConvertTo-Json -Depth 4
 }
 finally {
+    if ($script:RunnerTokenActive) {
+        [Environment]::SetEnvironmentVariable(
+            $script:RunnerTokenVariable,
+            $script:PreviousRunnerToken)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($script:RunnerHandshakePath) -and
+        (Test-Path -LiteralPath $script:RunnerHandshakePath -PathType Leaf)) {
+        [IO.File]::Delete($script:RunnerHandshakePath)
+    }
     if ($script:AcceptanceMutexHeld) {
         $script:AcceptanceMutex.ReleaseMutex()
     }

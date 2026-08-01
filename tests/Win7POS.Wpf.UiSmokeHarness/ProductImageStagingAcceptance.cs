@@ -45,6 +45,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
         internal const int CleanupFenceArmed = 77;
         internal const string AcceptanceMutexName =
             @"Global\Win7POS.ProductImagePhaseBAcceptance.v1";
+        internal const string AcceptancePhaseMutexName =
+            @"Global\Win7POS.ProductImagePhaseBAcceptance.Phase.v1";
+        internal const string AcceptanceRunnerTokenEnvironmentVariable =
+            "WIN7POS_PRODUCT_IMAGE_ACCEPTANCE_RUNNER_TOKEN";
+        internal const string AcceptanceRunnerHandshakeFileName =
+            "product-image-acceptance-runner.dpapi";
 
         private const string AllowedHost =
             "merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev";
@@ -1828,6 +1834,85 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
         private static string StatePath()
         {
             return Path.Combine(AppPaths.DataDirectory, StateFileName);
+        }
+
+        internal static void ValidateRunnerHandshake(
+            string runnerToken,
+            int parentProcessId)
+        {
+            EnsureIsolatedDataRoot();
+            Require(IsLowerHex64(runnerToken),
+                "product_image_acceptance_runner_token_invalid");
+            var path = Path.Combine(
+                AppPaths.DataDirectory,
+                AcceptanceRunnerHandshakeFileName);
+            var info = new FileInfo(path);
+            Require(info.Exists && info.Length > 0 && info.Length <= 4096,
+                "product_image_acceptance_runner_handshake_missing");
+            var encrypted = File.ReadAllBytes(path);
+            byte[] plaintext = null;
+            byte[] suppliedToken = null;
+            try
+            {
+                plaintext = ProtectedData.Unprotect(
+                    encrypted,
+                    null,
+                    DataProtectionScope.CurrentUser);
+                suppliedToken = ParseLowerHex64(runnerToken);
+                Require(plaintext != null && plaintext.Length == 40 &&
+                        plaintext[0] == (byte)'P' &&
+                        plaintext[1] == (byte)'I' &&
+                        plaintext[2] == (byte)'B' &&
+                        plaintext[3] == (byte)'1' &&
+                        BitConverter.ToInt32(plaintext, 4) == parentProcessId &&
+                        FixedTimeEquals(plaintext, 8, suppliedToken),
+                    "product_image_acceptance_runner_handshake_invalid");
+            }
+            catch (CryptographicException)
+            {
+                throw new InvalidOperationException(
+                    "product_image_acceptance_runner_handshake_invalid");
+            }
+            finally
+            {
+                Clear(encrypted);
+                Clear(plaintext);
+                Clear(suppliedToken);
+            }
+        }
+
+        private static byte[] ParseLowerHex64(string value)
+        {
+            Require(IsLowerHex64(value),
+                "product_image_acceptance_runner_token_invalid");
+            var bytes = new byte[32];
+            for (var index = 0; index < bytes.Length; index++)
+            {
+                bytes[index] = byte.Parse(
+                    value.Substring(index * 2, 2),
+                    NumberStyles.AllowHexSpecifier,
+                    CultureInfo.InvariantCulture);
+            }
+            return bytes;
+        }
+
+        private static bool FixedTimeEquals(
+            byte[] payload,
+            int payloadOffset,
+            byte[] expected)
+        {
+            if (payload == null || expected == null ||
+                payloadOffset < 0 ||
+                payload.Length - payloadOffset < expected.Length)
+            {
+                return false;
+            }
+            var difference = 0;
+            for (var index = 0; index < expected.Length; index++)
+            {
+                difference |= payload[payloadOffset + index] ^ expected[index];
+            }
+            return difference == 0;
         }
 
         private static void WriteSafeReport(

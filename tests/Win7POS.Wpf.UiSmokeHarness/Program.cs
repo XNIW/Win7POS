@@ -140,15 +140,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var productImageStagingAcceptance =
                 HasArg(args, "--product-image-staging-acceptance");
-            var productImageAcceptanceRunnerLockHeld =
-                HasArg(args, "--acceptance-runner-lock-held");
-            if (productImageAcceptanceRunnerLockHeld &&
-                !productImageStagingAcceptance)
-            {
-                throw new InvalidOperationException(
-                    "--acceptance-runner-lock-held is valid only for " +
-                    "product-image staging acceptance.");
-            }
+            var productImageAcceptanceRunnerToken =
+                Environment.GetEnvironmentVariable(
+                    ProductImageStagingAcceptance
+                        .AcceptanceRunnerTokenEnvironmentVariable);
             var restrictedQaData = physicalPrinterQa ||
                                    authorizationLeaseMode ||
                                    productImageStagingAcceptance ||
@@ -397,7 +392,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 stagingProfile,
                                 acceptanceOutput,
                                 stagingAcceptancePhase,
-                                productImageAcceptanceRunnerLockHeld)
+                                productImageAcceptanceRunnerToken)
                             .ConfigureAwait(true);
                         app.Shutdown(exitCode);
                         return;
@@ -919,32 +914,63 @@ namespace Win7POS.Wpf.UiSmokeHarness
             string profile,
             string outputDirectory,
             string phase,
-            bool runnerLockHeld)
+            string runnerToken)
         {
-            Mutex acceptanceMutex = null;
-            var mutexHeld = false;
-            if (!runnerLockHeld)
+            Mutex orchestratorMutex = null;
+            Mutex phaseMutex = null;
+            var orchestratorMutexHeld = false;
+            var phaseMutexHeld = false;
+            if (!string.IsNullOrWhiteSpace(runnerToken))
             {
-                acceptanceMutex = new Mutex(
+                var parentProcessId = GetParentProcessId();
+                ProductImageStagingAcceptance.ValidateRunnerHandshake(
+                    runnerToken,
+                    parentProcessId);
+                using (var runnerLockProbe = new Mutex(
+                    false,
+                    ProductImageStagingAcceptance.AcceptanceMutexName))
+                {
+                    var runnerLockMissing = false;
+                    try
+                    {
+                        runnerLockMissing = runnerLockProbe.WaitOne(0);
+                    }
+                    catch (AbandonedMutexException)
+                    {
+                        runnerLockMissing = true;
+                    }
+                    if (runnerLockMissing)
+                    {
+                        runnerLockProbe.ReleaseMutex();
+                        throw new InvalidOperationException(
+                            "product_image_acceptance_runner_lock_missing");
+                    }
+                }
+            }
+            else
+            {
+                orchestratorMutex = new Mutex(
                     false,
                     ProductImageStagingAcceptance.AcceptanceMutexName);
-                try
+                orchestratorMutexHeld = TryAcquireMutex(orchestratorMutex);
+                if (!orchestratorMutexHeld)
                 {
-                    mutexHeld = acceptanceMutex.WaitOne(0);
-                }
-                catch (AbandonedMutexException)
-                {
-                    mutexHeld = true;
-                }
-                if (!mutexHeld)
-                {
-                    acceptanceMutex.Dispose();
+                    orchestratorMutex.Dispose();
                     throw new InvalidOperationException(
                         "product_image_acceptance_already_running");
                 }
             }
             try
             {
+                phaseMutex = new Mutex(
+                    false,
+                    ProductImageStagingAcceptance.AcceptancePhaseMutexName);
+                phaseMutexHeld = TryAcquireMutex(phaseMutex);
+                if (!phaseMutexHeld)
+                {
+                    throw new InvalidOperationException(
+                        "product_image_acceptance_phase_already_running");
+                }
                 return await ProductImageStagingAcceptance.RunAsync(
                     profile,
                     outputDirectory,
@@ -952,10 +978,98 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             finally
             {
-                if (mutexHeld) acceptanceMutex.ReleaseMutex();
-                acceptanceMutex?.Dispose();
+                if (phaseMutexHeld) phaseMutex.ReleaseMutex();
+                phaseMutex?.Dispose();
+                if (orchestratorMutexHeld) orchestratorMutex.ReleaseMutex();
+                orchestratorMutex?.Dispose();
             }
         }
+
+        private static bool TryAcquireMutex(Mutex mutex)
+        {
+            try
+            {
+                return mutex.WaitOne(0);
+            }
+            catch (AbandonedMutexException)
+            {
+                return true;
+            }
+        }
+
+        private static int GetParentProcessId()
+        {
+            var snapshot = CreateToolhelp32Snapshot(0x00000002, 0);
+            if (snapshot == new IntPtr(-1))
+            {
+                throw new InvalidOperationException(
+                    "product_image_acceptance_parent_snapshot_failed");
+            }
+            try
+            {
+                var entry = new ProcessEntry32
+                {
+                    Size = (uint)Marshal.SizeOf(typeof(ProcessEntry32))
+                };
+                if (!Process32First(snapshot, ref entry))
+                {
+                    throw new InvalidOperationException(
+                        "product_image_acceptance_parent_lookup_failed");
+                }
+                var currentPid = (uint)Process.GetCurrentProcess().Id;
+                do
+                {
+                    if (entry.ProcessId == currentPid)
+                    {
+                        return checked((int)entry.ParentProcessId);
+                    }
+                }
+                while (Process32Next(snapshot, ref entry));
+                throw new InvalidOperationException(
+                    "product_image_acceptance_parent_not_found");
+            }
+            finally
+            {
+                CloseHandle(snapshot);
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct ProcessEntry32
+        {
+            public uint Size;
+            public uint Usage;
+            public uint ProcessId;
+            public IntPtr DefaultHeapId;
+            public uint ModuleId;
+            public uint Threads;
+            public uint ParentProcessId;
+            public int BasePriority;
+            public uint Flags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string ExecutableFile;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateToolhelp32Snapshot(
+            uint flags,
+            uint processId);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool Process32First(
+            IntPtr snapshot,
+            ref ProcessEntry32 entry);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool Process32Next(
+            IntPtr snapshot,
+            ref ProcessEntry32 entry);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
 
         private static bool HasArg(IEnumerable<string> args, string expected)
         {
