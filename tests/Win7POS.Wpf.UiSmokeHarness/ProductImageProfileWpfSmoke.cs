@@ -17,6 +17,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
     {
         internal static string Run()
         {
+            VerifyMutationRequestSerialization();
             const string profileName =
                 "asus-staging-image-phase-b-0123456789abcdef01234567";
             const string deviceToken = "qa-profile-device-secret";
@@ -101,12 +102,115 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return "PASS product_image_profile_dpapi_isolated=true " +
                     "shared_unchanged=true plaintext_secrets=false " +
                     "offline_authority_cloned=false " +
-                    "supervisor_profile_injected=true cleanup_exact=true";
+                    "supervisor_profile_injected=true cleanup_exact=true " +
+                    "net48_request_serialization=true";
             }
             finally
             {
                 try { isolated?.Clear(); } catch { }
                 try { shared.Clear(); } catch { }
+            }
+        }
+
+        private static void VerifyMutationRequestSerialization()
+        {
+            const string shopId =
+                "10000000-0000-4000-8000-000000000149";
+            const string deviceId =
+                "50000000-0000-4000-8000-000000000149";
+            const string staffId =
+                "60000000-0000-4000-8000-000000000149";
+            const string sessionId =
+                "70000000-0000-4000-8000-000000000149";
+            const string productId =
+                "20000000-0000-4000-8000-000000000149";
+            const string currentVersionId =
+                "30000000-0000-4000-8000-000000000149";
+            const string newVersionId =
+                "40000000-0000-4000-8000-000000000149";
+            var envelope = new PosProductImageEnvelope(
+                "1.0.0-test",
+                shopId,
+                deviceId,
+                staffId,
+                1,
+                sessionId,
+                "qa-contract-device-secret",
+                "qa-contract-session-secret");
+            var intent = new PosProductImageIntentRequest(
+                "qa-net48-intent-001",
+                "qa-net48-intent-idem-001",
+                envelope,
+                productId,
+                currentVersionId,
+                new PosProductImageUploadMetadata(
+                    700000,
+                    1200,
+                    "image/jpeg",
+                    new string('a', 64),
+                    1600),
+                new PosProductImageUploadMetadata(
+                    80000,
+                    288,
+                    "image/jpeg",
+                    new string('b', 64),
+                    384));
+            var finalize = new PosProductImageFinalizeRequest(
+                "qa-net48-finalize-001",
+                "qa-net48-finalize-idem-001",
+                envelope,
+                productId,
+                currentVersionId,
+                newVersionId);
+            var remove = new PosProductImageRemoveRequest(
+                "qa-net48-remove-001",
+                "qa-net48-remove-idem-001",
+                envelope,
+                productId,
+                newVersionId);
+            var read = new PosProductImageReadUrlsRequest(
+                envelope,
+                new[]
+                {
+                    new PosProductImageReadRef(
+                        productId,
+                        "main",
+                        newVersionId)
+                });
+
+            RequireSerializedDiscriminator(intent, "intent");
+            RequireSerializedDiscriminator(finalize, "finalize");
+            RequireSerializedDiscriminator(remove, "remove");
+            var readJson = PosProductImageContractV1.SerializeRequest(read);
+            if (readJson.IndexOf(
+                    "\"schemaVersion\":\"pos-product-image-v1\"",
+                    StringComparison.Ordinal) < 0 ||
+                readJson.IndexOf(
+                    "\"refs\":[",
+                    StringComparison.Ordinal) < 0)
+            {
+                throw new InvalidOperationException(
+                    "product_image_net48_read_serialization_invalid");
+            }
+        }
+
+        private static void RequireSerializedDiscriminator<T>(
+            T request,
+            string operation)
+        {
+            var json = PosProductImageContractV1.SerializeRequest(request);
+            if (json.IndexOf(
+                    "\"schemaVersion\":\"pos-product-image-v1\"",
+                    StringComparison.Ordinal) < 0 ||
+                json.IndexOf(
+                    "\"operation\":\"" + operation + "\"",
+                    StringComparison.Ordinal) < 0 ||
+                json.IndexOf(
+                    "\"payloadHash\":\"sha256:",
+                    StringComparison.Ordinal) < 0)
+            {
+                throw new InvalidOperationException(
+                    "product_image_net48_serialization_invalid");
             }
         }
 

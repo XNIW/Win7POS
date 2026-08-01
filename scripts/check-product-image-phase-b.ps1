@@ -33,6 +33,8 @@ $stagingAcceptance = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/ProductImag
 $stagingRunner = Read-Required "scripts/qa/Invoke-Win7PosProductImageStagingAcceptance.ps1"
 $stagingProgram = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $profileSmoke = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/ProductImageProfileWpfSmoke.cs"
+$profileSmokeRunner = Read-Required "scripts/run-product-image-profile-smoke.ps1"
+$ci = Read-Required ".github/workflows/ci.yml"
 $stagingLockTest = Read-Required "scripts/qa/Test-Win7PosProductImageAcceptanceLocks.ps1"
 $shopTransition = Read-Required "src/Win7POS.Data/Online/PosShopTransitionGuard.cs"
 
@@ -119,6 +121,20 @@ Require ($profileSmoke -match
          $profileSmoke -match 'supervisor_profile_injected=true' -and
          $profileSmoke -match 'profile_regression_cleanup_failed') `
     "The product-image profile smoke must regress isolated supervisor trust plumbing."
+Require ($profileSmoke -match 'VerifyMutationRequestSerialization\(\)' -and
+         $profileSmoke -match 'PosProductImageIntentRequest\(' -and
+         $profileSmoke -match 'PosProductImageFinalizeRequest\(' -and
+         $profileSmoke -match 'PosProductImageRemoveRequest\(' -and
+         $profileSmoke -match 'PosProductImageReadUrlsRequest\(' -and
+         @([regex]::Matches(
+             $profileSmoke,
+             'PosProductImageContractV1\.SerializeRequest\(')).Count -ge 2 -and
+         $profileSmoke -match 'net48_request_serialization=true') `
+    "The net48 profile smoke must execute product-image request serialization."
+Require ($profileSmokeRunner -match '--product-image-profile-smoke' -and
+         $profileSmokeRunner -match 'net48_request_serialization=true' -and
+         $ci -match 'run-product-image-profile-smoke\.ps1') `
+    "CI must execute the x86 net48 product-image serialization smoke."
 Require ($editor -match 'ChooseImageCommand' -and
          $editor -match 'RemoveImageCommand' -and
          $editor -match 'AutomationProperties\.Name') `

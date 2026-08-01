@@ -81,6 +81,11 @@ jobs:
       - name: Build WPF smoke harness (Release x86)
         run: dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
 
+      - name: WPF product-image profile and net48 serialization smoke (x86)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-product-image-profile-smoke.ps1 -Configuration Release -Platform x86
+
       - name: WPF authorization lease runtime smoke (x86)
         shell: pwsh
         run: pwsh -NoProfile -File scripts/run-authorization-lease-smoke.ps1 -Configuration Release -Platform x86
