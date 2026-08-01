@@ -219,6 +219,9 @@ Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
          $stagingRunner -match 'Start-Process[\s\S]{0,300}-PassThru' -and
          $stagingRunner -match '\$process\.ExitCode' -and
          $stagingRunner -notmatch '\$phaseOutput\s*=\s*&\s*\$Harness' -and
+         $stagingRunner.Contains(
+             "if (`$Profile -cnotmatch '^[A-Za-z0-9_-]{3,64}$')") -and
+         $stagingRunner -match 'product_image_acceptance_profile_invalid' -and
          $stagingRunner -match
              'elseif\s*\(Test-Path[^\r\n]*SafeDataDirectory[\s\S]{0,500}Remove-Item' -and
          $stagingRunner -match 'product_image_acceptance_already_running' -and

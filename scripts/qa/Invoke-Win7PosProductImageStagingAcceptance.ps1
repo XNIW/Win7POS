@@ -15,6 +15,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+if ($Profile -cnotmatch '^[A-Za-z0-9_-]{3,64}$') {
+    throw 'product_image_acceptance_profile_invalid'
+}
 $script:AcceptanceMutex = [System.Threading.Mutex]::new(
     $false,
     'Global\Win7POS.ProductImagePhaseBAcceptance.v1')
