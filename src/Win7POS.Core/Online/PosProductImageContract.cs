@@ -414,8 +414,19 @@ namespace Win7POS.Core.Online
 
         private PosProductImageIntentRequest() { }
 
-        [DataMember(Name = "schemaVersion", Order = 1)] public string SchemaVersion => PosProductImageContractV1.SchemaVersion;
-        [DataMember(Name = "operation", Order = 2)] public string Operation => "intent";
+        [DataMember(Name = "schemaVersion", Order = 1)]
+        public string SchemaVersion
+        {
+            get => PosProductImageContractV1.SchemaVersion;
+            private set { }
+        }
+
+        [DataMember(Name = "operation", Order = 2)]
+        public string Operation
+        {
+            get => "intent";
+            private set { }
+        }
         [DataMember(Name = "operationId", Order = 3)] public new string OperationId { get => base.OperationId; private set => base.OperationId = value; }
         [DataMember(Name = "idempotencyKey", Order = 4)] public new string IdempotencyKey { get => base.IdempotencyKey; private set => base.IdempotencyKey = value; }
         [DataMember(Name = "payloadHash", Order = 5)] public new string PayloadHash { get => base.PayloadHash; private set => base.PayloadHash = value; }
@@ -465,8 +476,19 @@ namespace Win7POS.Core.Online
 
         private PosProductImageFinalizeRequest() { }
 
-        [DataMember(Name = "schemaVersion", Order = 1)] public string SchemaVersion => PosProductImageContractV1.SchemaVersion;
-        [DataMember(Name = "operation", Order = 2)] public string Operation => "finalize";
+        [DataMember(Name = "schemaVersion", Order = 1)]
+        public string SchemaVersion
+        {
+            get => PosProductImageContractV1.SchemaVersion;
+            private set { }
+        }
+
+        [DataMember(Name = "operation", Order = 2)]
+        public string Operation
+        {
+            get => "finalize";
+            private set { }
+        }
         [DataMember(Name = "operationId", Order = 3)] public new string OperationId { get => base.OperationId; private set => base.OperationId = value; }
         [DataMember(Name = "idempotencyKey", Order = 4)] public new string IdempotencyKey { get => base.IdempotencyKey; private set => base.IdempotencyKey = value; }
         [DataMember(Name = "payloadHash", Order = 5)] public new string PayloadHash { get => base.PayloadHash; private set => base.PayloadHash = value; }
@@ -506,8 +528,19 @@ namespace Win7POS.Core.Online
 
         private PosProductImageRemoveRequest() { }
 
-        [DataMember(Name = "schemaVersion", Order = 1)] public string SchemaVersion => PosProductImageContractV1.SchemaVersion;
-        [DataMember(Name = "operation", Order = 2)] public string Operation => "remove";
+        [DataMember(Name = "schemaVersion", Order = 1)]
+        public string SchemaVersion
+        {
+            get => PosProductImageContractV1.SchemaVersion;
+            private set { }
+        }
+
+        [DataMember(Name = "operation", Order = 2)]
+        public string Operation
+        {
+            get => "remove";
+            private set { }
+        }
         [DataMember(Name = "operationId", Order = 3)] public new string OperationId { get => base.OperationId; private set => base.OperationId = value; }
         [DataMember(Name = "idempotencyKey", Order = 4)] public new string IdempotencyKey { get => base.IdempotencyKey; private set => base.IdempotencyKey = value; }
         [DataMember(Name = "payloadHash", Order = 5)] public new string PayloadHash { get => base.PayloadHash; private set => base.PayloadHash = value; }
