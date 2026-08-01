@@ -1060,7 +1060,11 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (!PosAdminWebOptions.TryLoad(out var options, out _))
                 return new OnlineSyncLaneOutcome(false, "admin_web_config_missing");
-            var result = await new PosSalesSyncService(_factory)
+            var result = await new PosSalesSyncService(
+                    _factory,
+                    new SaleRepository(_factory),
+                    _store,
+                    new FileLogger("PosSalesSyncService"))
                 .TrySyncPendingAsync(
                     options,
                     context.Generation,
@@ -1211,7 +1215,10 @@ namespace Win7POS.Wpf.Pos.Online
             if (forceFullRepair) Interlocked.Increment(ref _fullCatalogRuns);
             try
             {
-                var outcome = await new PosCatalogPullService(_factory)
+                var outcome = await new PosCatalogPullService(
+                        _factory,
+                        _store,
+                        new FileLogger("PosCatalogPullService"))
                     .TryPullCatalogForSupervisorAsync(
                         options,
                         trustedSession,

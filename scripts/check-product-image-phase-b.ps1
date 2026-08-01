@@ -32,6 +32,7 @@ $attributes = Read-Required ".gitattributes"
 $stagingAcceptance = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/ProductImageStagingAcceptance.cs"
 $stagingRunner = Read-Required "scripts/qa/Invoke-Win7PosProductImageStagingAcceptance.ps1"
 $stagingProgram = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
+$profileSmoke = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/ProductImageProfileWpfSmoke.cs"
 $stagingLockTest = Read-Required "scripts/qa/Test-Win7PosProductImageAcceptanceLocks.ps1"
 $shopTransition = Read-Required "src/Win7POS.Data/Online/PosShopTransitionGuard.cs"
 
@@ -100,6 +101,24 @@ Require ($syncHost -match 'ProductImageRuntime\.ReconcileTrustedIdentityAsync' -
          $syncHost.IndexOf('_store.SaveFirstLogin') -and
          @([regex]::Matches($syncHost, 'forcePurge:\s*true')).Count -ge 2) `
     "Trusted account/shop activation must durably purge image caches before the trust commit."
+Require ($syncHost -match
+             'new PosSalesSyncService\(\s*_factory,\s*new SaleRepository\(_factory\),\s*_store,' -and
+         $syncHost -match
+             'new PosCatalogPullService\(\s*_factory,\s*_store,') `
+    "Named-profile supervisor lanes must inject the host trusted-device store."
+Require ($profileSmoke -match
+             'Task\.Run\(\(\)\s*=>\s*VerifySupervisorUsesIsolatedProfileAsync\(' -and
+         @([regex]::Matches(
+             $profileSmoke,
+             'VerifySupervisorUsesIsolatedProfileAsync\(')).Count -ge 2 -and
+         $profileSmoke -match 'CancellationTokenSource\(' -and
+         $profileSmoke -match 'Task\.WhenAny\(' -and
+         $profileSmoke -match
+             'TriggerAsync\(\s*OnlineSyncLane\.SalesOutbox,\s*OnlineSyncLaneTrigger\.StartOfDay' -and
+         $profileSmoke -match 'IsCurrentAndActiveAsync\(generation\)' -and
+         $profileSmoke -match 'supervisor_profile_injected=true' -and
+         $profileSmoke -match 'profile_regression_cleanup_failed') `
+    "The product-image profile smoke must regress isolated supervisor trust plumbing."
 Require ($editor -match 'ChooseImageCommand' -and
          $editor -match 'RemoveImageCommand' -and
          $editor -match 'AutomationProperties\.Name') `
