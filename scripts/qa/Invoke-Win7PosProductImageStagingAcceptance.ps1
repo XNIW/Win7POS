@@ -8,7 +8,9 @@ param(
     [string]$DataDirectory =
         'C:\POSData\Win7POS-QA\ProductImagePhaseBAcceptance',
 
-    [string]$DotnetPath = 'C:\Dev\dotnet10\dotnet.exe'
+    [string]$DotnetPath = 'C:\Dev\dotnet10\dotnet.exe',
+
+    [switch]$PreflightOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -293,7 +295,13 @@ if (-not (Test-Path -LiteralPath $repoRoot -PathType Container)) {
     throw 'product_image_acceptance_repo_missing'
 }
 
-$branch = (git -C $repoRoot branch --show-current).Trim()
+$branchOutput = git -C $repoRoot branch --show-current
+$branch = if ($null -eq $branchOutput) {
+    [string]::Empty
+}
+else {
+    ([string]$branchOutput).Trim()
+}
 $head = (git -C $repoRoot rev-parse HEAD).Trim()
 $originMain = (git -C $repoRoot rev-parse origin/main).Trim()
 $dirty = git -C $repoRoot status --porcelain
@@ -304,6 +312,19 @@ if (-not $isExactMainCheckout -or $head -ne $originMain -or $dirty) {
 }
 if ($head -notmatch '^[0-9a-f]{40}$') {
     throw 'product_image_acceptance_sha_invalid'
+}
+if ($PreflightOnly) {
+    [pscustomobject]@{
+        exactMainSha = $head
+        checkoutMode = if ([string]::IsNullOrWhiteSpace($branch)) {
+            'detached'
+        }
+        else {
+            'main'
+        }
+        preflightPassed = $true
+    } | ConvertTo-Json -Compress
+    return
 }
 
 $statePath = Join-Path $script:SafeDataDirectory (
