@@ -378,6 +378,153 @@ public sealed class PosProductImageClientTests
         Assert.AreEqual(2, handler.Requests.Count);
     }
 
+    [TestMethod]
+    public async Task StorageHttp400ExpiryCodesAreTypedForUploadAndDownload()
+    {
+        var responses = new Queue<HttpResponseMessage>(new[]
+        {
+            Json(HttpStatusCode.BadRequest,
+                "{\"statusCode\":\"400\",\"code\":\"InvalidJWT\",\"error\":\"InvalidJWT\",\"message\":\"provider text is not contractual\"}"),
+            Json(HttpStatusCode.BadRequest,
+                "{\"statusCode\":\"400\",\"code\":\"ExpiredToken\",\"message\":\"provider text is not contractual\"}"),
+            Json(HttpStatusCode.BadRequest,
+                "{\"statusCode\":\"400\",\"code\":\"InvalidJWT\",\"error\":\"InvalidJWT\",\"message\":\"provider text is not contractual\"}"),
+            Json(HttpStatusCode.BadRequest,
+                "{\"statusCode\":\"400\",\"error\":\"ExpiredToken\",\"message\":\"provider text is not contractual\"}")
+        });
+        var handler = new RecordingHandler(_ => responses.Dequeue());
+        using var client = Client(handler);
+
+        foreach (var variant in new[] { "main", "thumb" })
+        {
+            using var uploadBytes = new MemoryStream(new byte[128]);
+            var upload = await client.UploadJpegAsync(
+                UploadUrl(variant), ShopId, ProductId, NewVersionId, variant,
+                uploadBytes, 128, CancellationToken.None);
+            Assert.AreEqual("expired_capability", upload.Code);
+            Assert.IsTrue(upload.Retryable);
+            Assert.AreEqual(400, upload.HttpStatus);
+        }
+
+        var expected = new PosProductImageUploadMetadata(
+            128, 8, ProductImageContractV1.WireMimeType,
+            new string('a', 64), 8);
+        foreach (var variant in new[] { "main", "thumb" })
+        {
+            var download = await client.DownloadJpegAsync(
+                ReadUrl(variant), ShopId, ProductId, NewVersionId, variant,
+                expected, CancellationToken.None);
+            Assert.AreEqual("expired_capability", download.Code);
+            Assert.IsTrue(download.Retryable);
+            Assert.AreEqual(400, download.HttpStatus);
+        }
+
+        Assert.AreEqual(4, handler.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task StorageHttp400OtherShapesRemainTerminalRejections()
+    {
+        var nonJson = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                "{\"code\":\"InvalidJWT\"}",
+                Encoding.UTF8,
+                "text/plain")
+        };
+        var responses = new Queue<HttpResponseMessage>(new[]
+        {
+            Json(HttpStatusCode.BadRequest, "{\"code\":\"InvalidRequest\"}"),
+            Json(HttpStatusCode.BadRequest, "{not-json}"),
+            nonJson,
+            Json(HttpStatusCode.BadRequest,
+                "{\"code\":\"InvalidRequest\",\"error\":\"InvalidJWT\"}")
+        });
+        var handler = new RecordingHandler(_ => responses.Dequeue());
+        using var client = Client(handler);
+
+        for (var index = 0; index < 2; index++)
+        {
+            using var uploadBytes = new MemoryStream(new byte[128]);
+            var upload = await client.UploadJpegAsync(
+                UploadUrl("main"), ShopId, ProductId, NewVersionId, "main",
+                uploadBytes, 128, CancellationToken.None);
+            Assert.AreEqual("upload_rejected", upload.Code);
+            Assert.IsFalse(upload.Retryable);
+        }
+
+        var expected = new PosProductImageUploadMetadata(
+            128, 8, ProductImageContractV1.WireMimeType,
+            new string('a', 64), 8);
+        for (var index = 0; index < 2; index++)
+        {
+            var download = await client.DownloadJpegAsync(
+                ReadUrl("main"), ShopId, ProductId, NewVersionId, "main",
+                expected, CancellationToken.None);
+            Assert.AreEqual("download_rejected", download.Code);
+            Assert.IsFalse(download.Retryable);
+        }
+
+        Assert.AreEqual(4, handler.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task StorageHttp400ResourceAlreadyExistsIsDeferredToFinalizeVerification()
+    {
+        var handler = new RecordingHandler(_ => Json(
+            HttpStatusCode.BadRequest,
+            "{\"statusCode\":\"409\",\"code\":\"ResourceAlreadyExists\",\"error\":\"Duplicate\",\"message\":\"provider text is not contractual\"}"));
+        using var client = Client(handler);
+        using var uploadBytes = new MemoryStream(new byte[128]);
+
+        var upload = await client.UploadJpegAsync(
+            UploadUrl("main"), ShopId, ProductId, NewVersionId, "main",
+            uploadBytes, 128, CancellationToken.None);
+
+        Assert.IsTrue(upload.IsSuccess);
+        Assert.AreEqual("already_uploaded", upload.Code);
+        Assert.IsFalse(upload.Retryable);
+        Assert.AreEqual(400, upload.HttpStatus);
+        Assert.AreEqual(1, handler.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task ResourceAlreadyExistsRequiresExactCodeField()
+    {
+        var responses = new Queue<HttpResponseMessage>(new[]
+        {
+            Json(HttpStatusCode.BadRequest,
+                "{\"error\":\"ResourceAlreadyExists\"}"),
+            Json(HttpStatusCode.Conflict,
+                "{\"code\":\"ResourceAlreadyExists\"}"),
+            Json(HttpStatusCode.Conflict,
+                "{\"code\":\"InvalidRequest\",\"error\":\"ResourceAlreadyExists\"}")
+        });
+        var handler = new RecordingHandler(_ => responses.Dequeue());
+        using var client = Client(handler);
+
+        using var firstBytes = new MemoryStream(new byte[128]);
+        var errorOnly = await client.UploadJpegAsync(
+            UploadUrl("main"), ShopId, ProductId, NewVersionId, "main",
+            firstBytes, 128, CancellationToken.None);
+        using var secondBytes = new MemoryStream(new byte[128]);
+        var exactFutureShape = await client.UploadJpegAsync(
+            UploadUrl("main"), ShopId, ProductId, NewVersionId, "main",
+            secondBytes, 128, CancellationToken.None);
+        using var thirdBytes = new MemoryStream(new byte[128]);
+        var conflictingFields = await client.UploadJpegAsync(
+            UploadUrl("main"), ShopId, ProductId, NewVersionId, "main",
+            thirdBytes, 128, CancellationToken.None);
+
+        Assert.IsFalse(errorOnly.IsSuccess);
+        Assert.AreEqual("upload_rejected", errorOnly.Code);
+        Assert.IsTrue(exactFutureShape.IsSuccess);
+        Assert.AreEqual("already_uploaded", exactFutureShape.Code);
+        Assert.IsFalse(conflictingFields.IsSuccess);
+        Assert.AreEqual("upload_rejected", conflictingFields.Code);
+        Assert.AreEqual(3, handler.Requests.Count);
+    }
+
     private static PosProductImageClient Client(HttpMessageHandler handler) => new(
         new PosAdminWebOptions(AdminOrigin),
         StorageOrigin,
