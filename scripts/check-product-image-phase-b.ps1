@@ -131,8 +131,12 @@ Require ($profileSmoke -match 'VerifyMutationRequestSerialization\(\)' -and
              'PosProductImageContractV1\.SerializeRequest\(')).Count -ge 2 -and
          $profileSmoke -match 'net48_request_serialization=true') `
     "The net48 profile smoke must execute product-image request serialization."
-Require ($profileSmoke -match 'VerifyStorageProviderErrorMappingAsync' -and
+Require ($profileSmoke -match 'Task\.Run\(VerifyStorageProviderErrorMappingAsync\)' -and
+         @([regex]::Matches(
+             $profileSmoke,
+             'VerifyStorageProviderErrorMappingAsync')).Count -ge 2 -and
          $profileSmoke -match 'InvalidJWT' -and
+         $profileSmoke -match 'ExpiredToken' -and
          $profileSmoke -match 'ResourceAlreadyExists' -and
          $profileSmoke -match 'net48_storage_error_mapping=true' -and
          $profileSmokeRunner -match 'net48_storage_error_mapping=true') `

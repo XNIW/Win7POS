@@ -235,7 +235,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var responses = new Queue<HttpResponseMessage>(new[]
             {
                 JsonStorageError("InvalidJWT", "InvalidJWT", "400"),
-                JsonStorageError("InvalidJWT", "InvalidJWT", "400"),
+                JsonStorageError(null, "ExpiredToken", "400"),
                 JsonStorageError("ResourceAlreadyExists", "Duplicate", "409"),
                 JsonStorageError(null, "ResourceAlreadyExists", "409")
             });
