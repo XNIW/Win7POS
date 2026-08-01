@@ -151,7 +151,9 @@ namespace Win7POS.Core.Online
                     using (var canonical = new MemoryStream())
                     {
                         serializer.WriteObject(canonical, parsed);
-                        var compactInput = CompactJsonWhitespace(utf8, length);
+                        var compactInput = CanonicalizeJsonForStrictComparison(
+                            utf8,
+                            length);
                         var serialized = Encoding.UTF8.GetString(canonical.ToArray());
                         if (!string.Equals(compactInput, serialized, StringComparison.Ordinal) ||
                             !parsed.IsStrictlyValid())
@@ -178,7 +180,9 @@ namespace Win7POS.Core.Online
             return value == 0x20 || value == 0x09 || value == 0x0a || value == 0x0d;
         }
 
-        private static string CompactJsonWhitespace(byte[] utf8, int length)
+        private static string CanonicalizeJsonForStrictComparison(
+            byte[] utf8,
+            int length)
         {
             var source = Encoding.UTF8.GetString(utf8, 0, length);
             var result = new StringBuilder(source.Length);
@@ -188,6 +192,12 @@ namespace Win7POS.Core.Online
             {
                 if (inString)
                 {
+                    // DataContractJsonSerializer emits every solidus as `\/`,
+                    // while JSON.stringify and other conforming writers normally
+                    // emit `/`. Both spellings decode to the same string. Fold the
+                    // optional escape to the serializer form before enforcing the
+                    // otherwise byte-exact member order and shape comparison.
+                    if (!escaped && character == '/') result.Append('\\');
                     result.Append(character);
                     if (escaped) escaped = false;
                     else if (character == '\\') escaped = true;
