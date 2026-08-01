@@ -199,8 +199,13 @@ Require ($stagingAcceptance -match
          $stagingLockTest -match 'product_image_acceptance_phase_already_running') `
     "Acceptance must fail closed on stale checkpoints and concurrent harness processes."
 Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
+         $stagingRunner -match '\$branchOutput\s*=\s*git' -and
+         $stagingRunner -match '\$null\s+-eq\s+\$branchOutput' -and
+         $stagingRunner -match '\[string\]::Empty' -and
          $stagingRunner -match 'rev-parse origin/main' -and
          $stagingRunner -match 'IsNullOrWhiteSpace\(\$branch\)' -and
+         $stagingRunner -match '\[switch\]\$PreflightOnly' -and
+         $stagingRunner -match 'preflightPassed\s*=\s*\$true' -and
          $stagingRunner -match 'AddHours\(2\)\.AddMinutes\(5\)' -and
          $stagingRunner -match 'AddHours\(3\)' -and
          $stagingRunner -match 'priorCheckpoint' -and
