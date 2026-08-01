@@ -255,6 +255,27 @@ Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
          $stagingRunner -notmatch 'TASK150_QA_HMAC_KEY|SUPABASE_SERVICE_ROLE_KEY') `
     "Staging runner must require exact main, wait the fence and avoid server secrets."
 
+$timestampProbe = @'
+{"startedAt":"2026-08-01T14:05:40.648372Z","fenceUntil":"2026-08-01T16:25:40.648372Z"}
+'@ | ConvertFrom-Json
+$probeStartedAt = [DateTimeOffset]$timestampProbe.startedAt
+$probeFenceUntil = [DateTimeOffset]$timestampProbe.fenceUntil
+Require ($probeStartedAt.Offset -eq [TimeSpan]::Zero -and
+         $probeFenceUntil.Offset -eq [TimeSpan]::Zero -and
+         $probeStartedAt.ToString('o') -eq
+             '2026-08-01T14:05:40.6483720+00:00' -and
+         $probeFenceUntil.ToString('o') -eq
+             '2026-08-01T16:25:40.6483720+00:00' -and
+         $probeFenceUntil - $probeStartedAt -eq [TimeSpan]::FromMinutes(140)) `
+    "Staging cleanup timestamps must preserve their UTC offset and duration after JSON parsing."
+Require ($stagingRunner -match
+             '\$runStartedAt\s*=\s*\[DateTimeOffset\]\s*\$report\.startedAt' -and
+         $stagingRunner -match
+             '\$fenceUntil\s*=\s*\[DateTimeOffset\]\s*\$report\.fenceUntil' -and
+         $stagingRunner -notmatch
+             '\[string\]\s*\$report\.(startedAt|fenceUntil)') `
+    "Staging runner must not lose the UTC offset while parsing cleanup timestamps."
+
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }
     exit 1

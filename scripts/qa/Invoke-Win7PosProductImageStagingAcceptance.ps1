@@ -216,14 +216,8 @@ function Wait-ForCleanupFence {
         throw 'product_image_acceptance_report_missing'
     }
     $report = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
-    $runStartedAt = [DateTimeOffset]::Parse(
-        [string]$report.startedAt,
-        [Globalization.CultureInfo]::InvariantCulture,
-        [Globalization.DateTimeStyles]::RoundtripKind)
-    $fenceUntil = [DateTimeOffset]::Parse(
-        [string]$report.fenceUntil,
-        [Globalization.CultureInfo]::InvariantCulture,
-        [Globalization.DateTimeStyles]::RoundtripKind)
+    $runStartedAt = [DateTimeOffset]$report.startedAt
+    $fenceUntil = [DateTimeOffset]$report.fenceUntil
     if ($fenceUntil -lt $runStartedAt.AddHours(2).AddMinutes(5)) {
         throw 'product_image_acceptance_fence_too_short'
     }
