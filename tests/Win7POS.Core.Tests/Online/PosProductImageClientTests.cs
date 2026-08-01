@@ -37,6 +37,69 @@ public sealed class PosProductImageClientTests
     }
 
     [TestMethod]
+    public async Task IntentAcceptsUploadUrlsWithOrdinaryJsonSolidusCharacters()
+    {
+        var request = Intent();
+        var response = IntentUploadRequired(request);
+        StringAssert.Contains(response, "\"mainUploadUrl\":\"https://");
+        Assert.IsTrue(response.IndexOf(@"https:\/\/", StringComparison.Ordinal) < 0);
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, response));
+        using var client = new PosProductImageClient(
+            new PosAdminWebOptions(AdminOrigin),
+            StorageOrigin,
+            handler,
+            () => DateTimeOffset.Parse("2026-07-30T16:56:00Z"));
+
+        var result = await client.IntentAsync(request, CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Code);
+        Assert.AreEqual("upload_required", result.Value?.Status);
+        Assert.AreEqual(UploadUrl("main"), result.Value?.MainUploadUrl);
+        Assert.AreEqual(UploadUrl("thumb"), result.Value?.ThumbUploadUrl);
+    }
+
+    [TestMethod]
+    public async Task IntentUploadUrlCompatibilityKeepsStrictShapeIdentityLeaseAndOriginChecks()
+    {
+        var request = Intent();
+        var valid = IntentUploadRequired(request);
+        var responses = new Queue<HttpResponseMessage>(new[]
+        {
+            Json(HttpStatusCode.OK, valid.Replace(
+                "\"status\":\"upload_required\",\"versionId\":\"" + NewVersionId + "\"",
+                "\"versionId\":\"" + NewVersionId + "\",\"status\":\"upload_required\"",
+                StringComparison.Ordinal)),
+            Json(HttpStatusCode.OK, valid.Substring(0, valid.Length - 1) + ",\"unknown\":true}"),
+            Json(HttpStatusCode.OK, valid.Replace(
+                request.OperationId,
+                "task149-fixture-intent-other",
+                StringComparison.Ordinal)),
+            Json(HttpStatusCode.OK, valid.Replace(
+                "storage.example.invalid",
+                "attacker.invalid",
+                StringComparison.Ordinal)),
+            Json(HttpStatusCode.OK, valid.Replace(
+                "2026-07-30T18:55:57.123456Z",
+                "2026-07-30T16:55:57.123456Z",
+                StringComparison.Ordinal))
+        });
+        var handler = new RecordingHandler(_ => responses.Dequeue());
+        using var client = new PosProductImageClient(
+            new PosAdminWebOptions(AdminOrigin),
+            StorageOrigin,
+            handler,
+            () => DateTimeOffset.Parse("2026-07-30T16:56:00Z"));
+
+        for (var index = 0; index < 5; index++)
+        {
+            var result = await client.IntentAsync(request, CancellationToken.None);
+            Assert.IsFalse(result.IsSuccess);
+            Assert.AreEqual(PosProductImageFailureKind.CorruptResponse, result.FailureKind);
+        }
+        Assert.AreEqual(0, responses.Count);
+    }
+
+    [TestMethod]
     public async Task RedirectIsObservedAndRejectedWithoutFollowingLocation()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Redirect)
@@ -114,6 +177,28 @@ public sealed class PosProductImageClientTests
 
         Assert.AreEqual(PosProductImageFailureKind.CorruptResponse, first.FailureKind);
         Assert.AreEqual(PosProductImageFailureKind.CorruptResponse, second.FailureKind);
+    }
+
+    [TestMethod]
+    public async Task ReadUrlsAcceptsReadyUrlWithOrdinaryJsonSolidusCharacters()
+    {
+        var request = ReadRequest();
+        var response = ReadReadyResponse(
+            "2026-07-30T17:01:03.123456Z",
+            ReadUrl("thumb"));
+        StringAssert.Contains(response, "\"signedUrl\":\"https://");
+        Assert.IsTrue(response.IndexOf(@"https:\/\/", StringComparison.Ordinal) < 0);
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, response));
+        using var client = new PosProductImageClient(
+            new PosAdminWebOptions(AdminOrigin),
+            StorageOrigin,
+            handler,
+            () => DateTimeOffset.Parse("2026-07-30T16:56:00Z"));
+
+        var result = await client.ReadUrlsAsync(request, CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Code);
+        Assert.AreEqual(ReadUrl("thumb"), result.Value?.Items.Single().SignedUrl);
     }
 
     [TestMethod]
@@ -566,6 +651,23 @@ public sealed class PosProductImageClientTests
         "\"cacheScope\":\"fixture-pos-image-scope-149\"," +
         "\"status\":\"noop\"," +
         "\"versionId\":\"" + CurrentVersionId + "\"}";
+
+    private static string IntentUploadRequired(PosProductImageIntentRequest request) => "{" +
+        "\"schemaVersion\":\"pos-product-image-v1\"," +
+        "\"operation\":\"intent\"," +
+        "\"operationId\":\"" + request.OperationId + "\"," +
+        "\"idempotencyKey\":\"" + request.IdempotencyKey + "\"," +
+        "\"payloadHash\":\"" + request.PayloadHash + "\"," +
+        "\"ok\":true," +
+        "\"code\":\"success\"," +
+        "\"replayed\":false," +
+        "\"serverTime\":\"2026-07-30T16:55:57.123456Z\"," +
+        "\"cacheScope\":\"fixture-pos-image-scope-149\"," +
+        "\"status\":\"upload_required\"," +
+        "\"versionId\":\"" + NewVersionId + "\"," +
+        "\"expiresAt\":\"2026-07-30T18:55:57.123456Z\"," +
+        "\"mainUploadUrl\":\"" + UploadUrl("main") + "\"," +
+        "\"thumbUploadUrl\":\"" + UploadUrl("thumb") + "\"}";
 
     private static string ReadReadyResponse(string expiresAt, string signedUrl) => "{" +
         "\"schemaVersion\":\"pos-product-image-v1\"," +

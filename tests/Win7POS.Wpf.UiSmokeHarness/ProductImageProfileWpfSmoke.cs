@@ -23,6 +23,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
         internal static string Run()
         {
             VerifyMutationRequestSerialization();
+            Task.Run(VerifyJsonStringifyStyleResponseParsingAsync)
+                .GetAwaiter()
+                .GetResult();
             Task.Run(VerifyStorageProviderErrorMappingAsync)
                 .GetAwaiter()
                 .GetResult();
@@ -112,6 +115,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "offline_authority_cloned=false " +
                     "supervisor_profile_injected=true cleanup_exact=true " +
                     "net48_request_serialization=true " +
+                    "net48_json_stringify_response=true " +
                     "net48_storage_error_mapping=true";
             }
             finally
@@ -220,6 +224,155 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 throw new InvalidOperationException(
                     "product_image_net48_serialization_invalid");
+            }
+        }
+
+        private static async Task VerifyJsonStringifyStyleResponseParsingAsync()
+        {
+            const string shopId =
+                "10000000-0000-4000-8000-000000000149";
+            const string productId =
+                "20000000-0000-4000-8000-000000000149";
+            const string currentVersionId =
+                "30000000-0000-4000-8000-000000000149";
+            const string newVersionId =
+                "40000000-0000-4000-8000-000000000149";
+            var storageOrigin = new Uri("https://storage.example.invalid/");
+            var envelope = new PosProductImageEnvelope(
+                "1.0.0-test",
+                shopId,
+                "50000000-0000-4000-8000-000000000149",
+                "60000000-0000-4000-8000-000000000149",
+                1,
+                "70000000-0000-4000-8000-000000000149",
+                "qa-contract-device-secret",
+                "qa-contract-session-secret");
+            var intent = new PosProductImageIntentRequest(
+                "qa-net48-intent-response-001",
+                "qa-net48-intent-response-idem-001",
+                envelope,
+                productId,
+                currentVersionId,
+                new PosProductImageUploadMetadata(
+                    700000,
+                    1200,
+                    "image/jpeg",
+                    new string('a', 64),
+                    1600),
+                new PosProductImageUploadMetadata(
+                    80000,
+                    288,
+                    "image/jpeg",
+                    new string('b', 64),
+                    384));
+            var read = new PosProductImageReadUrlsRequest(
+                envelope,
+                new[]
+                {
+                    new PosProductImageReadRef(
+                        productId,
+                        "thumb",
+                        newVersionId)
+                });
+            var mainUploadUrl = storageOrigin +
+                "storage/v1/object/upload/sign/product-images/shops/" +
+                shopId + "/products/" + productId + "/primary/" +
+                newVersionId + "/main.jpg?token=ephemeral";
+            var thumbUploadUrl = storageOrigin +
+                "storage/v1/object/upload/sign/product-images/shops/" +
+                shopId + "/products/" + productId + "/primary/" +
+                newVersionId + "/thumb.jpg?token=ephemeral";
+            var thumbReadUrl = storageOrigin +
+                "storage/v1/object/sign/product-images/shops/" +
+                shopId + "/products/" + productId + "/primary/" +
+                newVersionId + "/thumb.jpg?token=ephemeral";
+            var intentBody = "{" +
+                "\"schemaVersion\":\"pos-product-image-v1\"," +
+                "\"operation\":\"intent\"," +
+                "\"operationId\":\"" + intent.OperationId + "\"," +
+                "\"idempotencyKey\":\"" + intent.IdempotencyKey + "\"," +
+                "\"payloadHash\":\"" + intent.PayloadHash + "\"," +
+                "\"ok\":true," +
+                "\"code\":\"success\"," +
+                "\"replayed\":false," +
+                "\"serverTime\":\"2026-07-30T16:55:57.123456Z\"," +
+                "\"cacheScope\":\"fixture-pos-image-scope-149\"," +
+                "\"status\":\"upload_required\"," +
+                "\"versionId\":\"" + newVersionId + "\"," +
+                "\"expiresAt\":\"2026-07-30T18:55:57.123456Z\"," +
+                "\"mainUploadUrl\":\"" + mainUploadUrl + "\"," +
+                "\"thumbUploadUrl\":\"" + thumbUploadUrl + "\"}";
+            var readBody = "{" +
+                "\"schemaVersion\":\"pos-product-image-v1\"," +
+                "\"operation\":\"read-urls\"," +
+                "\"ok\":true," +
+                "\"code\":\"success\"," +
+                "\"serverTime\":\"2026-07-30T16:56:03.123456Z\"," +
+                "\"cacheScope\":\"fixture-pos-image-scope-149\"," +
+                "\"items\":[{" +
+                "\"expiresAt\":\"2026-07-30T17:01:03.123456Z\"," +
+                "\"metadata\":{\"bytes\":80000,\"height\":288," +
+                "\"mimeType\":\"image/jpeg\",\"sha256\":\"" +
+                new string('b', 64) + "\",\"width\":384}," +
+                "\"productId\":\"" + productId + "\"," +
+                "\"signedUrl\":\"" + thumbReadUrl + "\"," +
+                "\"status\":\"ready\"," +
+                "\"variant\":\"thumb\"," +
+                "\"versionId\":\"" + newVersionId + "\"}]}";
+            var reorderedIntentBody = intentBody.Replace(
+                "\"status\":\"upload_required\",\"versionId\":\"" +
+                    newVersionId + "\"",
+                "\"versionId\":\"" + newVersionId +
+                    "\",\"status\":\"upload_required\"");
+            if (intentBody.IndexOf(@"https:\/\/", StringComparison.Ordinal) >= 0 ||
+                readBody.IndexOf(@"https:\/\/", StringComparison.Ordinal) >= 0 ||
+                reorderedIntentBody == intentBody)
+            {
+                throw new InvalidOperationException(
+                    "product_image_net48_response_fixture_not_json_stringify_style");
+            }
+            var responses = new Queue<HttpResponseMessage>(new[]
+            {
+                JsonResponse(intentBody),
+                JsonResponse(readBody),
+                JsonResponse(reorderedIntentBody)
+            });
+            using (var client = new PosProductImageClient(
+                new PosAdminWebOptions(new Uri("https://admin.example.invalid/")),
+                storageOrigin,
+                new QueueHttpMessageHandler(responses),
+                () => DateTimeOffset.Parse("2026-07-30T16:56:00Z")))
+            {
+                var intentResult = await client.IntentAsync(
+                        intent,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                var readResult = await client.ReadUrlsAsync(
+                        read,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                var reorderedResult = await client.IntentAsync(
+                        intent,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!intentResult.IsSuccess ||
+                    intentResult.Value == null ||
+                    intentResult.Value.Status != "upload_required" ||
+                    intentResult.Value.MainUploadUrl != mainUploadUrl ||
+                    intentResult.Value.ThumbUploadUrl != thumbUploadUrl ||
+                    !readResult.IsSuccess ||
+                    readResult.Value == null ||
+                    readResult.Value.Items == null ||
+                    readResult.Value.Items.Length != 1 ||
+                    readResult.Value.Items[0].SignedUrl != thumbReadUrl ||
+                    reorderedResult.IsSuccess ||
+                    reorderedResult.FailureKind !=
+                        PosProductImageFailureKind.CorruptResponse ||
+                    responses.Count != 0)
+                {
+                    throw new InvalidOperationException(
+                        "product_image_net48_json_stringify_response_invalid");
+                }
             }
         }
 
@@ -336,6 +489,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 (code == null ? string.Empty : "\"code\":\"" + code + "\",") +
                 "\"error\":\"" + error + "\"}";
             return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        }
+
+        private static HttpResponseMessage JsonResponse(string body)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
             };

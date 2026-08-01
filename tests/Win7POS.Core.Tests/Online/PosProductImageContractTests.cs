@@ -173,6 +173,39 @@ public sealed class PosProductImageContractTests
     }
 
     [TestMethod]
+    public void StrictComparisonAcceptsOrdinarySolidusAcrossBackslashParityCases()
+    {
+        var message = string.Join(
+            "|",
+            Enumerable.Range(0, 6).Select(count => new string('\\', count) + "/"));
+        var error = new PosProductImageError
+        {
+            SchemaVersion = PosProductImageContractV1.SchemaVersion,
+            Operation = "intent",
+            Ok = false,
+            Code = "validation_failed",
+            Message = message,
+            Retryable = false,
+            ServerTime = "2026-07-30T12:00:00.000000Z",
+            RequestId = "posreq-solidus-parity"
+        };
+        var serializerStyle = PosProductImageContractV1.SerializeRequest(error);
+        var jsonStringifyStyle = serializerStyle.Replace(@"\/", "/");
+        Assert.AreNotEqual(serializerStyle, jsonStringifyStyle);
+
+        Assert.IsTrue(PosProductImageContractV1.TryDeserializeStrict(
+            Encoding.UTF8.GetBytes(serializerStyle),
+            PosProductImageContractV1.MaximumJsonBodyBytes,
+            out PosProductImageError serializerParsed));
+        Assert.IsTrue(PosProductImageContractV1.TryDeserializeStrict(
+            Encoding.UTF8.GetBytes(jsonStringifyStyle),
+            PosProductImageContractV1.MaximumJsonBodyBytes,
+            out PosProductImageError jsonStringifyParsed));
+        Assert.AreEqual(message, serializerParsed.Message);
+        Assert.AreEqual(message, jsonStringifyParsed.Message);
+    }
+
+    [TestMethod]
     public void CacheScopeAcceptsOpaqueBoundedTextOnly()
     {
         Assert.IsTrue(PosProductImageContractV1.IsCacheScope(new string('s', 256)));

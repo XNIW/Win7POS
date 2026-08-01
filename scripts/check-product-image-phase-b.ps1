@@ -141,8 +141,20 @@ Require ($profileSmoke -match 'Task\.Run\(VerifyStorageProviderErrorMappingAsync
          $profileSmoke -match 'net48_storage_error_mapping=true' -and
          $profileSmokeRunner -match 'net48_storage_error_mapping=true') `
     "The net48 profile smoke must execute bounded Storage error mapping."
+Require ($profileSmoke -match
+             'Task\.Run\(VerifyJsonStringifyStyleResponseParsingAsync\)' -and
+         @([regex]::Matches(
+             $profileSmoke,
+             'VerifyJsonStringifyStyleResponseParsingAsync')).Count -ge 2 -and
+         $profileSmoke -match 'upload_required' -and
+         $profileSmoke -match 'mainUploadUrl' -and
+         $profileSmoke -match 'signedUrl' -and
+         $profileSmoke -match 'net48_json_stringify_response=true' -and
+         $profileSmokeRunner -match 'net48_json_stringify_response=true') `
+    "The net48 profile smoke must accept JSON.stringify-style signed URLs."
 Require ($profileSmokeRunner -match '--product-image-profile-smoke' -and
          $profileSmokeRunner -match 'net48_request_serialization=true' -and
+         $profileSmokeRunner -match 'net48_json_stringify_response=true' -and
          $ci -match 'run-product-image-profile-smoke\.ps1') `
     "CI must execute the x86 net48 product-image serialization smoke."
 Require ($editor -match 'ChooseImageCommand' -and

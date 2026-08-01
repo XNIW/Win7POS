@@ -66,6 +66,9 @@ try {
             "net48_request_serialization=true",
             [StringComparison]::Ordinal) -lt 0 -or
         $result.IndexOf(
+            "net48_json_stringify_response=true",
+            [StringComparison]::Ordinal) -lt 0 -or
+        $result.IndexOf(
             "net48_storage_error_mapping=true",
             [StringComparison]::Ordinal) -lt 0) {
         throw "Product-image profile smoke did not report every net48 contract PASS marker."
