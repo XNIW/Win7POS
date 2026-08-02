@@ -70,6 +70,9 @@ try {
             [StringComparison]::Ordinal) -lt 0 -or
         $result.IndexOf(
             "net48_storage_error_mapping=true",
+            [StringComparison]::Ordinal) -lt 0 -or
+        $result.IndexOf(
+            "staging_diagnostic_redacted=true",
             [StringComparison]::Ordinal) -lt 0) {
         throw "Product-image profile smoke did not report every net48 contract PASS marker."
     }

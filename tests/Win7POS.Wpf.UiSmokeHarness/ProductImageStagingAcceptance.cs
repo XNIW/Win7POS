@@ -59,9 +59,163 @@ namespace Win7POS.Wpf.UiSmokeHarness
             "asus-product-image-phase-b-fixture-v1";
         private const string StateFileName = "product-image-acceptance-state.dpapi";
         private const string SafeReportName = "product-image-staging-result.json";
+        private const string DiagnosticReportName =
+            "product-image-staging-diagnostic.json";
+        private const string DiagnosticSchemaVersion =
+            "win7pos-product-image-staging-diagnostic-v1";
+        private const string GenericDiagnosticFailureCode =
+            "product_image_acceptance_failure";
         private const string BoundaryPath = "/api/qa/win7pos-product-image";
         private const string StorageOrigin = "https://jpgoimipbothfgkokyvm.supabase.co/";
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(45);
+        private static readonly string[] DiagnosticControlNames =
+        {
+            "authBootstrap",
+            "cachePromoted",
+            "cachePurged",
+            "catalogDelta",
+            "catalogFullDrain",
+            "catalogNullAfterRemove",
+            "cleanupComplete",
+            "durableOutbox",
+            "editorMain",
+            "exactVersionReference",
+            "expiredReadRenewed",
+            "expiredUploadRejected",
+            "finalize",
+            "finalizeReplay",
+            "immutableAuditPreserved",
+            "intent",
+            "intentReplay",
+            "listThumb",
+            "localPreview",
+            "newCachePromoted",
+            "noHardwareActions",
+            "noImageInitial",
+            "noSalesEffects",
+            "offlineCacheRestart",
+            "offlineChoose",
+            "oldCacheInvalidated",
+            "oldImageRetainedUntilFinalize",
+            "payloadHashMismatchRejected",
+            "preprocessPng",
+            "readBack",
+            "remove",
+            "removeReplay",
+            "replaceJpeg",
+            "responseLossRecovery",
+            "restartOutboxSurvived",
+            "runProfileIsolated",
+            "runProfileRemoved",
+            "saleSafe",
+            "sharedSnapshotUnchanged",
+            "staleConflictProtected",
+            "unrelatedFairness",
+            "uploadMainThumb",
+            "versionChanged"
+        };
+        private static readonly string[] DiagnosticScreenshotNames =
+        {
+            "product-image-first-list-thumb-1024x768.png",
+            "product-image-first-editor-main-1024x768.png",
+            "product-image-offline-restart-list-thumb-1024x768.png",
+            "product-image-offline-restart-editor-main-1024x768.png",
+            "product-image-replacement-list-thumb-1024x768.png",
+            "product-image-replacement-editor-main-1024x768.png",
+            "product-image-removed-list-no-image-1024x768.png",
+            "product-image-removed-editor-no-image-1024x768.png"
+        };
+        private static readonly HashSet<string> KnownDiagnosticFailureCodes =
+            new HashSet<string>(new[]
+            {
+                "acceptance_state_invalid",
+                "acceptance_state_missing",
+                "admin_base_url_missing",
+                "boundary_base_url_invalid",
+                "boundary_begin_failed",
+                "boundary_begin_recovery_failed",
+                "boundary_provision_failed",
+                "boundary_request_size_invalid",
+                "boundary_response_headers_invalid",
+                "boundary_response_invalid",
+                "boundary_response_size_invalid",
+                "cache_identity_invalid",
+                "cache_metadata_invalid",
+                "cache_restart_state_invalid",
+                "cache_restart_trust_missing",
+                "cache_scope_binding_invalid",
+                "cache_scope_purge_ack_failed",
+                "catalog_remove_missing",
+                "cleanup_prearm_failed",
+                "cleanup_state_invalid",
+                "current_user_sid_missing",
+                "evidence_redaction_failed",
+                "exact_cache_purge_failed",
+                "expired_read_not_rejected",
+                "expired_read_not_renewed",
+                "expired_upload_not_rejected",
+                "expired_upload_source_missing",
+                "expiry_read_setup_failed",
+                "expiry_upload_setup_failed",
+                "fairness_dependency_not_waiting",
+                "finalize_replay_failed",
+                "finalize_response_loss_setup_failed",
+                "first_cache_failed",
+                "first_catalog_image_missing",
+                "first_replace_transition_invalid",
+                "initial_no_image_product_invalid",
+                "intent_replay_failed",
+                "intent_response_loss_setup_failed",
+                "offline_cache_identity_invalid",
+                "offline_cache_restart_failed",
+                "offline_choose_not_durable",
+                "offline_restart_payload_missing",
+                "old_cache_not_invalidated_after_promotion",
+                "old_cache_not_retained_before_finalize",
+                "payload_hash_mismatch_not_rejected",
+                "product_image_acceptance_checkpoint_exists",
+                "product_image_acceptance_phase_invalid",
+                "product_image_cache_root_invalid",
+                "product_image_data_root_missing_ancestor",
+                "product_image_data_root_non_directory_ancestor",
+                "product_image_data_root_not_isolated",
+                "product_image_data_root_reparse_point",
+                "read_urls_failed",
+                "recovered_run_profile_name_invalid",
+                "remove_outbox_not_completed",
+                "remove_replay_failed",
+                "remove_transition_invalid",
+                "removed_editor_runtime_no_image_missing",
+                "removed_list_runtime_no_image_missing",
+                "renewed_read_failed",
+                "replace_initial_version_changed",
+                "replace_not_queued",
+                "replacement_cache_not_promoted",
+                "replacement_transition_invalid",
+                "replacement_version_unchanged",
+                "restart_outbox_missing",
+                "restart_staging_missing",
+                "resume_state_invalid",
+                "resume_trust_missing",
+                "run_bootstrap_catalog_failed",
+                "run_profile_already_exists",
+                "run_profile_name_invalid",
+                "run_trust_identity_mismatch",
+                "shared_bootstrap_failed",
+                "shared_profile_invalid",
+                "shared_profile_name_invalid",
+                "shared_profile_unavailable",
+                "shared_trust_missing",
+                "shared_trust_missing_for_cleanup",
+                "signed_url_persistence_detected",
+                "staging_editor_runtime_image_not_loaded",
+                "staging_list_runtime_image_not_loaded",
+                "stale_remove_not_rejected",
+                "terminal_cleanup_receipt_invalid",
+                "timestamp_invalid",
+                "trusted_generation_missing",
+                "unrelated_fairness_not_preserved"
+            }, StringComparer.Ordinal);
 
         internal static async Task<int> RunAsync(
             string sharedProfileName,
@@ -70,23 +224,37 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             if (string.IsNullOrWhiteSpace(outputDirectory))
                 throw new InvalidOperationException("product_image_acceptance_output_required");
-            EnsureIsolatedDataRoot();
-            Directory.CreateDirectory(outputDirectory);
-            switch ((phase ?? string.Empty).Trim().ToLowerInvariant())
+            var normalizedPhase = (phase ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+            try
             {
-                case "prepare":
-                    return await PrepareAsync(sharedProfileName, outputDirectory)
-                        .ConfigureAwait(true);
-                case "resume":
-                    return await ResumeAsync(outputDirectory).ConfigureAwait(true);
-                case "cache-restart":
-                    return await CacheRestartAsync(outputDirectory)
-                        .ConfigureAwait(true);
-                case "cleanup":
-                    return await CleanupAsync(outputDirectory).ConfigureAwait(true);
-                default:
-                    throw new InvalidOperationException(
-                        "product_image_acceptance_phase_invalid");
+                EnsureIsolatedDataRoot();
+                Directory.CreateDirectory(outputDirectory);
+                switch (normalizedPhase)
+                {
+                    case "prepare":
+                        return await PrepareAsync(sharedProfileName, outputDirectory)
+                            .ConfigureAwait(true);
+                    case "resume":
+                        return await ResumeAsync(outputDirectory).ConfigureAwait(true);
+                    case "cache-restart":
+                        return await CacheRestartAsync(outputDirectory)
+                            .ConfigureAwait(true);
+                    case "cleanup":
+                        return await CleanupAsync(outputDirectory).ConfigureAwait(true);
+                    default:
+                        throw new InvalidOperationException(
+                            "product_image_acceptance_phase_invalid");
+                }
+            }
+            catch (Exception exception)
+            {
+                TryWriteDiagnosticArtifact(
+                    outputDirectory,
+                    normalizedPhase,
+                    exception);
+                throw;
             }
         }
 
@@ -775,6 +943,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 report.Passed = IsFullMatrixComplete(report);
             });
+            TryRefreshDiagnosticAfterCleanup(outputDirectory);
             DeleteState();
             return 0;
         }
@@ -1915,6 +2084,253 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             return difference == 0;
         }
 
+        private static void TryWriteDiagnosticArtifact(
+            string outputDirectory,
+            string phase,
+            Exception exception)
+        {
+            try
+            {
+                Directory.CreateDirectory(outputDirectory);
+                WriteDiagnosticArtifact(
+                    outputDirectory,
+                    phase,
+                    exception,
+                    ReadSafeReportForDiagnostic(outputDirectory));
+            }
+            catch
+            {
+                // Diagnostic evidence must never replace the original failure or
+                // prevent the runner from entering its fenced cleanup path.
+            }
+        }
+
+        private static void WriteDiagnosticArtifact(
+            string outputDirectory,
+            string phase,
+            Exception exception,
+            SafeReport report)
+        {
+            WriteDiagnosticArtifactCore(
+                outputDirectory,
+                NormalizeDiagnosticPhase(phase),
+                NormalizeDiagnosticCheckpoint(report?.Phase),
+                NormalizeDiagnosticFailureCode(exception?.Message),
+                report);
+        }
+
+        private static void TryRefreshDiagnosticAfterCleanup(
+            string outputDirectory)
+        {
+            try
+            {
+                var path = Path.Combine(outputDirectory, DiagnosticReportName);
+                var prior = ReadDiagnosticArtifact(path);
+                if (prior == null ||
+                    prior.SchemaVersion != DiagnosticSchemaVersion ||
+                    NormalizeDiagnosticPhase(prior.Phase) != prior.Phase ||
+                    NormalizeDiagnosticCheckpoint(
+                        prior.LastCompletedCheckpoint) !=
+                        prior.LastCompletedCheckpoint ||
+                    !IsKnownDiagnosticFailureCode(prior.FailureCode))
+                {
+                    return;
+                }
+                WriteDiagnosticArtifactCore(
+                    outputDirectory,
+                    prior.Phase,
+                    prior.LastCompletedCheckpoint,
+                    prior.FailureCode,
+                    ReadSafeReportForDiagnostic(outputDirectory));
+            }
+            catch
+            {
+                // Remote cleanup is authoritative. A best-effort diagnostic
+                // refresh cannot make a completed cleanup fail.
+            }
+        }
+
+        private static void WriteDiagnosticArtifactCore(
+            string outputDirectory,
+            string phase,
+            string lastCompletedCheckpoint,
+            string failureCode,
+            SafeReport report)
+        {
+            var completed = new List<string>(DiagnosticControlNames.Length);
+            var missing = new List<string>(DiagnosticControlNames.Length);
+            foreach (var control in DiagnosticControlNames)
+            {
+                if (IsDiagnosticControlComplete(report, control))
+                    completed.Add(control);
+                else
+                    missing.Add(control);
+            }
+            var present = new List<string>(DiagnosticScreenshotNames.Length);
+            foreach (var screenshot in DiagnosticScreenshotNames)
+            {
+                if (File.Exists(Path.Combine(outputDirectory, screenshot)))
+                    present.Add(screenshot);
+            }
+            var artifact = new StagingDiagnosticArtifact
+            {
+                SchemaVersion = DiagnosticSchemaVersion,
+                ExactMainSha = ReadExactMainSha(),
+                Phase = phase,
+                LastCompletedCheckpoint = lastCompletedCheckpoint,
+                FailureCode = failureCode,
+                CompletedControlCount = completed.Count,
+                CompletedControls = completed.ToArray(),
+                MissingControls = missing.ToArray(),
+                ExpectedScreenshots =
+                    (string[])DiagnosticScreenshotNames.Clone(),
+                PresentScreenshots = present.ToArray(),
+                CleanupPending = report != null
+                    ? report.CleanupPending
+                    : File.Exists(StatePath()),
+                RecordedAt = CanonicalTimestamp(DateTimeOffset.UtcNow)
+            };
+            var bytes = Serialize(artifact);
+            if (bytes.Length > 64 * 1024)
+                throw new InvalidDataException(
+                    "product_image_staging_diagnostic_too_large");
+            var path = Path.Combine(outputDirectory, DiagnosticReportName);
+            var temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                using (var stream = new FileStream(
+                    temporary,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    4096,
+                    FileOptions.WriteThrough))
+                {
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(true);
+                }
+                if (File.Exists(path)) File.Replace(temporary, path, null);
+                else File.Move(temporary, path);
+            }
+            finally
+            {
+                if (File.Exists(temporary)) File.Delete(temporary);
+                Clear(bytes);
+            }
+        }
+
+        private static SafeReport ReadSafeReportForDiagnostic(
+            string outputDirectory)
+        {
+            var path = Path.Combine(outputDirectory, SafeReportName);
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length < 2 || info.Length > 256 * 1024)
+                return null;
+            var bytes = File.ReadAllBytes(path);
+            try
+            {
+                var report = Deserialize<SafeReport>(bytes);
+                var exactMainSha = ReadExactMainSha();
+                return report != null &&
+                    report.SchemaVersion ==
+                        "win7pos-product-image-staging-v1" &&
+                    (exactMainSha.Length == 0 ||
+                     string.Equals(
+                         report.ExactMainSha,
+                         exactMainSha,
+                         StringComparison.Ordinal))
+                    ? report
+                    : null;
+            }
+            catch (SerializationException)
+            {
+                return null;
+            }
+            finally
+            {
+                Clear(bytes);
+            }
+        }
+
+        private static StagingDiagnosticArtifact ReadDiagnosticArtifact(
+            string path)
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length < 2 || info.Length > 64 * 1024)
+                return null;
+            var bytes = File.ReadAllBytes(path);
+            try
+            {
+                return Deserialize<StagingDiagnosticArtifact>(bytes);
+            }
+            catch (SerializationException)
+            {
+                return null;
+            }
+            finally
+            {
+                Clear(bytes);
+            }
+        }
+
+        private static string NormalizeDiagnosticPhase(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized == "prepare" ||
+                   normalized == "resume" ||
+                   normalized == "cache-restart" ||
+                   normalized == "cleanup"
+                ? normalized
+                : "unknown";
+        }
+
+        private static string NormalizeDiagnosticCheckpoint(string value)
+        {
+            switch ((value ?? string.Empty).Trim())
+            {
+                case "begin_pending":
+                case "armed":
+                case "provisioned":
+                case "offline_queued":
+                case "first_cache_ready":
+                case "cleanup_fence_armed":
+                case "terminal_clean":
+                    return value.Trim();
+                default:
+                    return "none";
+            }
+        }
+
+        private static string NormalizeDiagnosticFailureCode(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            return KnownDiagnosticFailureCodes.Contains(normalized)
+                ? normalized
+                : GenericDiagnosticFailureCode;
+        }
+
+        private static bool IsKnownDiagnosticFailureCode(string value)
+        {
+            return string.Equals(
+                       value,
+                       GenericDiagnosticFailureCode,
+                       StringComparison.Ordinal) ||
+                   KnownDiagnosticFailureCodes.Contains(value ?? string.Empty);
+        }
+
+        private static bool IsDiagnosticControlComplete(
+            SafeReport report,
+            string control)
+        {
+            if (report == null) return false;
+            var property = typeof(SafeReport).GetProperty(
+                char.ToUpperInvariant(control[0]) + control.Substring(1));
+            if (property == null || property.PropertyType != typeof(bool))
+                throw new InvalidOperationException(
+                    "product_image_staging_diagnostic_control_invalid");
+            return (bool)property.GetValue(report, null);
+        }
+
         private static void WriteSafeReport(
             string outputDirectory,
             AcceptanceState state,
@@ -3031,6 +3447,35 @@ VALUES('PIB-LOCAL-FAIRNESS', 'Local fairness sentinel', 1, 1);")
             public string AccountScope { get; set; }
             public VariantEvidence Main { get; set; }
             public VariantEvidence Thumb { get; set; }
+        }
+
+        [DataContract]
+        private sealed class StagingDiagnosticArtifact
+        {
+            [DataMember(Name = "schemaVersion", Order = 1)]
+            public string SchemaVersion { get; set; }
+            [DataMember(Name = "exactMainSha", Order = 2)]
+            public string ExactMainSha { get; set; }
+            [DataMember(Name = "phase", Order = 3)]
+            public string Phase { get; set; }
+            [DataMember(Name = "lastCompletedCheckpoint", Order = 4)]
+            public string LastCompletedCheckpoint { get; set; }
+            [DataMember(Name = "failureCode", Order = 5)]
+            public string FailureCode { get; set; }
+            [DataMember(Name = "completedControlCount", Order = 6)]
+            public int CompletedControlCount { get; set; }
+            [DataMember(Name = "completedControls", Order = 7)]
+            public string[] CompletedControls { get; set; }
+            [DataMember(Name = "missingControls", Order = 8)]
+            public string[] MissingControls { get; set; }
+            [DataMember(Name = "expectedScreenshots", Order = 9)]
+            public string[] ExpectedScreenshots { get; set; }
+            [DataMember(Name = "presentScreenshots", Order = 10)]
+            public string[] PresentScreenshots { get; set; }
+            [DataMember(Name = "cleanupPending", Order = 11)]
+            public bool CleanupPending { get; set; }
+            [DataMember(Name = "recordedAt", Order = 12)]
+            public string RecordedAt { get; set; }
         }
 
         [DataContract]
