@@ -11,8 +11,10 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class ProductRepositoryPagingPerformanceTests
 {
     private const int RowCount = 100_000;
+    private const int NavigationRowCount = 20_000;
     private const int PageSize = 200;
     private const int SampleCount = 20;
+    private const int NavigationSampleCount = 5;
     private const double MaximumP95Milliseconds = 500d;
 
     public TestContext TestContext { get; set; } = null!;
@@ -72,6 +74,42 @@ public sealed class ProductRepositoryPagingPerformanceTests
             $"keyset={p95Milliseconds:F3} ms, offset={offsetP95Milliseconds:F3} ms.");
     }
 
+    [TestMethod]
+    [Timeout(120_000)]
+    public async Task SecondPageForwardKeyset_20K_ReportsSteadyStateEvidenceWithoutTimingGate()
+    {
+        using var fixture = new Fixture(NavigationRowCount);
+        var filter = new ProductPageFilter(string.Empty, null, null, PageSize, catalogRevision: 1);
+        var plan = CreateSecondPageForwardPlan(filter, NavigationRowCount);
+
+        await AssertSecondPageAsync(fixture.Repository, filter, plan, NavigationRowCount);
+
+        var elapsedSamples = new double[NavigationSampleCount];
+        var allocationSamples = new long[NavigationSampleCount];
+        for (var index = 0; index < NavigationSampleCount; index++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            var allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
+            var stopwatch = Stopwatch.StartNew();
+
+            await AssertSecondPageAsync(fixture.Repository, filter, plan, NavigationRowCount);
+
+            stopwatch.Stop();
+            elapsedSamples[index] = stopwatch.Elapsed.TotalMilliseconds;
+            allocationSamples[index] = GC.GetTotalAllocatedBytes(precise: true) - allocatedBefore;
+        }
+
+        Array.Sort(elapsedSamples);
+        Array.Sort(allocationSamples);
+        TestContext.WriteLine(
+            $"PRODUCT_REPOSITORY_NAVIGATION_20K samples={NavigationSampleCount} rows={NavigationRowCount} " +
+            $"page_size={PageSize} median_ms={elapsedSamples[NavigationSampleCount / 2]:F3} " +
+            $"median_allocated_bytes={allocationSamples[NavigationSampleCount / 2]} " +
+            "sql_commands=2 rows_materialized=200 scope=open+transaction+count+page+materialize+commit");
+    }
+
     private static ProductPagePlan CreateLastPageForwardPlan(ProductPageFilter filter)
     {
         var coordinator = new ProductPagingCoordinator();
@@ -101,6 +139,24 @@ public sealed class ProductRepositoryPagingPerformanceTests
         return lastPagePlan;
     }
 
+    private static ProductPagePlan CreateSecondPageForwardPlan(ProductPageFilter filter, int totalCount)
+    {
+        var coordinator = new ProductPagingCoordinator();
+        var firstPlan = coordinator.Plan(filter, 1);
+        coordinator.Accept(
+            filter,
+            firstPlan,
+            filter.CreateCursor("BC-00000001", 1),
+            filter.CreateCursor("BC-00000200", 200),
+            PageSize,
+            totalCount);
+
+        var secondPlan = coordinator.Plan(filter, 2);
+        Assert.AreEqual(ProductPageQueryKind.Forward, secondPlan.Kind);
+        Assert.IsFalse(secondPlan.UsedOffsetFallback);
+        return secondPlan;
+    }
+
     private static ProductPagePlan CreateLastPageOffsetPlan(ProductPageFilter filter)
     {
         var coordinator = new ProductPagingCoordinator();
@@ -128,6 +184,19 @@ public sealed class ProductRepositoryPagingPerformanceTests
         Assert.AreEqual(PageSize, snapshot.Items.Count);
         Assert.AreEqual(99_801L, snapshot.Items[0].Id);
         Assert.AreEqual(RowCount, snapshot.Items[snapshot.Items.Count - 1].Id);
+    }
+
+    private static async Task AssertSecondPageAsync(
+        ProductRepository repository,
+        ProductPageFilter filter,
+        ProductPagePlan plan,
+        int totalCount)
+    {
+        var snapshot = await repository.SearchDetailsPageAsync(filter, plan);
+        Assert.AreEqual(totalCount, snapshot.TotalCount);
+        Assert.AreEqual(PageSize, snapshot.Items.Count);
+        Assert.AreEqual(201L, snapshot.Items[0].Id);
+        Assert.AreEqual(400L, snapshot.Items[snapshot.Items.Count - 1].Id);
     }
 
     private sealed class Fixture : IDisposable

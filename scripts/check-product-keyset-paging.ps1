@@ -117,13 +117,15 @@ Check ($catalogEvents -match 'AdvanceRevision\(\)\s*=>\s*Interlocked\.Increment\
     "catalog revision is missing or not atomic on x86"
 
 Check ($wpfSmokeProgram -match '--product-paging-dispatcher-smoke' -and
-       $wpfPagingSmoke -match 'DispatcherTimer' -and
-       $wpfPagingSmoke -match 'pulseCount\s*<=\s*0' -and
+       $wpfPagingSmoke -match 'Dispatcher\.CurrentDispatcher\.InvokeAsync' -and
+       $wpfPagingSmoke -match 'dispatcherProbe\.Task' -and
+       $wpfPagingSmoke -match 'probeCount\s*!=\s*1' -and
+       $wpfPagingSmoke -match 'pagingWasInFlightDuringProbe' -and
        $wpfPagingSmoke -match 'LoadDetailsPageAsync' -and
        $wpfPagingSmokeRunner -match '--product-paging-dispatcher-smoke' -and
        $wpfPagingSmokeRunner -match 'GetTempPath' -and
        $ciWorkflow -match 'run-product-paging-dispatcher-smoke\.ps1') `
-    "WPF harness proves dispatcher pulses during a 100k product page load" `
+    "WPF harness executes a deterministic dispatcher probe during a 100k product page load" `
     "WPF dispatcher responsiveness smoke is missing or incomplete"
 
 Check ($viewModel -match 'LoadDetailsPageAsync' -and

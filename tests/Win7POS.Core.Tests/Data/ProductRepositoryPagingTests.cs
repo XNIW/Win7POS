@@ -10,6 +10,30 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class ProductRepositoryPagingTests
 {
     [TestMethod]
+    public void CountFromClause_UnfilteredPagingAvoidsProductMetaLookup()
+    {
+        var filter = new ProductPageFilter(string.Empty, null, null, 200, catalogRevision: 1);
+
+        var fromClause = ProductQueryRepository.BuildProductPageCountFromClause(filter);
+
+        Assert.IsFalse(
+            fromClause.Contains("product_meta", StringComparison.OrdinalIgnoreCase),
+            "An unfiltered page count must not probe product_meta once per product row.");
+    }
+
+    [TestMethod]
+    [DataRow(7, null)]
+    [DataRow(null, 11)]
+    public void CountFromClause_MetaFilterRetainsProductMetaLookup(int? categoryId, int? supplierId)
+    {
+        var filter = new ProductPageFilter(string.Empty, categoryId, supplierId, 200, catalogRevision: 1);
+
+        var fromClause = ProductQueryRepository.BuildProductPageCountFromClause(filter);
+
+        StringAssert.Contains(fromClause, "product_meta");
+    }
+
+    [TestMethod]
     public async Task ForwardKeyset_PreservesExactBarcodePrecedenceAndHasNoDuplicates()
     {
         using var fixture = new Fixture();

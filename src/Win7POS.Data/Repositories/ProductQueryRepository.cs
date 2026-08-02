@@ -266,9 +266,7 @@ FROM (
 
             var totalCount = await conn.ExecuteScalarAsync<int>(@"
 SELECT COUNT(1)
-FROM products p
-LEFT JOIN product_meta m ON m.barcode = p.barcode
-" + where, parameters, tx).ConfigureAwait(false);
+" + BuildProductPageCountFromClause(filter) + "\n" + where, parameters, tx).ConfigureAwait(false);
 
             var rankExpression = q.Length == 0
                 ? string.Empty
@@ -344,6 +342,16 @@ AND (
     AND (" + tuplePredicate + @")
   )
 )";
+        }
+
+        internal static string BuildProductPageCountFromClause(ProductPageFilter filter)
+        {
+            if (filter == null) throw new ArgumentNullException(nameof(filter));
+            if (!filter.CategoryId.HasValue && !filter.SupplierId.HasValue)
+                return "FROM products p";
+
+            return @"FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode";
         }
 
         private static string BuildProductPageOrdering(
