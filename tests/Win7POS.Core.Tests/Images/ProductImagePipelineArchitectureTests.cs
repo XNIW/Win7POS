@@ -1,6 +1,8 @@
 using System.Reflection;
 using Win7POS.Core.Images;
+using Win7POS.Core.Models;
 using Win7POS.Data.Images;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Core.Tests.Images;
 
@@ -38,6 +40,72 @@ public sealed class ProductImagePipelineArchitectureTests
                 parameter.ParameterType.FullName,
                 "System.Net.Http.HttpClient",
                 StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void DurableProductImageSurfaces_UseReferencesScopesAndOpaqueStagingOnly()
+    {
+        var productImageMembers = typeof(ProductDetailsRow)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Where(property => property.Name.Contains(
+                "Image",
+                StringComparison.Ordinal))
+            .OrderBy(property => property.Name, StringComparer.Ordinal)
+            .ToArray();
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "PrimaryImageUpdatedAt",
+                "PrimaryImageVersionId"
+            },
+            productImageMembers.Select(property => property.Name).ToArray());
+        Assert.IsTrue(productImageMembers.All(property =>
+            property.PropertyType == typeof(string)));
+
+        var forbiddenDurableNames = new[]
+        {
+            "Authorization",
+            "Capability",
+            "Credential",
+            "Secret",
+            "SignedUrl",
+            "Token",
+            "UploadUrl"
+        };
+        var durableTypes = new[]
+        {
+            typeof(ProductImageOperationRow),
+            typeof(ProductImageReplaceEnqueueRequest),
+            typeof(ProductImageRemoveEnqueueRequest),
+            typeof(ProductImageStagedVariant)
+        };
+        foreach (var property in durableTypes.SelectMany(type =>
+                     type.GetProperties(BindingFlags.Instance | BindingFlags.Public)))
+        {
+            Assert.IsFalse(
+                forbiddenDurableNames.Any(marker => property.Name.Contains(
+                    marker,
+                    StringComparison.OrdinalIgnoreCase)),
+                "Secret-bearing durable member: " + property.Name);
+            Assert.AreNotEqual(typeof(Uri), property.PropertyType);
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { "Bytes", "Height", "Identity", "Sha256", "Width" },
+            typeof(ProductImageStagedVariant)
+                .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Select(property => property.Name)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray());
+
+        var activeResolver = typeof(ProductImageCacheScopeStore).GetMethod(
+            nameof(ProductImageCacheScopeStore.ResolveActiveAsync));
+        Assert.IsNotNull(activeResolver);
+        CollectionAssert.AreEqual(
+            new[] { "staffId", "shopId", "cancellationToken" },
+            activeResolver.GetParameters()
+                .Select(parameter => parameter.Name)
+                .ToArray());
     }
 
     private static void AssertPublicSurfaceIsOfflineAndPlatformNeutral(
