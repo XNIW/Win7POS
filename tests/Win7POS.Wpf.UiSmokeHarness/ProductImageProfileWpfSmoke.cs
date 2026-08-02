@@ -4,6 +4,9 @@ using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +26,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         internal static string Run()
         {
             VerifyMutationRequestSerialization();
+            VerifyStagingDiagnosticArtifact();
             Task.Run(VerifyJsonStringifyStyleResponseParsingAsync)
                 .GetAwaiter()
                 .GetResult();
@@ -114,6 +118,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "shared_unchanged=true plaintext_secrets=false " +
                     "offline_authority_cloned=false " +
                     "supervisor_profile_injected=true cleanup_exact=true " +
+                    "staging_diagnostic_redacted=true " +
                     "net48_request_serialization=true " +
                     "net48_json_stringify_response=true " +
                     "net48_storage_error_mapping=true";
@@ -123,6 +128,322 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 try { isolated?.Clear(); } catch { }
                 try { shared.Clear(); } catch { }
             }
+        }
+
+        private static void VerifyStagingDiagnosticArtifact()
+        {
+            var acceptanceType = typeof(ProductImageStagingAcceptance);
+            var reportType = acceptanceType.GetNestedType(
+                "SafeReport",
+                BindingFlags.NonPublic);
+            var writer = reportType == null
+                ? null
+                : acceptanceType.GetMethod(
+                    "WriteDiagnosticArtifact",
+                    BindingFlags.NonPublic | BindingFlags.Static,
+                    null,
+                    new[]
+                    {
+                        typeof(string),
+                        typeof(string),
+                        typeof(Exception),
+                        reportType
+                    },
+                    null);
+            var failureWriter = acceptanceType.GetMethod(
+                "TryWriteDiagnosticArtifact",
+                BindingFlags.NonPublic | BindingFlags.Static,
+                null,
+                new[] { typeof(string), typeof(string), typeof(Exception) },
+                null);
+            var cleanupRefresh = acceptanceType.GetMethod(
+                "TryRefreshDiagnosticAfterCleanup",
+                BindingFlags.NonPublic | BindingFlags.Static,
+                null,
+                new[] { typeof(string) },
+                null);
+            if (reportType == null || writer == null ||
+                failureWriter == null || cleanupRefresh == null)
+            {
+                throw new InvalidOperationException(
+                    "product_image_staging_diagnostic_writer_missing");
+            }
+
+            var root = Path.GetFullPath(Path.Combine(
+                Path.GetTempPath(),
+                "Win7POS.ProductImageDiagnostic." +
+                Guid.NewGuid().ToString("N")));
+            var previousSha = Environment.GetEnvironmentVariable(
+                "WIN7POS_ACCEPTANCE_EXACT_MAIN_SHA");
+            try
+            {
+                Directory.CreateDirectory(root);
+                Environment.SetEnvironmentVariable(
+                    "WIN7POS_ACCEPTANCE_EXACT_MAIN_SHA",
+                    new string('a', 40));
+                File.WriteAllBytes(
+                    Path.Combine(
+                        root,
+                        "product-image-first-list-thumb-1024x768.png"),
+                    new byte[] { 1 });
+                File.WriteAllBytes(
+                    Path.Combine(root, "unexpected-secret-name.png"),
+                    new byte[] { 2 });
+
+                var report = Activator.CreateInstance(reportType, true);
+                reportType.GetProperty("AuthBootstrap").SetValue(
+                    report,
+                    true,
+                    null);
+                reportType.GetProperty("CachePromoted").SetValue(
+                    report,
+                    true,
+                    null);
+                reportType.GetProperty("CleanupPending").SetValue(
+                    report,
+                    true,
+                    null);
+                reportType.GetProperty("Phase").SetValue(
+                    report,
+                    "first_cache_ready",
+                    null);
+
+                writer.Invoke(
+                    null,
+                    new[]
+                    {
+                        root,
+                        "cache-restart",
+                        new InvalidOperationException(
+                            "staging_editor_runtime_image_not_loaded"),
+                        report
+                    });
+                var path = Path.Combine(
+                    root,
+                    "product-image-staging-diagnostic.json");
+                var known = ReadStagingDiagnostic(path);
+                RequireDiagnostic(
+                    known.SchemaVersion ==
+                        "win7pos-product-image-staging-diagnostic-v1" &&
+                    known.ExactMainSha == new string('a', 40) &&
+                    known.Phase == "cache-restart" &&
+                    known.LastCompletedCheckpoint == "first_cache_ready" &&
+                    known.FailureCode ==
+                        "staging_editor_runtime_image_not_loaded" &&
+                    known.CompletedControlCount == 2 &&
+                    known.CompletedControls.Length == 2 &&
+                    Array.IndexOf(
+                        known.CompletedControls,
+                        "authBootstrap") >= 0 &&
+                    Array.IndexOf(
+                        known.CompletedControls,
+                        "cachePromoted") >= 0 &&
+                    known.MissingControls.Length == 41 &&
+                    known.ExpectedScreenshots.Length == 8 &&
+                    known.PresentScreenshots.Length == 1 &&
+                    known.PresentScreenshots[0] ==
+                        "product-image-first-list-thumb-1024x768.png" &&
+                    known.CleanupPending,
+                    "product_image_staging_diagnostic_known_invalid");
+                foreach (var screenshot in known.ExpectedScreenshots)
+                {
+                    RequireDiagnostic(
+                        Array.IndexOf(ExpectedStagingScreenshots, screenshot) >= 0,
+                        "product_image_staging_diagnostic_screenshot_allowlist_invalid");
+                }
+
+                var safeReportPath = Path.Combine(
+                    root,
+                    "product-image-staging-result.json");
+                File.WriteAllText(
+                    safeReportPath,
+                    "{\"schemaVersion\":\"win7pos-product-image-staging-v1\"," +
+                    "\"exactMainSha\":\"" + new string('a', 40) + "\"," +
+                    "\"phase\":\"offline_queued\"," +
+                    "\"authBootstrap\":true,\"cleanupPending\":true}");
+                failureWriter.Invoke(
+                    null,
+                    new object[]
+                    {
+                        root,
+                        "resume",
+                        new InvalidOperationException("first_cache_failed")
+                    });
+                var oldReport = ReadStagingDiagnostic(path);
+                RequireDiagnostic(
+                    oldReport.FailureCode == "first_cache_failed" &&
+                    oldReport.LastCompletedCheckpoint == "offline_queued" &&
+                    oldReport.CompletedControlCount == 1 &&
+                    oldReport.CleanupPending,
+                    "product_image_staging_diagnostic_report_compatibility_failed");
+
+                File.WriteAllText(
+                    safeReportPath,
+                    "{\"schemaVersion\":\"win7pos-product-image-staging-v1\"," +
+                    "\"exactMainSha\":\"" + new string('a', 40) + "\"," +
+                    "\"phase\":\"terminal_clean\"," +
+                    "\"authBootstrap\":true,\"cleanupComplete\":true," +
+                    "\"cleanupPending\":false," +
+                    "\"immutableAuditPreserved\":true," +
+                    "\"runProfileRemoved\":true," +
+                    "\"sharedSnapshotUnchanged\":true}");
+                cleanupRefresh.Invoke(null, new object[] { root });
+                var cleaned = ReadStagingDiagnostic(path);
+                RequireDiagnostic(
+                    cleaned.FailureCode == "first_cache_failed" &&
+                    cleaned.LastCompletedCheckpoint == "offline_queued" &&
+                    cleaned.CompletedControlCount == 5 &&
+                    !cleaned.CleanupPending,
+                    "product_image_staging_diagnostic_cleanup_refresh_failed");
+                File.Delete(safeReportPath);
+
+                var successRoot = Path.Combine(root, "successful-cleanup");
+                Directory.CreateDirectory(successRoot);
+                cleanupRefresh.Invoke(null, new object[] { successRoot });
+                RequireDiagnostic(
+                    !File.Exists(Path.Combine(
+                        successRoot,
+                        "product-image-staging-diagnostic.json")),
+                    "product_image_staging_diagnostic_success_changed");
+
+                var controls = new List<string>();
+                controls.AddRange(known.CompletedControls);
+                controls.AddRange(known.MissingControls);
+                foreach (var control in controls)
+                {
+                    var propertyName = char.ToUpperInvariant(control[0]) +
+                        control.Substring(1);
+                    reportType.GetProperty(propertyName).SetValue(
+                        report,
+                        true,
+                        null);
+                }
+                reportType.GetProperty("CleanupPending").SetValue(
+                    report,
+                    false,
+                    null);
+                var matrix = acceptanceType.GetMethod(
+                    "IsFullMatrixComplete",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                RequireDiagnostic(
+                    matrix != null && (bool)matrix.Invoke(
+                        null,
+                        new[] { report }),
+                    "product_image_staging_diagnostic_matrix_changed");
+                reportType.GetProperty("CleanupPending").SetValue(
+                    report,
+                    true,
+                    null);
+                RequireDiagnostic(
+                    !(bool)matrix.Invoke(null, new[] { report }),
+                    "product_image_staging_diagnostic_cleanup_semantics_changed");
+
+                var unsafeDetail =
+                    "https://storage.example.invalid/object?token=secret " +
+                    "ASUSPIB_SECRET bearer raw-response " +
+                    new string('x', 512);
+                writer.Invoke(
+                    null,
+                    new[]
+                    {
+                        root,
+                        "cache-restart",
+                        new InvalidOperationException(unsafeDetail),
+                        report
+                    });
+                var unsafeText = File.ReadAllText(path);
+                var redacted = ReadStagingDiagnostic(path);
+                RequireDiagnostic(
+                    redacted.FailureCode ==
+                        "product_image_acceptance_failure" &&
+                    redacted.FailureCode.Length <= 80 &&
+                    unsafeText.IndexOf(
+                        "storage.example.invalid",
+                        StringComparison.OrdinalIgnoreCase) < 0 &&
+                    unsafeText.IndexOf(
+                        "token=",
+                        StringComparison.OrdinalIgnoreCase) < 0 &&
+                    unsafeText.IndexOf(
+                        "ASUSPIB_SECRET",
+                        StringComparison.Ordinal) < 0 &&
+                    unsafeText.IndexOf(
+                        "bearer",
+                        StringComparison.OrdinalIgnoreCase) < 0 &&
+                    unsafeText.IndexOf(
+                        "raw-response",
+                        StringComparison.OrdinalIgnoreCase) < 0 &&
+                    unsafeText.IndexOf(
+                        "unexpected-secret-name.png",
+                        StringComparison.Ordinal) < 0,
+                    "product_image_staging_diagnostic_redaction_failed");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(
+                    "WIN7POS_ACCEPTANCE_EXACT_MAIN_SHA",
+                    previousSha);
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        private static StagingDiagnosticProbe ReadStagingDiagnostic(
+            string path)
+        {
+            using (var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read))
+            {
+                return (StagingDiagnosticProbe)new DataContractJsonSerializer(
+                    typeof(StagingDiagnosticProbe)).ReadObject(stream);
+            }
+        }
+
+        private static void RequireDiagnostic(bool condition, string code)
+        {
+            if (!condition) throw new InvalidOperationException(code);
+        }
+
+        private static readonly string[] ExpectedStagingScreenshots =
+        {
+            "product-image-first-list-thumb-1024x768.png",
+            "product-image-first-editor-main-1024x768.png",
+            "product-image-offline-restart-list-thumb-1024x768.png",
+            "product-image-offline-restart-editor-main-1024x768.png",
+            "product-image-replacement-list-thumb-1024x768.png",
+            "product-image-replacement-editor-main-1024x768.png",
+            "product-image-removed-list-no-image-1024x768.png",
+            "product-image-removed-editor-no-image-1024x768.png"
+        };
+
+        [DataContract]
+        private sealed class StagingDiagnosticProbe
+        {
+            [DataMember(Name = "schemaVersion")]
+            public string SchemaVersion { get; set; }
+            [DataMember(Name = "exactMainSha")]
+            public string ExactMainSha { get; set; }
+            [DataMember(Name = "phase")]
+            public string Phase { get; set; }
+            [DataMember(Name = "lastCompletedCheckpoint")]
+            public string LastCompletedCheckpoint { get; set; }
+            [DataMember(Name = "failureCode")]
+            public string FailureCode { get; set; }
+            [DataMember(Name = "completedControlCount")]
+            public int CompletedControlCount { get; set; }
+            [DataMember(Name = "completedControls")]
+            public string[] CompletedControls { get; set; }
+            [DataMember(Name = "missingControls")]
+            public string[] MissingControls { get; set; }
+            [DataMember(Name = "expectedScreenshots")]
+            public string[] ExpectedScreenshots { get; set; }
+            [DataMember(Name = "presentScreenshots")]
+            public string[] PresentScreenshots { get; set; }
+            [DataMember(Name = "cleanupPending")]
+            public bool CleanupPending { get; set; }
+            [DataMember(Name = "recordedAt")]
+            public string RecordedAt { get; set; }
         }
 
         private static void VerifyMutationRequestSerialization()

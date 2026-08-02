@@ -141,6 +141,11 @@ Require ($profileSmoke -match 'Task\.Run\(VerifyStorageProviderErrorMappingAsync
          $profileSmoke -match 'net48_storage_error_mapping=true' -and
          $profileSmokeRunner -match 'net48_storage_error_mapping=true') `
     "The net48 profile smoke must execute bounded Storage error mapping."
+Require ($profileSmoke -match 'VerifyStagingDiagnosticArtifact\(\)' -and
+         $profileSmoke -match 'staging_diagnostic_redacted=true' -and
+         $profileSmoke -match 'product_image_staging_diagnostic_redaction_failed' -and
+         $profileSmokeRunner -match 'staging_diagnostic_redacted=true') `
+    "The net48 profile smoke must execute the redacted staging diagnostic regression."
 Require ($profileSmoke -match
              'Task\.Run\(VerifyJsonStringifyStyleResponseParsingAsync\)' -and
          @([regex]::Matches(
@@ -184,6 +189,13 @@ Require ($stagingAcceptance -match 'DataProtectionScope\.CurrentUser' -and
          $stagingAcceptance -notmatch 'Product\s*=\s*null' -and
          $stagingAcceptance -match 'new ProductsView' -and
          $stagingAcceptance -match 'new ProductEditDialog' -and
+         $stagingAcceptance -match 'product-image-staging-diagnostic\.json' -and
+         $stagingAcceptance -match 'win7pos-product-image-staging-diagnostic-v1' -and
+         $stagingAcceptance -match 'WriteDiagnosticArtifact\(' -and
+         $stagingAcceptance -match 'NormalizeDiagnosticFailureCode\(' -and
+         $stagingAcceptance -match 'TryRefreshDiagnosticAfterCleanup\(' -and
+         $stagingAcceptance -match 'DiagnosticScreenshotNames' -and
+         $stagingAcceptance -match 'DiagnosticControlNames' -and
          $stagingAcceptance -notmatch 'runMarker[^\r\n]*DataMember[^\r\n]*SafeReport') `
     "Real staging acceptance must preserve DPAPI, no-redirect, restart and capability-expiry coverage."
 Require ($stagingAcceptance.IndexOf('Phase = "begin_pending"') -lt
