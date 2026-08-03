@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.Serialization.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -81,9 +82,40 @@ internal static class Program
 
     private sealed class SupplierExcelPerfSelfTestParams
     {
+        public string Format = "xlsx";
+        public string InputPath = string.Empty;
+        public int Iterations = 5;
         public bool KeepDb;
+        public bool MeasureApplyBoundary;
         public int Products = 20000;
+        public bool ReaderOnly;
         public int Rows = 5000;
+    }
+
+    private sealed class SupplierExcelPerfMeasurement
+    {
+        public long AllocatedBytes;
+        public double ElapsedMilliseconds;
+        public long PeakWorkingSetBytes;
+        public long PrivateBytesAfter;
+        public long PrivateBytesBefore;
+    }
+
+    private sealed class SupplierExcelApplyBoundaryEvidence
+    {
+        public long AllocatedBytes { get; set; }
+        public int CategoryResolverLookupQueries { get; set; }
+        public int CategoryResolverCreateCommands { get; set; }
+        public double ElapsedMilliseconds { get; set; }
+        public int Inserted { get; set; }
+        public int LoadExistingQueries { get; set; }
+        public int PriceHistoryCommands { get; set; }
+        public int ProductWriteCommands { get; set; }
+        public int ProductWriteStatements { get; set; }
+        public int SupplierResolverLookupQueries { get; set; }
+        public int SupplierResolverCreateCommands { get; set; }
+        public int TotalSqlCommands { get; set; }
+        public int Updated { get; set; }
     }
 
     private sealed class Task081HttpHarnessSession
@@ -291,7 +323,7 @@ internal static class Program
         Console.WriteLine("  --supplier-excel-selftest");
         Console.WriteLine("  --supplier-excel-ui-selftest");
         Console.WriteLine("  --supplier-excel-apply-selftest");
-        Console.WriteLine("  --supplier-excel-perf-selftest [--products N] [--rows N] [--keepdb]");
+        Console.WriteLine("  --supplier-excel-perf-selftest [--products N] [--rows N] [--iterations N] [--format xlsx|html|xls] [--input FILE] [--reader-only] [--measure-apply-boundary] [--keepdb]");
         Console.WriteLine("  --catalog-import-outbox-selftest");
         Console.WriteLine("  --catalog-import-reconciliation-selftest");
         Console.WriteLine("  --catalog-import-sync-http-harness [--base-url <AdminWebUrl>] [--session-json <path>] [--keepdb]");
@@ -430,6 +462,48 @@ internal static class Program
                 continue;
             }
 
+            if (string.Equals(arg, "--iterations", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length ||
+                    !int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out parameters.Iterations))
+                {
+                    return false;
+                }
+
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--format", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length)
+                    return false;
+                parameters.Format = (args[i + 1] ?? string.Empty).Trim().ToLowerInvariant();
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--input", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length)
+                    return false;
+                parameters.InputPath = args[i + 1] ?? string.Empty;
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--reader-only", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.ReaderOnly = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--measure-apply-boundary", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.MeasureApplyBoundary = true;
+                continue;
+            }
+
             if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
             {
                 parameters.KeepDb = true;
@@ -437,7 +511,10 @@ internal static class Program
         }
 
         parameters.Products = Math.Max(100, parameters.Products);
+        parameters.Iterations = Math.Max(1, Math.Min(20, parameters.Iterations));
         parameters.Rows = Math.Max(20, parameters.Rows);
+        if (parameters.Format != "xlsx" && parameters.Format != "html" && parameters.Format != "xls")
+            return false;
         return hasSelfTest;
     }
 
@@ -2306,6 +2383,8 @@ CREATE TABLE users (
         var dialogOwnerHelper = ReadRepoFile(root, "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs");
         var localization = ReadRepoFile(root, "src/Win7POS.Wpf/Localization/PosLocalization.cs");
         var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs");
+        var supplierReader = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportReader.cs");
+        var supplierLimits = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportLimits.cs");
         var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
         var catalogImportContract = ReadRepoFile(root, "src/Win7POS.Core/Online/PosCatalogImportContract.cs");
         var catalogImportOutbox = ReadRepoFile(root, "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs");
@@ -2420,7 +2499,26 @@ CREATE TABLE users (
         AssertText(viewModel, "SyncProductMatches", "Step 4 product search predicate missing.");
         AssertText(viewModel, "StepIndex == 3 && SyncCanApply", "Apply must be enabled only from valid Step 4.");
         AssertText(viewModel, "string.IsNullOrWhiteSpace(row.SecondProductName)", "Missing new identity count must accept secondProductName like the analyzer.");
+        AssertText(
+            viewModel,
+            "CancelCommand = new RelayCommand(Cancel, () => !IsBusy || _analyzeCancellation != null)",
+            "Cancel must remain available while analysis is busy and disabled during non-analysis work.");
+        AssertText(viewModel, "cancellation.Cancel();", "Busy Cancel must request cooperative analysis cancellation.");
+        AssertText(viewModel, "statusAnalysisCancelled", "Cancellation must leave the supplier wizard in a reusable state.");
+        AssertText(viewModel, "LocalizedReaderError", "Reader diagnostic codes must be localized at the WPF boundary.");
         AssertText(workflow, "ListDetailsByBarcodesAsync", "Supplier import must not load the full catalog for barcode-only matching.");
+        AssertText(workflow, "ReadFirstWorksheet(filePath, cancellationToken)", "Supplier reader cancellation token must flow through the workflow.");
+        AssertText(workflow, "SupplierImportAnalyzer.Analyze(table, products, cancellationToken", "Analyzer cancellation token must flow through the workflow.");
+        Assert(
+            supplierReader.IndexOf("AsDataSet", StringComparison.Ordinal) < 0,
+            "Supplier first-sheet reading and worksheet counting must not materialize DataSet objects.");
+        AssertText(supplierReader, "while (reader.NextResult())", "Worksheet counting must advance results without reading cell matrices.");
+        AssertText(supplierReader, "BuildRawTableFromOwnedRows", "Reader rows must transfer ownership into the raw-table builder.");
+        AssertText(supplierLimits, "MaximumWorksheetRows = 60000", "Supplier worksheet row limit must remain centralized.");
+        AssertText(supplierLimits, "MaximumWorksheetCells = 1000000L", "Supplier worksheet cell limit must remain centralized.");
+        AssertText(supplierLimits, "MaximumOoxmlMetadataXmlBytes = 4L * 1024L * 1024L", "Supplier OOXML metadata expansion limit must remain centralized.");
+        AssertText(supplierLimits, "MaximumHtmlTableCandidates = 4096", "Supplier HTML preselection limit must remain centralized.");
+        AssertText(localization, "supplierExcelImport.errorCorruptOrUnsupported", "Recoverable reader errors must have localized operator text.");
         AssertText(workflow, "_authorizeApply = authorizeApply ?? (() => false)", "Supplier import workflow must fail closed without an authorizer.");
         AssertText(workflow, "DemandApplyAuthorization();", "Supplier import workflow must re-authorize immediately before mutation.");
         AssertText(workflow, "CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry", "Supplier import workflow must prepare catalog import outbox payload.");
@@ -3156,96 +3254,302 @@ CREATE TABLE users (
     {
         Console.WriteLine("Supplier Excel perf selftest");
         var total = Stopwatch.StartNew();
-        var timings = new Dictionary<string, long>(StringComparer.Ordinal);
+        var stageSamples = new Dictionary<string, List<SupplierExcelPerfMeasurement>>(StringComparer.Ordinal);
         var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-supplier-perf-" + Guid.NewGuid().ToString("N"));
+        var process = Process.GetCurrentProcess();
+        process.Refresh();
+        var privateBytesAtStart = process.PrivateMemorySize64;
+        var peakWorkingSetAtStart = process.PeakWorkingSet64;
         try
         {
             Directory.CreateDirectory(tempRoot);
-            var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
-            await InitializeHarnessDbAsync(options).ConfigureAwait(false);
-            var factory = new SqliteConnectionFactory(options);
+            if (!string.IsNullOrWhiteSpace(parameters.InputPath) && !parameters.ReaderOnly)
+                throw new ArgumentException("--input requires --reader-only because arbitrary workbooks do not provide the deterministic apply fixture.");
+            if (parameters.Format == "xls" && string.IsNullOrWhiteSpace(parameters.InputPath))
+                throw new ArgumentException("Binary .xls performance evidence requires --input; the existing dependencies do not generate BIFF workbooks.");
 
-            var sw = Stopwatch.StartNew();
-            await SeedSupplierPerfProductsAsync(factory, parameters.Products).ConfigureAwait(false);
-            timings["seedDbMs"] = sw.ElapsedMilliseconds;
+            string workbookPath;
+            if (!string.IsNullOrWhiteSpace(parameters.InputPath))
+            {
+                workbookPath = Path.GetFullPath(parameters.InputPath);
+                if (!File.Exists(workbookPath))
+                    throw new FileNotFoundException("Supplier Excel performance input not found.", workbookPath);
+            }
+            else
+            {
+                workbookPath = string.Empty;
+                for (var iteration = 0; iteration <= parameters.Iterations; iteration++)
+                {
+                    var extension = parameters.Format == "html" ? ".xls" : ".xlsx";
+                    var generatedPath = Path.Combine(tempRoot, "supplier-perf-" + iteration.ToString(CultureInfo.InvariantCulture) + extension);
+                    var generation = MeasureSupplierPerfStage(process, () =>
+                    {
+                        WriteSupplierPerfWorkbook(generatedPath, parameters.Rows, parameters.Products, parameters.Format);
+                        return generatedPath;
+                    });
+                    if (iteration > 0)
+                        AddSupplierPerfSample(stageSamples, "workbookGeneration", generation.Measurement);
+                    workbookPath = generatedPath;
+                }
+            }
 
-            var workbookPath = Path.Combine(tempRoot, "supplier-perf.xlsx");
-            sw.Restart();
-            WriteSupplierPerfWorkbook(workbookPath, parameters.Rows, parameters.Products);
-            timings["writeWorkbookMs"] = sw.ElapsedMilliseconds;
+            SqliteConnectionFactory? factory = null;
+            ProductRepository? productRepository = null;
+            long seedDbMilliseconds = 0;
+            if (!parameters.ReaderOnly)
+            {
+                var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
+                await InitializeHarnessDbAsync(options).ConfigureAwait(false);
+                factory = new SqliteConnectionFactory(options);
+                var seed = Stopwatch.StartNew();
+                await SeedSupplierPerfProductsAsync(factory, parameters.Products).ConfigureAwait(false);
+                seedDbMilliseconds = seed.ElapsedMilliseconds;
+                productRepository = new ProductRepository(factory);
+            }
 
-            sw.Restart();
-            var table = SupplierExcelImportReader.ReadFirstWorksheet(workbookPath);
-            timings["readWorkbookMs"] = sw.ElapsedMilliseconds;
-            Assert(table.Rows.Count == parameters.Rows, "Perf workbook row count mismatch.");
+            var observedKind = string.Empty;
+            var observedSheetName = string.Empty;
+            var observedSheetCount = 0;
+            var observedWorksheetRows = 0;
+            var observedTableRows = 0;
+            var observedColumns = 0;
+            var observedNonEmptyCells = 0L;
+            var observedFingerprint = string.Empty;
+            var observedAnalyzeProducts = 0;
+            var observedPreviewProducts = 0;
+            var observedPreviewNew = 0;
+            var observedPreviewUpdated = 0;
+            var observedPreviewNoChange = 0;
+            var observedPreviewSkipped = 0;
+            SupplierImportSyncPreview? boundaryPreview = null;
 
-            sw.Restart();
-            var preliminary = SupplierImportAnalyzer.Analyze(table, Array.Empty<ProductDetailsRow>());
-            timings["preliminaryAnalyzeMs"] = sw.ElapsedMilliseconds;
-            Assert(preliminary.Warnings.Any(w => w.Message.Contains("duplicato", StringComparison.OrdinalIgnoreCase)), "Perf fixture duplicate warning missing.");
-            Assert(preliminary.Warnings.Any(w => w.Message.Contains("Barcode", StringComparison.OrdinalIgnoreCase)), "Perf fixture missing-barcode warning missing.");
+            for (var iteration = 0; iteration <= parameters.Iterations; iteration++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                var measuredIteration = iteration > 0;
 
-            var productRepository = new ProductRepository(factory);
-            var analyzeBarcodes = preliminary.EditableRows.Select(row => row.Barcode).Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
-            sw.Restart();
-            var targetedAnalyzeProducts = await productRepository.ListDetailsByBarcodesAsync(analyzeBarcodes).ConfigureAwait(false);
-            timings["analyzeLookupMs"] = sw.ElapsedMilliseconds;
-            Assert(targetedAnalyzeProducts.Count <= parameters.Rows, "Targeted analyze lookup must stay bounded by source rows.");
-            Assert(targetedAnalyzeProducts.Count < parameters.Products, "Targeted analyze lookup must not load full catalog.");
+                var kind = MeasureSupplierPerfStage(process, () => SupplierExcelImportReader.DetectWorkbookKindName(workbookPath));
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "workbookKindDetection", kind.Measurement);
 
-            sw.Restart();
-            var analysis = SupplierImportAnalyzer.Analyze(table, targetedAnalyzeProducts);
-            timings["analyzeMs"] = sw.ElapsedMilliseconds;
-            var missingBarcode = analysis.EditableRows.First(row => row.RowNumber == 4);
-            missingBarcode.IsSkipped = true;
-            var secondNameOnly = analysis.EditableRows.First(row => row.RowNumber == 5);
-            Assert(!string.IsNullOrWhiteSpace(secondNameOnly.SecondProductName), "Second-name-only row missing.");
-            Assert(string.Equals(secondNameOnly.ProductName, secondNameOnly.SecondProductName, StringComparison.Ordinal), "Second name must seed product name.");
-            var filledRetail = SupplierRetailPriceHelper.ApplyMarkupToRetailPriceRows(analysis.EditableRows, 30, 50, true);
-            Assert(filledRetail >= 1, "Perf fixture retail bulk fill did not update missing retail row.");
+                var sheetCount = MeasureSupplierPerfStage(process, () => SupplierExcelImportReader.CountWorksheets(workbookPath));
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "worksheetCount", sheetCount.Measurement);
 
-            var previewBarcodes = analysis.EditableRows.Select(row => row.Barcode).Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
-            sw.Restart();
-            var targetedPreviewProducts = await productRepository.ListDetailsByBarcodesAsync(previewBarcodes).ConfigureAwait(false);
-            timings["previewLookupMs"] = sw.ElapsedMilliseconds;
-            Assert(targetedPreviewProducts.Count <= parameters.Rows, "Targeted preview lookup must stay bounded by source rows.");
+                var firstWorksheet = MeasureSupplierPerfStage(process, () => SupplierExcelImportReader.ReadFirstWorksheetData(workbookPath));
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "firstWorksheetRead", firstWorksheet.Measurement);
 
-            sw.Restart();
-            var preview = SupplierImportAnalyzer.BuildSyncPreview(analysis.EditableRows, targetedPreviewProducts);
-            timings["previewMs"] = sw.ElapsedMilliseconds;
-            Assert(preview.CanApply, "Perf preview must be applyable after Step 3 fixes.");
-            Assert(preview.NewProducts.Count > 0, "Perf preview must include new products.");
-            Assert(preview.UpdatedProducts.Count > 0, "Perf preview must include updates.");
-            Assert(preview.SkippedRows.Count == 1, "Perf preview must include one skipped row.");
+                observedKind = kind.Value;
+                observedSheetCount = sheetCount.Value;
+                observedSheetName = firstWorksheet.Value.SheetName;
+                observedWorksheetRows = firstWorksheet.Value.Rows.Count;
+                observedColumns = firstWorksheet.Value.Rows.Count == 0 ? 0 : firstWorksheet.Value.Rows.Max(row => row.Count);
+                observedNonEmptyCells = firstWorksheet.Value.Rows.Sum(row => (long)row.Count(value => !string.IsNullOrEmpty(value)));
 
-            sw.Restart();
-            var dryRun = await new SupplierExcelImportApplier(factory).ApplyAsync(
-                preview,
-                new SupplierExcelImportApplyOptions { DryRun = true, InsertNew = true }).ConfigureAwait(false);
-            timings["dryRunApplyMs"] = sw.ElapsedMilliseconds;
-            Assert(dryRun.Errors == 0, "Perf dry-run apply must not error.");
-            Assert(dryRun.Inserted == preview.NewProducts.Count, "Dry-run insert count must match preview.");
-            Assert(dryRun.Updated == preview.UpdatedProducts.Count, "Dry-run update count must match preview.");
+                var rawTable = MeasureSupplierPerfStage(process, () =>
+                    SupplierImportAnalyzer.BuildRawTableFromOwnedRows(firstWorksheet.Value.SheetName, firstWorksheet.Value.Rows));
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "rawTableConstruction", rawTable.Measurement);
+
+                observedTableRows = rawTable.Value.Rows.Count;
+
+                if (string.IsNullOrWhiteSpace(parameters.InputPath))
+                {
+                    Assert(rawTable.Value.Rows.Count == parameters.Rows, "Perf workbook row count mismatch.");
+                    Assert(parameters.Format == "html" || sheetCount.Value == 2, "XLSX perf fixture must contain two worksheets.");
+                }
+
+                if (parameters.ReaderOnly)
+                {
+                    observedFingerprint = BuildSupplierRawTableFingerprint(rawTable.Value);
+                    continue;
+                }
+
+                var preliminary = MeasureSupplierPerfStage(process, () =>
+                    SupplierImportAnalyzer.Analyze(rawTable.Value, Array.Empty<ProductDetailsRow>()));
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "preliminaryAnalysis", preliminary.Measurement);
+                Assert(preliminary.Value.Warnings.Any(w => w.Message.Contains("duplicato", StringComparison.OrdinalIgnoreCase)), "Perf fixture duplicate warning missing.");
+                Assert(preliminary.Value.Warnings.Any(w => w.Message.Contains("Barcode", StringComparison.OrdinalIgnoreCase)), "Perf fixture missing-barcode warning missing.");
+
+                var analyzeBarcodes = preliminary.Value.EditableRows
+                    .Select(row => row.Barcode)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .ToArray();
+                var targetedAnalyzeProducts = await MeasureSupplierPerfStageAsync(process, () =>
+                    productRepository!.ListDetailsByBarcodesAsync(analyzeBarcodes)).ConfigureAwait(false);
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "targetedExistingProductLookup", targetedAnalyzeProducts.Measurement);
+                Assert(targetedAnalyzeProducts.Value.Count <= parameters.Rows, "Targeted analyze lookup must stay bounded by source rows.");
+                Assert(targetedAnalyzeProducts.Value.Count < parameters.Products, "Targeted analyze lookup must not load full catalog.");
+
+                var analysis = MeasureSupplierPerfStage(process, () =>
+                    SupplierImportAnalyzer.Analyze(rawTable.Value, targetedAnalyzeProducts.Value));
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "finalAnalysis", analysis.Measurement);
+                var missingBarcode = analysis.Value.EditableRows.First(row => row.RowNumber == 4);
+                missingBarcode.IsSkipped = true;
+                var secondNameOnly = analysis.Value.EditableRows.First(row => row.RowNumber == 5);
+                Assert(!string.IsNullOrWhiteSpace(secondNameOnly.SecondProductName), "Second-name-only row missing.");
+                Assert(string.Equals(secondNameOnly.ProductName, secondNameOnly.SecondProductName, StringComparison.Ordinal), "Second name must seed product name.");
+                var filledRetail = SupplierRetailPriceHelper.ApplyMarkupToRetailPriceRows(analysis.Value.EditableRows, 30, 50, true);
+                Assert(filledRetail >= 1, "Perf fixture retail bulk fill did not update missing retail row.");
+
+                var previewBarcodes = analysis.Value.EditableRows
+                    .Select(row => row.Barcode)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .ToArray();
+                var targetedPreviewProducts = await MeasureSupplierPerfStageAsync(process, () =>
+                    productRepository!.ListDetailsByBarcodesAsync(previewBarcodes)).ConfigureAwait(false);
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "previewExistingProductLookup", targetedPreviewProducts.Measurement);
+
+                var preview = MeasureSupplierPerfStage(process, () =>
+                    SupplierImportAnalyzer.BuildSyncPreview(analysis.Value.EditableRows, targetedPreviewProducts.Value));
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "syncPreview", preview.Measurement);
+                Assert(preview.Value.CanApply, "Perf preview must be applyable after Step 3 fixes.");
+                Assert(preview.Value.NewProducts.Count > 0, "Perf preview must include new products.");
+                Assert(preview.Value.UpdatedProducts.Count > 0, "Perf preview must include updates.");
+                Assert(preview.Value.SkippedRows.Count == 1, "Perf preview must include one skipped row.");
+                boundaryPreview = preview.Value;
+
+                var dryRun = await MeasureSupplierPerfStageAsync(process, () =>
+                    new SupplierExcelImportApplier(factory!).ApplyAsync(
+                        preview.Value,
+                        new SupplierExcelImportApplyOptions { DryRun = true, InsertNew = true })).ConfigureAwait(false);
+                if (measuredIteration)
+                    AddSupplierPerfSample(stageSamples, "dryRunApply", dryRun.Measurement);
+                Assert(dryRun.Value.Errors == 0, "Perf dry-run apply must not error.");
+                Assert(dryRun.Value.Inserted == preview.Value.NewProducts.Count, "Dry-run insert count must match preview.");
+                Assert(dryRun.Value.Updated == preview.Value.UpdatedProducts.Count, "Dry-run update count must match preview.");
+
+                observedAnalyzeProducts = targetedAnalyzeProducts.Value.Count;
+                observedPreviewProducts = targetedPreviewProducts.Value.Count;
+                observedPreviewNew = preview.Value.NewProducts.Count;
+                observedPreviewUpdated = preview.Value.UpdatedProducts.Count;
+                observedPreviewNoChange = preview.Value.NoChangeRows.Count;
+                observedPreviewSkipped = preview.Value.SkippedRows.Count;
+                observedFingerprint = SupplierPerfSha256(preview.Value.Fingerprint);
+            }
+
+            SupplierExcelApplyBoundaryEvidence? applyBoundaryEvidence = null;
+            if (parameters.MeasureApplyBoundary)
+            {
+                if (factory == null || boundaryPreview == null)
+                    throw new InvalidOperationException("Apply boundary evidence requires the generated full-path fixture.");
+                var activeRows = boundaryPreview.ValidatedRows
+                    .Where(row => row != null && !row.IsSkipped && !string.IsNullOrWhiteSpace(row.Barcode))
+                    .ToList();
+                var loadExistingQueries = activeRows
+                    .Select(row => row.Barcode.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+                var supplierLookups = activeRows
+                    .Select(row => (row.Supplier ?? string.Empty).Trim())
+                    .Where(value => value.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+                var categoryLookups = activeRows
+                    .Select(row => (row.Category ?? string.Empty).Trim())
+                    .Where(value => value.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+                var measuredApply = await MeasureSupplierPerfStageAsync(process, () =>
+                    new SupplierExcelImportApplier(factory).ApplyAsync(
+                        boundaryPreview,
+                        new SupplierExcelImportApplyOptions { DryRun = false, InsertNew = true })).ConfigureAwait(false);
+                Assert(measuredApply.Value.Errors == 0, "Apply boundary evidence must complete without errors.");
+                var productWriteCommands = measuredApply.Value.Inserted + measuredApply.Value.Updated;
+                var supplierCreateCommands = measuredApply.Value.SuppliersCreated * 2;
+                var categoryCreateCommands = measuredApply.Value.CategoriesCreated * 2;
+                applyBoundaryEvidence = new SupplierExcelApplyBoundaryEvidence
+                {
+                    AllocatedBytes = measuredApply.Measurement.AllocatedBytes,
+                    CategoryResolverLookupQueries = categoryLookups,
+                    CategoryResolverCreateCommands = categoryCreateCommands,
+                    ElapsedMilliseconds = measuredApply.Measurement.ElapsedMilliseconds,
+                    Inserted = measuredApply.Value.Inserted,
+                    LoadExistingQueries = loadExistingQueries,
+                    PriceHistoryCommands = measuredApply.Value.PriceHistoryInserted,
+                    ProductWriteCommands = productWriteCommands,
+                    ProductWriteStatements = productWriteCommands * 2,
+                    SupplierResolverLookupQueries = supplierLookups,
+                    SupplierResolverCreateCommands = supplierCreateCommands,
+                    TotalSqlCommands = loadExistingQueries + supplierLookups + supplierCreateCommands +
+                        categoryLookups + categoryCreateCommands + productWriteCommands +
+                        measuredApply.Value.PriceHistoryInserted,
+                    Updated = measuredApply.Value.Updated
+                };
+            }
 
             total.Stop();
-            timings["totalMs"] = total.ElapsedMilliseconds;
-            Assert(total.Elapsed < TimeSpan.FromSeconds(180), "Supplier perf selftest exceeded 180 seconds.");
+            process.Refresh();
+            var stageSummary = stageSamples
+                .Select(pair => new
+                {
+                    stage = pair.Key,
+                    repetitions = pair.Value.Count,
+                    medianElapsedMilliseconds = MedianSupplierPerf(pair.Value.Select(value => value.ElapsedMilliseconds)),
+                    medianAllocatedBytes = MedianSupplierPerf(pair.Value.Select(value => value.AllocatedBytes)),
+                    medianPrivateBytesDelta = MedianSupplierPerf(pair.Value.Select(value => value.PrivateBytesAfter - value.PrivateBytesBefore)),
+                    maximumPeakWorkingSetBytes = pair.Value.Max(value => value.PeakWorkingSetBytes)
+                })
+                .ToArray();
+            var readAnalyzeStageNames = new HashSet<string>(new[]
+            {
+                "firstWorksheetRead",
+                "rawTableConstruction",
+                "preliminaryAnalysis",
+                "targetedExistingProductLookup",
+                "finalAnalysis",
+                "previewExistingProductLookup",
+                "syncPreview"
+            }, StringComparer.Ordinal);
             Console.WriteLine(JsonSerializer.Serialize(new
             {
                 ok = true,
                 parameters.Products,
                 parameters.Rows,
+                parameters.Iterations,
+                parameters.Format,
+                parameters.ReaderOnly,
+                parameters.MeasureApplyBoundary,
+                input = string.IsNullOrWhiteSpace(parameters.InputPath) ? "generated" : Path.GetFileName(parameters.InputPath),
+                seedDbMilliseconds,
                 counts = new
                 {
-                    tableRows = table.Rows.Count,
-                    targetedAnalyzeProducts = targetedAnalyzeProducts.Count,
-                    targetedPreviewProducts = targetedPreviewProducts.Count,
-                    previewNew = preview.NewProducts.Count,
-                    previewUpdated = preview.UpdatedProducts.Count,
-                    previewNoChange = preview.NoChangeRows.Count,
-                    previewSkipped = preview.SkippedRows.Count
+                    workbookKind = observedKind,
+                    worksheetCount = observedSheetCount,
+                    worksheetName = observedSheetName,
+                    worksheetRows = observedWorksheetRows,
+                    tableRows = observedTableRows,
+                    columns = observedColumns,
+                    nonEmptyCells = observedNonEmptyCells,
+                    targetedAnalyzeProducts = observedAnalyzeProducts,
+                    targetedPreviewProducts = observedPreviewProducts,
+                    previewNew = observedPreviewNew,
+                    previewUpdated = observedPreviewUpdated,
+                    previewNoChange = observedPreviewNoChange,
+                    previewSkipped = observedPreviewSkipped
                 },
-                timings
+                applicationFingerprint = observedFingerprint,
+                applyBoundaryEvidence,
+                readAnalyzeMedianAllocatedBytes = stageSummary
+                    .Where(value => readAnalyzeStageNames.Contains(value.stage))
+                    .Sum(value => value.medianAllocatedBytes),
+                processMemory = new
+                {
+                    privateBytesAtStart,
+                    privateBytesAtEnd = process.PrivateMemorySize64,
+                    peakWorkingSetAtStart,
+                    peakWorkingSetAtEnd = process.PeakWorkingSet64
+                },
+                totalElapsedMilliseconds = total.Elapsed.TotalMilliseconds,
+                stages = stageSummary
             }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine("SUPPLIER EXCEL PERF SELFTEST PASS");
             Console.WriteLine("TEST PASS");
@@ -3515,62 +3819,231 @@ VALUES(
         }
     }
 
-    private static void WriteSupplierPerfWorkbook(string path, int rows, int products)
+    private static (T Value, SupplierExcelPerfMeasurement Measurement) MeasureSupplierPerfStage<T>(
+        Process process,
+        Func<T> action)
     {
+        process.Refresh();
+        var privateBytesBefore = process.PrivateMemorySize64;
+        var allocatedBefore = GC.GetTotalAllocatedBytes(false);
+        var stopwatch = Stopwatch.StartNew();
+        var value = action();
+        stopwatch.Stop();
+        var allocatedAfter = GC.GetTotalAllocatedBytes(false);
+        process.Refresh();
+        return (value, new SupplierExcelPerfMeasurement
+        {
+            AllocatedBytes = Math.Max(0, allocatedAfter - allocatedBefore),
+            ElapsedMilliseconds = stopwatch.Elapsed.TotalMilliseconds,
+            PeakWorkingSetBytes = process.PeakWorkingSet64,
+            PrivateBytesAfter = process.PrivateMemorySize64,
+            PrivateBytesBefore = privateBytesBefore
+        });
+    }
+
+    private static async Task<(T Value, SupplierExcelPerfMeasurement Measurement)> MeasureSupplierPerfStageAsync<T>(
+        Process process,
+        Func<Task<T>> action)
+    {
+        process.Refresh();
+        var privateBytesBefore = process.PrivateMemorySize64;
+        var allocatedBefore = GC.GetTotalAllocatedBytes(false);
+        var stopwatch = Stopwatch.StartNew();
+        var value = await action().ConfigureAwait(false);
+        stopwatch.Stop();
+        var allocatedAfter = GC.GetTotalAllocatedBytes(false);
+        process.Refresh();
+        return (value, new SupplierExcelPerfMeasurement
+        {
+            AllocatedBytes = Math.Max(0, allocatedAfter - allocatedBefore),
+            ElapsedMilliseconds = stopwatch.Elapsed.TotalMilliseconds,
+            PeakWorkingSetBytes = process.PeakWorkingSet64,
+            PrivateBytesAfter = process.PrivateMemorySize64,
+            PrivateBytesBefore = privateBytesBefore
+        });
+    }
+
+    private static void AddSupplierPerfSample(
+        IDictionary<string, List<SupplierExcelPerfMeasurement>> samples,
+        string stage,
+        SupplierExcelPerfMeasurement measurement)
+    {
+        if (!samples.TryGetValue(stage, out var values))
+        {
+            values = new List<SupplierExcelPerfMeasurement>();
+            samples[stage] = values;
+        }
+        values.Add(measurement);
+    }
+
+    private static double MedianSupplierPerf(IEnumerable<double> values)
+    {
+        var sorted = values.OrderBy(value => value).ToArray();
+        if (sorted.Length == 0)
+            return 0;
+        var middle = sorted.Length / 2;
+        return sorted.Length % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2d : sorted[middle];
+    }
+
+    private static long MedianSupplierPerf(IEnumerable<long> values)
+    {
+        var sorted = values.OrderBy(value => value).ToArray();
+        if (sorted.Length == 0)
+            return 0;
+        var middle = sorted.Length / 2;
+        return sorted.Length % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+    }
+
+    private static string BuildSupplierRawTableFingerprint(SupplierExcelRawTable table)
+    {
+        var canonical = new StringBuilder();
+        AppendSupplierFingerprintValue(canonical, table.SheetName);
+        canonical.Append(table.HasHeader ? '1' : '0').Append('|')
+            .Append(table.DataRowIndex.ToString(CultureInfo.InvariantCulture)).Append('|')
+            .Append(table.DroppedSummaryRows.ToString(CultureInfo.InvariantCulture)).Append('|');
+        foreach (var column in table.Columns)
+        {
+            canonical.Append(column.ColumnIndex.ToString(CultureInfo.InvariantCulture)).Append('|');
+            AppendSupplierFingerprintValue(canonical, column.OriginalHeader);
+            AppendSupplierFingerprintValue(canonical, column.CanonicalKey);
+            AppendSupplierFingerprintValue(canonical, column.HeaderSource);
+        }
+        foreach (var row in table.Rows)
+        {
+            canonical.Append(row.RowNumber.ToString(CultureInfo.InvariantCulture)).Append('|');
+            foreach (var value in row.Values)
+                AppendSupplierFingerprintValue(canonical, value);
+        }
+        return SupplierPerfSha256(canonical.ToString());
+    }
+
+    private static string SupplierPerfSha256(string value)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty))).ToLowerInvariant();
+    }
+
+    private static void AppendSupplierFingerprintValue(StringBuilder target, string? value)
+    {
+        value ??= string.Empty;
+        target.Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value).Append('|');
+    }
+
+    private static readonly string[] SupplierPerfHeaders =
+    {
+        "barcode",
+        "itemNumber",
+        "productName",
+        "secondProductName",
+        "purchasePrice",
+        "retailPrice",
+        "quantity",
+        "supplier",
+        "category",
+        "unit",
+        "taxCode",
+        "notes"
+    };
+
+    private static void WriteSupplierPerfWorkbook(string path, int rows, int products, string format)
+    {
+        if (string.Equals(format, "html", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSupplierPerfHtmlWorkbook(path, rows, products);
+            return;
+        }
+
         using (var workbook = new XLWorkbook())
         {
             var ws = workbook.Worksheets.Add("supplier-perf");
-            var headers = new[] { "barcode", "itemNumber", "productName", "secondProductName", "purchasePrice", "retailPrice", "quantity", "supplier", "category" };
-            for (var c = 0; c < headers.Length; c++)
+            for (var c = 0; c < SupplierPerfHeaders.Length; c++)
             {
-                ws.Cell(1, c + 1).Value = headers[c];
+                ws.Cell(1, c + 1).Value = SupplierPerfHeaders[c];
             }
 
             for (var i = 1; i <= rows; i++)
             {
                 var excelRow = i + 1;
-                var barcode = SupplierPerfBarcodeForRow(i, products);
-                var item = "PERF-" + i.ToString("000000", CultureInfo.InvariantCulture);
-                var productName = "Perf Product " + i.ToString(CultureInfo.InvariantCulture);
-                var secondName = "Perf Second " + i.ToString(CultureInfo.InvariantCulture);
-                var retailPrice = SupplierPerfPrice(i + 100);
-
-                if (i == 1 || i == 2)
-                {
-                    barcode = SupplierPerfExistingBarcode(1);
-                    item = i == 1 ? "DUP-FIRST" : "DUP-LAST";
-                    productName = i == 1 ? "Duplicate First" : "Duplicate Last";
-                }
-                else if (i == 3)
-                {
-                    barcode = string.Empty;
-                    item = "MISSING-BARCODE";
-                }
-                else if (i == 4)
-                {
-                    barcode = SupplierPerfNewBarcode(i);
-                    productName = string.Empty;
-                    secondName = "Second Name Only";
-                }
-                else if (i == 5)
-                {
-                    barcode = SupplierPerfNewBarcode(i);
-                    retailPrice = string.Empty;
-                }
-
-                ws.Cell(excelRow, 1).Value = barcode;
-                ws.Cell(excelRow, 2).Value = item;
-                ws.Cell(excelRow, 3).Value = productName;
-                ws.Cell(excelRow, 4).Value = secondName;
-                ws.Cell(excelRow, 5).Value = SupplierPerfPrice(i);
-                ws.Cell(excelRow, 6).Value = retailPrice;
-                ws.Cell(excelRow, 7).Value = (i % 40 + 1).ToString(CultureInfo.InvariantCulture);
-                ws.Cell(excelRow, 8).Value = "Perf Supplier";
-                ws.Cell(excelRow, 9).Value = "Perf Category";
+                var values = SupplierPerfValues(i, products);
+                for (var c = 0; c < values.Length; c++)
+                    ws.Cell(excelRow, c + 1).Value = values[c];
             }
 
+            var secondSheet = workbook.Worksheets.Add("large-second-sheet");
+            secondSheet.Cell(1, 1).Value = "ignoredKey";
+            secondSheet.Cell(1, 2).Value = "ignoredValue";
+            for (var i = 1; i <= rows; i++)
+            {
+                secondSheet.Cell(i + 1, 1).Value = "SECOND-" + i.ToString("000000", CultureInfo.InvariantCulture);
+                secondSheet.Cell(i + 1, 2).Value = "Only the first worksheet is contractual";
+            }
             workbook.SaveAs(path);
         }
+    }
+
+    private static void WriteSupplierPerfHtmlWorkbook(string path, int rows, int products)
+    {
+        var html = new StringBuilder(Math.Max(4096, rows * 512));
+        html.Append("<!doctype html><html><head><meta charset=\"utf-8\"></head><body><table><thead><tr>");
+        foreach (var header in SupplierPerfHeaders)
+            html.Append("<th>").Append(WebUtility.HtmlEncode(header)).Append("</th>");
+        html.Append("</tr></thead><tbody>");
+        for (var i = 1; i <= rows; i++)
+        {
+            html.Append("<tr>");
+            foreach (var value in SupplierPerfValues(i, products))
+                html.Append("<td>").Append(WebUtility.HtmlEncode(value)).Append("</td>");
+            html.Append("</tr>");
+        }
+        html.Append("</tbody></table></body></html>");
+        File.WriteAllText(path, html.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    }
+
+    private static string[] SupplierPerfValues(int row, int products)
+    {
+        var barcode = SupplierPerfBarcodeForRow(row, products);
+        var item = "PERF-" + row.ToString("000000", CultureInfo.InvariantCulture);
+        var productName = "Perf Product " + row.ToString(CultureInfo.InvariantCulture);
+        var secondName = "Perf Second " + row.ToString(CultureInfo.InvariantCulture);
+        var retailPrice = SupplierPerfPrice(row + 100);
+
+        if (row == 1 || row == 2)
+        {
+            barcode = SupplierPerfExistingBarcode(1);
+            item = row == 1 ? "DUP-FIRST" : "DUP-LAST";
+            productName = row == 1 ? "Duplicate First" : "Duplicate Last";
+        }
+        else if (row == 3)
+        {
+            barcode = string.Empty;
+            item = "MISSING-BARCODE";
+        }
+        else if (row == 4)
+        {
+            barcode = SupplierPerfNewBarcode(row);
+            productName = string.Empty;
+            secondName = "Second Name Only";
+        }
+        else if (row == 5)
+        {
+            barcode = SupplierPerfNewBarcode(row);
+            retailPrice = string.Empty;
+        }
+
+        return new[]
+        {
+            barcode,
+            item,
+            productName,
+            secondName,
+            SupplierPerfPrice(row),
+            retailPrice,
+            (row % 40 + 1).ToString(CultureInfo.InvariantCulture),
+            "Perf Supplier",
+            "Perf Category",
+            "EA",
+            (row % 2 == 0 ? "VAT19" : "VAT0"),
+            "Representative supplier note " + row.ToString(CultureInfo.InvariantCulture)
+        };
     }
 
     private static string SupplierPerfBarcodeForRow(int row, int products)

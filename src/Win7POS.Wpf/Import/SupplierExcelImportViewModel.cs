@@ -5,12 +5,14 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core.Import;
+using Win7POS.Data.Import;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 
@@ -22,6 +24,7 @@ namespace Win7POS.Wpf.Import
         private readonly ISupplierExcelFileDialogService _fileDialogService;
         private readonly ISupplierExcelCompletionDialogService _completionDialogService;
         private readonly FileLogger _logger = new FileLogger("SupplierExcelImportViewModel");
+        private CancellationTokenSource _analyzeCancellation;
         private int _stepIndex;
         private string _selectedPath = string.Empty;
         private string _status = string.Empty;
@@ -51,7 +54,7 @@ namespace Win7POS.Wpf.Import
             SyncPreviewCommand = new AsyncRelayCommand(BuildSyncPreviewAsync, () => !IsBusy && StepIndex == 2 && EditableRows.Count > 0);
             ApplyCommand = new AsyncRelayCommand(ApplyAsync, () => !IsBusy && StepIndex == 3 && CanApply);
             ApplyMarkupCommand = new RelayCommand(ApplyMarkup, () => !IsBusy && StepIndex == 2 && EditableRows.Count > 0);
-            CancelCommand = new RelayCommand(() => RequestClose?.Invoke(false), () => !IsBusy);
+            CancelCommand = new RelayCommand(Cancel, () => !IsBusy || _analyzeCancellation != null);
             Status = PosLocalization.T("supplierExcelImport.statusChooseFile");
         }
 
@@ -375,6 +378,8 @@ namespace Win7POS.Wpf.Import
                 return;
             }
 
+            var cancellation = new CancellationTokenSource();
+            _analyzeCancellation = cancellation;
             IsBusy = true;
             Status = PosLocalization.T("supplierExcelImport.statusAnalyzing");
             try
@@ -382,7 +387,11 @@ namespace Win7POS.Wpf.Import
                 var overrides = Columns.Count == 0
                     ? null
                     : Columns.ToDictionary(c => c.ColumnIndex, c => c.IsEnabled ? (c.CanonicalKey ?? string.Empty) : string.Empty);
-                var result = await _service.AnalyzeAsync(SelectedPath, overrides).ConfigureAwait(true);
+                var result = await _service.AnalyzeAsync(
+                    SelectedPath,
+                    overrides,
+                    cancellation.Token).ConfigureAwait(true);
+                cancellation.Token.ThrowIfCancellationRequested();
                 ApplyAnalysis(result);
                 StepIndex = 1;
                 Status = PosLocalization.F(
@@ -391,14 +400,64 @@ namespace Win7POS.Wpf.Import
                         ? PosLocalization.T("common.unavailableShort")
                         : SelectedSheetName);
             }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                Status = PosLocalization.T("supplierExcelImport.statusAnalysisCancelled");
+            }
+            catch (SupplierExcelImportException ex)
+            {
+                _logger.LogError(ex, "Supplier Excel analyze rejected");
+                Status = PosLocalization.F(
+                    "supplierExcelImport.statusAnalyzeError",
+                    LocalizedReaderError(ex.Code));
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Supplier Excel analyze failed");
-                Status = PosLocalization.F("supplierExcelImport.statusAnalyzeError", ex.Message);
+                Status = PosLocalization.F(
+                    "supplierExcelImport.statusAnalyzeError",
+                    PosLocalization.T("supplierExcelImport.errorGeneric"));
             }
             finally
             {
+                if (ReferenceEquals(_analyzeCancellation, cancellation))
+                    _analyzeCancellation = null;
+                cancellation.Dispose();
                 IsBusy = false;
+            }
+        }
+
+        private void Cancel()
+        {
+            if (!IsBusy)
+            {
+                RequestClose?.Invoke(false);
+                return;
+            }
+
+            var cancellation = _analyzeCancellation;
+            if (cancellation == null || cancellation.IsCancellationRequested)
+                return;
+            Status = PosLocalization.T("supplierExcelImport.statusCancellationRequested");
+            cancellation.Cancel();
+        }
+
+        private static string LocalizedReaderError(string code)
+        {
+            switch (code ?? string.Empty)
+            {
+                case SupplierExcelImportErrorCodes.FileTooLarge:
+                    return PosLocalization.T("supplierExcelImport.errorFileTooLarge");
+                case SupplierExcelImportErrorCodes.RowLimitExceeded:
+                    return PosLocalization.T("supplierExcelImport.errorRowLimit");
+                case SupplierExcelImportErrorCodes.ColumnLimitExceeded:
+                    return PosLocalization.T("supplierExcelImport.errorColumnLimit");
+                case SupplierExcelImportErrorCodes.CellLimitExceeded:
+                    return PosLocalization.T("supplierExcelImport.errorCellLimit");
+                case SupplierExcelImportErrorCodes.CellTextTooLarge:
+                    return PosLocalization.T("supplierExcelImport.errorCellText");
+                default:
+                    return PosLocalization.T("supplierExcelImport.errorCorruptOrUnsupported");
             }
         }
 

@@ -59,6 +59,41 @@ public sealed class SupplierImportAnalyzerTests
         Assert.IsTrue(preview.Errors.Any(error => error.Message.Contains("retailPrice", StringComparison.OrdinalIgnoreCase)));
     }
 
+    [TestMethod]
+    public void BuildRawTable_CancelledToken_DoesNotReturnPartialTable()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var rows = Enumerable.Range(0, 1000)
+            .Select(index => (IReadOnlyList<string>)new[]
+            {
+                (10000000 + index).ToString(),
+                "Product " + index,
+                "100",
+                "180"
+            })
+            .ToList();
+
+        Assert.ThrowsExactly<OperationCanceledException>(() =>
+            SupplierImportAnalyzer.BuildRawTable("cancel", rows, cancellation.Token));
+    }
+
+    [TestMethod]
+    public void Analyze_CancelledToken_DoesNotReturnPartialAnalysis()
+    {
+        var table = SupplierTable(
+            new[] { "barcode", "productName", "purchasePrice", "retailPrice" },
+            new[] { "990000000004", "Cancelled", "100", "180" });
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        Assert.ThrowsExactly<OperationCanceledException>(() =>
+            SupplierImportAnalyzer.Analyze(
+                table,
+                Array.Empty<ProductDetailsRow>(),
+                cancellation.Token));
+    }
+
     private static SupplierExcelRawTable SupplierTable(params string[][] rows)
     {
         return SupplierImportAnalyzer.BuildRawTable(

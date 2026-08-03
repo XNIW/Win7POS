@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Win7POS.Core.Models;
 
 namespace Win7POS.Core.Import
@@ -11,6 +12,7 @@ namespace Win7POS.Core.Import
     public static class SupplierImportAnalyzer
     {
         private const int MaxPatternSampleRows = 40;
+        private const int CancellationCheckRowInterval = 64;
         private static readonly Regex CombiningMarks = new Regex(@"\p{M}+", RegexOptions.Compiled);
 
         private static readonly Dictionary<string, string[]> HeaderAliases =
@@ -39,20 +41,63 @@ namespace Win7POS.Core.Import
 
         public static SupplierExcelRawTable BuildRawTable(string sheetName, IReadOnlyList<IReadOnlyList<string>> rawRows)
         {
-            var rows = NormalizeRows(rawRows);
+            return BuildRawTable(sheetName, rawRows, CancellationToken.None);
+        }
+
+        public static SupplierExcelRawTable BuildRawTable(
+            string sheetName,
+            IReadOnlyList<IReadOnlyList<string>> rawRows,
+            CancellationToken cancellationToken)
+        {
+            return BuildRawTableCore(sheetName, NormalizeRows(rawRows, cancellationToken), cancellationToken);
+        }
+
+        /// <summary>
+        /// Builds a raw table by taking ownership of normalized mutable rows.
+        /// Callers must not reuse or mutate the supplied rows after this call.
+        /// </summary>
+        public static SupplierExcelRawTable BuildRawTableFromOwnedRows(string sheetName, List<List<string>> normalizedRows)
+        {
+            return BuildRawTableFromOwnedRows(sheetName, normalizedRows, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Builds a raw table by taking ownership of normalized mutable rows.
+        /// Callers must not reuse or mutate the supplied rows after this call.
+        /// </summary>
+        public static SupplierExcelRawTable BuildRawTableFromOwnedRows(
+            string sheetName,
+            List<List<string>> normalizedRows,
+            CancellationToken cancellationToken)
+        {
+            return BuildRawTableCore(sheetName, normalizedRows ?? new List<List<string>>(), cancellationToken);
+        }
+
+        private static SupplierExcelRawTable BuildRawTableCore(
+            string sheetName,
+            List<List<string>> rows,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             var table = new SupplierExcelRawTable { SheetName = sheetName ?? string.Empty };
             if (rows.Count == 0) return table;
 
-            var dataRowIdx = DetectFirstDataRow(rows);
+            var dataRowIdx = DetectFirstDataRow(rows, cancellationToken);
             if (dataRowIdx < 0) dataRowIdx = 0;
             table.DataRowIndex = dataRowIdx;
             table.HasHeader = dataRowIdx > 0;
 
             var colCount = rows.Max(r => r.Count);
             var originalHeaders = table.HasHeader
-                ? PadRow(rows[dataRowIdx - 1], colCount)
+                ? PadRowInPlace(rows[dataRowIdx - 1], colCount)
                 : Enumerable.Range(1, colCount).Select(i => "Column " + i.ToString(CultureInfo.InvariantCulture)).ToList();
-            var dataRows = rows.Skip(dataRowIdx).Select(row => PadRow(row, colCount)).ToList();
+            var dataRows = rows.Skip(dataRowIdx).ToList();
+            for (var rowIndex = 0; rowIndex < dataRows.Count; rowIndex++)
+            {
+                if (rowIndex % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+                PadRowInPlace(dataRows[rowIndex], colCount);
+            }
             var dataRowNumbers = Enumerable.Range(dataRowIdx + 1, dataRows.Count).ToList();
 
             var columns = new List<SupplierExcelColumn>();
@@ -73,11 +118,12 @@ namespace Win7POS.Core.Import
                 });
             }
 
-            DropEmptyColumns(columns, dataRows);
+            DropEmptyColumns(columns, dataRows, cancellationToken);
             InferPatternColumns(columns, dataRows, table.HasHeader);
-            EnsureRequiredColumns(columns, dataRows);
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureRequiredColumns(columns, dataRows, cancellationToken);
             var beforeSummaryFilter = dataRows.Count;
-            FilterSummaryRows(columns, dataRows, dataRowNumbers);
+            FilterSummaryRows(columns, dataRows, dataRowNumbers, cancellationToken);
             table.DroppedSummaryRows = Math.Max(0, beforeSummaryFilter - dataRows.Count);
             ApplyColumnSamples(columns, dataRows);
 
@@ -89,9 +135,9 @@ namespace Win7POS.Core.Import
 
             for (var i = 0; i < dataRows.Count; i++)
             {
-                var item = new SupplierExcelRow { RowNumber = dataRowNumbers[i] };
-                item.Values.AddRange(dataRows[i]);
-                table.Rows.Add(item);
+                if (i % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+                table.Rows.Add(new SupplierExcelRow(dataRowNumbers[i], dataRows[i]));
             }
 
             return table;
@@ -102,6 +148,16 @@ namespace Win7POS.Core.Import
             IEnumerable<ProductDetailsRow> existingProducts,
             IDictionary<int, string> columnOverrides = null)
         {
+            return Analyze(table, existingProducts, CancellationToken.None, columnOverrides);
+        }
+
+        public static SupplierImportAnalysis Analyze(
+            SupplierExcelRawTable table,
+            IEnumerable<ProductDetailsRow> existingProducts,
+            CancellationToken cancellationToken,
+            IDictionary<int, string> columnOverrides = null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             var result = new SupplierImportAnalysis();
             if (table == null) return result;
             result.SheetName = table.SheetName ?? string.Empty;
@@ -117,8 +173,11 @@ namespace Win7POS.Core.Import
             result.SourceRowCount = table.Rows.Count;
 
             var existingByBarcode = new Dictionary<string, ProductDetailsRow>(StringComparer.OrdinalIgnoreCase);
+            var existingIndex = 0;
             foreach (var product in existingProducts ?? Enumerable.Empty<ProductDetailsRow>())
             {
+                if (existingIndex++ % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 var barcode = (product?.Barcode ?? string.Empty).Trim();
                 if (barcode.Length > 0 && !existingByBarcode.ContainsKey(barcode))
                     existingByBarcode.Add(barcode, product);
@@ -131,8 +190,11 @@ namespace Win7POS.Core.Import
             }
 
             var pendingByBarcode = new Dictionary<string, PendingRow>(StringComparer.OrdinalIgnoreCase);
+            var rawIndex = 0;
             foreach (var raw in table.Rows)
             {
+                if (rawIndex++ % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 var rowMap = BuildRowMap(columns, raw.Values);
                 var barcode = Value(rowMap, AndroidImportKeys.Barcode);
                 if (string.IsNullOrWhiteSpace(barcode))
@@ -162,8 +224,11 @@ namespace Win7POS.Core.Import
                 }
             }
 
+            var pendingIndex = 0;
             foreach (var pending in pendingByBarcode.Values)
             {
+                if (pendingIndex++ % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 var barcode = Value(pending.Values, AndroidImportKeys.Barcode);
                 if (pending.Rows.Count > 1)
                 {
@@ -214,6 +279,7 @@ namespace Win7POS.Core.Import
                 result.EditableRows.Add(editable);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             return result;
         }
 
@@ -375,26 +441,36 @@ namespace Win7POS.Core.Import
             return sb.ToString();
         }
 
-        private static List<List<string>> NormalizeRows(IReadOnlyList<IReadOnlyList<string>> rawRows)
+        private static List<List<string>> NormalizeRows(
+            IReadOnlyList<IReadOnlyList<string>> rawRows,
+            CancellationToken cancellationToken)
         {
-            return (rawRows ?? Array.Empty<IReadOnlyList<string>>())
-                .Select(row => (row ?? Array.Empty<string>())
-                    .Select(value => (value ?? string.Empty).Trim())
-                    .ToList())
-                .Select(row =>
-                {
-                    while (row.Count > 0 && string.IsNullOrWhiteSpace(row[row.Count - 1]))
-                        row.RemoveAt(row.Count - 1);
-                    return row;
-                })
-                .Where(row => row.Any(value => !string.IsNullOrWhiteSpace(value)))
-                .ToList();
+            var source = rawRows ?? Array.Empty<IReadOnlyList<string>>();
+            var normalized = new List<List<string>>(source.Count);
+            for (var rowIndex = 0; rowIndex < source.Count; rowIndex++)
+            {
+                if (rowIndex % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+                var sourceRow = source[rowIndex] ?? Array.Empty<string>();
+                var row = new List<string>(sourceRow.Count);
+                for (var column = 0; column < sourceRow.Count; column++)
+                    row.Add((sourceRow[column] ?? string.Empty).Trim());
+                while (row.Count > 0 && string.IsNullOrWhiteSpace(row[row.Count - 1]))
+                    row.RemoveAt(row.Count - 1);
+                if (row.Any(value => !string.IsNullOrWhiteSpace(value)))
+                    normalized.Add(row);
+            }
+            return normalized;
         }
 
-        private static int DetectFirstDataRow(IReadOnlyList<List<string>> rows)
+        private static int DetectFirstDataRow(
+            IReadOnlyList<List<string>> rows,
+            CancellationToken cancellationToken)
         {
             for (var i = 0; i < rows.Count; i++)
             {
+                if (i % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 var numeric = rows[i].Count(v => ParseNumber(v).HasValue);
                 var text = rows[i].Count(v => !string.IsNullOrWhiteSpace(v) && !ParseNumber(v).HasValue);
                 if (numeric >= 3 && text >= 1) return i;
@@ -402,12 +478,14 @@ namespace Win7POS.Core.Import
             return -1;
         }
 
-        private static List<string> PadRow(IReadOnlyList<string> row, int count)
+        private static List<string> PadRowInPlace(List<string> row, int count)
         {
-            var result = new List<string>(count);
-            for (var i = 0; i < count; i++)
-                result.Add(i < (row?.Count ?? 0) ? (row[i] ?? string.Empty).Trim() : string.Empty);
-            return result;
+            row = row ?? new List<string>();
+            for (var i = 0; i < row.Count; i++)
+                row[i] = (row[i] ?? string.Empty).Trim();
+            while (row.Count < count)
+                row.Add(string.Empty);
+            return row;
         }
 
         private static string CanonicalHeaderKey(string rawHeader)
@@ -422,17 +500,31 @@ namespace Win7POS.Core.Import
             return string.Empty;
         }
 
-        private static void DropEmptyColumns(List<SupplierExcelColumn> columns, List<List<string>> rows)
+        private static void DropEmptyColumns(
+            List<SupplierExcelColumn> columns,
+            List<List<string>> rows,
+            CancellationToken cancellationToken)
         {
             for (var c = columns.Count - 1; c >= 0; c--)
             {
-                if (!string.IsNullOrWhiteSpace(columns[c].OriginalHeader) ||
-                    rows.Any(row => c < row.Count && !string.IsNullOrWhiteSpace(row[c])))
+                cancellationToken.ThrowIfCancellationRequested();
+                var hasValue = !string.IsNullOrWhiteSpace(columns[c].OriginalHeader);
+                for (var rowIndex = 0; !hasValue && rowIndex < rows.Count; rowIndex++)
+                {
+                    if (rowIndex % CancellationCheckRowInterval == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
+                    hasValue = c < rows[rowIndex].Count && !string.IsNullOrWhiteSpace(rows[rowIndex][c]);
+                }
+                if (hasValue)
                     continue;
 
                 columns.RemoveAt(c);
-                foreach (var row in rows)
-                    if (c < row.Count) row.RemoveAt(c);
+                for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+                {
+                    if (rowIndex % CancellationCheckRowInterval == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
+                    if (c < rows[rowIndex].Count) rows[rowIndex].RemoveAt(c);
+                }
             }
         }
 
@@ -557,10 +649,14 @@ namespace Win7POS.Core.Import
             return Tuple.Create(bestCol, bestScore);
         }
 
-        private static void EnsureRequiredColumns(List<SupplierExcelColumn> columns, List<List<string>> rows)
+        private static void EnsureRequiredColumns(
+            List<SupplierExcelColumn> columns,
+            List<List<string>> rows,
+            CancellationToken cancellationToken)
         {
             foreach (var key in AndroidImportKeys.RequiredKeys)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (columns.Any(c => c.CanonicalKey == key)) continue;
                 var index = columns.Count;
                 columns.Add(new SupplierExcelColumn
@@ -574,11 +670,20 @@ namespace Win7POS.Core.Import
                     IsGenerated = true,
                     OriginalHeader = string.Empty
                 });
-                foreach (var row in rows) row.Add(string.Empty);
+                for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+                {
+                    if (rowIndex % CancellationCheckRowInterval == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
+                    rows[rowIndex].Add(string.Empty);
+                }
             }
         }
 
-        private static void FilterSummaryRows(List<SupplierExcelColumn> columns, List<List<string>> rows, List<int> rowNumbers)
+        private static void FilterSummaryRows(
+            List<SupplierExcelColumn> columns,
+            List<List<string>> rows,
+            List<int> rowNumbers,
+            CancellationToken cancellationToken)
         {
             var map = columns
                 .Select((c, i) => new { c.CanonicalKey, Index = i })
@@ -587,6 +692,8 @@ namespace Win7POS.Core.Import
                 .ToDictionary(g => g.Key, g => g.First().Index, StringComparer.Ordinal);
             for (var i = rows.Count - 1; i >= 0; i--)
             {
+                if (i % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 if (!IsSummaryRow(rows[i], map))
                     continue;
                 rows.RemoveAt(i);

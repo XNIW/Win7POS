@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core;
 using Win7POS.Core.Import;
@@ -37,10 +38,25 @@ namespace Win7POS.Wpf.Import
             string filePath,
             IDictionary<int, string> columnOverrides = null)
         {
+            return await AnalyzeAsync(filePath, columnOverrides, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        public async Task<SupplierImportAnalysis> AnalyzeAsync(
+            string filePath,
+            IDictionary<int, string> columnOverrides,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             DbInitializer.EnsureCreated(_options);
-            var table = await Task.Run(() => SupplierExcelImportReader.ReadFirstWorksheet(filePath)).ConfigureAwait(false);
-            var products = await LoadExistingProductsForTableAsync(table, columnOverrides).ConfigureAwait(false);
-            return SupplierImportAnalyzer.Analyze(table, products, columnOverrides);
+            var table = await Task.Run(
+                () => SupplierExcelImportReader.ReadFirstWorksheet(filePath, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+            var products = await LoadExistingProductsForTableAsync(
+                table,
+                columnOverrides,
+                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return SupplierImportAnalyzer.Analyze(table, products, cancellationToken, columnOverrides);
         }
 
         public async Task<SupplierImportSyncPreview> BuildSyncPreviewAsync(
@@ -181,13 +197,17 @@ namespace Win7POS.Wpf.Import
 
         private async Task<IReadOnlyList<ProductDetailsRow>> LoadExistingProductsForTableAsync(
             SupplierExcelRawTable table,
-            IDictionary<int, string> columnOverrides)
+            IDictionary<int, string> columnOverrides,
+            CancellationToken cancellationToken)
         {
             var preliminary = SupplierImportAnalyzer.Analyze(
                 table,
                 Array.Empty<ProductDetailsRow>(),
+                cancellationToken,
                 columnOverrides);
-            return await LoadExistingProductsForRowsAsync(preliminary.EditableRows).ConfigureAwait(false);
+            var products = await LoadExistingProductsForRowsAsync(preliminary.EditableRows).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return products;
         }
 
         private async Task<IReadOnlyList<ProductDetailsRow>> LoadExistingProductsForRowsAsync(
