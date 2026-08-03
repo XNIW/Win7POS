@@ -108,8 +108,21 @@ namespace Win7POS.Core.Import
 
     public sealed class SupplierExcelRow
     {
+        private readonly List<string> _values;
+
+        public SupplierExcelRow()
+            : this(0, new List<string>())
+        {
+        }
+
+        internal SupplierExcelRow(int rowNumber, List<string> values)
+        {
+            RowNumber = rowNumber;
+            _values = values ?? new List<string>();
+        }
+
         public int RowNumber { get; set; }
-        public List<string> Values { get; } = new List<string>();
+        public List<string> Values { get { return _values; } }
     }
 
     public sealed class SupplierImportAnalysis
