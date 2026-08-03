@@ -60,8 +60,39 @@ namespace Win7POS.Core.Import
         public bool HasHeader { get; set; }
         public int DataRowIndex { get; set; }
         public int DroppedSummaryRows { get; set; }
+        public SupplierImportDetectionTrace DetectionTrace { get; set; } = new SupplierImportDetectionTrace();
         public List<SupplierExcelColumn> Columns { get; } = new List<SupplierExcelColumn>();
         public List<SupplierExcelRow> Rows { get; } = new List<SupplierExcelRow>();
+    }
+
+    public sealed class SupplierImportColumnCandidateTrace
+    {
+        public int ColumnIndex { get; set; }
+        public double Score { get; set; }
+        public IReadOnlyList<string> Reasons { get; set; } = Array.Empty<string>();
+    }
+
+    public sealed class SupplierImportFieldDecisionTrace
+    {
+        public string Field { get; set; } = string.Empty;
+        public int? SelectedColumnIndex { get; set; }
+        public string Confidence { get; set; } = "low";
+        public string Reason { get; set; } = "not-evaluated";
+        public List<SupplierImportColumnCandidateTrace> Candidates { get; } = new List<SupplierImportColumnCandidateTrace>();
+    }
+
+    /// <summary>
+    /// Bounded structural diagnostics for supplier-column detection. Candidate
+    /// traces contain scores and reason codes only; worksheet values are never retained here.
+    /// </summary>
+    public sealed class SupplierImportDetectionTrace
+    {
+        public bool HasHeader { get; set; }
+        public int DataRowIndex { get; set; } = -1;
+        public string HeaderMode { get; set; } = "generated-no-data";
+        public int SampleSize { get; set; }
+        public List<int> HeaderRows { get; } = new List<int>();
+        public List<SupplierImportFieldDecisionTrace> FieldDecisions { get; } = new List<SupplierImportFieldDecisionTrace>();
     }
 
     public sealed class SupplierExcelColumn : INotifyPropertyChanged
@@ -140,6 +171,7 @@ namespace Win7POS.Core.Import
         public int DataRowIndex { get; set; }
         public int HeaderRowNumber { get; set; }
         public int SkippedMetadataRows { get; set; }
+        public SupplierImportDetectionTrace DetectionTrace { get; set; } = new SupplierImportDetectionTrace();
         public bool CanApply { get { return Errors.Count == 0; } }
     }
 

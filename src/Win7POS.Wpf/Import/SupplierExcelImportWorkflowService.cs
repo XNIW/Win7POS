@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -56,7 +57,9 @@ namespace Win7POS.Wpf.Import
                 columnOverrides,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            return SupplierImportAnalyzer.Analyze(table, products, cancellationToken, columnOverrides);
+            var analysis = SupplierImportAnalyzer.Analyze(table, products, cancellationToken, columnOverrides);
+            LogDetectionTrace(analysis.DetectionTrace);
+            return analysis;
         }
 
         public async Task<SupplierImportSyncPreview> BuildSyncPreviewAsync(
@@ -193,6 +196,29 @@ namespace Win7POS.Wpf.Import
                         Win7POS.Wpf.Localization.PosLocalization.T(
                             "products.operationImportCatalog")));
             }
+        }
+
+        private void LogDetectionTrace(SupplierImportDetectionTrace trace)
+        {
+            if (trace == null) return;
+            var decisions = trace.FieldDecisions
+                .Take(AndroidImportKeys.AllKeys.Length)
+                .Select(decision =>
+                    (decision.Field ?? string.Empty) + "=" +
+                    (decision.SelectedColumnIndex.HasValue
+                        ? decision.SelectedColumnIndex.Value.ToString(CultureInfo.InvariantCulture)
+                        : "-") + "," +
+                    (decision.Confidence ?? "low") + "," +
+                    (decision.Reason ?? "not-evaluated") + ",scores[" +
+                    string.Join(",", decision.Candidates.Take(3).Select(candidate =>
+                        candidate.ColumnIndex.ToString(CultureInfo.InvariantCulture) + ":" +
+                        candidate.Score.ToString("0.000", CultureInfo.InvariantCulture))) + "]");
+            _logger.LogInfo(
+                "Supplier import detection mode=" + (trace.HeaderMode ?? string.Empty) +
+                " dataRowIndex=" + trace.DataRowIndex.ToString(CultureInfo.InvariantCulture) +
+                " headerRows=" + string.Join(",", trace.HeaderRows.Take(2)) +
+                " sampleSize=" + trace.SampleSize.ToString(CultureInfo.InvariantCulture) +
+                " decisions=" + string.Join(";", decisions));
         }
 
         private async Task<IReadOnlyList<ProductDetailsRow>> LoadExistingProductsForTableAsync(

@@ -13,7 +13,16 @@ namespace Win7POS.Core.Import
     {
         private const int MaxPatternSampleRows = 40;
         private const int CancellationCheckRowInterval = 64;
+        private const int LegacyHeaderAliasFastPath = 3;
+        private const int MaxHeaderLookbackRows = 2;
+        private const int MinimumPatternEvidence = 2;
+        private const double MinimumPatternScore = 0.45;
+        private const double AmbiguityMargin = 0.08;
+        private const double MinimumRowNumberLikeRatio = 0.75;
         private static readonly Regex CombiningMarks = new Regex(@"\p{M}+", RegexOptions.Compiled);
+        private static readonly Regex HeaderFragmentSeparators = new Regex(
+            @"[\r\n/\\:：()（）\[\]{}|;]+",
+            RegexOptions.Compiled);
 
         private static readonly Dictionary<string, string[]> HeaderAliases =
             new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -35,6 +44,26 @@ namespace Win7POS.Core.Import
                 { AndroidImportKeys.OldPurchasePrice, new[] { "oldpurchaseprice", "prezzovecchioacquisto", "prezzoprecedenteacquisto", "acquistoprec", "previouspurchaseprice", "Prezzo vecchio acquisto", "旧进价", "Precio de compra anterior", "Old purchase price", "Purchase (Old)", "Acquisto (Vecchio)", "Compra (Antiguo)", "进价（旧）" } },
                 { AndroidImportKeys.OldRetailPrice, new[] { "oldretailprice", "prezzovecchiovendita", "prezzoprecedentevendita", "venditaprec", "previousretailprice", "Prezzo vecchio vendita", "旧零售价", "Precio de venta anterior", "Old retail price", "Retail (Old)", "Vendita (Vecchio)", "Venta (Antiguo)", "售价（旧）" } }
             };
+
+        private static readonly string[] HeaderAliasOrder =
+        {
+            AndroidImportKeys.RetailPrice,
+            AndroidImportKeys.PurchasePrice,
+            AndroidImportKeys.Barcode,
+            AndroidImportKeys.Quantity,
+            AndroidImportKeys.TotalPrice,
+            AndroidImportKeys.ProductName,
+            AndroidImportKeys.SecondProductName,
+            AndroidImportKeys.ItemNumber,
+            AndroidImportKeys.Supplier,
+            AndroidImportKeys.RowNumber,
+            AndroidImportKeys.Discount,
+            AndroidImportKeys.DiscountedPrice,
+            AndroidImportKeys.RealQuantity,
+            AndroidImportKeys.Category,
+            AndroidImportKeys.OldPurchasePrice,
+            AndroidImportKeys.OldRetailPrice
+        };
 
         private static readonly HashSet<string> CanonicalKeys =
             new HashSet<string>(AndroidImportKeys.AllKeys, StringComparer.Ordinal);
@@ -82,16 +111,32 @@ namespace Win7POS.Core.Import
             var table = new SupplierExcelRawTable { SheetName = sheetName ?? string.Empty };
             if (rows.Count == 0) return table;
 
-            var dataRowIdx = DetectFirstDataRow(rows, cancellationToken);
+            var headerDetection = DetectHeader(rows, cancellationToken);
+            var dataRowIdx = headerDetection.DataRowIndex;
             if (dataRowIdx < 0) dataRowIdx = 0;
             table.DataRowIndex = dataRowIdx;
-            table.HasHeader = dataRowIdx > 0;
+            table.HasHeader = headerDetection.HasHeader;
+            table.DetectionTrace = new SupplierImportDetectionTrace
+            {
+                HasHeader = headerDetection.HasHeader,
+                DataRowIndex = headerDetection.DataRowIndex,
+                HeaderMode = headerDetection.HeaderMode
+            };
+            foreach (var headerRow in headerDetection.HeaderRows)
+                table.DetectionTrace.HeaderRows.Add(headerRow);
 
-            var colCount = rows.Max(r => r.Count);
-            var originalHeaders = table.HasHeader
-                ? PadRowInPlace(rows[dataRowIdx - 1], colCount)
-                : Enumerable.Range(1, colCount).Select(i => "Column " + i.ToString(CultureInfo.InvariantCulture)).ToList();
             var dataRows = rows.Skip(dataRowIdx).ToList();
+            var originalHeaders = table.HasHeader
+                ? MergeHeaderRows(rows, headerDetection.HeaderRows)
+                : new List<string>();
+            var colCount = Math.Max(
+                originalHeaders.Count,
+                dataRows.Count == 0 ? 0 : dataRows.Max(row => row.Count));
+            if (!table.HasHeader)
+                originalHeaders = Enumerable.Range(1, colCount)
+                    .Select(i => "Column " + i.ToString(CultureInfo.InvariantCulture))
+                    .ToList();
+            PadRowInPlace(originalHeaders, colCount);
             for (var rowIndex = 0; rowIndex < dataRows.Count; rowIndex++)
             {
                 if (rowIndex % CancellationCheckRowInterval == 0)
@@ -104,27 +149,32 @@ namespace Win7POS.Core.Import
             for (var i = 0; i < colCount; i++)
             {
                 var rawHeader = originalHeaders[i] ?? string.Empty;
-                var key = table.HasHeader ? CanonicalHeaderKey(rawHeader) : string.Empty;
                 columns.Add(new SupplierExcelColumn
                 {
                     ColumnIndex = i,
                     OriginalHeader = table.HasHeader ? rawHeader : string.Empty,
                     DisplayName = table.HasHeader && rawHeader.Trim().Length > 0 ? rawHeader.Trim() : "Column " + (i + 1).ToString(CultureInfo.InvariantCulture),
-                    CanonicalKey = key ?? string.Empty,
-                    HeaderSource = string.IsNullOrEmpty(key) ? (table.HasHeader ? "unknown" : "generated") : "alias",
-                    Confidence = string.IsNullOrEmpty(key) ? "low" : "high",
-                    IsEnabled = !string.IsNullOrEmpty(key),
+                    CanonicalKey = string.Empty,
+                    HeaderSource = table.HasHeader ? "unknown" : "generated",
+                    Confidence = "low",
+                    IsEnabled = false,
                     IsGenerated = !table.HasHeader
                 });
             }
 
             DropEmptyColumns(columns, dataRows, cancellationToken);
-            InferPatternColumns(columns, dataRows, table.HasHeader);
+            InferPatternColumns(
+                columns,
+                dataRows,
+                table.HasHeader,
+                table.DetectionTrace,
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             EnsureRequiredColumns(columns, dataRows, cancellationToken);
             var beforeSummaryFilter = dataRows.Count;
             FilterSummaryRows(columns, dataRows, dataRowNumbers, cancellationToken);
             table.DroppedSummaryRows = Math.Max(0, beforeSummaryFilter - dataRows.Count);
+            table.DetectionTrace.SampleSize = Math.Min(dataRows.Count, MaxPatternSampleRows);
             ApplyColumnSamples(columns, dataRows);
 
             for (var i = 0; i < columns.Count; i++)
@@ -163,8 +213,13 @@ namespace Win7POS.Core.Import
             result.SheetName = table.SheetName ?? string.Empty;
             result.HasHeader = table.HasHeader;
             result.DataRowIndex = table.DataRowIndex;
-            result.HeaderRowNumber = table.HasHeader ? table.DataRowIndex : 0;
-            result.SkippedMetadataRows = table.HasHeader ? Math.Max(0, table.DataRowIndex - 1) : 0;
+            result.DetectionTrace = CloneDetectionTrace(table.DetectionTrace);
+            result.HeaderRowNumber = table.HasHeader && result.DetectionTrace.HeaderRows.Count > 0
+                ? result.DetectionTrace.HeaderRows[result.DetectionTrace.HeaderRows.Count - 1] + 1
+                : (table.HasHeader ? table.DataRowIndex : 0);
+            result.SkippedMetadataRows = table.HasHeader && result.DetectionTrace.HeaderRows.Count > 0
+                ? Math.Max(0, result.DetectionTrace.HeaderRows.Min())
+                : (table.HasHeader ? Math.Max(0, table.DataRowIndex - 1) : 0);
             result.DroppedSummaryRows = table.DroppedSummaryRows;
 
             var columns = CloneColumns(table.Columns);
@@ -441,6 +496,58 @@ namespace Win7POS.Core.Import
             return sb.ToString();
         }
 
+        private static bool IsCjkHeaderChar(char value)
+        {
+            return (value >= '\u3400' && value <= '\u4dbf') ||
+                (value >= '\u4e00' && value <= '\u9fff') ||
+                (value >= '\uf900' && value <= '\ufaff');
+        }
+
+        private static IEnumerable<string> SplitHeaderFragmentByScript(string fragment)
+        {
+            if (string.IsNullOrWhiteSpace(fragment)) yield break;
+            var current = new StringBuilder();
+            bool? currentIsCjk = null;
+            foreach (var ch in fragment)
+            {
+                var isCjk = IsCjkHeaderChar(ch);
+                if (current.Length > 0 && currentIsCjk.HasValue && currentIsCjk.Value != isCjk)
+                {
+                    yield return current.ToString();
+                    current.Clear();
+                }
+                current.Append(ch);
+                currentIsCjk = isCjk;
+            }
+            if (current.Length > 0)
+                yield return current.ToString();
+        }
+
+        private static IReadOnlyList<string> NormalizedHeaderFragments(string rawHeader)
+        {
+            var raw = rawHeader ?? string.Empty;
+            var coarse = HeaderFragmentSeparators
+                .Split(raw)
+                .SelectMany(fragment => Regex.Split(fragment, @"\s+"))
+                .Where(fragment => !string.IsNullOrWhiteSpace(fragment))
+                .ToList();
+            var fragments = new List<string> { raw };
+            fragments.AddRange(coarse);
+            fragments.AddRange(coarse.SelectMany(SplitHeaderFragmentByScript));
+            return fragments
+                .Select(NormalizeHeader)
+                .Where(fragment => fragment.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+        }
+
+        private static bool HeaderMatchesAlias(string rawHeader, string alias)
+        {
+            var normalizedAlias = NormalizeHeader(alias);
+            return normalizedAlias.Length > 0 &&
+                NormalizedHeaderFragments(rawHeader).Contains(normalizedAlias, StringComparer.Ordinal);
+        }
+
         private static List<List<string>> NormalizeRows(
             IReadOnlyList<IReadOnlyList<string>> rawRows,
             CancellationToken cancellationToken)
@@ -463,19 +570,164 @@ namespace Win7POS.Core.Import
             return normalized;
         }
 
-        private static int DetectFirstDataRow(
+        private static HeaderDetection DetectHeader(
             IReadOnlyList<List<string>> rows,
             CancellationToken cancellationToken)
         {
-            for (var i = 0; i < rows.Count; i++)
+            if (rows.Count == 0)
+                return new HeaderDetection(-1, false, Array.Empty<int>(), "generated-no-data");
+
+            var profiles = BuildRowProfiles(rows, cancellationToken);
+            var explicitHeaderIndex = -1;
+            for (var index = 0; index < profiles.Count; index++)
             {
-                if (i % CancellationCheckRowInterval == 0)
-                    cancellationToken.ThrowIfCancellationRequested();
-                var numeric = rows[i].Count(v => ParseNumber(v).HasValue);
-                var text = rows[i].Count(v => !string.IsNullOrWhiteSpace(v) && !ParseNumber(v).HasValue);
-                if (numeric >= 3 && text >= 1) return i;
+                if (profiles[index].AliasHits >= LegacyHeaderAliasFastPath &&
+                    index + 1 < profiles.Count && profiles[index + 1].LooksDataLike)
+                {
+                    explicitHeaderIndex = index;
+                    break;
+                }
             }
-            return -1;
+            if (explicitHeaderIndex >= 0)
+                return new HeaderDetection(
+                    explicitHeaderIndex + 1,
+                    true,
+                    new[] { explicitHeaderIndex },
+                    "legacy-fast-path");
+
+            var candidateIndex = -1;
+            for (var index = 0; index < profiles.Count; index++)
+            {
+                if (index % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+                var current = profiles[index];
+                if (!current.LooksDataLike) continue;
+
+                var repeatedPatternMatches = 0;
+                var last = Math.Min(index + 3, profiles.Count - 1);
+                for (var nextIndex = index + 1; nextIndex <= last; nextIndex++)
+                {
+                    var next = profiles[nextIndex];
+                    var minimumOverlap = Math.Min(3, Math.Min(current.NonBlankCount, next.NonBlankCount));
+                    if (next.LooksDataLike && SharedColumnCount(current, next) >= minimumOverlap)
+                        repeatedPatternMatches++;
+                }
+                var previousAliasHits = index > 0 ? profiles[index - 1].AliasHits : 0;
+                var futureSupportsTable = repeatedPatternMatches >= 1;
+                var immediateHeaderSupportsTable = previousAliasHits >= LegacyHeaderAliasFastPath;
+                var startsWithDenseData = index == 0 && profiles.Count > 1 && profiles[1].LooksDataLike;
+                if (futureSupportsTable || immediateHeaderSupportsTable || startsWithDenseData)
+                {
+                    candidateIndex = index;
+                    break;
+                }
+            }
+
+            if (candidateIndex < 0)
+                candidateIndex = profiles.FindIndex(profile => profile.LooksDataLike);
+            if (candidateIndex <= 0)
+                return new HeaderDetection(
+                    candidateIndex,
+                    false,
+                    Array.Empty<int>(),
+                    candidateIndex >= 0 ? "generated-no-header" : "generated-fallback");
+
+            var immediateHeaderIndex = candidateIndex - 1;
+            var immediateAliasHits = profiles[immediateHeaderIndex].AliasHits;
+            if (immediateAliasHits >= LegacyHeaderAliasFastPath)
+                return new HeaderDetection(
+                    candidateIndex,
+                    true,
+                    new[] { immediateHeaderIndex },
+                    "legacy-fast-path");
+
+            var lookbackStart = Math.Max(0, candidateIndex - MaxHeaderLookbackRows);
+            var lookbackRows = Enumerable.Range(lookbackStart, candidateIndex - lookbackStart)
+                .Where(index => profiles[index].NonBlankCount > 0 && !profiles[index].LooksDataLike)
+                .ToList();
+            IReadOnlyList<int> headerRows;
+            if (lookbackRows.Count >= 2)
+                headerRows = lookbackRows.Skip(Math.Max(0, lookbackRows.Count - MaxHeaderLookbackRows)).ToList();
+            else if (lookbackRows.Count > 0)
+                headerRows = lookbackRows;
+            else
+                headerRows = new[] { immediateHeaderIndex };
+
+            var combinedAliasHits = CountHeaderAliasHits(MergeHeaderRows(rows, headerRows));
+            if (combinedAliasHits > immediateAliasHits && headerRows.Count > 1)
+                return new HeaderDetection(candidateIndex, true, headerRows, "combined-lookback");
+            return new HeaderDetection(
+                candidateIndex,
+                true,
+                new[] { immediateHeaderIndex },
+                "single-row-fallback");
+        }
+
+        private static List<RowProfile> BuildRowProfiles(
+            IReadOnlyList<List<string>> rows,
+            CancellationToken cancellationToken)
+        {
+            var profiles = new List<RowProfile>(rows.Count);
+            for (var index = 0; index < rows.Count; index++)
+            {
+                if (index % CancellationCheckRowInterval == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+                var row = rows[index];
+                var nonBlankColumns = new HashSet<int>();
+                var numericCount = 0;
+                var textCount = 0;
+                for (var column = 0; column < row.Count; column++)
+                {
+                    var value = row[column];
+                    if (string.IsNullOrWhiteSpace(value)) continue;
+                    nonBlankColumns.Add(column);
+                    if (ParseNumber(value).HasValue) numericCount++;
+                    else textCount++;
+                }
+                var looksDataLike = nonBlankColumns.Count >= 4 && numericCount >= 2 && textCount >= 1;
+                profiles.Add(new RowProfile(
+                    index,
+                    nonBlankColumns,
+                    numericCount,
+                    textCount,
+                    looksDataLike ? 0 : CountHeaderAliasHits(row)));
+            }
+            return profiles;
+        }
+
+        private static int SharedColumnCount(RowProfile first, RowProfile second)
+        {
+            return first.NonBlankColumns.Count(column => second.NonBlankColumns.Contains(column));
+        }
+
+        private static int CountHeaderAliasHits(IEnumerable<string> row)
+        {
+            return row.Select(CanonicalHeaderKey)
+                .Where(key => !string.IsNullOrEmpty(key))
+                .Distinct(StringComparer.Ordinal)
+                .Count();
+        }
+
+        private static List<string> MergeHeaderRows(
+            IReadOnlyList<List<string>> rows,
+            IReadOnlyList<int> headerRows)
+        {
+            if (headerRows == null || headerRows.Count == 0) return new List<string>();
+            var columnCount = headerRows.Max(index => index >= 0 && index < rows.Count ? rows[index].Count : 0);
+            var merged = new List<string>(columnCount);
+            for (var column = 0; column < columnCount; column++)
+            {
+                var fragments = new List<string>();
+                foreach (var rowIndex in headerRows)
+                {
+                    if (rowIndex < 0 || rowIndex >= rows.Count || column >= rows[rowIndex].Count) continue;
+                    var value = rows[rowIndex][column];
+                    if (string.IsNullOrWhiteSpace(value) || fragments.Contains(value, StringComparer.Ordinal)) continue;
+                    fragments.Add(value);
+                }
+                merged.Add(string.Join(" ", fragments));
+            }
+            return merged;
         }
 
         private static List<string> PadRowInPlace(List<string> row, int count)
@@ -490,12 +742,15 @@ namespace Win7POS.Core.Import
 
         private static string CanonicalHeaderKey(string rawHeader)
         {
-            var normalized = NormalizeHeader(rawHeader);
-            if (normalized.Length == 0) return string.Empty;
-            foreach (var pair in HeaderAliases)
+            var fragments = NormalizedHeaderFragments(rawHeader);
+            if (fragments.Count == 0) return string.Empty;
+            foreach (var key in HeaderAliasOrder)
             {
-                if (NormalizeHeader(pair.Key) == normalized) return pair.Key;
-                if (pair.Value.Any(alias => NormalizeHeader(alias) == normalized)) return pair.Key;
+                string[] aliases;
+                if (!HeaderAliases.TryGetValue(key, out aliases)) continue;
+                if (fragments.Contains(NormalizeHeader(key), StringComparer.Ordinal)) return key;
+                if (aliases.Any(alias => fragments.Contains(NormalizeHeader(alias), StringComparer.Ordinal)))
+                    return key;
             }
             return string.Empty;
         }
@@ -528,125 +783,695 @@ namespace Win7POS.Core.Import
             }
         }
 
-        private static void InferPatternColumns(List<SupplierExcelColumn> columns, List<List<string>> rows, bool hasHeader)
+        private static void InferPatternColumns(
+            List<SupplierExcelColumn> columns,
+            List<List<string>> rows,
+            bool hasHeader,
+            SupplierImportDetectionTrace trace,
+            CancellationToken cancellationToken)
         {
-            if (columns.Count == 0 || rows.Count == 0) return;
-            var used = new HashSet<int>(columns
-                .Select((column, index) => new { column, index })
-                .Where(item => !string.IsNullOrEmpty(item.column.CanonicalKey))
-                .Select(item => item.index));
-            Action<string, Func<List<string>, double>, double> assign = (key, scorer, threshold) =>
+            if (columns.Count == 0 || rows.Count == 0)
             {
-                if (columns.Any(c => c.CanonicalKey == key)) return;
-                var bestCol = -1;
-                var bestScore = 0.0;
-                for (var i = 0; i < columns.Count; i++)
-                {
-                    if (used.Contains(i)) continue;
-                    var values = rows.Take(MaxPatternSampleRows).Select(row => i < row.Count ? row[i] : string.Empty).ToList();
-                    var score = scorer(values);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestCol = i;
-                    }
-                }
-                if (bestCol >= 0 && bestScore >= threshold)
-                {
-                    columns[bestCol].CanonicalKey = key;
-                    columns[bestCol].HeaderSource = "pattern";
-                    columns[bestCol].Confidence = bestScore >= 0.85 ? "high" : "medium";
-                    columns[bestCol].IsEnabled = true;
-                    used.Add(bestCol);
-                }
-            };
-
-            assign(AndroidImportKeys.Barcode, ScoreBarcode, 0.70);
-            assign(AndroidImportKeys.ProductName, ScoreProductName, 0.50);
-            assign(AndroidImportKeys.ItemNumber, ScoreItemNumber, 0.50);
-            assign(AndroidImportKeys.Quantity, ScoreQuantity, 0.70);
-            InferPurchaseAndTotal(columns, rows, used);
-
-            if (!hasHeader)
-            {
-                assign(AndroidImportKeys.RetailPrice, ScorePositiveNumeric, 0.70);
-                assign(AndroidImportKeys.SecondProductName, ScoreProductName, 0.50);
-                assign(AndroidImportKeys.Supplier, ScoreProductName, 0.50);
-                assign(AndroidImportKeys.Discount, ScoreDiscount, 0.50);
-                assign(AndroidImportKeys.DiscountedPrice, ScorePositiveNumeric, 0.70);
-                assign(AndroidImportKeys.RowNumber, ScoreRowNumber, 0.50);
+                SynthesizeFieldTraces(trace, new Dictionary<string, SupplierImportFieldDecisionTrace>(StringComparer.Ordinal));
+                return;
             }
-        }
 
-        private static void InferPurchaseAndTotal(List<SupplierExcelColumn> columns, List<List<string>> rows, HashSet<int> used)
-        {
-            var quantityCol = columns.FindIndex(c => c.CanonicalKey == AndroidImportKeys.Quantity);
-            if (quantityCol >= 0 && !columns.Any(c => c.CanonicalKey == AndroidImportKeys.PurchasePrice))
+            cancellationToken.ThrowIfCancellationRequested();
+            var samples = BuildColumnSamples(rows, columns.Count);
+            var used = new HashSet<int>();
+            var decisions = new Dictionary<string, SupplierImportFieldDecisionTrace>(StringComparer.Ordinal);
+
+            if (hasHeader)
             {
-                var bestPurchase = -1;
-                var bestTotal = -1;
-                var bestMatch = 0.0;
-                for (var p = 0; p < columns.Count; p++)
+                foreach (var key in HeaderAliasOrder)
                 {
-                    if (used.Contains(p)) continue;
-                    for (var t = 0; t < columns.Count; t++)
+                    string[] aliases;
+                    if (!HeaderAliases.TryGetValue(key, out aliases)) continue;
+                    var found = -1;
+                    for (var column = 0; column < columns.Count; column++)
                     {
-                        if (t == p || used.Contains(t)) continue;
-                        var match = MultiplicationMatch(rows, quantityCol, p, t);
-                        if (match > bestMatch)
+                        if (used.Contains(column)) continue;
+                        var rawHeader = columns[column].OriginalHeader ?? string.Empty;
+                        if (HeaderMatchesAlias(rawHeader, key) || aliases.Any(alias => HeaderMatchesAlias(rawHeader, alias)))
                         {
-                            bestMatch = match;
-                            bestPurchase = p;
-                            bestTotal = t;
+                            found = column;
+                            break;
+                        }
+                    }
+                    if (found < 0) continue;
+                    if (ShouldSkipHeaderAlias(key, columns[found].OriginalHeader, samples[found]))
+                    {
+                        decisions[key] = FieldDecision(
+                            key,
+                            null,
+                            "low",
+                            "header-alias-rejected",
+                            new[] { new PatternCandidate(found, 0.0, new[] { "row-number-like-ref-cajas" }) });
+                        continue;
+                    }
+
+                    AssignAlias(columns, used, key, found);
+                    decisions[key] = FieldDecision(
+                        key,
+                        found,
+                        "high",
+                        "header-alias",
+                        new[] { new PatternCandidate(found, 1.0, new[] { "alias-match" }) });
+                }
+            }
+
+            var minimumEvidence = MinimumEvidenceFor(rows.Count);
+            var rankedNumeric = samples
+                .Where(sample => sample.NumericValues.Count >= minimumEvidence && sample.DigitLongRatio < 0.90)
+                .OrderBy(sample => sample.MedianNumeric ?? double.MaxValue)
+                .ToList();
+            var numericMedianRank = new Dictionary<int, double>();
+            for (var index = 0; index < rankedNumeric.Count; index++)
+            {
+                numericMedianRank[rankedNumeric[index].ColumnIndex] = rankedNumeric.Count <= 1
+                    ? 0.5
+                    : Ratio(index, rankedNumeric.Count - 1);
+            }
+
+            var firstPassFields = new[]
+            {
+                AndroidImportKeys.Barcode,
+                AndroidImportKeys.ProductName,
+                AndroidImportKeys.Quantity
+            };
+            var pending = new Dictionary<string, List<PatternCandidate>>(StringComparer.Ordinal);
+            foreach (var field in firstPassFields)
+            {
+                if (columns.Any(column => column.CanonicalKey == field)) continue;
+                pending[field] = ScorePatternCandidates(
+                    field,
+                    Enumerable.Range(0, columns.Count).Where(column => !used.Contains(column)).ToList(),
+                    samples,
+                    numericMedianRank,
+                    rows);
+            }
+
+            var greedyOrder = pending
+                .OrderByDescending(pair => pair.Value.Count == 0 ? 0.0 : pair.Value[0].Score)
+                .ThenBy(pair => Array.IndexOf(firstPassFields, pair.Key))
+                .Select(pair => pair.Key)
+                .ToList();
+            foreach (var field in greedyOrder)
+                EvaluateAndAssignPatternField(field, pending[field], columns, used, decisions);
+
+            if (!columns.Any(column => column.CanonicalKey == AndroidImportKeys.PurchasePrice) ||
+                !columns.Any(column => column.CanonicalKey == AndroidImportKeys.TotalPrice))
+            {
+                var quantityColumn = columns.FindIndex(column => column.CanonicalKey == AndroidImportKeys.Quantity);
+                if (quantityColumn >= 0)
+                {
+                    var pair = DetectPurchaseTotalPair(
+                        quantityColumn,
+                        Enumerable.Range(0, columns.Count).Where(column => !used.Contains(column)).ToList(),
+                        samples,
+                        rows);
+                    if (pair != null)
+                    {
+                        if (!columns.Any(column => column.CanonicalKey == AndroidImportKeys.PurchasePrice))
+                        {
+                            var decision = FieldDecision(
+                                AndroidImportKeys.PurchasePrice,
+                                pair.PurchaseColumn,
+                                "high",
+                                "quantity-multiplication",
+                                new[]
+                                {
+                                    new PatternCandidate(
+                                        pair.PurchaseColumn,
+                                        pair.MatchRatio,
+                                        new[] { "pair=" + ScoreText(pair.MatchRatio) })
+                                });
+                            AssignPattern(columns, used, AndroidImportKeys.PurchasePrice, pair.PurchaseColumn, decision.Confidence);
+                            decisions[AndroidImportKeys.PurchasePrice] = decision;
+                        }
+                        if (!columns.Any(column => column.CanonicalKey == AndroidImportKeys.TotalPrice) &&
+                            !used.Contains(pair.TotalColumn))
+                        {
+                            var decision = FieldDecision(
+                                AndroidImportKeys.TotalPrice,
+                                pair.TotalColumn,
+                                "high",
+                                "quantity-multiplication",
+                                new[]
+                                {
+                                    new PatternCandidate(
+                                        pair.TotalColumn,
+                                        pair.MatchRatio,
+                                        new[] { "pair=" + ScoreText(pair.MatchRatio) })
+                                });
+                            AssignPattern(columns, used, AndroidImportKeys.TotalPrice, pair.TotalColumn, decision.Confidence);
+                            decisions[AndroidImportKeys.TotalPrice] = decision;
                         }
                     }
                 }
-                if (bestMatch >= 0.70)
+            }
+
+            foreach (var field in new[] { AndroidImportKeys.ItemNumber, AndroidImportKeys.PurchasePrice })
+            {
+                if (columns.Any(column => column.CanonicalKey == field)) continue;
+                var ranked = ScorePatternCandidates(
+                    field,
+                    Enumerable.Range(0, columns.Count).Where(column => !used.Contains(column)).ToList(),
+                    samples,
+                    numericMedianRank,
+                    rows);
+                EvaluateAndAssignPatternField(field, ranked, columns, used, decisions);
+                if (field == AndroidImportKeys.ItemNumber &&
+                    !columns.Any(column => column.CanonicalKey == AndroidImportKeys.ItemNumber))
                 {
-                    columns[bestPurchase].CanonicalKey = AndroidImportKeys.PurchasePrice;
-                    columns[bestPurchase].HeaderSource = "pattern";
-                    columns[bestPurchase].Confidence = bestMatch >= 0.85 ? "high" : "medium";
-                    columns[bestPurchase].IsEnabled = true;
-                    columns[bestTotal].CanonicalKey = AndroidImportKeys.TotalPrice;
-                    columns[bestTotal].HeaderSource = "pattern";
-                    columns[bestTotal].Confidence = bestMatch >= 0.85 ? "high" : "medium";
-                    columns[bestTotal].IsEnabled = true;
-                    used.Add(bestPurchase);
-                    used.Add(bestTotal);
-                    return;
+                    TryAssignLegacyItemNumber(columns, rows, used, decisions);
                 }
             }
 
-            if (!columns.Any(c => c.CanonicalKey == AndroidImportKeys.PurchasePrice))
+            if (!columns.Any(column => column.CanonicalKey == AndroidImportKeys.TotalPrice))
             {
-                var best = BestColumn(columns, rows, used, ScorePositiveNumeric);
-                if (best.Item1 >= 0 && best.Item2 >= 0.70)
+                var quantityColumn = columns.FindIndex(column => column.CanonicalKey == AndroidImportKeys.Quantity);
+                var purchaseColumn = columns.FindIndex(column => column.CanonicalKey == AndroidImportKeys.PurchasePrice);
+                if (quantityColumn >= 0 && purchaseColumn >= 0)
                 {
-                    columns[best.Item1].CanonicalKey = AndroidImportKeys.PurchasePrice;
-                    columns[best.Item1].HeaderSource = "pattern";
-                    columns[best.Item1].Confidence = best.Item2 >= 0.85 ? "high" : "medium";
-                    columns[best.Item1].IsEnabled = true;
-                    used.Add(best.Item1);
+                    var available = new List<int> { quantityColumn, purchaseColumn };
+                    available.AddRange(Enumerable.Range(0, columns.Count).Where(column => !used.Contains(column)));
+                    var ranked = ScorePatternCandidates(
+                            AndroidImportKeys.TotalPrice,
+                            available,
+                            samples,
+                            numericMedianRank,
+                            rows)
+                        .Where(candidate => candidate.ColumnIndex != quantityColumn && candidate.ColumnIndex != purchaseColumn)
+                        .ToList();
+                    EvaluateAndAssignPatternField(
+                        AndroidImportKeys.TotalPrice,
+                        ranked,
+                        columns,
+                        used,
+                        decisions,
+                        "total-multiplication");
                 }
+            }
+
+            if (!hasHeader)
+                InferHeaderlessSupplementalColumns(columns, rows, used, decisions);
+
+            SynthesizeFieldTraces(trace, decisions);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        private static void AssignAlias(
+            List<SupplierExcelColumn> columns,
+            ISet<int> used,
+            string key,
+            int column)
+        {
+            columns[column].CanonicalKey = key;
+            columns[column].HeaderSource = "alias";
+            columns[column].Confidence = "high";
+            columns[column].IsEnabled = true;
+            used.Add(column);
+        }
+
+        private static void AssignPattern(
+            List<SupplierExcelColumn> columns,
+            ISet<int> used,
+            string key,
+            int column,
+            string confidence)
+        {
+            if (column < 0 || column >= columns.Count || used.Contains(column)) return;
+            columns[column].CanonicalKey = key;
+            if (!string.Equals(columns[column].HeaderSource, "alias", StringComparison.OrdinalIgnoreCase))
+                columns[column].HeaderSource = "pattern";
+            columns[column].Confidence = confidence;
+            columns[column].IsEnabled = true;
+            used.Add(column);
+        }
+
+        private static void EvaluateAndAssignPatternField(
+            string field,
+            IEnumerable<PatternCandidate> rankedCandidates,
+            List<SupplierExcelColumn> columns,
+            ISet<int> used,
+            IDictionary<string, SupplierImportFieldDecisionTrace> decisions,
+            string assignedReason = "pattern-score")
+        {
+            var available = rankedCandidates.Where(candidate => !used.Contains(candidate.ColumnIndex)).Take(3).ToList();
+            var selected = available.FirstOrDefault();
+            var runnerUp = available.Skip(1).FirstOrDefault();
+            if (selected == null)
+            {
+                decisions[field] = FieldDecision(field, null, "low", "no-candidate", Array.Empty<PatternCandidate>());
+                return;
+            }
+
+            var chosen = selected;
+            var assign = ShouldAssignCandidate(selected, runnerUp);
+            var confidence = ConfidenceFor(selected, runnerUp);
+            var reason = assign ? assignedReason : "low-confidence";
+            if (!assign && field == AndroidImportKeys.ProductName && selected.Score >= 0.85)
+            {
+                var barcodeColumn = columns.FindIndex(column => column.CanonicalKey == AndroidImportKeys.Barcode);
+                if (barcodeColumn >= 0 && selected.ColumnIndex == barcodeColumn + 1)
+                {
+                    assign = true;
+                    confidence = "medium";
+                    reason = "catalog-adjacency-tiebreak";
+                }
+            }
+            if (!assign && field == AndroidImportKeys.Quantity)
+            {
+                var productNameColumn = columns.FindIndex(column => column.CanonicalKey == AndroidImportKeys.ProductName);
+                var adjacent = available.FirstOrDefault(candidate =>
+                    candidate.ColumnIndex == productNameColumn + 1 && candidate.Score >= MinimumPatternScore);
+                if (productNameColumn >= 0 && adjacent != null)
+                {
+                    chosen = adjacent;
+                    assign = true;
+                    confidence = "medium";
+                    reason = "catalog-adjacency-tiebreak";
+                }
+            }
+            decisions[field] = FieldDecision(
+                field,
+                assign ? (int?)chosen.ColumnIndex : null,
+                confidence,
+                reason,
+                available);
+            if (assign)
+                AssignPattern(columns, used, field, chosen.ColumnIndex, confidence);
+        }
+
+        private static SupplierImportFieldDecisionTrace FieldDecision(
+            string field,
+            int? selectedColumn,
+            string confidence,
+            string reason,
+            IEnumerable<PatternCandidate> candidates)
+        {
+            var decision = new SupplierImportFieldDecisionTrace
+            {
+                Field = field ?? string.Empty,
+                SelectedColumnIndex = selectedColumn,
+                Confidence = confidence ?? "low",
+                Reason = reason ?? "not-evaluated"
+            };
+            foreach (var candidate in (candidates ?? Enumerable.Empty<PatternCandidate>()).Take(3))
+            {
+                decision.Candidates.Add(new SupplierImportColumnCandidateTrace
+                {
+                    ColumnIndex = candidate.ColumnIndex,
+                    Score = candidate.Score,
+                    Reasons = candidate.Reasons.Take(4).ToArray()
+                });
+            }
+            return decision;
+        }
+
+        private static void SynthesizeFieldTraces(
+            SupplierImportDetectionTrace trace,
+            IDictionary<string, SupplierImportFieldDecisionTrace> decisions)
+        {
+            trace.FieldDecisions.Clear();
+            foreach (var field in AndroidImportKeys.AllKeys)
+            {
+                SupplierImportFieldDecisionTrace decision;
+                if (!decisions.TryGetValue(field, out decision))
+                    decision = FieldDecision(field, null, "low", "not-evaluated", Array.Empty<PatternCandidate>());
+                trace.FieldDecisions.Add(decision);
             }
         }
 
-        private static Tuple<int, double> BestColumn(List<SupplierExcelColumn> columns, List<List<string>> rows, HashSet<int> used, Func<List<string>, double> scorer)
+        private static int MinimumEvidenceFor(int dataRowCount)
         {
-            var bestCol = -1;
-            var bestScore = 0.0;
-            for (var i = 0; i < columns.Count; i++)
+            return dataRowCount <= 1 ? 1 : MinimumPatternEvidence;
+        }
+
+        private static List<ColumnSample> BuildColumnSamples(List<List<string>> rows, int columnCount)
+        {
+            var sampleRows = rows.Take(MaxPatternSampleRows).ToList();
+            var samples = new List<ColumnSample>(columnCount);
+            for (var column = 0; column < columnCount; column++)
             {
-                if (used.Contains(i)) continue;
-                var values = rows.Take(MaxPatternSampleRows).Select(row => i < row.Count ? row[i] : string.Empty).ToList();
-                var score = scorer(values);
-                if (score > bestScore)
+                var values = sampleRows.Select(row => column < row.Count ? (row[column] ?? string.Empty).Trim() : string.Empty).ToList();
+                var nonBlank = values.Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
+                var numeric = nonBlank.Select(ParseNumber).Where(value => value.HasValue).Select(value => value.Value).ToList();
+                var digitOnly = nonBlank.Where(value => value.All(char.IsDigit)).ToList();
+                samples.Add(new ColumnSample
                 {
-                    bestCol = i;
-                    bestScore = score;
+                    ColumnIndex = column,
+                    Values = values,
+                    NonBlankValues = nonBlank,
+                    NumericValues = numeric,
+                    MedianNumeric = Median(numeric),
+                    NumericRatio = Ratio(numeric.Count, sampleRows.Count),
+                    IntegerRatio = Ratio(numeric.Count(value => value == Math.Truncate(value)), numeric.Count),
+                    DecimalRawRatio = Ratio(nonBlank.Count(value => value.IndexOf(',') >= 0 || value.IndexOf('.') >= 0), nonBlank.Count),
+                    DominantLengthShare = DominantShare(nonBlank.Select(value => value.Length)),
+                    DominantValueShare = DominantShare(nonBlank),
+                    DigitLongRatio = Ratio(digitOnly.Count(value => value.Length >= 8 && value.Length <= 14), nonBlank.Count),
+                    ShortCodeRatio = Ratio(nonBlank.Count(value =>
+                        value.Length >= 4 && value.Length <= 12 && value.Any(char.IsDigit) &&
+                        (value.Length < 8 || value.Any(char.IsLetter))), nonBlank.Count),
+                    AlphaNumericRatio = Ratio(nonBlank.Count(value => value.Any(char.IsLetter) && value.Any(char.IsDigit)), nonBlank.Count),
+                    TextRatio = Ratio(nonBlank.Count(value => !ParseNumber(value).HasValue && value.Length >= 3), nonBlank.Count),
+                    LongTextRatio = Ratio(nonBlank.Count(value =>
+                        !ParseNumber(value).HasValue && (value.Length >= 5 || value.IndexOf(' ') >= 0)), nonBlank.Count),
+                    SmallPositiveRatio = Ratio(numeric.Count(value => value > 0.0 && value <= 200.0), numeric.Count),
+                    PriceLikeMagnitudeRatio = Ratio(numeric.Count(value => value >= 20.0), numeric.Count)
+                });
+            }
+            return samples;
+        }
+
+        private static List<PatternCandidate> ScorePatternCandidates(
+            string field,
+            IReadOnlyList<int> availableColumns,
+            IReadOnlyList<ColumnSample> samples,
+            IDictionary<int, double> numericMedianRank,
+            List<List<string>> rows)
+        {
+            var minimumEvidence = MinimumEvidenceFor(rows.Count);
+            var candidates = new List<PatternCandidate>();
+            foreach (var column in availableColumns)
+            {
+                var sample = samples[column];
+                var reasons = new List<string>();
+                double score;
+                switch (field)
+                {
+                    case AndroidImportKeys.Barcode:
+                        if (sample.NonBlankValues.Count < minimumEvidence)
+                        {
+                            reasons.Add("insufficient-evidence");
+                            score = 0.0;
+                        }
+                        else
+                        {
+                            reasons.Add("digits=" + ScoreText(sample.DigitLongRatio));
+                            reasons.Add("len=" + ScoreText(sample.DominantLengthShare));
+                            score = (sample.NumericRatio * 0.20) +
+                                (sample.DigitLongRatio * 0.55) +
+                                (sample.DominantLengthShare * 0.15) +
+                                ((1.0 - sample.AlphaNumericRatio) * 0.10);
+                        }
+                        break;
+                    case AndroidImportKeys.ItemNumber:
+                        if (sample.NonBlankValues.Count < minimumEvidence)
+                        {
+                            reasons.Add("insufficient-evidence");
+                            score = 0.0;
+                        }
+                        else
+                        {
+                            reasons.Add("short=" + ScoreText(sample.ShortCodeRatio));
+                            reasons.Add("alphaNum=" + ScoreText(sample.AlphaNumericRatio));
+                            score = (sample.NumericRatio * 0.15) +
+                                (sample.ShortCodeRatio * 0.45) +
+                                (sample.AlphaNumericRatio * 0.20) +
+                                ((1.0 - sample.DigitLongRatio) * 0.20);
+                        }
+                        break;
+                    case AndroidImportKeys.ProductName:
+                        if (sample.NonBlankValues.Count < minimumEvidence)
+                        {
+                            reasons.Add("insufficient-evidence");
+                            score = 0.0;
+                        }
+                        else
+                        {
+                            reasons.Add("text=" + ScoreText(sample.TextRatio));
+                            reasons.Add("long=" + ScoreText(sample.LongTextRatio));
+                            score = (sample.TextRatio * 0.55) +
+                                (sample.LongTextRatio * 0.30) +
+                                ((1.0 - sample.NumericRatio) * 0.15);
+                        }
+                        break;
+                    case AndroidImportKeys.Quantity:
+                        if (sample.NumericValues.Count < minimumEvidence)
+                        {
+                            reasons.Add("insufficient-evidence");
+                            score = 0.0;
+                        }
+                        else
+                        {
+                            double rank;
+                            if (!numericMedianRank.TryGetValue(column, out rank)) rank = 0.5;
+                            var rowNumberLike = RowNumberLikeRatio(sample);
+                            reasons.Add("small=" + ScoreText(sample.SmallPositiveRatio));
+                            reasons.Add("rank=" + ScoreText(rank));
+                            reasons.Add("seq=" + ScoreText(rowNumberLike));
+                            score = (sample.NumericRatio * 0.30) +
+                                (sample.IntegerRatio * 0.20) +
+                                (sample.SmallPositiveRatio * 0.25) +
+                                ((1.0 - rank) * 0.15) +
+                                (sample.DominantValueShare * 0.10) -
+                                (rowNumberLike * 0.25);
+                        }
+                        break;
+                    case AndroidImportKeys.PurchasePrice:
+                        if (sample.NumericValues.Count < minimumEvidence)
+                        {
+                            reasons.Add("insufficient-evidence");
+                            score = 0.0;
+                        }
+                        else
+                        {
+                            double rank;
+                            if (!numericMedianRank.TryGetValue(column, out rank)) rank = 0.5;
+                            reasons.Add("price=" + ScoreText(sample.PriceLikeMagnitudeRatio));
+                            reasons.Add("rank=" + ScoreText(rank));
+                            score = (sample.NumericRatio * 0.30) +
+                                (sample.PriceLikeMagnitudeRatio * 0.20) +
+                                (rank * 0.20) +
+                                (sample.DecimalRawRatio * 0.10) +
+                                ((1.0 - sample.DigitLongRatio) * 0.05) +
+                                ((1.0 - sample.DominantValueShare) * 0.05) +
+                                ((1.0 - sample.ShortCodeRatio) * 0.10);
+                        }
+                        break;
+                    case AndroidImportKeys.TotalPrice:
+                        if (availableColumns.Count < 2)
+                        {
+                            reasons.Add("missing-dependencies");
+                            score = 0.0;
+                        }
+                        else
+                        {
+                            var quantityColumn = availableColumns[0];
+                            var purchaseColumn = availableColumns[1];
+                            var sampleRows = rows.Take(MaxPatternSampleRows).ToList();
+                            var matches = sampleRows.Count(row =>
+                            {
+                                var quantity = ParseNumber(quantityColumn < row.Count ? row[quantityColumn] : null);
+                                var purchase = ParseNumber(purchaseColumn < row.Count ? row[purchaseColumn] : null);
+                                var total = ParseNumber(column < row.Count ? row[column] : null);
+                                if (!quantity.HasValue || !purchase.HasValue || !total.HasValue) return false;
+                                var expected = quantity.Value * purchase.Value;
+                                return Math.Abs(total.Value - expected) <= 0.10 * Math.Max(expected, 1.0);
+                            });
+                            score = Ratio(matches, sampleRows.Count);
+                            reasons.Add("mul=" + ScoreText(score));
+                        }
+                        break;
+                    default:
+                        score = 0.0;
+                        break;
+                }
+                candidates.Add(new PatternCandidate(column, Math.Max(0.0, Math.Min(1.0, score)), reasons));
+            }
+            return candidates.OrderByDescending(candidate => candidate.Score)
+                .ThenBy(candidate => candidate.ColumnIndex)
+                .ToList();
+        }
+
+        private static string ConfidenceFor(PatternCandidate selected, PatternCandidate runnerUp)
+        {
+            if (selected.Score < MinimumPatternScore) return "low";
+            if (runnerUp == null) return "high";
+            if (selected.Score - runnerUp.Score <= AmbiguityMargin) return "low";
+            return selected.Score >= 0.70 ? "high" : "medium";
+        }
+
+        private static bool ShouldAssignCandidate(PatternCandidate selected, PatternCandidate runnerUp)
+        {
+            return selected.Score >= MinimumPatternScore &&
+                (runnerUp == null || selected.Score - runnerUp.Score > AmbiguityMargin);
+        }
+
+        private static NumericPairDetection DetectPurchaseTotalPair(
+            int quantityColumn,
+            IReadOnlyList<int> availableColumns,
+            IReadOnlyList<ColumnSample> samples,
+            List<List<string>> rows)
+        {
+            var minimumEvidence = MinimumEvidenceFor(rows.Count);
+            var sampleRows = rows.Take(MaxPatternSampleRows).ToList();
+            NumericPairDetection best = null;
+            for (var firstIndex = 0; firstIndex < availableColumns.Count; firstIndex++)
+            {
+                var firstColumn = availableColumns[firstIndex];
+                var firstMedian = samples[firstColumn].MedianNumeric;
+                if (!firstMedian.HasValue) continue;
+                for (var secondIndex = firstIndex + 1; secondIndex < availableColumns.Count; secondIndex++)
+                {
+                    var secondColumn = availableColumns[secondIndex];
+                    var secondMedian = samples[secondColumn].MedianNumeric;
+                    if (!secondMedian.HasValue) continue;
+                    var purchaseColumn = firstMedian.Value <= secondMedian.Value ? firstColumn : secondColumn;
+                    var totalColumn = purchaseColumn == firstColumn ? secondColumn : firstColumn;
+                    var informative = 0;
+                    var matches = 0;
+                    var errorSum = 0.0;
+                    foreach (var row in sampleRows)
+                    {
+                        var quantity = ParseNumber(quantityColumn < row.Count ? row[quantityColumn] : null);
+                        var purchase = ParseNumber(purchaseColumn < row.Count ? row[purchaseColumn] : null);
+                        var total = ParseNumber(totalColumn < row.Count ? row[totalColumn] : null);
+                        if (!quantity.HasValue || !purchase.HasValue || !total.HasValue) continue;
+                        informative++;
+                        var expected = quantity.Value * purchase.Value;
+                        var difference = Math.Abs(total.Value - expected);
+                        errorSum += difference / Math.Max(expected, 1.0);
+                        if (difference <= 0.10 * Math.Max(expected, 1.0)) matches++;
+                    }
+                    var matchRatio = Ratio(matches, informative);
+                    var averageError = informative == 0 ? double.PositiveInfinity : errorSum / informative;
+                    var meetsEvidence = informative >= minimumEvidence && (informative > 1 || matchRatio >= 1.0);
+                    var candidate = new NumericPairDetection(purchaseColumn, totalColumn, matchRatio, averageError);
+                    if (meetsEvidence && (best == null || candidate.IsBetterThan(best)))
+                        best = candidate;
                 }
             }
-            return Tuple.Create(bestCol, bestScore);
+            var minimumMatch = rows.Count <= 1 ? 1.0 : 0.70;
+            return best != null && best.MatchRatio >= minimumMatch ? best : null;
+        }
+
+        private static double RowNumberLikeRatio(ColumnSample sample)
+        {
+            var informative = 0;
+            var matches = 0;
+            for (var index = 0; index < sample.Values.Count; index++)
+            {
+                var number = ParseNumber(sample.Values[index]);
+                if (!number.HasValue || number.Value != Math.Truncate(number.Value)) continue;
+                informative++;
+                if ((long)number.Value == index + 1L) matches++;
+            }
+            return Ratio(matches, informative);
+        }
+
+        private static bool ShouldSkipHeaderAlias(string key, string rawHeader, ColumnSample sample)
+        {
+            return key == AndroidImportKeys.ItemNumber &&
+                NormalizeHeader(rawHeader) == NormalizeHeader("ref.cajas") &&
+                RowNumberLikeRatio(sample) >= MinimumRowNumberLikeRatio;
+        }
+
+        private static void InferHeaderlessSupplementalColumns(
+            List<SupplierExcelColumn> columns,
+            List<List<string>> rows,
+            ISet<int> used,
+            IDictionary<string, SupplierImportFieldDecisionTrace> decisions)
+        {
+            var supplemental = new[]
+            {
+                new { Key = AndroidImportKeys.RetailPrice, Scorer = (Func<List<string>, double>)ScorePositiveNumeric, Threshold = 0.70 },
+                new { Key = AndroidImportKeys.SecondProductName, Scorer = (Func<List<string>, double>)ScoreProductName, Threshold = 0.50 },
+                new { Key = AndroidImportKeys.Supplier, Scorer = (Func<List<string>, double>)ScoreProductName, Threshold = 0.50 },
+                new { Key = AndroidImportKeys.Discount, Scorer = (Func<List<string>, double>)ScoreDiscount, Threshold = 0.50 },
+                new { Key = AndroidImportKeys.DiscountedPrice, Scorer = (Func<List<string>, double>)ScorePositiveNumeric, Threshold = 0.70 },
+                new { Key = AndroidImportKeys.RowNumber, Scorer = (Func<List<string>, double>)ScoreRowNumber, Threshold = 0.50 }
+            };
+            foreach (var field in supplemental)
+            {
+                if (columns.Any(column => column.CanonicalKey == field.Key)) continue;
+                var candidates = new List<PatternCandidate>();
+                for (var column = 0; column < columns.Count; column++)
+                {
+                    if (used.Contains(column)) continue;
+                    var values = rows.Take(MaxPatternSampleRows)
+                        .Select(row => column < row.Count ? row[column] : string.Empty)
+                        .ToList();
+                    candidates.Add(new PatternCandidate(column, field.Scorer(values), new[] { "legacy-supplemental" }));
+                }
+                var ranked = candidates.OrderByDescending(candidate => candidate.Score)
+                    .ThenBy(candidate => candidate.ColumnIndex)
+                    .ToList();
+                var selected = ranked.FirstOrDefault();
+                if (selected == null || selected.Score < field.Threshold) continue;
+                var confidence = selected.Score >= 0.85 ? "high" : "medium";
+                AssignPattern(columns, used, field.Key, selected.ColumnIndex, confidence);
+                decisions[field.Key] = FieldDecision(
+                    field.Key,
+                    selected.ColumnIndex,
+                    confidence,
+                    "legacy-supplemental-pattern",
+                    ranked.Take(3));
+            }
+        }
+
+        private static void TryAssignLegacyItemNumber(
+            List<SupplierExcelColumn> columns,
+            List<List<string>> rows,
+            ISet<int> used,
+            IDictionary<string, SupplierImportFieldDecisionTrace> decisions)
+        {
+            var ranked = new List<PatternCandidate>();
+            for (var column = 0; column < columns.Count; column++)
+            {
+                if (used.Contains(column)) continue;
+                var values = rows.Take(MaxPatternSampleRows)
+                    .Select(row => column < row.Count ? row[column] : string.Empty)
+                    .ToList();
+                var nonBlank = values.Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
+                ranked.Add(new PatternCandidate(
+                    column,
+                    Ratio(
+                        nonBlank.Count(value =>
+                            IsItemNumber(value) && value.Any(char.IsLetter) && value.Any(char.IsDigit)),
+                        nonBlank.Count),
+                    new[] { "strict-alphanumeric-item-shape" }));
+            }
+            ranked = ranked.OrderByDescending(candidate => candidate.Score)
+                .ThenBy(candidate => candidate.ColumnIndex)
+                .ToList();
+            var selected = ranked.FirstOrDefault();
+            var runnerUp = ranked.Skip(1).FirstOrDefault();
+            if (selected == null || selected.Score < 0.85 ||
+                (runnerUp != null && selected.Score - runnerUp.Score <= AmbiguityMargin))
+                return;
+            AssignPattern(columns, used, AndroidImportKeys.ItemNumber, selected.ColumnIndex, "medium");
+            decisions[AndroidImportKeys.ItemNumber] = FieldDecision(
+                AndroidImportKeys.ItemNumber,
+                selected.ColumnIndex,
+                "medium",
+                "strict-alphanumeric-item-shape",
+                ranked.Take(3));
+        }
+
+        private static double? Median(IReadOnlyList<double> values)
+        {
+            if (values == null || values.Count == 0) return null;
+            var sorted = values.OrderBy(value => value).ToList();
+            var middle = sorted.Count / 2;
+            return sorted.Count % 2 == 0
+                ? (sorted[middle - 1] + sorted[middle]) / 2.0
+                : sorted[middle];
+        }
+
+        private static double DominantShare<T>(IEnumerable<T> values)
+        {
+            var materialized = values == null ? new List<T>() : values.ToList();
+            if (materialized.Count == 0) return 0.0;
+            return Ratio(materialized.GroupBy(value => value).Max(group => group.Count()), materialized.Count);
+        }
+
+        private static string ScoreText(double value)
+        {
+            return value.ToString("0.00", CultureInfo.InvariantCulture);
         }
 
         private static void EnsureRequiredColumns(
@@ -880,6 +1705,41 @@ namespace Win7POS.Core.Import
             return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed)
                 ? (double?)parsed
                 : null;
+        }
+
+        private static SupplierImportDetectionTrace CloneDetectionTrace(SupplierImportDetectionTrace source)
+        {
+            source = source ?? new SupplierImportDetectionTrace();
+            var clone = new SupplierImportDetectionTrace
+            {
+                HasHeader = source.HasHeader,
+                DataRowIndex = source.DataRowIndex,
+                HeaderMode = source.HeaderMode ?? string.Empty,
+                SampleSize = source.SampleSize
+            };
+            foreach (var headerRow in source.HeaderRows)
+                clone.HeaderRows.Add(headerRow);
+            foreach (var field in source.FieldDecisions)
+            {
+                var fieldClone = new SupplierImportFieldDecisionTrace
+                {
+                    Field = field.Field ?? string.Empty,
+                    SelectedColumnIndex = field.SelectedColumnIndex,
+                    Confidence = field.Confidence ?? "low",
+                    Reason = field.Reason ?? "not-evaluated"
+                };
+                foreach (var candidate in field.Candidates.Take(3))
+                {
+                    fieldClone.Candidates.Add(new SupplierImportColumnCandidateTrace
+                    {
+                        ColumnIndex = candidate.ColumnIndex,
+                        Score = candidate.Score,
+                        Reasons = (candidate.Reasons ?? Array.Empty<string>()).Take(4).ToArray()
+                    });
+                }
+                clone.FieldDecisions.Add(fieldClone);
+            }
+            return clone;
         }
 
         private static List<SupplierExcelColumn> CloneColumns(IEnumerable<SupplierExcelColumn> columns)
@@ -1301,6 +2161,114 @@ namespace Win7POS.Core.Import
             return allowLong
                 ? Convert.ToInt64(Math.Round(parsed.Value)).ToString(CultureInfo.InvariantCulture)
                 : Convert.ToInt32(Math.Round(parsed.Value)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        private sealed class HeaderDetection
+        {
+            public HeaderDetection(int dataRowIndex, bool hasHeader, IReadOnlyList<int> headerRows, string headerMode)
+            {
+                DataRowIndex = dataRowIndex;
+                HasHeader = hasHeader;
+                HeaderRows = headerRows ?? Array.Empty<int>();
+                HeaderMode = headerMode ?? string.Empty;
+            }
+
+            public int DataRowIndex { get; }
+            public bool HasHeader { get; }
+            public IReadOnlyList<int> HeaderRows { get; }
+            public string HeaderMode { get; }
+        }
+
+        private sealed class RowProfile
+        {
+            public RowProfile(
+                int index,
+                HashSet<int> nonBlankColumns,
+                int numericCount,
+                int textCount,
+                int aliasHits)
+            {
+                Index = index;
+                NonBlankColumns = nonBlankColumns ?? new HashSet<int>();
+                NumericCount = numericCount;
+                TextCount = textCount;
+                AliasHits = aliasHits;
+            }
+
+            public int Index { get; }
+            public HashSet<int> NonBlankColumns { get; }
+            public int NonBlankCount { get { return NonBlankColumns.Count; } }
+            public int NumericCount { get; }
+            public int TextCount { get; }
+            public int AliasHits { get; }
+            public bool LooksDataLike
+            {
+                get { return NonBlankCount >= 4 && NumericCount >= 2 && TextCount >= 1; }
+            }
+        }
+
+        private sealed class ColumnSample
+        {
+            public int ColumnIndex { get; set; }
+            public List<string> Values { get; set; } = new List<string>();
+            public List<string> NonBlankValues { get; set; } = new List<string>();
+            public List<double> NumericValues { get; set; } = new List<double>();
+            public double? MedianNumeric { get; set; }
+            public double NumericRatio { get; set; }
+            public double IntegerRatio { get; set; }
+            public double DecimalRawRatio { get; set; }
+            public double DominantLengthShare { get; set; }
+            public double DominantValueShare { get; set; }
+            public double DigitLongRatio { get; set; }
+            public double ShortCodeRatio { get; set; }
+            public double AlphaNumericRatio { get; set; }
+            public double TextRatio { get; set; }
+            public double LongTextRatio { get; set; }
+            public double SmallPositiveRatio { get; set; }
+            public double PriceLikeMagnitudeRatio { get; set; }
+        }
+
+        private sealed class PatternCandidate
+        {
+            public PatternCandidate(int columnIndex, double score, IEnumerable<string> reasons)
+            {
+                ColumnIndex = columnIndex;
+                Score = Math.Max(0.0, Math.Min(1.0, score));
+                Reasons = (reasons ?? Enumerable.Empty<string>()).Take(4).ToArray();
+            }
+
+            public int ColumnIndex { get; }
+            public double Score { get; }
+            public IReadOnlyList<string> Reasons { get; }
+        }
+
+        private sealed class NumericPairDetection
+        {
+            public NumericPairDetection(
+                int purchaseColumn,
+                int totalColumn,
+                double matchRatio,
+                double averageRelativeError)
+            {
+                PurchaseColumn = purchaseColumn;
+                TotalColumn = totalColumn;
+                MatchRatio = matchRatio;
+                AverageRelativeError = averageRelativeError;
+            }
+
+            public int PurchaseColumn { get; }
+            public int TotalColumn { get; }
+            public double MatchRatio { get; }
+            public double AverageRelativeError { get; }
+
+            public bool IsBetterThan(NumericPairDetection other)
+            {
+                if (other == null) return true;
+                if (MatchRatio != other.MatchRatio) return MatchRatio > other.MatchRatio;
+                if (AverageRelativeError != other.AverageRelativeError)
+                    return AverageRelativeError < other.AverageRelativeError;
+                return PurchaseColumn < other.PurchaseColumn;
+            }
         }
 
         private sealed class RowValue
