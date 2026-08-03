@@ -66,8 +66,8 @@ namespace Win7POS.Wpf.Import
             IReadOnlyList<SupplierImportEditableRow> rows)
         {
             DbInitializer.EnsureCreated(_options);
-            var products = await LoadExistingProductsForRowsAsync(rows).ConfigureAwait(false);
-            return SupplierImportAnalyzer.BuildSyncPreview(rows, products);
+            var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
+            return await applier.BuildPreviewAsync(rows).ConfigureAwait(false);
         }
 
         public async Task<SupplierExcelApplyUiResult> ApplyAsync(
@@ -129,6 +129,9 @@ namespace Win7POS.Wpf.Import
             if (!rebuilt.CanApply)
                 throw new InvalidOperationException(BuildPreviewErrorSummary(rebuilt));
             if (!string.Equals(rebuilt.Fingerprint, preview.Fingerprint, StringComparison.Ordinal))
+                throw new InvalidOperationException("Sync DB preview non aggiornato: torna allo Step 3 e ricalcola Sync DB.");
+            string applyBaselineMismatch;
+            if (!SupplierImportAnalyzer.TryMatchApplyExpectations(preview, rebuilt, out applyBaselineMismatch))
                 throw new InvalidOperationException("Sync DB preview non aggiornato: torna allo Step 3 e ricalcola Sync DB.");
 
             var backupPath = string.Empty;

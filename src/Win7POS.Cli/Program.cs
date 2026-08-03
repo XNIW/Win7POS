@@ -85,6 +85,7 @@ internal static class Program
         public string Format = "xlsx";
         public string InputPath = string.Empty;
         public int Iterations = 5;
+        public bool ApplyMatrix;
         public bool KeepDb;
         public bool MeasureApplyBoundary;
         public int Products = 20000;
@@ -104,18 +105,71 @@ internal static class Program
     private sealed class SupplierExcelApplyBoundaryEvidence
     {
         public long AllocatedBytes { get; set; }
+        public int ApplyContextSelectCommands { get; set; }
+        public int BarcodeBatchSize { get; set; }
+        public int BarcodeBatches { get; set; }
+        public long DatabaseGrowthBytes { get; set; }
         public int CategoryResolverLookupQueries { get; set; }
         public int CategoryResolverCreateCommands { get; set; }
         public double ElapsedMilliseconds { get; set; }
+        public long FinalOutboxCount { get; set; }
+        public long FinalPriceHistoryCount { get; set; }
+        public long FinalProductCount { get; set; }
         public int Inserted { get; set; }
+        public int LegacyLoadExistingQueries { get; set; }
+        public int LegacyPriceHistoryCommands { get; set; }
+        public int LegacyTotalSqlCommands { get; set; }
         public int LoadExistingQueries { get; set; }
+        public int OutboxCommands { get; set; }
         public int PriceHistoryCommands { get; set; }
+        public int PriceHistoryRows { get; set; }
+        public int ProductMetaStatements { get; set; }
         public int ProductWriteCommands { get; set; }
         public int ProductWriteStatements { get; set; }
+        public int Repetitions { get; set; }
         public int SupplierResolverLookupQueries { get; set; }
         public int SupplierResolverCreateCommands { get; set; }
         public int TotalSqlCommands { get; set; }
         public int Updated { get; set; }
+        public long WalGrowthBytes { get; set; }
+    }
+
+    private sealed class SupplierExcelApplyBoundarySample
+    {
+        public SupplierExcelImportApplyResult Result { get; set; } = new SupplierExcelImportApplyResult();
+        public SupplierExcelPerfMeasurement Measurement { get; set; } = new SupplierExcelPerfMeasurement();
+        public long DatabaseGrowthBytes { get; set; }
+        public long FinalOutboxCount { get; set; }
+        public long FinalPriceHistoryCount { get; set; }
+        public long FinalProductCount { get; set; }
+        public long WalGrowthBytes { get; set; }
+    }
+
+    private sealed class SupplierExcelApplyMatrixEvidence
+    {
+        public string Scenario { get; set; } = string.Empty;
+        public int RawRows { get; set; }
+        public int EffectiveRows { get; set; }
+        public int ApplyContextSelectCommands { get; set; }
+        public int ExistingProductSelectCommands { get; set; }
+        public int SupplierSelectCommands { get; set; }
+        public int SupplierInsertCommands { get; set; }
+        public int CategorySelectCommands { get; set; }
+        public int CategoryInsertCommands { get; set; }
+        public int ProductWriteCommands { get; set; }
+        public int ProductMetaStatements { get; set; }
+        public int PriceHistoryCommands { get; set; }
+        public int PriceHistoryRows { get; set; }
+        public int OutboxCommands { get; set; }
+        public int LegacyTotalSqlCommands { get; set; }
+        public int TotalSqlCommands { get; set; }
+        public double MedianElapsedMilliseconds { get; set; }
+        public long MedianAllocatedBytes { get; set; }
+        public long MedianDatabaseGrowthBytes { get; set; }
+        public long MedianWalGrowthBytes { get; set; }
+        public long FinalProductCount { get; set; }
+        public long FinalPriceHistoryCount { get; set; }
+        public long FinalOutboxCount { get; set; }
     }
 
     private sealed class Task081HttpHarnessSession
@@ -323,7 +377,7 @@ internal static class Program
         Console.WriteLine("  --supplier-excel-selftest");
         Console.WriteLine("  --supplier-excel-ui-selftest");
         Console.WriteLine("  --supplier-excel-apply-selftest");
-        Console.WriteLine("  --supplier-excel-perf-selftest [--products N] [--rows N] [--iterations N] [--format xlsx|html|xls] [--input FILE] [--reader-only] [--measure-apply-boundary] [--keepdb]");
+        Console.WriteLine("  --supplier-excel-perf-selftest [--products N] [--rows N] [--iterations N] [--format xlsx|html|xls] [--input FILE] [--reader-only] [--measure-apply-boundary] [--apply-matrix] [--keepdb]");
         Console.WriteLine("  --catalog-import-outbox-selftest");
         Console.WriteLine("  --catalog-import-reconciliation-selftest");
         Console.WriteLine("  --catalog-import-sync-http-harness [--base-url <AdminWebUrl>] [--session-json <path>] [--keepdb]");
@@ -501,6 +555,12 @@ internal static class Program
             if (string.Equals(arg, "--measure-apply-boundary", StringComparison.OrdinalIgnoreCase))
             {
                 parameters.MeasureApplyBoundary = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--apply-matrix", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.ApplyMatrix = true;
                 continue;
             }
 
@@ -2523,12 +2583,19 @@ CREATE TABLE users (
         AssertText(workflow, "DemandApplyAuthorization();", "Supplier import workflow must re-authorize immediately before mutation.");
         AssertText(workflow, "CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry", "Supplier import workflow must prepare catalog import outbox payload.");
         AssertText(workflow, "rebuilt.Fingerprint", "Apply must recompute and verify Step 4 before writing.");
+        AssertText(workflow, ".BuildPreviewAsync(rows)", "Step 4 must capture products and shop context atomically.");
         AssertText(applier, "CatalogImportOutboxRepository", "Supplier import apply must enqueue catalog import outbox.");
         AssertText(applier, ".EnqueueAsync(conn, tx", "Catalog import outbox enqueue must share the apply transaction.");
         AssertText(catalogImportContract, "PosCatalogImportRequest", "Catalog import DTO request missing.");
         AssertText(catalogImportOutbox, "MarkBlockedAsync", "Catalog import outbox blocked transition missing.");
         AssertText(catalogImportPayloadBuilder, "Path.GetFileName", "Catalog import payload must redact source path.");
-        AssertText(applier, "ApplyAsync(preview.ValidatedRows", "Data applier must apply validated Step 4 rows.");
+        AssertText(applier, "SupplierImportAnalyzer.BuildSyncPreview", "Data applier must rebuild Step 4 inside the transaction.");
+        AssertText(applier, "TryMatchApplyExpectations", "Data applier must compare the transactional snapshot with the Step 4 baseline.");
+        AssertText(applier, "CatalogShopTransitionBarrier", "Supplier Step 4 and Apply must serialize with catalog shop transitions.");
+        AssertText(applier, "LoadApplyContextAsync", "Supplier Apply must revalidate official shop context and transition epoch.");
+        AssertText(applier, "CatalogShopStateRepository.TransitionEpochKey", "Supplier Apply context must include the catalog transition epoch.");
+        AssertText(applier, "ParameterBatchSize = 500", "Data applier must keep barcode batching centralized and bounded.");
+        AssertText(applier, "command.Prepare()", "Data applier must prepare repeated commands.");
         AssertText(generalImportViewModel, "CanApplyImport", "General catalog import must gate Apply on a current DB sync preview.");
         AssertText(generalImportViewModel, "BuildCurrentAnalyzeFingerprint", "General catalog import must invalidate stale analyzed files/options.");
         AssertText(generalImportViewModel, "InvalidateAnalyzeResult", "General catalog import must clear stale preview state.");
@@ -2651,12 +2718,15 @@ CREATE TABLE users (
 
             await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
+            var supplierApplier = new SupplierExcelImportApplier(factory);
             var table = SupplierExcelImportReader.ReadFirstWorksheet(workbookPath);
             var existingProducts = await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false);
             var workflowAnalysis = SupplierImportAnalyzer.Analyze(table, existingProducts);
             Assert(workflowAnalysis.Errors.Count == 0, "Operational workbook must analyze without errors.");
             Assert(workflowAnalysis.EditableRows.Count == 1, "Operational workbook must expose one editable row.");
-            var workflowPreview = SupplierImportAnalyzer.BuildSyncPreview(workflowAnalysis.EditableRows, existingProducts);
+            var workflowPreview = await supplierApplier
+                .BuildPreviewAsync(workflowAnalysis.EditableRows)
+                .ConfigureAwait(false);
             Assert(workflowPreview.CanApply, "Step 4 operational preview must allow apply.");
             Assert(workflowPreview.NewProducts.Count == 1, "Step 4 operational preview must show one new product.");
             Assert(workflowPreview.UpdatedProducts.Count == 0, "Step 4 operational preview must show zero updates.");
@@ -2721,7 +2791,9 @@ CREATE TABLE users (
                 mappingWithOverride.Errors.Count == 0,
                 "Step 2 barcode override must produce an applyable preview: " +
                     string.Join(" | ", mappingWithOverride.Errors.Select(error => error.Message)));
-            var mappingPreview = SupplierImportAnalyzer.BuildSyncPreview(mappingWithOverride.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            var mappingPreview = await supplierApplier
+                .BuildPreviewAsync(mappingWithOverride.EditableRows)
+                .ConfigureAwait(false);
             Assert(mappingPreview.CanApply && mappingPreview.NewProducts.Count == 1, "Step 4 mapping override preview must show one new product.");
             var mappingApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
                 mappingPreview,
@@ -2737,7 +2809,9 @@ CREATE TABLE users (
             Assert(
                 priceEditAnalysis.EditableRows.Any(row => !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)),
                 "Step 3 must expose missing retailPrice before user edit.");
-            var priceEditBlockedPreview = SupplierImportAnalyzer.BuildSyncPreview(priceEditAnalysis.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            var priceEditBlockedPreview = await supplierApplier
+                .BuildPreviewAsync(priceEditAnalysis.EditableRows)
+                .ConfigureAwait(false);
             Assert(!priceEditBlockedPreview.CanApply, "Step 4 preview must block a new product without retailPrice.");
             Assert(priceEditBlockedPreview.Errors.Any(error => error.Message.Contains("retailPrice", StringComparison.OrdinalIgnoreCase)), "Step 4 retailPrice error must be visible.");
             var priceEditChanged = SupplierRetailPriceHelper.ApplyMarkupToRetailPriceRows(
@@ -2746,7 +2820,9 @@ CREATE TABLE users (
                 roundTo: 50,
                 applyOnlyEmptyRetailPrice: true);
             Assert(priceEditChanged == 1, "Step 3 bulk helper must fill one empty retailPrice.");
-            var priceEditPreview = SupplierImportAnalyzer.BuildSyncPreview(priceEditAnalysis.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            var priceEditPreview = await supplierApplier
+                .BuildPreviewAsync(priceEditAnalysis.EditableRows)
+                .ConfigureAwait(false);
             Assert(priceEditPreview.CanApply && priceEditPreview.NewProducts.Count == 1, "Edited retailPrice must make Step 4 classify the row as new.");
             var priceEditApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
                 priceEditPreview,
@@ -2772,7 +2848,9 @@ CREATE TABLE users (
             var manualRetailRow = manualRetailAnalysis.EditableRows.Single();
             Assert(string.IsNullOrWhiteSpace(manualRetailRow.RetailPrice), "Manual retail edit fixture must start with empty retailPrice.");
             manualRetailRow.RetailPrice = "175";
-            var manualRetailPreview = SupplierImportAnalyzer.BuildSyncPreview(manualRetailAnalysis.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            var manualRetailPreview = await supplierApplier
+                .BuildPreviewAsync(manualRetailAnalysis.EditableRows)
+                .ConfigureAwait(false);
             Assert(manualRetailPreview.CanApply && manualRetailPreview.NewProducts.Count == 1, "Manual retail edit must appear in Step 4 as new product.");
             var manualRetailApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
                 manualRetailPreview,
@@ -2801,7 +2879,9 @@ CREATE TABLE users (
             barcodeCorrectionAnalysis.EditableRows[0].Barcode = "6666666600006";
             barcodeCorrectionAnalysis.EditableRows[1].Barcode = "6666666600999";
             barcodeCorrectionAnalysis.EditableRows[1].IsSkipped = true;
-            var barcodeCorrectionPreview = SupplierImportAnalyzer.BuildSyncPreview(barcodeCorrectionAnalysis.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            var barcodeCorrectionPreview = await supplierApplier
+                .BuildPreviewAsync(barcodeCorrectionAnalysis.EditableRows)
+                .ConfigureAwait(false);
             Assert(barcodeCorrectionPreview.CanApply, "Corrected/skipped barcode Step 4 preview must allow apply.");
             Assert(barcodeCorrectionPreview.NewProducts.Any(row => row.Barcode == "6666666600006"), "Corrected barcode must appear in Step 4 as new product.");
             Assert(barcodeCorrectionPreview.SkippedRows.Any(row => row.Barcode == "6666666600999"), "Skipped barcode row must appear in Step 4 skipped list.");
@@ -2830,7 +2910,9 @@ CREATE TABLE users (
                 new[] { "4444444400004", "MANUAL-RETAIL", "MANUAL-RETAIL", "100", "175", "1", "", "" });
             var updateNoChangeExisting = await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false);
             var updateNoChangeAnalysis = SupplierImportAnalyzer.Analyze(updateNoChangeTable, updateNoChangeExisting);
-            var updateNoChangePreview = SupplierImportAnalyzer.BuildSyncPreview(updateNoChangeAnalysis.EditableRows, updateNoChangeExisting);
+            var updateNoChangePreview = await supplierApplier
+                .BuildPreviewAsync(updateNoChangeAnalysis.EditableRows)
+                .ConfigureAwait(false);
             Assert(updateNoChangePreview.CanApply, "Update/no-change Step 4 preview must allow apply.");
             Assert(updateNoChangePreview.UpdatedProducts.Count == 1, "Existing product with changed price/quantity must appear in Step 4 updates.");
             Assert(updateNoChangePreview.UpdatedProducts.Single().DiffSummary.Contains("retailPrice", StringComparison.Ordinal), "Update diff must include retailPrice before/after.");
@@ -2860,7 +2942,9 @@ CREATE TABLE users (
                 new SupplierImportEditableRow { RowNumber = 100, Barcode = "9999999900009", ItemNumber = "DUP-A", ProductName = "Dup A", PurchasePrice = "1", RetailPrice = "2", Quantity = "1" },
                 new SupplierImportEditableRow { RowNumber = 101, Barcode = "9999999900009", ItemNumber = "DUP-B", ProductName = "Dup B", PurchasePrice = "1", RetailPrice = "2", Quantity = "1" }
             };
-            var duplicatePreview = SupplierImportAnalyzer.BuildSyncPreview(duplicateFinalRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            var duplicatePreview = await supplierApplier
+                .BuildPreviewAsync(duplicateFinalRows)
+                .ConfigureAwait(false);
             Assert(duplicatePreview.CanApply, "Step 4 duplicate final barcode must keep last row and allow apply with warning.");
             Assert(duplicatePreview.NewProducts.Count == 1, "Duplicate final preview must expose one effective new product.");
             Assert(duplicatePreview.NewProducts.Single().ItemNumber == "DUP-B", "Duplicate final preview must keep last occurrence.");
@@ -3263,6 +3347,27 @@ CREATE TABLE users (
         try
         {
             Directory.CreateDirectory(tempRoot);
+            if (parameters.ApplyMatrix)
+            {
+                var matrix = await RunSupplierExcelApplyMatrixAsync(
+                    process,
+                    tempRoot,
+                    parameters.Iterations).ConfigureAwait(false);
+                total.Stop();
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    applyMatrix = true,
+                    warmups = 1,
+                    measuredRepetitions = parameters.Iterations,
+                    batchSize = SupplierExcelImportBatching.ParameterBatchSize,
+                    totalElapsedMilliseconds = total.Elapsed.TotalMilliseconds,
+                    scenarios = matrix
+                }, new JsonSerializerOptions { WriteIndented = true }));
+                Console.WriteLine("SUPPLIER EXCEL PERF SELFTEST PASS");
+                Console.WriteLine("TEST PASS");
+                return;
+            }
             if (!string.IsNullOrWhiteSpace(parameters.InputPath) && !parameters.ReaderOnly)
                 throw new ArgumentException("--input requires --reader-only because arbitrary workbooks do not provide the deterministic apply fixture.");
             if (parameters.Format == "xls" && string.IsNullOrWhiteSpace(parameters.InputPath))
@@ -3407,8 +3512,9 @@ CREATE TABLE users (
                 if (measuredIteration)
                     AddSupplierPerfSample(stageSamples, "previewExistingProductLookup", targetedPreviewProducts.Measurement);
 
-                var preview = MeasureSupplierPerfStage(process, () =>
-                    SupplierImportAnalyzer.BuildSyncPreview(analysis.Value.EditableRows, targetedPreviewProducts.Value));
+                var preview = await MeasureSupplierPerfStageAsync(process, () =>
+                    new SupplierExcelImportApplier(factory!)
+                        .BuildPreviewAsync(analysis.Value.EditableRows)).ConfigureAwait(false);
                 if (measuredIteration)
                     AddSupplierPerfSample(stageSamples, "syncPreview", preview.Measurement);
                 Assert(preview.Value.CanApply, "Perf preview must be applyable after Step 3 fixes.");
@@ -3444,7 +3550,7 @@ CREATE TABLE users (
                 var activeRows = boundaryPreview.ValidatedRows
                     .Where(row => row != null && !row.IsSkipped && !string.IsNullOrWhiteSpace(row.Barcode))
                     .ToList();
-                var loadExistingQueries = activeRows
+                var legacyLoadExistingQueries = activeRows
                     .Select(row => row.Barcode.Trim())
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
@@ -3458,31 +3564,62 @@ CREATE TABLE users (
                     .Where(value => value.Length > 0)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
-                var measuredApply = await MeasureSupplierPerfStageAsync(process, () =>
-                    new SupplierExcelImportApplier(factory).ApplyAsync(
-                        boundaryPreview,
-                        new SupplierExcelImportApplyOptions { DryRun = false, InsertNew = true })).ConfigureAwait(false);
-                Assert(measuredApply.Value.Errors == 0, "Apply boundary evidence must complete without errors.");
-                var productWriteCommands = measuredApply.Value.Inserted + measuredApply.Value.Updated;
-                var supplierCreateCommands = measuredApply.Value.SuppliersCreated * 2;
-                var categoryCreateCommands = measuredApply.Value.CategoriesCreated * 2;
+                var samples = await MeasureSupplierApplyBoundaryAsync(
+                    process,
+                    tempRoot,
+                    factory,
+                    boundaryPreview,
+                    parameters.Iterations).ConfigureAwait(false);
+                var measured = samples.Skip(1).ToArray();
+                Assert(measured.Length == parameters.Iterations, "Apply boundary measured repetition count mismatch.");
+                var representative = measured[0].Result;
+                foreach (var sample in measured)
+                {
+                    Assert(sample.Result.Errors == 0, "Apply boundary evidence must complete without errors.");
+                    Assert(sample.Result.Inserted == representative.Inserted, "Apply boundary insert count must be deterministic.");
+                    Assert(sample.Result.Updated == representative.Updated, "Apply boundary update count must be deterministic.");
+                    Assert(
+                        sample.Result.SqlMetrics.TotalCommands == representative.SqlMetrics.TotalCommands,
+                        "Apply boundary SQL command count must be deterministic.");
+                }
+                var legacyProductWriteCommands = representative.Inserted + representative.Updated;
+                var legacySupplierCreateCommands = representative.SuppliersCreated * 2;
+                var legacyCategoryCreateCommands = representative.CategoriesCreated * 2;
+                var legacyPriceHistoryCommands = representative.PriceHistoryInserted;
                 applyBoundaryEvidence = new SupplierExcelApplyBoundaryEvidence
                 {
-                    AllocatedBytes = measuredApply.Measurement.AllocatedBytes,
-                    CategoryResolverLookupQueries = categoryLookups,
-                    CategoryResolverCreateCommands = categoryCreateCommands,
-                    ElapsedMilliseconds = measuredApply.Measurement.ElapsedMilliseconds,
-                    Inserted = measuredApply.Value.Inserted,
-                    LoadExistingQueries = loadExistingQueries,
-                    PriceHistoryCommands = measuredApply.Value.PriceHistoryInserted,
-                    ProductWriteCommands = productWriteCommands,
-                    ProductWriteStatements = productWriteCommands * 2,
-                    SupplierResolverLookupQueries = supplierLookups,
-                    SupplierResolverCreateCommands = supplierCreateCommands,
-                    TotalSqlCommands = loadExistingQueries + supplierLookups + supplierCreateCommands +
-                        categoryLookups + categoryCreateCommands + productWriteCommands +
-                        measuredApply.Value.PriceHistoryInserted,
-                    Updated = measuredApply.Value.Updated
+                    AllocatedBytes = MedianSupplierPerf(measured.Select(sample => sample.Measurement.AllocatedBytes)),
+                    ApplyContextSelectCommands = representative.SqlMetrics.ApplyContextSelectCommands,
+                    BarcodeBatchSize = SupplierExcelImportBatching.ParameterBatchSize,
+                    BarcodeBatches = representative.SqlMetrics.ExistingProductSelectCommands,
+                    CategoryResolverLookupQueries = representative.SqlMetrics.CategorySelectCommands,
+                    CategoryResolverCreateCommands = representative.SqlMetrics.CategoryMaxIdCommands +
+                        representative.SqlMetrics.CategoryInsertCommands,
+                    DatabaseGrowthBytes = MedianSupplierPerf(measured.Select(sample => sample.DatabaseGrowthBytes)),
+                    ElapsedMilliseconds = MedianSupplierPerf(measured.Select(sample => sample.Measurement.ElapsedMilliseconds)),
+                    FinalOutboxCount = MedianSupplierPerf(measured.Select(sample => sample.FinalOutboxCount)),
+                    FinalPriceHistoryCount = MedianSupplierPerf(measured.Select(sample => sample.FinalPriceHistoryCount)),
+                    FinalProductCount = MedianSupplierPerf(measured.Select(sample => sample.FinalProductCount)),
+                    Inserted = representative.Inserted,
+                    LegacyLoadExistingQueries = legacyLoadExistingQueries,
+                    LegacyPriceHistoryCommands = legacyPriceHistoryCommands,
+                    LegacyTotalSqlCommands = legacyLoadExistingQueries + supplierLookups + legacySupplierCreateCommands +
+                        categoryLookups + legacyCategoryCreateCommands + legacyProductWriteCommands +
+                        legacyPriceHistoryCommands,
+                    LoadExistingQueries = representative.SqlMetrics.ExistingProductSelectCommands,
+                    OutboxCommands = representative.SqlMetrics.OutboxCommands,
+                    PriceHistoryCommands = representative.SqlMetrics.PriceHistoryCommands,
+                    PriceHistoryRows = representative.SqlMetrics.PriceHistoryRows,
+                    ProductMetaStatements = representative.SqlMetrics.ProductMetaStatements,
+                    ProductWriteCommands = representative.SqlMetrics.ProductWriteCommands,
+                    ProductWriteStatements = representative.SqlMetrics.ProductStatements,
+                    Repetitions = measured.Length,
+                    SupplierResolverLookupQueries = representative.SqlMetrics.SupplierSelectCommands,
+                    SupplierResolverCreateCommands = representative.SqlMetrics.SupplierMaxIdCommands +
+                        representative.SqlMetrics.SupplierInsertCommands,
+                    TotalSqlCommands = representative.SqlMetrics.TotalCommands,
+                    Updated = representative.Updated,
+                    WalGrowthBytes = MedianSupplierPerf(measured.Select(sample => sample.WalGrowthBytes))
                 };
             }
 
@@ -3762,6 +3899,303 @@ VALUES(@barcode, @timestamp, 'retail', NULL, 150, 'IMPORT');",
             serializer.WriteObject(stream, value);
             return Encoding.UTF8.GetString(stream.ToArray());
         }
+    }
+
+    private static async Task<IReadOnlyList<SupplierExcelApplyMatrixEvidence>> RunSupplierExcelApplyMatrixAsync(
+        Process process,
+        string tempRoot,
+        int measuredIterations)
+    {
+        var datasets = new[] { 100, 1000, 5000, 20000 };
+        var scenarios = new[]
+        {
+            "all_new",
+            "all_existing_no_change",
+            "all_existing_updates",
+            "half_new_half_update",
+            "duplicate_barcodes",
+            "supplier_category_reuse",
+            "many_distinct_suppliers_categories"
+        };
+        var evidence = new List<SupplierExcelApplyMatrixEvidence>();
+        foreach (var rowCount in datasets)
+        {
+            foreach (var scenario in scenarios)
+            {
+                var fixtureRoot = Path.Combine(
+                    tempRoot,
+                    "matrix-" + rowCount.ToString(CultureInfo.InvariantCulture) + "-" + scenario);
+                Directory.CreateDirectory(fixtureRoot);
+                var options = PosDbOptions.ForPath(Path.Combine(fixtureRoot, "pos.db"));
+                await InitializeHarnessDbAsync(options).ConfigureAwait(false);
+                var factory = new SqliteConnectionFactory(options);
+                var rows = BuildSupplierApplyMatrixRows(rowCount, scenario);
+                await SeedSupplierApplyMatrixExistingProductsAsync(factory, rows, scenario).ConfigureAwait(false);
+                var preview = await new SupplierExcelImportApplier(factory)
+                    .BuildPreviewAsync(rows)
+                    .ConfigureAwait(false);
+                Assert(preview.CanApply, "Apply matrix preview must be applyable: " + scenario);
+                var outboxEntry = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
+                    preview,
+                    "supplier-matrix-" + scenario + ".xlsx",
+                    "perf-matrix");
+                var samples = await MeasureSupplierApplyBoundaryAsync(
+                    process,
+                    fixtureRoot,
+                    factory,
+                    preview,
+                    measuredIterations,
+                    outboxEntry).ConfigureAwait(false);
+                var measured = samples.Skip(1).ToArray();
+                Assert(measured.Length == measuredIterations, "Apply matrix repetition count mismatch.");
+                var representative = measured[0].Result;
+                foreach (var sample in measured)
+                {
+                    Assert(sample.Result.Errors == 0, "Apply matrix sample failed: " + scenario);
+                    Assert(
+                        sample.Result.SqlMetrics.TotalCommands == representative.SqlMetrics.TotalCommands,
+                        "Apply matrix SQL counts must be deterministic: " + scenario);
+                }
+
+                var effectiveRows = preview.ValidatedRows.Count;
+                var expectedBatches = (effectiveRows + SupplierExcelImportBatching.ParameterBatchSize - 1) /
+                    SupplierExcelImportBatching.ParameterBatchSize;
+                Assert(
+                    representative.SqlMetrics.ExistingProductSelectCommands == expectedBatches,
+                    "Apply matrix existing-product batch count mismatch: " + scenario);
+                Assert(
+                    representative.Inserted == preview.NewProducts.Count &&
+                    representative.Updated == preview.UpdatedProducts.Count &&
+                    representative.NoChange == preview.NoChangeRows.Count,
+                    "Apply matrix final classification mismatch: " + scenario);
+                var supplierLookups = preview.ValidatedRows
+                    .Select(row => CategorySupplierResolver.Normalize(row.Supplier))
+                    .Where(value => value.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+                var categoryLookups = preview.ValidatedRows
+                    .Select(row => CategorySupplierResolver.Normalize(row.Category))
+                    .Where(value => value.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+                var productWrites = representative.Inserted + representative.Updated;
+                var legacyTotal = effectiveRows + supplierLookups + representative.SuppliersCreated * 2 +
+                    categoryLookups + representative.CategoriesCreated * 2 + productWrites +
+                    representative.PriceHistoryInserted + representative.SqlMetrics.OutboxCommands;
+                evidence.Add(new SupplierExcelApplyMatrixEvidence
+                {
+                    Scenario = scenario,
+                    RawRows = rowCount,
+                    EffectiveRows = effectiveRows,
+                    ApplyContextSelectCommands = representative.SqlMetrics.ApplyContextSelectCommands,
+                    ExistingProductSelectCommands = representative.SqlMetrics.ExistingProductSelectCommands,
+                    SupplierSelectCommands = representative.SqlMetrics.SupplierSelectCommands,
+                    SupplierInsertCommands = representative.SqlMetrics.SupplierMaxIdCommands +
+                        representative.SqlMetrics.SupplierInsertCommands,
+                    CategorySelectCommands = representative.SqlMetrics.CategorySelectCommands,
+                    CategoryInsertCommands = representative.SqlMetrics.CategoryMaxIdCommands +
+                        representative.SqlMetrics.CategoryInsertCommands,
+                    ProductWriteCommands = representative.SqlMetrics.ProductWriteCommands,
+                    ProductMetaStatements = representative.SqlMetrics.ProductMetaStatements,
+                    PriceHistoryCommands = representative.SqlMetrics.PriceHistoryCommands,
+                    PriceHistoryRows = representative.SqlMetrics.PriceHistoryRows,
+                    OutboxCommands = representative.SqlMetrics.OutboxCommands,
+                    LegacyTotalSqlCommands = legacyTotal,
+                    TotalSqlCommands = representative.SqlMetrics.TotalCommands,
+                    MedianElapsedMilliseconds = MedianSupplierPerf(
+                        measured.Select(sample => sample.Measurement.ElapsedMilliseconds)),
+                    MedianAllocatedBytes = MedianSupplierPerf(
+                        measured.Select(sample => sample.Measurement.AllocatedBytes)),
+                    MedianDatabaseGrowthBytes = MedianSupplierPerf(
+                        measured.Select(sample => sample.DatabaseGrowthBytes)),
+                    MedianWalGrowthBytes = MedianSupplierPerf(
+                        measured.Select(sample => sample.WalGrowthBytes)),
+                    FinalProductCount = MedianSupplierPerf(measured.Select(sample => sample.FinalProductCount)),
+                    FinalPriceHistoryCount = MedianSupplierPerf(
+                        measured.Select(sample => sample.FinalPriceHistoryCount)),
+                    FinalOutboxCount = MedianSupplierPerf(measured.Select(sample => sample.FinalOutboxCount))
+                });
+            }
+        }
+        return evidence;
+    }
+
+    private static IReadOnlyList<SupplierImportEditableRow> BuildSupplierApplyMatrixRows(
+        int rowCount,
+        string scenario)
+    {
+        var rows = new List<SupplierImportEditableRow>(rowCount);
+        var distinctReferenceCount = Math.Min(rowCount, 1000);
+        for (var index = 1; index <= rowCount; index++)
+        {
+            var identity = string.Equals(scenario, "duplicate_barcodes", StringComparison.Ordinal)
+                ? (index + 1) / 2
+                : index;
+            var supplier = string.Empty;
+            var category = string.Empty;
+            if (!string.Equals(scenario, "all_new", StringComparison.Ordinal))
+            {
+                if (string.Equals(scenario, "many_distinct_suppliers_categories", StringComparison.Ordinal))
+                {
+                    var referenceIndex = ((identity - 1) % distinctReferenceCount) + 1;
+                    supplier = "Matrix Supplier " + referenceIndex.ToString("0000", CultureInfo.InvariantCulture);
+                    category = "Matrix Category " + referenceIndex.ToString("0000", CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    supplier = "Matrix Shared Supplier";
+                    category = "Matrix Shared Category";
+                }
+            }
+            rows.Add(new SupplierImportEditableRow
+            {
+                RowNumber = index + 1,
+                Barcode = "MATRIX-" + scenario + "-" + identity.ToString("000000", CultureInfo.InvariantCulture),
+                ItemNumber = "MATRIX-ITEM-" + index.ToString("000000", CultureInfo.InvariantCulture),
+                ProductName = "Matrix Product " + index.ToString(CultureInfo.InvariantCulture),
+                SecondProductName = "Matrix Second " + index.ToString(CultureInfo.InvariantCulture),
+                PurchasePrice = "100",
+                RetailPrice = "180",
+                Quantity = "2",
+                Supplier = supplier,
+                Category = category
+            });
+        }
+        return rows;
+    }
+
+    private static async Task SeedSupplierApplyMatrixExistingProductsAsync(
+        SqliteConnectionFactory factory,
+        IReadOnlyList<SupplierImportEditableRow> rows,
+        string scenario)
+    {
+        var seedAll = string.Equals(scenario, "all_existing_no_change", StringComparison.Ordinal) ||
+            string.Equals(scenario, "all_existing_updates", StringComparison.Ordinal);
+        var seedHalf = string.Equals(scenario, "half_new_half_update", StringComparison.Ordinal);
+        if (!seedAll && !seedHalf)
+            return;
+
+        using (var conn = factory.Open())
+        using (var tx = conn.BeginTransaction())
+        using (var product = conn.CreateCommand())
+        using (var meta = conn.CreateCommand())
+        {
+            await ExecuteSqliteAsync(conn, tx, @"
+INSERT INTO suppliers(id, name, is_active) VALUES(1, 'Matrix Shared Supplier', 1);
+INSERT INTO categories(id, name, is_active) VALUES(1, 'Matrix Shared Category', 1);").ConfigureAwait(false);
+            product.Transaction = tx;
+            product.CommandText = @"
+INSERT INTO products(barcode, name, unitPrice, is_active, remote_deleted_at)
+VALUES(@barcode, @name, @retailPrice, 1, NULL);";
+            var productBarcode = product.Parameters.Add("@barcode", SqliteType.Text);
+            var productName = product.Parameters.Add("@name", SqliteType.Text);
+            var retailPrice = product.Parameters.Add("@retailPrice", SqliteType.Integer);
+            product.Prepare();
+
+            meta.Transaction = tx;
+            meta.CommandText = @"
+INSERT INTO product_meta(
+  barcode, article_code, name2, purchase_price, purchase_old, retail_old,
+  supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(
+  @barcode, @articleCode, @name2, @purchasePrice, 0, 0,
+  1, 'Matrix Shared Supplier', 1, 'Matrix Shared Category', @stockQty);";
+            var metaBarcode = meta.Parameters.Add("@barcode", SqliteType.Text);
+            var articleCode = meta.Parameters.Add("@articleCode", SqliteType.Text);
+            var name2 = meta.Parameters.Add("@name2", SqliteType.Text);
+            var purchasePrice = meta.Parameters.Add("@purchasePrice", SqliteType.Integer);
+            var stockQty = meta.Parameters.Add("@stockQty", SqliteType.Integer);
+            meta.Prepare();
+
+            for (var index = 0; index < rows.Count; index++)
+            {
+                if (seedHalf && index % 2 != 0)
+                    continue;
+                var row = rows[index];
+                var noChange = string.Equals(scenario, "all_existing_no_change", StringComparison.Ordinal);
+                productBarcode.Value = row.Barcode;
+                productName.Value = noChange ? row.ProductName : "Before " + row.Barcode;
+                retailPrice.Value = noChange ? 180 : 90;
+                await product.ExecuteNonQueryAsync().ConfigureAwait(false);
+                metaBarcode.Value = row.Barcode;
+                articleCode.Value = noChange ? row.ItemNumber : "BEFORE-ITEM";
+                name2.Value = noChange ? row.SecondProductName : "Before second";
+                purchasePrice.Value = noChange ? 100 : 50;
+                stockQty.Value = noChange ? 2 : 1;
+                await meta.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+            tx.Commit();
+        }
+    }
+
+    private static async Task<IReadOnlyList<SupplierExcelApplyBoundarySample>> MeasureSupplierApplyBoundaryAsync(
+        Process process,
+        string tempRoot,
+        SqliteConnectionFactory sourceFactory,
+        SupplierImportSyncPreview preview,
+        int measuredIterations,
+        CatalogImportOutboxEntry? outboxEntry = null)
+    {
+        var sourceDbPath = Path.Combine(tempRoot, "pos.db");
+        var checkpoint = await new DbMaintenanceRepository(sourceFactory).WalCheckpointAsync().ConfigureAwait(false);
+        Assert(checkpoint.Busy == 0, "Apply boundary source fixture WAL checkpoint must not be busy.");
+        SqliteConnection.ClearAllPools();
+        Assert(File.Exists(sourceDbPath), "Apply boundary source fixture DB missing.");
+
+        var samples = new List<SupplierExcelApplyBoundarySample>();
+        for (var iteration = 0; iteration <= measuredIterations; iteration++)
+        {
+            var clonePath = Path.Combine(
+                tempRoot,
+                "apply-boundary-" + iteration.ToString(CultureInfo.InvariantCulture) + ".db");
+            File.Copy(sourceDbPath, clonePath, true);
+            var databaseBytesBefore = new FileInfo(clonePath).Length;
+            var walPath = clonePath + "-wal";
+            var walBytesBefore = File.Exists(walPath) ? new FileInfo(walPath).Length : 0L;
+            var cloneFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(clonePath));
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            var measured = await MeasureSupplierPerfStageAsync(process, () =>
+                new SupplierExcelImportApplier(cloneFactory).ApplyAsync(
+                    preview,
+                    new SupplierExcelImportApplyOptions
+                    {
+                        CatalogImportOutboxEntry = outboxEntry,
+                        DryRun = false,
+                        InsertNew = true
+                    })).ConfigureAwait(false);
+            Assert(measured.Value.Errors == 0, "Apply boundary clone failed: " + string.Join(" | ", measured.Value.ErrorMessages));
+
+            long productCount;
+            long priceHistoryCount;
+            long outboxCount;
+            using (var conn = cloneFactory.Open())
+            {
+                productCount = await ScalarLongAsync(conn, null, "SELECT COUNT(1) FROM products;").ConfigureAwait(false);
+                priceHistoryCount = await ScalarLongAsync(conn, null, "SELECT COUNT(1) FROM product_price_history;").ConfigureAwait(false);
+                outboxCount = await ScalarLongAsync(conn, null, "SELECT COUNT(1) FROM catalog_import_outbox;").ConfigureAwait(false);
+            }
+            SqliteConnection.ClearAllPools();
+            var databaseBytesAfter = File.Exists(clonePath) ? new FileInfo(clonePath).Length : 0L;
+            var walBytesAfter = File.Exists(walPath) ? new FileInfo(walPath).Length : 0L;
+            samples.Add(new SupplierExcelApplyBoundarySample
+            {
+                Result = measured.Value,
+                Measurement = measured.Measurement,
+                DatabaseGrowthBytes = databaseBytesAfter - databaseBytesBefore,
+                FinalOutboxCount = outboxCount,
+                FinalPriceHistoryCount = priceHistoryCount,
+                FinalProductCount = productCount,
+                WalGrowthBytes = walBytesAfter - walBytesBefore
+            });
+
+            try { if (File.Exists(clonePath)) File.Delete(clonePath); } catch { }
+            try { if (File.Exists(walPath)) File.Delete(walPath); } catch { }
+            try { if (File.Exists(clonePath + "-shm")) File.Delete(clonePath + "-shm"); } catch { }
+        }
+        return samples;
     }
 
     private static async Task SeedSupplierPerfProductsAsync(SqliteConnectionFactory factory, int products)
@@ -6918,7 +7352,9 @@ SELECT last_insert_rowid();";
         };
         var existing = await products.ListDetailsByBarcodesAsync(new[] { barcode }).ConfigureAwait(false);
         Assert(existing.Count == 1 && !existing[0].IsActive, "Targeted lookup must include inactive same-barcode product for reactivation.");
-        var preview = SupplierImportAnalyzer.BuildSyncPreview(new[] { row }, existing);
+        var preview = await new SupplierExcelImportApplier(factory)
+            .BuildPreviewAsync(new[] { row })
+            .ConfigureAwait(false);
         Assert(preview.CanApply, "Soft-deleted reactivation preview must be applyable.");
         Assert(preview.UpdatedProducts.Count == 1, "Soft-deleted reactivation must be classified as update/reactivation.");
         Assert(preview.NewProducts.Count == 0, "Soft-deleted reactivation must not be classified as a new insert.");

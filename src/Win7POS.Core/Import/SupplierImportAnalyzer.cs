@@ -429,6 +429,8 @@ namespace Win7POS.Core.Import
                 if (!ValidateFinalRow(row, existing, preview))
                     continue;
 
+                preview.ApplyExpectations.Add(ToApplyExpectation(row, barcode, existing));
+
                 var updated = ToFinalCanonicalRow(row, existing);
                 if (existing == null)
                 {
@@ -464,6 +466,128 @@ namespace Win7POS.Core.Import
             preview.Summary.ErrorCount = preview.Errors.Count;
             preview.Fingerprint = BuildSyncFingerprint(preview);
             return preview;
+        }
+
+        public static bool TryMatchApplyExpectations(
+            SupplierImportSyncPreview expected,
+            SupplierImportSyncPreview current,
+            out string mismatchReason)
+        {
+            string mismatchBarcode;
+            int mismatchRowNumber;
+            return TryMatchApplyExpectations(
+                expected,
+                current,
+                out mismatchReason,
+                out mismatchBarcode,
+                out mismatchRowNumber);
+        }
+
+        public static bool TryMatchApplyExpectations(
+            SupplierImportSyncPreview expected,
+            SupplierImportSyncPreview current,
+            out string mismatchReason,
+            out string mismatchBarcode,
+            out int mismatchRowNumber)
+        {
+            mismatchReason = string.Empty;
+            mismatchBarcode = string.Empty;
+            mismatchRowNumber = 0;
+            if (expected == null || current == null)
+            {
+                mismatchReason = "baseline_missing";
+                return false;
+            }
+
+            var expectedContext = expected.ApplyContext;
+            var currentContext = current.ApplyContext;
+            var expectsContext = expectedContext != null && expectedContext.IsCaptured;
+            var hasCurrentContext = currentContext != null && currentContext.IsCaptured;
+            if (!expectsContext || !hasCurrentContext)
+            {
+                mismatchReason = "apply_context_missing";
+                return false;
+            }
+            if (!string.Equals(
+                    NormalizeValue(expectedContext.ShopId),
+                    NormalizeValue(currentContext.ShopId),
+                    StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(
+                    NormalizeValue(expectedContext.ShopCode),
+                    NormalizeValue(currentContext.ShopCode),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                mismatchReason = "expected_shop_changed";
+                return false;
+            }
+            if (expectedContext.TransitionEpoch != currentContext.TransitionEpoch)
+            {
+                mismatchReason = "expected_transition_epoch_changed";
+                return false;
+            }
+
+            var expectedRows = expected.ApplyExpectations
+                .Where(item => item != null)
+                .ToDictionary(item => NormalizeValue(item.Barcode), StringComparer.OrdinalIgnoreCase);
+            var currentRows = current.ApplyExpectations
+                .Where(item => item != null)
+                .ToDictionary(item => NormalizeValue(item.Barcode), StringComparer.OrdinalIgnoreCase);
+            if (expectedRows.Count != expected.ValidatedRows.Count ||
+                currentRows.Count != current.ValidatedRows.Count ||
+                expectedRows.Count != currentRows.Count)
+            {
+                mismatchReason = "baseline_row_set_changed";
+                return false;
+            }
+
+            foreach (var pair in expectedRows.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                SupplierImportApplyExpectation actual;
+                if (!currentRows.TryGetValue(pair.Key, out actual))
+                {
+                    mismatchReason = "baseline_row_set_changed";
+                    mismatchBarcode = pair.Value.Barcode ?? string.Empty;
+                    mismatchRowNumber = pair.Value.RowNumber;
+                    return false;
+                }
+
+                var baseline = pair.Value;
+                mismatchBarcode = baseline.Barcode ?? string.Empty;
+                mismatchRowNumber = baseline.RowNumber;
+                if (baseline.Exists != actual.Exists)
+                {
+                    mismatchReason = baseline.Exists
+                        ? "expected_exists_now_missing"
+                        : "expected_missing_now_exists";
+                    return false;
+                }
+                if (!baseline.Exists)
+                    continue;
+                if (baseline.ProductId != actual.ProductId)
+                {
+                    mismatchReason = "expected_product_replaced";
+                    return false;
+                }
+                if (baseline.IsActive != actual.IsActive)
+                {
+                    mismatchReason = "expected_active_changed";
+                    return false;
+                }
+                if (baseline.HasMeta != actual.HasMeta)
+                {
+                    mismatchReason = "expected_meta_changed";
+                    return false;
+                }
+                if (!ApplyExpectationFieldsEqual(baseline, actual))
+                {
+                    mismatchReason = "expected_fields_changed";
+                    return false;
+                }
+            }
+
+            mismatchBarcode = string.Empty;
+            mismatchRowNumber = 0;
+            return true;
         }
 
         public static double? ParseNumber(string value)
@@ -1900,6 +2024,59 @@ namespace Win7POS.Core.Import
                 Supplier = existing.SupplierName ?? string.Empty,
                 Category = existing.CategoryName ?? string.Empty
             };
+        }
+
+        private static SupplierImportApplyExpectation ToApplyExpectation(
+            SupplierImportEditableRow row,
+            string barcode,
+            ProductDetailsRow existing)
+        {
+            if (existing == null)
+            {
+                return new SupplierImportApplyExpectation
+                {
+                    RowNumber = row == null ? 0 : row.RowNumber,
+                    Barcode = barcode,
+                    Exists = false,
+                    HasMeta = false
+                };
+            }
+
+            return new SupplierImportApplyExpectation
+            {
+                RowNumber = row == null ? 0 : row.RowNumber,
+                Barcode = barcode,
+                Exists = true,
+                ProductId = existing.Id,
+                IsActive = existing.IsActive,
+                HasMeta = existing.HasMeta,
+                ProductName = existing.Name ?? string.Empty,
+                RetailPrice = existing.UnitPrice,
+                ItemNumber = existing.ArticleCode ?? string.Empty,
+                SecondProductName = existing.Name2 ?? string.Empty,
+                PurchasePrice = existing.PurchasePrice,
+                Quantity = existing.StockQty,
+                SupplierId = existing.SupplierId,
+                Supplier = existing.SupplierName ?? string.Empty,
+                CategoryId = existing.CategoryId,
+                Category = existing.CategoryName ?? string.Empty
+            };
+        }
+
+        private static bool ApplyExpectationFieldsEqual(
+            SupplierImportApplyExpectation left,
+            SupplierImportApplyExpectation right)
+        {
+            return TextEquals(left.ProductName, right.ProductName) &&
+                left.RetailPrice == right.RetailPrice &&
+                TextEquals(left.ItemNumber, right.ItemNumber) &&
+                TextEquals(left.SecondProductName, right.SecondProductName) &&
+                left.PurchasePrice == right.PurchasePrice &&
+                left.Quantity == right.Quantity &&
+                left.SupplierId == right.SupplierId &&
+                TextEquals(left.Supplier, right.Supplier) &&
+                left.CategoryId == right.CategoryId &&
+                TextEquals(left.Category, right.Category);
         }
 
         private static SupplierImportProductRow ToCanonicalRow(SupplierImportEditableRow row, ProductDetailsRow existing)
