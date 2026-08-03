@@ -85,12 +85,12 @@
       },
       "System.Text.Encoding.CodePages": {
         "type": "Direct",
-        "requested": "[8.0.0, )",
-        "resolved": "8.0.0",
-        "contentHash": "OZIsVplFGaVY90G2SbpgU7EnCoOO5pw1t4ic21dBF3/1omrJFpAGoNAVpPyMVOC90/hvgkGG3VFqR13YgZMQfg==",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "9dngR7sk2fW/FEbrTCSYNGjsv5IyJnZy9+LI39+55pci5ngiZrjqSkQbIMfZnsrJnyGzCFcQgrAA8sMqsXydyQ==",
         "dependencies": {
-          "System.Memory": "4.5.5",
-          "System.Runtime.CompilerServices.Unsafe": "6.0.0"
+          "System.Memory": "4.6.3",
+          "System.Runtime.CompilerServices.Unsafe": "6.1.2"
         }
       },
       "DocumentFormat.OpenXml": {
