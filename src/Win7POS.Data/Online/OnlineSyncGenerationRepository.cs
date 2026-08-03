@@ -602,7 +602,17 @@ WHERE completed_at IS NULL
     FROM article_mutation_outbox
     WHERE state = 'retry_wait'
       AND last_typed_code = @code
-  );",
+  );
+
+UPDATE customer_order_inbox
+SET state = 'retry_wait',
+    ack_next_retry_at = @nowMs,
+    ack_last_error_code = @code,
+    ack_claim_generation_id = NULL,
+    ack_claim_generation_fingerprint = NULL,
+    ack_claim_token = NULL,
+    updated_at = @nowMs
+WHERE state = 'ack_in_progress';",
                 new { nowMs, code, articleUpdatedAt },
                 transaction).ConfigureAwait(false);
         }
@@ -674,7 +684,18 @@ WHERE completed_at IS NULL
     FROM article_mutation_outbox
     WHERE state = 'retry_wait'
       AND last_typed_code = @code
-  );",
+  );
+
+UPDATE customer_order_inbox
+SET state = 'retry_wait',
+    ack_next_retry_at = @nowMs,
+    ack_last_error_code = @code,
+    ack_claim_generation_id = NULL,
+    ack_claim_generation_fingerprint = NULL,
+    ack_claim_token = NULL,
+    updated_at = @nowMs
+WHERE state = 'ack_in_progress'
+  AND ack_claim_generation_id = @generationId;",
                 new { generationId, nowMs, code, articleUpdatedAt },
                 transaction).ConfigureAwait(false);
         }
