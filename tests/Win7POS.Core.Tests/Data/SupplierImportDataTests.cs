@@ -74,7 +74,8 @@ public sealed class SupplierImportDataTests
             RetailPrice = "180",
             Quantity = "3"
         };
-        var preview = SupplierImportAnalyzer.BuildSyncPreview(new[] { row }, existing);
+        var preview = await new SupplierExcelImportApplier(db.Factory)
+            .BuildPreviewAsync(new[] { row });
         Assert.AreEqual(1, preview.UpdatedProducts.Count);
         Assert.AreEqual(0, preview.NewProducts.Count);
 

@@ -446,6 +446,7 @@ ORDER BY timestamp DESC, id DESC";
             const string sql = @"
 SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPrice,
   COALESCE(p.is_active, 1) AS IsActive,
+  CASE WHEN m.barcode IS NULL THEN 0 ELSE 1 END AS HasMeta,
   COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
   m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,
@@ -485,6 +486,7 @@ ORDER BY p.barcode ASC";
                 var rows = await conn.QueryAsync<ProductDetailsRow>(@"
 SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPrice,
   COALESCE(p.is_active, 1) AS IsActive,
+  CASE WHEN m.barcode IS NULL THEN 0 ELSE 1 END AS HasMeta,
   COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
   m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,
