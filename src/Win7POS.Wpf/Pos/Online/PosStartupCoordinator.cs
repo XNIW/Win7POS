@@ -328,6 +328,7 @@ namespace Win7POS.Wpf.Pos.Online
             host.Signal(OnlineSyncLane.SalesOutbox, trigger);
             host.Signal(OnlineSyncLane.CatalogImportOutbox, trigger);
             host.Signal(OnlineSyncLane.ArticleMutationOutbox, trigger);
+            host.Signal(OnlineSyncLane.CustomerOrders, trigger);
         }
 
         public async Task<CatalogSyncRunResult> TriggerAdaptiveOnlineRefreshAsync(
@@ -406,14 +407,24 @@ namespace Win7POS.Wpf.Pos.Online
                 OnlineSyncLane.CatalogImportOutbox,
                 trigger,
                 cancellationToken);
-            await Task.WhenAll(heartbeatTask, salesTask, catalogImportTask).ConfigureAwait(false);
+            var customerOrdersTask = host.TriggerAsync(
+                OnlineSyncLane.CustomerOrders,
+                trigger,
+                cancellationToken);
+            await Task.WhenAll(
+                heartbeatTask,
+                salesTask,
+                catalogImportTask,
+                customerOrdersTask).ConfigureAwait(false);
 
             var heartbeat = heartbeatTask.Result;
             var sales = salesTask.Result;
             var catalogImport = catalogImportTask.Result;
+            var customerOrders = customerOrdersTask.Result;
             var authenticationDenied = heartbeat.AuthenticationDenied ||
                 sales.AuthenticationDenied ||
-                catalogImport.AuthenticationDenied;
+                catalogImport.AuthenticationDenied ||
+                customerOrders.AuthenticationDenied;
             if (authenticationDenied)
             {
                 return new CatalogSyncRunResult(
@@ -423,7 +434,9 @@ namespace Win7POS.Wpf.Pos.Online
                     code: FirstNonEmpty(
                         heartbeat.AuthenticationDenied ? heartbeat.Code : null,
                         sales.AuthenticationDenied ? sales.Code : null,
-                        catalogImport.Code,
+                        catalogImport.AuthenticationDenied
+                            ? catalogImport.Code
+                            : customerOrders.Code,
                         "auth_denied"));
             }
 
@@ -449,15 +462,19 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             var offline = heartbeat.Offline || sales.Offline ||
-                catalogImport.Offline || catalog?.Offline == true;
+                catalogImport.Offline || customerOrders.Offline ||
+                catalog?.Offline == true;
             var outboxWorkRemaining = sales.HasImmediateMore ||
                 sales.NextRetryAt.HasValue ||
                 catalogImport.HasImmediateMore ||
-                catalogImport.NextRetryAt.HasValue;
+                catalogImport.NextRetryAt.HasValue ||
+                customerOrders.HasImmediateMore ||
+                customerOrders.NextRetryAt.HasValue;
             return new CatalogSyncRunResult(
                 success: heartbeat.Success &&
                     sales.Success &&
                     catalogImport.Success &&
+                    customerOrders.Success &&
                     (!catalogRequested || catalog?.Success == true),
                 authenticationDenied: catalog?.AuthenticationDenied == true,
                 offline: offline,
@@ -474,8 +491,10 @@ namespace Win7POS.Wpf.Pos.Online
                 catalogPullAttempted: catalogRequested,
                 catalogPullSkippedCode: catalogRequested ? string.Empty : heartbeat.Code,
                 nextOutboxRetryAt: MinimumRetryAt(
-                    sales.NextRetryAt,
-                    catalogImport.NextRetryAt));
+                    MinimumRetryAt(
+                        sales.NextRetryAt,
+                        catalogImport.NextRetryAt),
+                    customerOrders.NextRetryAt));
         }
 
         public Task StopAsync()

@@ -11,7 +11,8 @@ namespace Win7POS.Core.Online
         CatalogImportOutbox = 2,
         CatalogDelta = 3,
         ArticleMutationOutbox = 4,
-        ProductImageOutbox = 5
+        ProductImageOutbox = 5,
+        CustomerOrders = 6
     }
 
     public enum OnlineSyncLaneTrigger
@@ -309,7 +310,8 @@ namespace Win7POS.Core.Online
             if ((lane == OnlineSyncLane.SalesOutbox ||
                  lane == OnlineSyncLane.CatalogImportOutbox ||
                  lane == OnlineSyncLane.ArticleMutationOutbox ||
-                 lane == OnlineSyncLane.ProductImageOutbox) &&
+                 lane == OnlineSyncLane.ProductImageOutbox ||
+                 lane == OnlineSyncLane.CustomerOrders) &&
                 outcome.HasImmediateMore)
             {
                 return new OnlineSyncLaneScheduleDecision(

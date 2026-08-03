@@ -18,6 +18,8 @@ namespace Win7POS.Data.Online
         private const string HeartbeatPath = "/api/pos/session/heartbeat";
         private const string CatalogPullPath = "/api/pos/catalog/pull";
         private const string CatalogImportSyncPath = "/api/pos/catalog/import-sync";
+        private const string CustomerOrderAckPath = "/api/pos/orders/ack";
+        private const string CustomerOrderClaimPath = "/api/pos/orders/claim";
         private const string SalesSyncPath = "/api/pos/sales/sync";
         private const int MaxResponseBodyBytes = 8 * 1024 * 1024;
         private const int MaxErrorResponseBodyBytes = 64 * 1024;
@@ -99,6 +101,34 @@ namespace Win7POS.Data.Online
                 CatalogImportSyncPath,
                 request,
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<PosOnlineResult<PosCustomerOrderClaimResponse>>
+            CustomerOrderClaimAsync(
+                PosCustomerOrderClaimRequest request,
+                CancellationToken cancellationToken)
+        {
+            return await PostJsonAsync<
+                PosCustomerOrderClaimRequest,
+                PosCustomerOrderClaimResponse>(
+                    CustomerOrderClaimPath,
+                    request,
+                    cancellationToken,
+                    noStore: true).ConfigureAwait(false);
+        }
+
+        public async Task<PosOnlineResult<PosCustomerOrderAckResponse>>
+            CustomerOrderAckAsync(
+                PosCustomerOrderAckRequest request,
+                CancellationToken cancellationToken)
+        {
+            return await PostJsonAsync<
+                PosCustomerOrderAckRequest,
+                PosCustomerOrderAckResponse>(
+                    CustomerOrderAckPath,
+                    request,
+                    cancellationToken,
+                    noStore: true).ConfigureAwait(false);
         }
 
         public async Task<PosOnlineResult<PosArticleMutationResponse>>

@@ -147,6 +147,7 @@ namespace Win7POS.Data.Online
                 case OnlineSyncLane.Heartbeat:
                     return 3;
                 case OnlineSyncLane.SalesOutbox:
+                case OnlineSyncLane.CustomerOrders:
                     return 2;
                 case OnlineSyncLane.CatalogImportOutbox:
                 case OnlineSyncLane.CatalogDelta:
