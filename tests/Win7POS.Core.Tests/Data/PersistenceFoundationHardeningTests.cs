@@ -281,6 +281,167 @@ CREATE TABLE IF NOT EXISTS restore_protocol_wal_writes(
     }
 
     [TestMethod]
+    public async Task OnlineBackup_TransientNativeBusy_RetriesFromCleanPartialSnapshot()
+    {
+        using var files = await RestoreProtocolFiles.CreateAsync();
+        var attempts = 0;
+        var hooks = new BackupRestoreTestHooks
+        {
+            BackupFault = point =>
+            {
+                if (point == BackupFailurePoint.SourceRemovedOrLocked &&
+                    Interlocked.Increment(ref attempts) == 1)
+                {
+                    throw new SqliteException("deterministic snapshot busy", 5);
+                }
+            }
+        };
+        var destination = Path.Combine(files.Root, "busy-retry-backup.db");
+
+        var result = await new SqliteOnlineBackup(files.LiveFactory, null, hooks)
+            .CreateVerifiedAsync(destination);
+
+        Assert.IsTrue(result.IsValid);
+        Assert.AreEqual(2, attempts, "Transient SQLITE_BUSY must retry exactly once.");
+        Assert.AreEqual(0, Directory.GetFiles(files.Root, "*.partial-*").Length);
+        await AssertDatabaseValidAndDeleteFullAsync(destination);
+    }
+
+    [TestMethod]
+    public async Task RestoreSnapshot_TransientNativeBusy_RetriesFromCleanCandidate()
+    {
+        using var files = await RestoreProtocolFiles.CreateAsync();
+        var attempts = 0;
+        var hooks = new BackupRestoreTestHooks
+        {
+            RestoreFault = point =>
+            {
+                if (point == RestoreFailurePoint.DuringSourceSnapshotIdentityGuard &&
+                    Interlocked.Increment(ref attempts) == 1)
+                {
+                    throw new SqliteException("deterministic restore snapshot busy", 5);
+                }
+            }
+        };
+
+        var result = await RestoreWithHooksAsync(files, hooks, "busy-retry");
+
+        Assert.IsTrue(result.LiveValidation.IsValid);
+        Assert.AreEqual(2, attempts, "Transient restore SQLITE_BUSY must retry exactly once.");
+        Assert.AreEqual("new-live", ReadProtocolValue(files.Live));
+        AssertRestoreResidue(files.Root, expectedCount: 0);
+    }
+
+    [TestMethod]
+    public async Task NativeSnapshot_PersistentBusyFailsClosedAndCleanRetryPasses()
+    {
+        using var files = await RestoreProtocolFiles.CreateAsync();
+        var backupAttempts = 0;
+        var backupDestination = Path.Combine(files.Root, "persistent-busy-backup.db");
+        var backupHooks = new BackupRestoreTestHooks
+        {
+            BackupFault = point =>
+            {
+                if (point == BackupFailurePoint.SourceRemovedOrLocked)
+                {
+                    Interlocked.Increment(ref backupAttempts);
+                    throw new SqliteException("persistent deterministic backup busy", 5);
+                }
+            }
+        };
+
+        await Assert.ThrowsExactlyAsync<SqliteException>(() =>
+            new SqliteOnlineBackup(files.LiveFactory, null, backupHooks)
+                .CreateVerifiedAsync(backupDestination));
+        Assert.AreEqual(5, backupAttempts, "Backup SQLITE_BUSY retry must be bounded.");
+        Assert.IsFalse(File.Exists(backupDestination));
+        Assert.AreEqual(0, Directory.GetFiles(files.Root, "*.partial-*").Length);
+
+        var backupRetryDestination = Path.Combine(files.Root, "persistent-busy-backup-retry.db");
+        var backupRetry = await new SqliteOnlineBackup(files.LiveFactory)
+            .CreateVerifiedAsync(backupRetryDestination);
+        Assert.IsTrue(backupRetry.IsValid);
+        await AssertDatabaseValidAndDeleteFullAsync(backupRetryDestination);
+
+        var restoreAttempts = 0;
+        var restoreHooks = new BackupRestoreTestHooks
+        {
+            RestoreFault = point =>
+            {
+                if (point == RestoreFailurePoint.DuringSourceSnapshotIdentityGuard)
+                {
+                    Interlocked.Increment(ref restoreAttempts);
+                    throw new SqliteException("persistent deterministic restore busy", 5);
+                }
+            }
+        };
+
+        await Assert.ThrowsExactlyAsync<SqliteException>(() =>
+            RestoreWithHooksAsync(files, restoreHooks, "persistent-busy"));
+        Assert.AreEqual(5, restoreAttempts, "Restore SQLITE_BUSY retry must be bounded.");
+        Assert.AreEqual("old-live", ReadProtocolValue(files.Live));
+        AssertRestoreResidue(files.Root, expectedCount: 0);
+
+        var restoreRetry = await RestoreWithHooksAsync(files, null, "persistent-busy-retry");
+        Assert.IsTrue(restoreRetry.LiveValidation.IsValid);
+        Assert.AreEqual("new-live", ReadProtocolValue(files.Live));
+        AssertRestoreResidue(files.Root, expectedCount: 0);
+    }
+
+    [TestMethod]
+    public async Task NativeSnapshot_CancellationAfterBusyStopsBeforeRetryAndCleansPartial()
+    {
+        using var files = await RestoreProtocolFiles.CreateAsync();
+        using var backupCancellation = new CancellationTokenSource();
+        var backupAttempts = 0;
+        var backupDestination = Path.Combine(files.Root, "busy-cancel-backup.db");
+        var backupHooks = new BackupRestoreTestHooks
+        {
+            BackupFault = point =>
+            {
+                if (point == BackupFailurePoint.SourceRemovedOrLocked)
+                {
+                    Interlocked.Increment(ref backupAttempts);
+                    backupCancellation.Cancel();
+                    throw new SqliteException("cancel after backup busy", 5);
+                }
+            }
+        };
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            new SqliteOnlineBackup(files.LiveFactory, null, backupHooks)
+                .CreateVerifiedAsync(backupDestination, backupCancellation.Token));
+        Assert.AreEqual(1, backupAttempts);
+        Assert.IsFalse(File.Exists(backupDestination));
+        Assert.AreEqual(0, Directory.GetFiles(files.Root, "*.partial-*").Length);
+
+        using var restoreCancellation = new CancellationTokenSource();
+        var restoreAttempts = 0;
+        var restoreHooks = new BackupRestoreTestHooks
+        {
+            RestoreFault = point =>
+            {
+                if (point == RestoreFailurePoint.DuringSourceSnapshotIdentityGuard)
+                {
+                    Interlocked.Increment(ref restoreAttempts);
+                    restoreCancellation.Cancel();
+                    throw new SqliteException("cancel after restore busy", 5);
+                }
+            }
+        };
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            RestoreWithHooksAsync(
+                files,
+                restoreHooks,
+                "busy-cancel",
+                restoreCancellation.Token));
+        Assert.AreEqual(1, restoreAttempts);
+        Assert.AreEqual("old-live", ReadProtocolValue(files.Live));
+        AssertRestoreResidue(files.Root, expectedCount: 0);
+    }
+
+    [TestMethod]
     public async Task BackupRestore_DiagnosticSinkFailureCannotChangeProtocolOutcome()
     {
         using var files = await RestoreProtocolFiles.CreateAsync();

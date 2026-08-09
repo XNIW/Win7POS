@@ -18,6 +18,10 @@ namespace Win7POS.Data.Online
 
     public sealed class SqliteRestoreCoordinator
     {
+        private const int NativeSnapshotMaximumAttempts = 5;
+        private const int NativeSnapshotRetryDelayMilliseconds = 25;
+        private const int NativeSnapshotRetryWindowMilliseconds = 5000;
+
         private readonly Action<BackupRestoreDiagnostic> _diagnostics;
         private readonly SqliteConnectionFactory _liveFactory;
         private readonly SqliteOnlineBackup _onlineBackup;
@@ -235,7 +239,11 @@ namespace Win7POS.Data.Online
             try
             {
                 var snapshotWatch = Stopwatch.StartNew();
-                await Task.Run(() => CreateReadOnlySnapshot(sourcePath, candidatePath))
+                var busyRetries = await Task.Run(
+                        () => CreateReadOnlySnapshot(
+                            sourcePath,
+                            candidatePath,
+                            cancellationToken))
                     .ConfigureAwait(false);
                 snapshotWatch.Stop();
                 _testHooks?.AtRestore(RestoreFailurePoint.AfterSourceSnapshot);
@@ -246,7 +254,7 @@ namespace Win7POS.Data.Online
                     inspection,
                     snapshotWatch.Elapsed.TotalMilliseconds,
                     cancellationToken,
-                    "ok");
+                    busyRetries == 0 ? "ok" : "ok_after_busy_retry");
 
                 // BackupDatabase is synchronous and deliberately not abandoned.
                 cancellationToken.ThrowIfCancellationRequested();
@@ -342,16 +350,49 @@ namespace Win7POS.Data.Online
             throw new IOException("Unable to allocate a unique same-directory restore candidate.");
         }
 
-        private void CreateReadOnlySnapshot(string sourcePath, string candidatePath)
+        private int CreateReadOnlySnapshot(
+            string sourcePath,
+            string candidatePath,
+            CancellationToken cancellationToken)
         {
-            _testHooks?.AtRestore(RestoreFailurePoint.DuringSourceSnapshotIdentityGuard);
-            using (var source = new SqliteConnection(BuildSourceConnectionString(sourcePath)))
-            using (var destination = new SqliteConnection(BuildCandidateConnectionString(candidatePath)))
+            var retryWindow = Stopwatch.StartNew();
+            for (var attempt = 1; ; attempt++)
             {
-                source.Open();
-                destination.Open();
-                source.BackupDatabase(destination);
+                try
+                {
+                    _testHooks?.AtRestore(RestoreFailurePoint.DuringSourceSnapshotIdentityGuard);
+                    using (var source = new SqliteConnection(BuildSourceConnectionString(sourcePath)))
+                    using (var destination = new SqliteConnection(BuildCandidateConnectionString(candidatePath)))
+                    {
+                        source.Open();
+                        destination.Open();
+                        source.BackupDatabase(destination);
+                    }
+
+                    return attempt - 1;
+                }
+                catch (SqliteException exception) when (
+                    IsNativeSnapshotBusy(exception) &&
+                    attempt < NativeSnapshotMaximumAttempts &&
+                    retryWindow.ElapsedMilliseconds < NativeSnapshotRetryWindowMilliseconds)
+                {
+                    DeleteSqliteFiles(candidatePath);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var remaining = NativeSnapshotRetryWindowMilliseconds -
+                        (int)retryWindow.ElapsedMilliseconds;
+                    if (remaining > 0)
+                    {
+                        Thread.Sleep(Math.Min(
+                            NativeSnapshotRetryDelayMilliseconds,
+                            remaining));
+                    }
+                }
             }
+        }
+
+        private static bool IsNativeSnapshotBusy(SqliteException exception)
+        {
+            return exception.SqliteErrorCode == 5 || exception.SqliteErrorCode == 6;
         }
 
         private static FileStream OpenSourceIdentityGuard(string sourcePath)
