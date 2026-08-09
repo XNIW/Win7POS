@@ -10,6 +10,10 @@ namespace Win7POS.Data.Backup
 {
     public sealed class SqliteOnlineBackup
     {
+        private const int NativeSnapshotMaximumAttempts = 5;
+        private const int NativeSnapshotRetryDelayMilliseconds = 25;
+        private const int NativeSnapshotRetryWindowMilliseconds = 5000;
+
         private readonly Action<BackupRestoreDiagnostic> _diagnostics;
         private readonly SqliteConnectionFactory _sourceFactory;
         private readonly BackupRestoreTestHooks _testHooks;
@@ -79,7 +83,11 @@ namespace Win7POS.Data.Backup
                     _testHooks?.AtBackup(BackupFailurePoint.BeforeSourceOpen);
                     cancellationToken.ThrowIfCancellationRequested();
                     var snapshot = Stopwatch.StartNew();
-                    await Task.Run(() => CreateNativeSnapshot(sourcePath, temporaryPath))
+                    var busyRetries = await Task.Run(
+                            () => CreateNativeSnapshot(
+                                sourcePath,
+                                temporaryPath,
+                                cancellationToken))
                         .ConfigureAwait(false);
                     snapshot.Stop();
                     Report(
@@ -89,7 +97,7 @@ namespace Win7POS.Data.Backup
                         inspection,
                         snapshot.Elapsed.TotalMilliseconds,
                         cancellationToken,
-                        "ok");
+                        busyRetries == 0 ? "ok" : "ok_after_busy_retry");
                     _testHooks?.AtBackup(BackupFailurePoint.AfterTemporarySnapshotCreation);
 
                     // SQLite's native backup call is synchronous. Cancellation is observed
@@ -177,16 +185,50 @@ namespace Win7POS.Data.Backup
             }
         }
 
-        private void CreateNativeSnapshot(string sourcePath, string temporaryPath)
+        private int CreateNativeSnapshot(
+            string sourcePath,
+            string temporaryPath,
+            CancellationToken cancellationToken)
         {
-            _testHooks?.AtBackup(BackupFailurePoint.SourceRemovedOrLocked);
-            using (var source = new SqliteConnection(BuildSourceConnectionString(sourcePath)))
-            using (var destination = new SqliteConnection(BuildDestinationConnectionString(temporaryPath)))
+            var retryWindow = Stopwatch.StartNew();
+            for (var attempt = 1; ; attempt++)
             {
-                source.Open();
-                destination.Open();
-                source.BackupDatabase(destination);
+                try
+                {
+                    _testHooks?.AtBackup(BackupFailurePoint.SourceRemovedOrLocked);
+                    using (var source = new SqliteConnection(BuildSourceConnectionString(sourcePath)))
+                    using (var destination = new SqliteConnection(BuildDestinationConnectionString(temporaryPath)))
+                    {
+                        source.Open();
+                        destination.Open();
+                        source.BackupDatabase(destination);
+                    }
+
+                    return attempt - 1;
+                }
+                catch (SqliteException exception) when (
+                    IsNativeSnapshotBusy(exception) &&
+                    attempt < NativeSnapshotMaximumAttempts &&
+                    retryWindow.ElapsedMilliseconds < NativeSnapshotRetryWindowMilliseconds)
+                {
+                    DeleteIfPresent(temporaryPath);
+                    DeleteSqliteSidecars(temporaryPath);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var remaining = NativeSnapshotRetryWindowMilliseconds -
+                        (int)retryWindow.ElapsedMilliseconds;
+                    if (remaining > 0)
+                    {
+                        Thread.Sleep(Math.Min(
+                            NativeSnapshotRetryDelayMilliseconds,
+                            remaining));
+                    }
+                }
             }
+        }
+
+        private static bool IsNativeSnapshotBusy(SqliteException exception)
+        {
+            return exception.SqliteErrorCode == 5 || exception.SqliteErrorCode == 6;
         }
 
         private static FileStream OpenSourceIdentityGuard(string sourcePath)

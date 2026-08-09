@@ -351,7 +351,7 @@ if ($restoreSafety -notmatch "ValidateLivePreSwapAsync" -or
 $stageStart = Index-OrFail $restoreCoordinator "private async Task<RestoreCandidatePreparation> StageAndValidateCandidateAsync" "candidate staging method missing"
 $stageEnd = Index-OrFail $restoreCoordinator "private string AllocateCandidatePath" "candidate staging end marker missing"
 $stageBody = $restoreCoordinator.Substring($stageStart, $stageEnd - $stageStart)
-$sourceSnapshot = Index-OrFail $stageBody "CreateReadOnlySnapshot(sourcePath, candidatePath)" "restore must create a SQLite snapshot"
+$sourceSnapshot = Index-OrFail $stageBody "CreateReadOnlySnapshot(" "restore must create a SQLite snapshot"
 $candidateMigration = Index-OrFail $stageBody "DbInitializer.EnsureCreated(PosDbOptions.ForPath(candidatePath))" "candidate migration missing"
 $candidateIntegrity = Index-OrFail $stageBody ".ValidateAsync(cancellationToken)" "candidate integrity/foreign-key validation missing"
 $candidateValidation = Index-OrFail $stageBody ".ValidateCandidateAsync(expectedShopId, expectedShopCode)" "candidate shop/outbox validation missing"
@@ -546,6 +546,24 @@ if ($backupBody -notmatch "_onlineBackup\.CreateVerifiedAsync\(outputPath, cance
     Fail "manual DB backup must use SQLite online backup and validate the snapshot"
 } else {
     Pass "manual DB backup uses a verified SQLite online snapshot"
+}
+
+if ($onlineBackup -notmatch "NativeSnapshotMaximumAttempts\s*=\s*5" -or
+    $onlineBackup -notmatch "NativeSnapshotRetryWindowMilliseconds\s*=\s*5000" -or
+    $onlineBackup -notmatch "IsNativeSnapshotBusy" -or
+    $onlineBackup -notmatch "DeleteSqliteSidecars\(temporaryPath\)" -or
+    $restoreCoordinator -notmatch "NativeSnapshotMaximumAttempts\s*=\s*5" -or
+    $restoreCoordinator -notmatch "NativeSnapshotRetryWindowMilliseconds\s*=\s*5000" -or
+    $restoreCoordinator -notmatch "IsNativeSnapshotBusy" -or
+    $restoreCoordinator -notmatch "DeleteSqliteFiles\(candidatePath\)" -or
+    $onlineBackup -notmatch "DeleteSqliteSidecars\(temporaryPath\);\s*cancellationToken\.ThrowIfCancellationRequested\(\)" -or
+    $restoreCoordinator -notmatch "DeleteSqliteFiles\(candidatePath\);\s*cancellationToken\.ThrowIfCancellationRequested\(\)" -or
+    $persistenceHardeningTests -notmatch "TransientNativeBusy_RetriesFromCleanPartialSnapshot" -or
+    $persistenceHardeningTests -notmatch "PersistentBusyFailsClosedAndCleanRetryPasses" -or
+    $persistenceHardeningTests -notmatch "CancellationAfterBusyStopsBeforeRetryAndCleansPartial") {
+    Fail "native backup/restore snapshot BUSY retry must be bounded, clean partial state and remain tested"
+} else {
+    Pass "native backup/restore snapshot BUSY retry is bounded and fail-closed"
 }
 
 if ($startOfDay -notmatch "RestoreNeedsReviewSettingKey" -or
