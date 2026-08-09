@@ -52,6 +52,8 @@
                 </Grid>
             </Border>
             <ListBox x:Name="CartListBox" Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem, Mode=TwoWay}"
+                     AutomationProperties.AutomationId="Pos.CartItems"
+                     AutomationProperties.Name="{loc:Loc pos.cart.productHeader}"
                      AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      SelectionChanged="CartListBox_SelectionChanged">
                 <ListBox.Resources>
@@ -212,6 +214,40 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+            <Border Grid.Row="1"
+                    Margin="24"
+                    Padding="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource SurfaceBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource RadiusLarge}"
+                    IsHitTestVisible="False"
+                    Visibility="{Binding IsCartEmpty, Converter={StaticResource BoolToVis}}"
+                    AutomationProperties.AutomationId="Pos.EmptyCartState"
+                    AutomationProperties.Name="{loc:Loc pos.cart.emptyTitle}">
+                <StackPanel MaxWidth="440" HorizontalAlignment="Center">
+                    <Path Data="{StaticResource IconRegister}"
+                          Style="{StaticResource ButtonIconPathStyle}"
+                          Fill="{StaticResource PrimaryLightBrush}"
+                          Width="28"
+                          Height="28"
+                          HorizontalAlignment="Center"
+                          Margin="0,0,0,12"/>
+                    <TextBlock Text="{loc:Loc pos.cart.emptyTitle}"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               TextAlignment="Center"/>
+                    <TextBlock Text="{loc:Loc pos.cart.emptyHelp}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="13"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
         </Grid>
 
         <!-- Destra: Inserimento / Scanner (solo BarcodeBox + Sconto + Add) -->
@@ -220,6 +256,8 @@
                 <TextBlock Text="{loc:Loc pos.cart.scannerTitle}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
                 <TextBlock Text="{loc:Loc pos.cart.barcode}" FontSize="12" Foreground="#6B5B73" Margin="0,0,0,6"/>
                 <TextBox x:Name="BarcodeBox"
+                         AutomationProperties.AutomationId="Pos.BarcodeInput"
+                         AutomationProperties.Name="{loc:Loc pos.cart.barcode}"
                          MinHeight="40"
                          Margin="0,0,0,6"
                          Style="{StaticResource ModernTextBoxStyle}"
@@ -230,7 +268,8 @@
                            FontSize="11"
                            Foreground="#7B4FA3"
                            FontWeight="SemiBold"/>
-                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddBarcodeCommand}">
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddBarcodeCommand}"
+                        AutomationProperties.AutomationId="Pos.AddBarcode" AutomationProperties.Name="{loc:Loc common.add}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconAdd}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc common.add}" Margin="8,0,0,0"/>

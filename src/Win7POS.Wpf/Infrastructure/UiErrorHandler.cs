@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using Win7POS.Core;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Infrastructure
 {
@@ -8,7 +9,7 @@ namespace Win7POS.Wpf.Infrastructure
     public static class UiErrorHandler
     {
         private static string LogPathMessage =>
-            "Si è verificato un errore. Controlla i log per dettagli:\n" + (AppPaths.LogPath ?? "app.log");
+            PosLocalization.T("app.genericErrorCheckLog") + "\n" + (AppPaths.LogPath ?? "app.log");
 
         public static void Handle(Exception ex, FileLogger logger, string context)
         {
@@ -16,7 +17,10 @@ namespace Win7POS.Wpf.Infrastructure
             log.LogError(ex, context ?? "UI error");
             try
             {
-                Win7POS.Wpf.Import.ModernMessageDialog.Show(Application.Current?.MainWindow, "Win7POS", LogPathMessage);
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(
+                    Application.Current?.MainWindow,
+                    PosLocalization.T("app.genericErrorTitle"),
+                    LogPathMessage);
             }
             catch (Exception showEx)
             {

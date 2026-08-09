@@ -103,7 +103,7 @@ namespace Win7POS.Wpf.Import
                     .DiffAsync(rows, expectedDiff.Items.Count)
                     .ConfigureAwait(false);
                 if (!DiffSummariesMatch(expectedDiff.Summary, currentDiff.Summary))
-                    throw new InvalidOperationException("Sync DB preview non aggiornato: riesegui Analizza prima di applicare.");
+                    throw new InvalidOperationException(PosLocalization.T("import.previewStale"));
 
                 string backupSummary = string.Empty;
                 if (!options.DryRun)
@@ -112,12 +112,12 @@ namespace Win7POS.Wpf.Import
                     {
                         var backupPath = await CreateBackupBeforeApplyAsync(opt.DbPath).ConfigureAwait(false);
                         if (!string.IsNullOrWhiteSpace(backupPath))
-                            backupSummary = "Backup creato: " + backupPath;
+                            backupSummary = PosLocalization.F("import.backupCreated", backupPath);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Backup pre-import failed");
-                        backupSummary = "Backup non creato: " + ex.Message;
+                        backupSummary = PosLocalization.T("import.backupNotCreated");
                     }
                 }
 
@@ -129,7 +129,7 @@ namespace Win7POS.Wpf.Import
                         dedicatedCategories,
                         priceHistoryRows).ConfigureAwait(false);
                 if (apply.ErrorsCount > 0)
-                    throw new InvalidOperationException("Apply failed with row errors.");
+                    throw new InvalidOperationException(PosLocalization.T("import.applyRowErrors"));
 
                 var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 var details = AuditDetails.Kv(
@@ -306,20 +306,8 @@ namespace Win7POS.Wpf.Import
 
         private static string DescribeSheetState(bool hasSheet, bool hasFunctionalRows)
         {
-            if (!hasSheet) return "assente";
-            return hasFunctionalRows ? "presente" : "presente ma funzionalmente vuoto/sporco";
-        }
-
-        private static void AppendMessages(StringBuilder sb, string title, IReadOnlyList<string> messages, int maxDetailed)
-        {
-            if (messages == null || messages.Count == 0) return;
-
-            sb.AppendLine(title + ":");
-            var take = maxDetailed < 0 ? messages.Count : Math.Min(messages.Count, maxDetailed);
-            for (var i = 0; i < take; i++)
-                sb.AppendLine("  - " + messages[i]);
-            if (maxDetailed >= 0 && messages.Count > maxDetailed)
-                sb.AppendLine("  ...altri " + (messages.Count - maxDetailed) + " warning");
+            if (!hasSheet) return PosLocalization.T("import.sheetAbsent");
+            return PosLocalization.T(hasFunctionalRows ? "import.sheetPresent" : "import.sheetUnusable");
         }
 
         private static string BuildAnalyzeSummary(
@@ -333,39 +321,42 @@ namespace Win7POS.Wpf.Import
             var s = diff.Summary;
             var fileName = Path.GetFileName(filePath ?? string.Empty);
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("Import Analyze + Diff (CSV/XLSX)");
-            sb.AppendLine("File: " + fileName);
-            sb.AppendLine("Path: " + filePath);
-            sb.AppendLine("DB path: " + dbPath);
-            sb.AppendLine("Rows(parsed/valid/errors/duplicates): " + parse.TotalRows + "/" + analysis.ValidRows + "/" + analysis.ErrorRows + "/" + analysis.Duplicates);
-            sb.AppendLine("Errors(missingBarcode/invalidPrice): " + analysis.MissingBarcode + "/" + analysis.InvalidPrice);
-            sb.AppendLine("Diff(new/updatePrice/updateName/updateBoth/noChange/invalid): " +
-                s.NewProduct + "/" + s.UpdatePrice + "/" + s.UpdateName + "/" + s.UpdateBoth + "/" + s.NoChange + "/" + s.InvalidRow);
-            sb.AppendLine("Preview items: " + diff.Items.Count);
+            sb.AppendLine(PosLocalization.T("import.summaryAnalysisTitle"));
+            sb.AppendLine(PosLocalization.F("import.summaryFile", fileName));
+            sb.AppendLine(PosLocalization.F(
+                "import.summaryRows",
+                parse.TotalRows,
+                analysis.ValidRows,
+                analysis.ErrorRows,
+                analysis.Duplicates));
+            sb.AppendLine(PosLocalization.F(
+                "import.summaryDiff",
+                s.NewProduct,
+                s.UpdatePrice,
+                s.UpdateName,
+                s.UpdateBoth,
+                s.NoChange,
+                s.InvalidRow));
 
             if (workbookAnalysis != null)
             {
-                sb.AppendLine("Workbook(products/suppliers/categories/priceHistory): " +
-                    workbookAnalysis.ProductsCount + "/" +
-                    workbookAnalysis.SuppliersCount + "/" +
-                    workbookAnalysis.CategoriesCount + "/" +
-                    workbookAnalysis.PriceHistoryCount);
-                sb.AppendLine("Fogli dedicati(suppliers/categories): " +
-                    DescribeSheetState(workbookAnalysis.HasSuppliersSheet, workbookAnalysis.HasFunctionalSuppliersSheet) + "/" +
-                    DescribeSheetState(workbookAnalysis.HasCategoriesSheet, workbookAnalysis.HasFunctionalCategoriesSheet));
-                sb.AppendLine("Conflitti(supplierName/supplierId/categoryName/categoryId): " +
-                    workbookAnalysis.DuplicateSupplierNameCount + "/" +
-                    workbookAnalysis.DuplicateSupplierIdCount + "/" +
-                    workbookAnalysis.DuplicateCategoryNameCount + "/" +
-                    workbookAnalysis.DuplicateCategoryIdCount);
-                sb.AppendLine("Copertura(unusedSupplier/unusedCategory/unresolvedSupplier/unresolvedCategory): " +
-                    workbookAnalysis.UnusedSupplierCount + "/" +
-                    workbookAnalysis.UnusedCategoryCount + "/" +
-                    workbookAnalysis.UnresolvedSupplierCount + "/" +
-                    workbookAnalysis.UnresolvedCategoryCount);
-                sb.AppendLine("PriceHistory(orphan): " + workbookAnalysis.OrphanPriceHistoryCount);
-                AppendMessages(sb, "Errori workbook", workbookAnalysis.Errors, int.MaxValue);
-                AppendMessages(sb, "Avvisi workbook", workbookAnalysis.Warnings, 10);
+                sb.AppendLine(PosLocalization.F(
+                    "import.summaryWorkbook",
+                    workbookAnalysis.ProductsCount,
+                    workbookAnalysis.SuppliersCount,
+                    workbookAnalysis.CategoriesCount,
+                    workbookAnalysis.PriceHistoryCount));
+                sb.AppendLine(PosLocalization.F(
+                    "import.summaryDedicatedSheets",
+                    DescribeSheetState(workbookAnalysis.HasSuppliersSheet, workbookAnalysis.HasFunctionalSuppliersSheet),
+                    DescribeSheetState(workbookAnalysis.HasCategoriesSheet, workbookAnalysis.HasFunctionalCategoriesSheet)));
+                if (workbookAnalysis.Errors.Count > 0 || workbookAnalysis.Warnings.Count > 0)
+                {
+                    sb.AppendLine(PosLocalization.F(
+                        "import.summaryWorkbookIssues",
+                        workbookAnalysis.Errors.Count,
+                        workbookAnalysis.Warnings.Count));
+                }
             }
             else
             {
@@ -378,8 +369,8 @@ namespace Win7POS.Wpf.Import
                     var cn = CategorySupplierResolver.Normalize(row?.CategoryName);
                     if (cn.Length > 0) uniqueCategories.Add(cn);
                 }
-                sb.AppendLine("Source: CSV (solo prodotti)");
-                sb.AppendLine("Fogli Suppliers/Categories assenti: usato fallback da righe prodotti (fornitori=" + uniqueSuppliers.Count + ", categorie=" + uniqueCategories.Count + ")");
+                sb.AppendLine(PosLocalization.T("import.summaryCsvSource"));
+                sb.AppendLine(PosLocalization.F("import.summaryCsvFallback", uniqueSuppliers.Count, uniqueCategories.Count));
             }
             return sb.ToString().TrimEnd();
         }
@@ -387,24 +378,36 @@ namespace Win7POS.Wpf.Import
         private static string BuildApplySummary(string dbPath, ImportApplyOptions options, ImportApplyResult apply)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("CSV Apply");
-            sb.AppendLine("DB path: " + dbPath);
-            sb.AppendLine("Options(insert/updatePrice/updateName/dryRun): " +
-                options.InsertNew + "/" + options.UpdatePrice + "/" + options.UpdateName + "/" + options.DryRun);
-            sb.AppendLine("Products(inserted/updated/noChange/skipped/errors): " +
-                apply.AppliedInserted + "/" + apply.AppliedUpdated + "/" + apply.NoChange + "/" + apply.Skipped + "/" + apply.ErrorsCount);
-            sb.AppendLine("Suppliers(fromSheet/fromDb/created): " +
-                apply.SuppliersFromSheet + "/" + apply.SuppliersFromDb + "/" + apply.SuppliersCreated);
-            sb.AppendLine("Categories(fromSheet/fromDb/created): " +
-                apply.CategoriesFromSheet + "/" + apply.CategoriesFromDb + "/" + apply.CategoriesCreated);
-            sb.AppendLine("PriceHistory(inserted/skipped): " +
-                apply.PriceHistoryInserted + "/" + apply.PriceHistorySkipped);
+            sb.AppendLine(PosLocalization.T("import.summaryApplyTitle"));
+            sb.AppendLine(PosLocalization.F(
+                "import.summaryProducts",
+                apply.AppliedInserted,
+                apply.AppliedUpdated,
+                apply.NoChange,
+                apply.Skipped,
+                apply.ErrorsCount));
+            sb.AppendLine(PosLocalization.F(
+                "import.summarySuppliers",
+                apply.SuppliersFromSheet,
+                apply.SuppliersFromDb,
+                apply.SuppliersCreated));
+            sb.AppendLine(PosLocalization.F(
+                "import.summaryCategories",
+                apply.CategoriesFromSheet,
+                apply.CategoriesFromDb,
+                apply.CategoriesCreated));
+            sb.AppendLine(PosLocalization.F(
+                "import.summaryPriceHistory",
+                apply.PriceHistoryInserted,
+                apply.PriceHistorySkipped));
             if (apply.SupplierNameOverwrittenCount > 0 || apply.CategoryNameOverwrittenCount > 0)
             {
-                sb.AppendLine("Dedicated sheet overwrites(suppliers/categories): " +
-                    apply.SupplierNameOverwrittenCount + "/" + apply.CategoryNameOverwrittenCount);
+                sb.AppendLine(PosLocalization.F(
+                    "import.summaryOverwrites",
+                    apply.SupplierNameOverwrittenCount,
+                    apply.CategoryNameOverwrittenCount));
             }
-            sb.AppendLine("Changed barcodes: " + apply.ChangedBarcodes.Count);
+            sb.AppendLine(PosLocalization.F("import.summaryChangedBarcodes", apply.ChangedBarcodes.Count));
             return sb.ToString().TrimEnd();
         }
     }
