@@ -32,7 +32,7 @@ internal sealed class BackupRestoreSelfTestRequest
 
 internal static class BackupRestoreSelfTest
 {
-    private const string Implementation = "baseline_raw_copy_v1";
+    private const string Implementation = "wal_safe_sealed_candidate_v2";
     private const string ShopId = "perf-shop";
     private const string ShopCode = "PERF-SHOP";
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
@@ -114,8 +114,15 @@ internal static class BackupRestoreSelfTest
         {
             if (request.Mode == BackupRestoreSelfTestMode.Failure)
             {
-                await RunBaselineFailureSmokeAsync(root).ConfigureAwait(false);
-                Console.WriteLine("BACKUP_RESTORE_RESULT mode=failure implementation=" + Implementation + " result=pass cases=3");
+                var failureSummary = await RunFailureMatrixAsync(root).ConfigureAwait(false);
+                Console.WriteLine(
+                    "BACKUP_RESTORE_RESULT mode=failure implementation=" + Implementation +
+                    " result=pass restore_fault_points=" + failureSummary.RestoreFaultPoints.ToString(Invariant) +
+                    " cancellation_points=" + failureSummary.CancellationPoints.ToString(Invariant) +
+                    " crash_recovery_points=" + failureSummary.CrashRecoveryPoints.ToString(Invariant) +
+                    " backup_fault_points=" + failureSummary.BackupFaultPoints.ToString(Invariant) +
+                    " startup_recovery_points=" + failureSummary.StartupRecoveryPoints.ToString(Invariant) +
+                    " partial_backup_residue=0 restore_temp_residue=0 retry=pass double_recovery=pass old_or_new_valid=true");
                 Console.WriteLine("BACKUP RESTORE FAILURE SELFTEST PASS");
                 Console.WriteLine("TEST PASS");
                 return;
@@ -155,7 +162,8 @@ internal static class BackupRestoreSelfTest
                         DeleteDirectoryBestEffort(iterationRoot);
                 }
 
-                if (request.Mode == BackupRestoreSelfTestMode.Performance)
+                if (request.Mode == BackupRestoreSelfTestMode.Performance ||
+                    request.Mode == BackupRestoreSelfTestMode.Functional)
                 {
                     var walProbeRoot = Path.Combine(profileRoot, "wal-probe");
                     var walResult = await RunWalCommittedProbeAsync(seedPath, walProbeRoot)
@@ -163,8 +171,11 @@ internal static class BackupRestoreSelfTest
                     Console.WriteLine(
                         "BACKUP_RESTORE_RESULT mode=wal_committed implementation=" + Implementation +
                         " size_mib=" + sizeMiB.ToString(Invariant) +
-                        " committed_frame_preserved=" + Bool(walResult) +
-                        " expected_baseline_gap=true");
+                        " committed_frame_preserved=" + Bool(walResult.CommittedFramePreserved) +
+                        " concurrent_writer_consistent=" + Bool(walResult.ConcurrentWriterConsistent) +
+                        " writer_max_latency_ms=" + walResult.WriterMaximumLatencyMilliseconds.ToString(Invariant) +
+                        " baseline_gap_closed=" + Bool(
+                            walResult.CommittedFramePreserved && walResult.ConcurrentWriterConsistent));
                     if (!request.KeepDatabase)
                         DeleteDirectoryBestEffort(walProbeRoot);
                 }
@@ -312,7 +323,6 @@ VALUES(@id, zeroblob(262144));";
 
         var sourcePath = Path.Combine(root, "restore-source.db");
         var livePath = Path.Combine(root, "live.db");
-        var validationPath = Path.Combine(root, "pos_restore_validate.db");
         var preBackupPath = Path.Combine(root, "pre-restore.db");
         CloneSeed(seedPath, sourcePath);
         CloneSeed(seedPath, livePath);
@@ -328,71 +338,42 @@ VALUES(@id, zeroblob(262144));";
             return Task.CompletedTask;
         }).ConfigureAwait(false);
 
-        await MeasureAsync(sample, "restore", "snapshot", () =>
-        {
-            File.Copy(sourcePath, validationPath, true);
-            sample.SourceSnapshotBytes = new FileInfo(validationPath).Length;
-            return Task.CompletedTask;
-        }).ConfigureAwait(false);
-
-        await MeasureAsync(sample, "restore", "candidate_migration", () =>
-        {
-            DbInitializer.EnsureCreated(PosDbOptions.ForPath(validationPath));
-            return Task.CompletedTask;
-        }).ConfigureAwait(false);
-        var candidateFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(validationPath));
-        await MeasureAsync(sample, "restore", "candidate_integrity_fk", async () =>
-        {
-            var validation = await new DbMaintenanceRepository(candidateFactory).ValidateAsync().ConfigureAwait(false);
-            Require(validation.IsValid, "Candidate integrity/FK validation failed.");
-        }).ConfigureAwait(false);
-        await MeasureAsync(sample, "restore", "preliminary_shop_validation", async () =>
-        {
-            var safety = await new RestoreShopSafetyRepository(candidateFactory)
-                .ValidateCandidateAsync(ShopId, ShopCode)
-                .ConfigureAwait(false);
-            Require(safety.IsValid, "Candidate shop validation failed: " + safety.Code);
-        }).ConfigureAwait(false);
-        SqliteConnectionFactory.ClearAllPools();
-
         var liveFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(livePath));
         var liveCatalogEpoch = await new CatalogShopStateRepository(liveFactory)
             .LoadTransitionEpochAsync()
             .ConfigureAwait(false);
-        var fenceStart = Stopwatch.StartNew();
-        var fenceAllocationBefore = GC.GetTotalAllocatedBytes(false);
-        await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
-        {
-            fenceStart.Stop();
-            sample.AddPhase(
-                "restore",
-                "fence_wait",
-                fenceStart.Elapsed.TotalMilliseconds,
-                Math.Max(0, GC.GetTotalAllocatedBytes(false) - fenceAllocationBefore));
-            await MeasureAsync(sample, "restore", "fenced_live_revalidation", async () =>
+        var phaseAllocationCheckpoint = GC.GetTotalAllocatedBytes(false);
+        var coordinator = new SqliteRestoreCoordinator(
+            liveFactory,
+            new SqliteOnlineBackup(liveFactory),
+            diagnostic =>
             {
-                var safety = await new RestoreShopSafetyRepository(liveFactory)
-                    .ValidateLivePreSwapAsync(ShopId, ShopCode, liveCatalogEpoch)
-                    .ConfigureAwait(false);
-                Require(safety.IsValid, "Fenced live validation failed: " + safety.Code);
-            }).ConfigureAwait(false);
-            await MeasureAsync(sample, "restore", "fenced_candidate_revalidation", async () =>
-            {
-                var safety = await new RestoreShopSafetyRepository(candidateFactory)
-                    .ValidateCandidateAsync(ShopId, ShopCode)
-                    .ConfigureAwait(false);
-                Require(safety.IsValid, "Fenced candidate validation failed: " + safety.Code);
-            }).ConfigureAwait(false);
-            await MeasureAsync(sample, "restore", "verified_prebackup", async () =>
-            {
-                var validation = await new SqliteOnlineBackup(liveFactory)
-                    .CreateVerifiedAsync(preBackupPath)
-                    .ConfigureAwait(false);
-                Require(validation.IsValid, "Pre-restore backup validation failed.");
-                sample.PreBackupBytes = new FileInfo(preBackupPath).Length;
-            }).ConfigureAwait(false);
-            await InstallBaselineAsync(sample, validationPath, livePath).ConfigureAwait(false);
-        }).ConfigureAwait(false);
+                if (!string.Equals(diagnostic.Phase, "complete", StringComparison.Ordinal))
+                {
+                    var allocatedNow = GC.GetTotalAllocatedBytes(false);
+                    sample.AddPhase(
+                        "restore",
+                        diagnostic.Phase,
+                        diagnostic.ElapsedMilliseconds,
+                        Math.Max(0, allocatedNow - phaseAllocationCheckpoint));
+                    phaseAllocationCheckpoint = allocatedNow;
+                }
+            });
+        var outcome = await coordinator.RestoreAsync(
+                sourcePath,
+                preBackupPath,
+                ShopId,
+                ShopCode,
+                liveCatalogEpoch,
+                validation =>
+                {
+                    Require(validation.IsValid, "Post-swap validation failed.");
+                    return Task.CompletedTask;
+                })
+            .ConfigureAwait(false);
+        Require(outcome.LiveValidation.IsValid, "Restore coordinator did not return valid evidence.");
+        sample.SourceSnapshotBytes = new FileInfo(sourcePath).Length;
+        sample.PreBackupBytes = new FileInfo(preBackupPath).Length;
 
         totalStopwatch.Stop();
         sample.RestoreTotalMilliseconds = totalStopwatch.Elapsed.TotalMilliseconds;
@@ -407,11 +388,10 @@ VALUES(@id, zeroblob(262144));";
             sourceFingerprint,
             sample.ResultFingerprint,
             StringComparison.Ordinal);
-        sample.EstimatedBytesWritten =
-            sample.SourceSnapshotBytes + sample.PreBackupBytes + sample.CandidateDurableCopyBytes;
-        sample.EstimatedFullSizeReadPasses = 7;
-        sample.EstimatedFullSizeWritePasses = 3;
-        sample.CandidateCopyPasses = 2;
+        sample.EstimatedBytesWritten = sample.SourceSnapshotBytes + sample.PreBackupBytes;
+        sample.EstimatedFullSizeReadPasses = 6;
+        sample.EstimatedFullSizeWritePasses = 2;
+        sample.CandidateCopyPasses = 1;
         Require(sample.FingerprintMatch, "Restored logical fingerprint differs from the source snapshot.");
         Require(sample.FinalWalBytes == 0 && sample.FinalShmBytes == 0 && sample.FinalJournalBytes == 0,
             "Restored live database retained a SQLite sidecar.");
@@ -422,74 +402,14 @@ VALUES(@id, zeroblob(262144));";
         return sample;
     }
 
-    private static async Task InstallBaselineAsync(
-        IterationSample sample,
-        string validatedRestorePath,
-        string liveDatabasePath)
-    {
-        var liveDirectory = Path.GetDirectoryName(liveDatabasePath) ??
-            throw new InvalidOperationException("Live directory is missing.");
-        var token = Guid.NewGuid().ToString("N").Substring(0, 8);
-        var liveFileName = Path.GetFileName(liveDatabasePath);
-        var candidateFileName = liveFileName + ".restore-" + token + ".new";
-        var rollbackFileName = liveFileName + ".restore-" + token + ".old";
-        var candidatePath = Path.Combine(liveDirectory, candidateFileName);
-        var rollbackPath = Path.Combine(liveDirectory, rollbackFileName);
-        var markerPath = liveDatabasePath + ".restore-in-progress";
-
-        await MeasureAsync(sample, "restore", "prepared_marker", () =>
-        {
-            WriteMarker(markerPath, "prepared", candidateFileName, rollbackFileName);
-            return Task.CompletedTask;
-        }).ConfigureAwait(false);
-        await MeasureAsync(sample, "restore", "candidate_durable_copy", () =>
-        {
-            CopyDurable(validatedRestorePath, candidatePath);
-            sample.CandidateDurableCopyBytes = new FileInfo(candidatePath).Length;
-            return Task.CompletedTask;
-        }).ConfigureAwait(false);
-        await MeasureAsync(sample, "restore", "replace", () =>
-        {
-            SqliteConnectionFactory.ClearAllPools();
-            DeleteSqliteSidecars(liveDatabasePath);
-            File.Replace(candidatePath, liveDatabasePath, rollbackPath);
-            SqliteConnectionFactory.ClearAllPools();
-            return Task.CompletedTask;
-        }).ConfigureAwait(false);
-        await MeasureAsync(sample, "restore", "post_swap_migration", () =>
-        {
-            DbInitializer.EnsureCreated(PosDbOptions.ForPath(liveDatabasePath));
-            return Task.CompletedTask;
-        }).ConfigureAwait(false);
-        await MeasureAsync(sample, "restore", "post_swap_integrity_fk", async () =>
-        {
-            var validation = await new DbMaintenanceRepository(
-                    new SqliteConnectionFactory(PosDbOptions.ForPath(liveDatabasePath)))
-                .ValidateAsync()
-                .ConfigureAwait(false);
-            Require(validation.IsValid, "Post-swap integrity/FK validation failed.");
-        }).ConfigureAwait(false);
-        await MeasureAsync(sample, "restore", "committed_marker_cleanup", () =>
-        {
-            WriteMarker(markerPath, "committed", candidateFileName, rollbackFileName);
-            DeleteFileBestEffort(candidatePath);
-            DeleteSqliteSidecars(candidatePath);
-            DeleteFileBestEffort(rollbackPath);
-            DeleteSqliteSidecars(rollbackPath);
-            DeleteFileBestEffort(markerPath);
-            DeleteSqliteSidecars(liveDatabasePath);
-            return Task.CompletedTask;
-        }).ConfigureAwait(false);
-        DeleteFileBestEffort(validatedRestorePath);
-        DeleteSqliteSidecars(validatedRestorePath);
-    }
-
-    private static async Task<bool> RunWalCommittedProbeAsync(string seedPath, string root)
+    private static async Task<WalProbeResult> RunWalCommittedProbeAsync(string seedPath, string root)
     {
         Directory.CreateDirectory(root);
         var sourcePath = Path.Combine(root, "wal-source.db");
-        var copiedPath = Path.Combine(root, "raw-copy.db");
+        var livePath = Path.Combine(root, "live.db");
+        var preBackupPath = Path.Combine(root, "pre-restore.db");
         CloneSeed(seedPath, sourcePath);
+        CloneSeed(seedPath, livePath);
         using var source = new SqliteConnection(
             new SqliteConnectionStringBuilder
             {
@@ -500,33 +420,509 @@ VALUES(@id, zeroblob(262144));";
         source.Open();
         source.Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=0;");
         source.Execute("INSERT INTO backup_restore_perf_commits(id, value) VALUES(2, 'wal-committed');");
-        var sourceCount = source.ExecuteScalar<long>("SELECT COUNT(1) FROM backup_restore_perf_commits;");
-        File.Copy(sourcePath, copiedPath, true);
-        using var copied = new SqliteConnection("Data Source=" + copiedPath + ";Pooling=False");
-        copied.Open();
-        var copiedCount = await copied.ExecuteScalarAsync<long>(
-            "SELECT COUNT(1) FROM backup_restore_perf_commits;").ConfigureAwait(false);
-        return copiedCount == sourceCount;
+        source.Execute(@"
+CREATE TABLE IF NOT EXISTS backup_restore_perf_wal_writes(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  value TEXT NOT NULL);");
+        var stopWriter = 0;
+        var writerCount = 0;
+        var writerMaximumLatency = 0L;
+        Exception? writerFailure = null;
+        var writer = Task.Run(async () =>
+        {
+            try
+            {
+                using var connection = new SqliteConnection(
+                    new SqliteConnectionStringBuilder
+                    {
+                        Cache = SqliteCacheMode.Private,
+                        DataSource = sourcePath,
+                        Mode = SqliteOpenMode.ReadWrite,
+                        Pooling = false
+                    }.ToString() + ";Default Timeout=5");
+                connection.Open();
+                while (Volatile.Read(ref stopWriter) == 0)
+                {
+                    var stopwatch = Stopwatch.StartNew();
+                    await connection.ExecuteAsync(
+                            "INSERT INTO backup_restore_perf_wal_writes(value) VALUES('writer');")
+                        .ConfigureAwait(false);
+                    stopwatch.Stop();
+                    UpdateMaximumValue(ref writerMaximumLatency, stopwatch.ElapsedMilliseconds);
+                    Interlocked.Increment(ref writerCount);
+                    await Task.Delay(1).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                writerFailure = ex;
+            }
+        });
+        var writerDeadline = DateTime.UtcNow.AddSeconds(10);
+        while (Volatile.Read(ref writerCount) < 3 && DateTime.UtcNow < writerDeadline)
+            await Task.Delay(10).ConfigureAwait(false);
+        Require(Volatile.Read(ref writerCount) >= 3, "WAL concurrent writer did not start.");
+        var liveFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(livePath));
+        var epoch = await new CatalogShopStateRepository(liveFactory)
+            .LoadTransitionEpochAsync()
+            .ConfigureAwait(false);
+        RestoreOperationResult outcome;
+        try
+        {
+            outcome = await new SqliteRestoreCoordinator(
+                    liveFactory,
+                    new SqliteOnlineBackup(liveFactory))
+                .RestoreAsync(
+                    sourcePath,
+                    preBackupPath,
+                    ShopId,
+                    ShopCode,
+                    epoch,
+                    _ => Task.CompletedTask)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref stopWriter, 1);
+            await writer.ConfigureAwait(false);
+        }
+        Require(outcome.LiveValidation.IsValid, "WAL committed-frame restore was invalid.");
+        Require(writerFailure == null, "WAL concurrent writer failed: " + writerFailure);
+        Require(writerMaximumLatency < 5000, "WAL concurrent writer exceeded busy_timeout.");
+        using var restored = liveFactory.Open();
+        var committedFramePreserved = await restored.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM backup_restore_perf_commits WHERE id=2 AND value='wal-committed';")
+            .ConfigureAwait(false) == 1;
+        var restoredWrites = await restored.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM backup_restore_perf_wal_writes;")
+            .ConfigureAwait(false);
+        var sourceWrites = source.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM backup_restore_perf_wal_writes;");
+        var writerConsistent = restoredWrites >= 1 && restoredWrites <= sourceWrites;
+        Require(committedFramePreserved, "WAL committed frame was not preserved.");
+        Require(writerConsistent, "WAL concurrent snapshot was inconsistent.");
+        await AssertDeleteFullAsync(livePath).ConfigureAwait(false);
+        return new WalProbeResult
+        {
+            CommittedFramePreserved = committedFramePreserved,
+            ConcurrentWriterConsistent = writerConsistent,
+            WriterMaximumLatencyMilliseconds = writerMaximumLatency
+        };
     }
 
-    private static async Task RunBaselineFailureSmokeAsync(string root)
+    private static async Task<FailureMatrixSummary> RunFailureMatrixAsync(string root)
     {
-        var livePath = Path.Combine(root, "live.db");
-        var destinationPath = Path.Combine(root, "backup.db");
-        await CreateSeedAsync(livePath, 8).ConfigureAwait(false);
-        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(livePath));
-        await AssertThrowsAsync<InvalidOperationException>(() =>
-            new SqliteOnlineBackup(factory).CreateVerifiedAsync(livePath)).ConfigureAwait(false);
-        File.Copy(livePath, destinationPath);
-        await AssertThrowsAsync<IOException>(() =>
-            new SqliteOnlineBackup(factory).CreateVerifiedAsync(destinationPath)).ConfigureAwait(false);
-        var corruptPath = Path.Combine(root, "corrupt.db");
-        File.WriteAllBytes(corruptPath, new byte[] { 0, 1, 2, 3 });
-        await AssertThrowsAsync<Exception>(async () =>
+        var seedPath = Path.Combine(root, "failure-seed.db");
+        await CreateSeedAsync(seedPath, 4).ConfigureAwait(false);
+        var summary = new FailureMatrixSummary();
+        var restoreFaultPoints = new[]
         {
-            var corruptFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(corruptPath));
-            await new DbMaintenanceRepository(corruptFactory).ValidateAsync().ConfigureAwait(false);
-        }).ConfigureAwait(false);
+            RestoreFailurePoint.DuringSourceSnapshotIdentityGuard,
+            RestoreFailurePoint.AfterSourceSnapshot,
+            RestoreFailurePoint.AfterCandidateMigration,
+            RestoreFailurePoint.AfterCandidateIntegrityForeignKey,
+            RestoreFailurePoint.AfterPreliminaryShopValidation,
+            RestoreFailurePoint.WhileFenceWait,
+            RestoreFailurePoint.AfterFencedLiveRevalidation,
+            RestoreFailurePoint.AfterFencedCandidateRevalidation,
+            RestoreFailurePoint.DuringVerifiedPreBackup,
+            RestoreFailurePoint.AfterPreBackupBeforePrepared,
+            RestoreFailurePoint.AfterPreparedBeforeSwap,
+            RestoreFailurePoint.ImmediatelyAfterReplace,
+            RestoreFailurePoint.DuringPostMigration,
+            RestoreFailurePoint.DuringPostIntegrity,
+            RestoreFailurePoint.DuringPostForeignKey,
+            RestoreFailurePoint.BeforeCommitted,
+            RestoreFailurePoint.AfterCommittedBeforeCleanup,
+            RestoreFailurePoint.PartialCleanupFailure
+        };
+
+        foreach (var point in restoreFaultPoints)
+        {
+            using var fixture = await FailureFixture.CreateAsync(seedPath, root, "restore-" + point)
+                .ConfigureAwait(false);
+            var hooks = new BackupRestoreTestHooks
+            {
+                RestoreFault = observed =>
+                {
+                    if (observed == point)
+                        throw new IOException("restore_fault_" + point);
+                }
+            };
+            var error = await CaptureExceptionAsync(() =>
+                    RestoreWithHooksAsync(fixture, hooks, "fault"))
+                .ConfigureAwait(false);
+            var completesDuringCleanup = point == RestoreFailurePoint.PartialCleanupFailure;
+            Require(completesDuringCleanup ? error == null : error != null,
+                "Restore fault point was not deterministically observed: " + point);
+            var expectsNew = point == RestoreFailurePoint.AfterCommittedBeforeCleanup ||
+                point == RestoreFailurePoint.PartialCleanupFailure;
+            Require(string.Equals(ReadFailureValue(fixture.LivePath), expectsNew ? "new-live" : "old-live", StringComparison.Ordinal),
+                "Restore fault left an unexpected live value: " + point);
+            await AssertDeleteFullAsync(fixture.LivePath).ConfigureAwait(false);
+            AssertRestoreResidue(fixture.RootPath, 0);
+            AssertBackupPartialResidue(fixture.RootPath, 0);
+            await AssertExistingPreBackupsValidAsync(fixture.RootPath).ConfigureAwait(false);
+
+            var retry = await RestoreWithHooksAsync(fixture, null, "retry").ConfigureAwait(false);
+            Require(retry.LiveValidation.IsValid, "Restore retry was invalid: " + point);
+            Require(string.Equals(ReadFailureValue(fixture.LivePath), "new-live", StringComparison.Ordinal),
+                "Restore retry did not install the source: " + point);
+            AssertRestoreResidue(fixture.RootPath, 0);
+            summary.RestoreFaultPoints++;
+            Console.WriteLine(
+                "BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=" + point +
+                " result=pass terminal=" + (expectsNew ? "new_valid" : "old_valid") +
+                " retry=pass residue=0");
+        }
+
+        var cancellationCases = new[]
+        {
+            new CancellationCase("before", null, false),
+            new CancellationCase("after_snapshot", RestoreFailurePoint.AfterSourceSnapshot, false),
+            new CancellationCase("after_candidate_validation", RestoreFailurePoint.AfterPreliminaryShopValidation, false),
+            new CancellationCase("fence_wait", RestoreFailurePoint.WhileFenceWait, false),
+            new CancellationCase("after_prebackup", RestoreFailurePoint.AfterPreBackupBeforePrepared, false),
+            new CancellationCase("after_prepared", RestoreFailurePoint.AfterPreparedBeforeSwap, true),
+            new CancellationCase("after_swap", RestoreFailurePoint.ImmediatelyAfterReplace, true),
+            new CancellationCase("during_post_swap", RestoreFailurePoint.DuringPostIntegrity, true)
+        };
+        foreach (var cancellationCase in cancellationCases)
+        {
+            using var fixture = await FailureFixture.CreateAsync(seedPath, root, "cancel-" + cancellationCase.Name)
+                .ConfigureAwait(false);
+            using var cancellation = new CancellationTokenSource();
+            BackupRestoreTestHooks? hooks = null;
+            if (cancellationCase.Point.HasValue)
+            {
+                hooks = new BackupRestoreTestHooks
+                {
+                    RestoreFault = observed =>
+                    {
+                        if (observed == cancellationCase.Point.Value)
+                            cancellation.Cancel();
+                    }
+                };
+            }
+            else
+            {
+                cancellation.Cancel();
+            }
+
+            var error = await CaptureExceptionAsync(() =>
+                    RestoreWithHooksAsync(fixture, hooks, "cancel", cancellation.Token))
+                .ConfigureAwait(false);
+            Require(error is OperationCanceledException,
+                "Restore cancellation was not propagated consistently: " + cancellationCase.Name);
+            Require(string.Equals(
+                    ReadFailureValue(fixture.LivePath),
+                    cancellationCase.ExpectsNew ? "new-live" : "old-live",
+                    StringComparison.Ordinal),
+                "Restore cancellation crossed an invalid atomic boundary: " + cancellationCase.Name);
+            await AssertDeleteFullAsync(fixture.LivePath).ConfigureAwait(false);
+            AssertRestoreResidue(fixture.RootPath, 0);
+            var retry = await RestoreWithHooksAsync(fixture, null, "cancel-retry").ConfigureAwait(false);
+            Require(retry.LiveValidation.IsValid, "Cancellation retry failed: " + cancellationCase.Name);
+            AssertRestoreResidue(fixture.RootPath, 0);
+            summary.CancellationPoints++;
+            Console.WriteLine(
+                "BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=" + cancellationCase.Name +
+                " result=pass terminal=" + (cancellationCase.ExpectsNew ? "new_valid" : "old_valid") +
+                " retry=pass residue=0");
+        }
+
+        var crashCases = new[]
+        {
+            new CrashCase(RestoreFailurePoint.AfterPreparedBeforeSwap, "old-live"),
+            new CrashCase(RestoreFailurePoint.ImmediatelyAfterReplace, "old-live"),
+            new CrashCase(RestoreFailurePoint.AfterCommittedBeforeCleanup, "new-live")
+        };
+        foreach (var crashCase in crashCases)
+        {
+            using var fixture = await FailureFixture.CreateAsync(seedPath, root, "crash-" + crashCase.Point)
+                .ConfigureAwait(false);
+            var hooks = new BackupRestoreTestHooks
+            {
+                RestoreFault = observed =>
+                {
+                    if (observed == crashCase.Point)
+                        throw new RestoreCrashSimulationException(crashCase.Point.ToString());
+                }
+            };
+            var error = await CaptureExceptionAsync(() => RestoreWithHooksAsync(fixture, hooks, "crash"))
+                .ConfigureAwait(false);
+            Require(error is RestoreCrashSimulationException, "Crash point was not observed: " + crashCase.Point);
+            Require(File.Exists(fixture.LivePath + ".restore-in-progress"), "Recoverable marker was not retained.");
+            var installer = new AtomicRestoreInstaller();
+            await installer.RecoverInterruptedInstallAsync(fixture.LivePath).ConfigureAwait(false);
+            await installer.RecoverInterruptedInstallAsync(fixture.LivePath).ConfigureAwait(false);
+            Require(string.Equals(ReadFailureValue(fixture.LivePath), crashCase.ExpectedValue, StringComparison.Ordinal),
+                "Crash recovery selected the wrong terminal database: " + crashCase.Point);
+            await AssertDeleteFullAsync(fixture.LivePath).ConfigureAwait(false);
+            AssertRestoreResidue(fixture.RootPath, 0);
+            summary.CrashRecoveryPoints++;
+            Console.WriteLine(
+                "BACKUP_RESTORE_RESULT mode=recovery_case point=" + crashCase.Point +
+                " result=pass terminal=" + (crashCase.ExpectedValue == "new-live" ? "new_valid" : "old_valid") +
+                " double_recovery=pass residue=0");
+        }
+
+        using (var fixture = await FailureFixture.CreateAsync(seedPath, root, "startup-recovery").ConfigureAwait(false))
+        {
+            WriteMarker(
+                fixture.LivePath + ".restore-in-progress",
+                "prepared",
+                "r-cafebabe.db",
+                "r-deadbeef.old");
+            var calls = 0;
+            var hooks = new BackupRestoreTestHooks
+            {
+                RestoreFault = observed =>
+                {
+                    if (observed == RestoreFailurePoint.StartupRecovery)
+                        calls++;
+                }
+            };
+            var installer = new AtomicRestoreInstaller(null, hooks, "cli-recovery", null);
+            await installer.RecoverInterruptedInstallAsync(fixture.LivePath).ConfigureAwait(false);
+            await installer.RecoverInterruptedInstallAsync(fixture.LivePath).ConfigureAwait(false);
+            Require(calls == 2, "Startup recovery hook was not invoked idempotently.");
+            Require(string.Equals(ReadFailureValue(fixture.LivePath), "old-live", StringComparison.Ordinal),
+                "Prepared startup recovery changed a valid old live database.");
+            AssertRestoreResidue(fixture.RootPath, 0);
+            summary.StartupRecoveryPoints++;
+        }
+
+        await RunBackupFailureMatrixAsync(seedPath, root, summary).ConfigureAwait(false);
+        return summary;
+    }
+
+    private static async Task RunBackupFailureMatrixAsync(
+        string seedPath,
+        string root,
+        FailureMatrixSummary summary)
+    {
+        var injectedPoints = new[]
+        {
+            BackupFailurePoint.BeforeSourceOpen,
+            BackupFailurePoint.AfterTemporarySnapshotCreation,
+            BackupFailurePoint.AfterSnapshotBeforeValidation,
+            BackupFailurePoint.AfterIntegrityForeignKey,
+            BackupFailurePoint.BeforePublish,
+            BackupFailurePoint.PublishError,
+            BackupFailurePoint.SourceRemovedOrLocked
+        };
+        foreach (var point in injectedPoints)
+        {
+            using var fixture = await FailureFixture.CreateAsync(seedPath, root, "backup-" + point)
+                .ConfigureAwait(false);
+            var finalPath = Path.Combine(fixture.RootPath, "backup.db");
+            var hooks = new BackupRestoreTestHooks
+            {
+                BackupFault = observed =>
+                {
+                    if (observed == point)
+                        throw new IOException("backup_fault_" + point);
+                }
+            };
+            await AssertThrowsAsync<IOException>(() =>
+                    new SqliteOnlineBackup(fixture.LiveFactory, null, hooks)
+                        .CreateVerifiedAsync(finalPath))
+                .ConfigureAwait(false);
+            Require(!File.Exists(finalPath), "Failed backup published a final file: " + point);
+            AssertBackupPartialResidue(fixture.RootPath, 0);
+            var retryPath = Path.Combine(fixture.RootPath, "backup-retry.db");
+            var retry = await new SqliteOnlineBackup(fixture.LiveFactory)
+                .CreateVerifiedAsync(retryPath)
+                .ConfigureAwait(false);
+            Require(retry.IsValid, "Backup retry failed: " + point);
+            await AssertDeleteFullAsync(retryPath).ConfigureAwait(false);
+            summary.BackupFaultPoints++;
+            Console.WriteLine(
+                "BACKUP_RESTORE_RESULT mode=failure_case operation=backup point=" + point +
+                " result=pass final_published=false retry=pass residue=0");
+        }
+
+        using (var fixture = await FailureFixture.CreateAsync(seedPath, root, "backup-collision").ConfigureAwait(false))
+        {
+            const string token = "fixedtoken";
+            var finalPath = Path.Combine(fixture.RootPath, "collision.db");
+            var intentionalPartial = finalPath + ".partial-" + token;
+            File.WriteAllText(intentionalPartial, "collision");
+            var collisions = 0;
+            var hooks = new BackupRestoreTestHooks
+            {
+                TemporaryTokenFactory = () => token,
+                BackupFault = point =>
+                {
+                    if (point == BackupFailurePoint.Collision)
+                        collisions++;
+                }
+            };
+            await AssertThrowsAsync<IOException>(() =>
+                    new SqliteOnlineBackup(fixture.LiveFactory, null, hooks).CreateVerifiedAsync(finalPath))
+                .ConfigureAwait(false);
+            Require(collisions == 16 && !File.Exists(finalPath), "Backup collision policy was not fail-closed.");
+            File.Delete(intentionalPartial);
+            AssertBackupPartialResidue(fixture.RootPath, 0);
+            summary.BackupFaultPoints++;
+        }
+
+        using (var fixture = await FailureFixture.CreateAsync(seedPath, root, "backup-unwritable").ConfigureAwait(false))
+        {
+            var finalPath = Path.Combine(fixture.RootPath, "denied", "backup.db");
+            var hooks = new BackupRestoreTestHooks
+            {
+                BackupFault = point =>
+                {
+                    if (point == BackupFailurePoint.UnwritableDestination)
+                        throw new UnauthorizedAccessException("denied-test");
+                }
+            };
+            await AssertThrowsAsync<UnauthorizedAccessException>(() =>
+                    new SqliteOnlineBackup(fixture.LiveFactory, null, hooks).CreateVerifiedAsync(finalPath))
+                .ConfigureAwait(false);
+            Require(!File.Exists(finalPath), "Unwritable destination published a file.");
+            summary.BackupFaultPoints++;
+        }
+
+        using (var fixture = await FailureFixture.CreateAsync(seedPath, root, "backup-cleanup").ConfigureAwait(false))
+        {
+            var finalPath = Path.Combine(fixture.RootPath, "cleanup.db");
+            var hooks = new BackupRestoreTestHooks
+            {
+                BackupFault = point =>
+                {
+                    if (point == BackupFailurePoint.AfterSnapshotBeforeValidation ||
+                        point == BackupFailurePoint.CleanupFailure)
+                    {
+                        throw new IOException("cleanup-test");
+                    }
+                }
+            };
+            await AssertThrowsAsync<IOException>(() =>
+                    new SqliteOnlineBackup(fixture.LiveFactory, null, hooks).CreateVerifiedAsync(finalPath))
+                .ConfigureAwait(false);
+            Require(!File.Exists(finalPath), "Cleanup fault published a final backup.");
+            AssertBackupPartialResidue(fixture.RootPath, 0);
+            summary.BackupFaultPoints++;
+        }
+
+        using (var fixture = await FailureFixture.CreateAsync(seedPath, root, "backup-cancel").ConfigureAwait(false))
+        using (var cancellation = new CancellationTokenSource())
+        {
+            var finalPath = Path.Combine(fixture.RootPath, "cancel.db");
+            var hooks = new BackupRestoreTestHooks
+            {
+                BackupFault = point =>
+                {
+                    if (point == BackupFailurePoint.AfterTemporarySnapshotCreation)
+                        cancellation.Cancel();
+                }
+            };
+            await AssertThrowsAsync<OperationCanceledException>(() =>
+                    new SqliteOnlineBackup(fixture.LiveFactory, null, hooks)
+                        .CreateVerifiedAsync(finalPath, cancellation.Token))
+                .ConfigureAwait(false);
+            Require(!File.Exists(finalPath), "Cancelled backup published a final file.");
+            AssertBackupPartialResidue(fixture.RootPath, 0);
+            summary.CancellationPoints++;
+        }
+
+        using (var fixture = await FailureFixture.CreateAsync(seedPath, root, "backup-destinations").ConfigureAwait(false))
+        {
+            await AssertThrowsAsync<InvalidOperationException>(() =>
+                    new SqliteOnlineBackup(fixture.LiveFactory).CreateVerifiedAsync(fixture.LivePath))
+                .ConfigureAwait(false);
+            var existing = Path.Combine(fixture.RootPath, "existing.db");
+            File.Copy(fixture.LivePath, existing);
+            await AssertThrowsAsync<IOException>(() =>
+                    new SqliteOnlineBackup(fixture.LiveFactory).CreateVerifiedAsync(existing))
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<RestoreOperationResult> RestoreWithHooksAsync(
+        FailureFixture fixture,
+        BackupRestoreTestHooks? hooks,
+        string suffix,
+        CancellationToken cancellationToken = default(CancellationToken))
+    {
+        var preBackupPath = Path.Combine(
+            fixture.RootPath,
+            "pre-" + suffix + "-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".db");
+        var backup = hooks == null
+            ? new SqliteOnlineBackup(fixture.LiveFactory)
+            : new SqliteOnlineBackup(fixture.LiveFactory, null, hooks);
+        var coordinator = hooks == null
+            ? new SqliteRestoreCoordinator(fixture.LiveFactory, backup)
+            : new SqliteRestoreCoordinator(fixture.LiveFactory, backup, null, hooks);
+        return await coordinator.RestoreAsync(
+                fixture.SourcePath,
+                preBackupPath,
+                ShopId,
+                ShopCode,
+                fixture.LiveEpoch,
+                validation =>
+                {
+                    Require(validation.IsValid, "Post-swap validation was invalid.");
+                    return Task.CompletedTask;
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<Exception?> CaptureExceptionAsync(Func<Task> action)
+    {
+        try
+        {
+            await action().ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+    }
+
+    private static async Task AssertExistingPreBackupsValidAsync(string root)
+    {
+        foreach (var path in Directory.GetFiles(root, "pre-*.db"))
+            await AssertDeleteFullAsync(path).ConfigureAwait(false);
+    }
+
+    private static void AssertRestoreResidue(string root, int expectedCount)
+    {
+        var residue = Directory.GetFiles(root)
+            .Where(path =>
+                Path.GetFileName(path).StartsWith("r-", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".restore-in-progress", StringComparison.OrdinalIgnoreCase) ||
+                Path.GetFileName(path).Contains(".restore-in-progress.tmp-", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Require(residue.Length == expectedCount, "Unexpected restore residue: " +
+            string.Join(",", residue.Select(Path.GetFileName)));
+    }
+
+    private static void AssertBackupPartialResidue(string root, int expectedCount)
+    {
+        var residue = Directory.GetFiles(root, "*.partial-*");
+        Require(residue.Length == expectedCount, "Unexpected backup partial residue: " +
+            string.Join(",", residue.Select(Path.GetFileName)));
+    }
+
+    private static string ReadFailureValue(string path)
+    {
+        using var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder
+            {
+                Cache = SqliteCacheMode.Private,
+                DataSource = path,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString());
+        connection.Open();
+        return connection.ExecuteScalar<string>(
+            "SELECT value FROM backup_restore_perf_commits WHERE id=1;") ?? string.Empty;
     }
 
     private static async Task AssertThrowsAsync<T>(Func<Task> action) where T : Exception
@@ -788,6 +1184,126 @@ VALUES(@id, zeroblob(262144));";
         return ordered.Length % 2 == 0
             ? (ordered[midpoint - 1] + ordered[midpoint]) / 2
             : ordered[midpoint];
+    }
+
+    private static void UpdateMaximumValue(ref long target, long value)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref target);
+            if (value <= current || Interlocked.CompareExchange(ref target, value, current) == current)
+                return;
+        }
+    }
+
+    private sealed class WalProbeResult
+    {
+        public bool CommittedFramePreserved { get; set; }
+        public bool ConcurrentWriterConsistent { get; set; }
+        public long WriterMaximumLatencyMilliseconds { get; set; }
+    }
+
+    private sealed class FailureMatrixSummary
+    {
+        public int BackupFaultPoints { get; set; }
+        public int CancellationPoints { get; set; }
+        public int CrashRecoveryPoints { get; set; }
+        public int RestoreFaultPoints { get; set; }
+        public int StartupRecoveryPoints { get; set; }
+    }
+
+    private sealed class CancellationCase
+    {
+        public CancellationCase(
+            string name,
+            RestoreFailurePoint? point,
+            bool expectsNew)
+        {
+            Name = name;
+            Point = point;
+            ExpectsNew = expectsNew;
+        }
+
+        public bool ExpectsNew { get; }
+        public string Name { get; }
+        public RestoreFailurePoint? Point { get; }
+    }
+
+    private sealed class CrashCase
+    {
+        public CrashCase(RestoreFailurePoint point, string expectedValue)
+        {
+            Point = point;
+            ExpectedValue = expectedValue;
+        }
+
+        public string ExpectedValue { get; }
+        public RestoreFailurePoint Point { get; }
+    }
+
+    private sealed class FailureFixture : IDisposable
+    {
+        private FailureFixture(string rootPath)
+        {
+            RootPath = rootPath;
+            LivePath = Path.Combine(rootPath, "live.db");
+            SourcePath = Path.Combine(rootPath, "source.db");
+            LiveFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(LivePath));
+        }
+
+        public SqliteConnectionFactory LiveFactory { get; }
+        public long LiveEpoch { get; private set; }
+        public string LivePath { get; }
+        public string RootPath { get; }
+        public string SourcePath { get; }
+
+        public static async Task<FailureFixture> CreateAsync(
+            string seedPath,
+            string parentRoot,
+            string name)
+        {
+            var safeName = new string((name ?? "case")
+                .Select(character => char.IsLetterOrDigit(character) ? character : '-')
+                .ToArray());
+            var rootPath = Path.Combine(
+                parentRoot,
+                safeName + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            Directory.CreateDirectory(rootPath);
+            var fixture = new FailureFixture(rootPath);
+            CloneSeed(seedPath, fixture.LivePath);
+            CloneSeed(seedPath, fixture.SourcePath);
+            using (var live = fixture.LiveFactory.Open())
+            {
+                await live.ExecuteAsync(
+                        "UPDATE backup_restore_perf_commits SET value='old-live' WHERE id=1;")
+                    .ConfigureAwait(false);
+            }
+            using (var source = new SqliteConnection(
+                new SqliteConnectionStringBuilder
+                {
+                    Cache = SqliteCacheMode.Private,
+                    DataSource = fixture.SourcePath,
+                    Mode = SqliteOpenMode.ReadWrite,
+                    Pooling = false
+                }.ToString()))
+            {
+                source.Open();
+                await source.ExecuteAsync(
+                        "UPDATE backup_restore_perf_commits SET value='new-live' WHERE id=1;")
+                    .ConfigureAwait(false);
+            }
+            fixture.LiveEpoch = await new CatalogShopStateRepository(fixture.LiveFactory)
+                .LoadTransitionEpochAsync()
+                .ConfigureAwait(false);
+            SqliteConnectionFactory.ClearAllPools();
+            return fixture;
+        }
+
+        public void Dispose()
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            DeleteDirectoryBestEffort(RootPath);
+        }
     }
 
     private sealed class WriterProbe
