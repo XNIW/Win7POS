@@ -66,14 +66,14 @@ namespace Win7POS.Wpf.Import
         public ObservableCollection<int> RoundToOptions { get; } = new ObservableCollection<int>(new[] { 10, 50, 100 });
         public ObservableCollection<SupplierExcelColumn> Columns { get; } = new ObservableCollection<SupplierExcelColumn>();
         public ObservableCollection<SupplierImportEditableRow> EditableRows { get; } = new ObservableCollection<SupplierImportEditableRow>();
-        public ObservableCollection<SupplierImportWarning> Warnings { get; } = new ObservableCollection<SupplierImportWarning>();
-        public ObservableCollection<SupplierImportError> Errors { get; } = new ObservableCollection<SupplierImportError>();
+        public ObservableCollection<SupplierImportIssueDisplayRow> Warnings { get; } = new ObservableCollection<SupplierImportIssueDisplayRow>();
+        public ObservableCollection<SupplierImportIssueDisplayRow> Errors { get; } = new ObservableCollection<SupplierImportIssueDisplayRow>();
         public ObservableCollection<SupplierImportProductRow> SyncNewProducts { get; } = new ObservableCollection<SupplierImportProductRow>();
         public ObservableCollection<SupplierImportSyncRow> SyncUpdatedProducts { get; } = new ObservableCollection<SupplierImportSyncRow>();
         public ObservableCollection<SupplierImportSyncRow> SyncNoChangeRows { get; } = new ObservableCollection<SupplierImportSyncRow>();
         public ObservableCollection<SupplierImportSyncSkippedRow> SyncSkippedRows { get; } = new ObservableCollection<SupplierImportSyncSkippedRow>();
-        public ObservableCollection<SupplierImportWarning> SyncWarnings { get; } = new ObservableCollection<SupplierImportWarning>();
-        public ObservableCollection<SupplierImportError> SyncErrors { get; } = new ObservableCollection<SupplierImportError>();
+        public ObservableCollection<SupplierImportIssueDisplayRow> SyncWarnings { get; } = new ObservableCollection<SupplierImportIssueDisplayRow>();
+        public ObservableCollection<SupplierImportIssueDisplayRow> SyncErrors { get; } = new ObservableCollection<SupplierImportIssueDisplayRow>();
         public ICollectionView SyncNewProductsView { get; private set; }
         public ICollectionView SyncUpdatedProductsView { get; private set; }
         public ICollectionView SyncNoChangeRowsView { get; private set; }
@@ -489,10 +489,15 @@ namespace Win7POS.Wpf.Import
                 _completionDialogService.ShowCompletion(PosLocalization.T("supplierExcelImport.title"), apply.Summary);
                 RequestClose?.Invoke(true);
             }
+            catch (SupplierExcelImportWorkflowException ex)
+            {
+                _logger.LogError(ex, "Supplier Excel apply rejected");
+                Status = ex.OperatorMessage;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Supplier Excel apply failed");
-                Status = ex.Message;
+                Status = PosLocalization.T("supplierExcelImport.applyFailedFriendly");
             }
             finally
             {
@@ -530,7 +535,9 @@ namespace Win7POS.Wpf.Import
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Supplier Excel sync preview failed");
-                Status = PosLocalization.F("supplierExcelImport.statusSyncError", ex.Message);
+                Status = PosLocalization.F(
+                    "supplierExcelImport.statusSyncError",
+                    PosLocalization.T("app.genericErrorCheckLog"));
             }
             finally
             {
@@ -588,9 +595,9 @@ namespace Win7POS.Wpf.Import
                 EditableRows.Add(row);
             }
             foreach (var warning in analysis.Warnings)
-                Warnings.Add(warning);
+                Warnings.Add(SupplierImportIssueDisplayRow.FromWarning(warning));
             foreach (var error in analysis.Errors)
-                Errors.Add(error);
+                Errors.Add(SupplierImportIssueDisplayRow.FromError(error));
             OnPropertyChanged(nameof(SelectedSheetName));
             OnPropertyChanged(nameof(HeaderSummary));
             OnPropertyChanged(nameof(RowSummary));
@@ -628,9 +635,9 @@ namespace Win7POS.Wpf.Import
             foreach (var row in preview.SkippedRows)
                 SyncSkippedRows.Add(row);
             foreach (var warning in preview.Warnings)
-                SyncWarnings.Add(warning);
+                SyncWarnings.Add(SupplierImportIssueDisplayRow.FromWarning(warning));
             foreach (var error in preview.Errors)
-                SyncErrors.Add(error);
+                SyncErrors.Add(SupplierImportIssueDisplayRow.FromError(error));
             RefreshSyncFilters();
             OnPropertyChanged(nameof(SyncNewProductsCount));
             OnPropertyChanged(nameof(SyncUpdatedProductsCount));
@@ -737,8 +744,8 @@ namespace Win7POS.Wpf.Import
             SyncUpdatedProductsView.Filter = item => SyncUpdateMatches(item as SupplierImportSyncRow);
             SyncNoChangeRowsView.Filter = item => SyncUpdateMatches(item as SupplierImportSyncRow);
             SyncSkippedRowsView.Filter = item => SyncSkippedMatches(item as SupplierImportSyncSkippedRow);
-            SyncWarningsView.Filter = item => SyncWarningMatches(item as SupplierImportWarning);
-            SyncErrorsView.Filter = item => SyncErrorMatches(item as SupplierImportError);
+            SyncWarningsView.Filter = item => SyncWarningMatches(item as SupplierImportIssueDisplayRow);
+            SyncErrorsView.Filter = item => SyncErrorMatches(item as SupplierImportIssueDisplayRow);
         }
 
         private void RefreshSyncFilters()
@@ -791,33 +798,25 @@ namespace Win7POS.Wpf.Import
                 TextMatches(row.ProductName, query);
         }
 
-        private bool SyncWarningMatches(SupplierImportWarning warning)
+        private bool SyncWarningMatches(SupplierImportIssueDisplayRow warning)
         {
             if (warning == null) return false;
             var query = SyncSearchText.Trim();
             if (query.Length == 0) return true;
-            return TextMatches(warning.Message, query) || RowsMatch(warning.Rows, query);
+            return TextMatches(warning.Message, query) ||
+                TextMatches(warning.SourceMessage, query) ||
+                TextMatches(warning.RowsDisplay, query);
         }
 
-        private bool SyncErrorMatches(SupplierImportError error)
+        private bool SyncErrorMatches(SupplierImportIssueDisplayRow error)
         {
             if (error == null) return false;
             var query = SyncSearchText.Trim();
             if (query.Length == 0) return true;
             return TextMatches(error.Message, query) ||
+                TextMatches(error.SourceMessage, query) ||
                 TextMatches(error.Barcode, query) ||
-                TextMatches(error.RowIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), query);
-        }
-
-        private static bool RowsMatch(IReadOnlyList<int> rows, string query)
-        {
-            if (rows == null) return false;
-            foreach (var row in rows)
-            {
-                if (TextMatches(row.ToString(System.Globalization.CultureInfo.InvariantCulture), query))
-                    return true;
-            }
-            return false;
+                TextMatches(error.RowsDisplay, query);
         }
 
         private static bool TextMatches(string value, string query)
@@ -939,6 +938,87 @@ namespace Win7POS.Wpf.Import
             {
                 CanExecuteChanged?.Invoke(this, EventArgs.Empty);
             }
+        }
+    }
+
+    public sealed class SupplierImportIssueDisplayRow
+    {
+        private const string InvalidNumberPrefix = "Valore numerico non valido per ";
+
+        private SupplierImportIssueDisplayRow()
+        {
+        }
+
+        public string Message { get; private set; } = string.Empty;
+        public string SourceMessage { get; private set; } = string.Empty;
+        public string RowsDisplay { get; private set; } = string.Empty;
+        public string Barcode { get; private set; } = string.Empty;
+
+        public static SupplierImportIssueDisplayRow FromWarning(SupplierImportWarning warning)
+        {
+            var source = warning?.Message ?? string.Empty;
+            return new SupplierImportIssueDisplayRow
+            {
+                Message = Localize(source),
+                SourceMessage = source,
+                RowsDisplay = JoinRows(warning?.Rows),
+                Barcode = string.Empty
+            };
+        }
+
+        public static SupplierImportIssueDisplayRow FromError(SupplierImportError error)
+        {
+            var source = error?.Message ?? string.Empty;
+            return new SupplierImportIssueDisplayRow
+            {
+                Message = Localize(source),
+                SourceMessage = source,
+                RowsDisplay = error != null && error.RowIndex > 0
+                    ? error.RowIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    : string.Empty,
+                Barcode = error?.Barcode ?? string.Empty
+            };
+        }
+
+        private static string JoinRows(IReadOnlyList<int> rows)
+        {
+            if (rows == null || rows.Count == 0) return string.Empty;
+            return string.Join(", ", rows.Select(row =>
+                row.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        private static string Localize(string sourceMessage)
+        {
+            var source = (sourceMessage ?? string.Empty).Trim();
+            switch (source)
+            {
+                case "Colonna obbligatoria mancante: barcode":
+                    return PosLocalization.T("supplierExcelImport.issueMissingBarcodeColumn");
+                case "Barcode mancante: correggi barcode in Step 3 oppure seleziona Skip per ignorare la riga.":
+                case "Barcode richiesto prima del Sync DB.":
+                    return PosLocalization.T("supplierExcelImport.issueMissingBarcode");
+                case "Barcode duplicato: viene usata l'ultima occorrenza.":
+                    return PosLocalization.T("supplierExcelImport.issueDuplicateBarcode");
+                case "Barcode duplicato nella revisione finale: viene usata l'ultima occorrenza.":
+                    return PosLocalization.T("supplierExcelImport.issueDuplicateBarcodeFinal");
+                case "Prezzo vendita vuoto: il prezzo vendita non verra sovrascritto senza conferma o compilazione.":
+                    return PosLocalization.T("supplierExcelImport.issueRetailPriceEmpty");
+                case "Nuovo prodotto senza productName, secondProductName o itemNumber: compila una delle colonne in Step 3 oppure seleziona Skip.":
+                case "Nuovo prodotto senza productName, secondProductName o itemNumber.":
+                    return PosLocalization.T("supplierExcelImport.issueNewIdentityMissing");
+                case "Nuovo prodotto senza retailPrice.":
+                    return PosLocalization.T("supplierExcelImport.issueNewRetailPriceMissing");
+                case "retailPrice vuoto: il Sync DB mantiene il prezzo vendita esistente.":
+                    return PosLocalization.T("supplierExcelImport.issueRetailPricePreserved");
+            }
+
+            if (source.StartsWith(InvalidNumberPrefix, StringComparison.Ordinal))
+            {
+                var field = source.Substring(InvalidNumberPrefix.Length).Trim().TrimEnd('.');
+                return PosLocalization.F("supplierExcelImport.issueInvalidNumber", field);
+            }
+
+            return PosLocalization.T("supplierExcelImport.issueGeneric");
         }
     }
 
