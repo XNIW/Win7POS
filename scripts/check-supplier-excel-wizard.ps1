@@ -83,7 +83,10 @@ Assert-Contains $dialogXaml "UseModalOverlay=`"True`"" "Supplier import dialog m
 Assert-Contains $dialogXaml "WindowStartupLocation=`"CenterOwner`"" "Supplier import dialog must center on its safe owner."
 Assert-Contains $dialogXaml "MaxWidth=`"1120`"" "Supplier import dialog must cap width for work-area clamp."
 Assert-Contains $dialogXaml "MaxHeight=`"720`"" "Supplier import dialog must cap height for work-area clamp."
-Assert-Contains $dialogXaml "<ScrollViewer Grid.Row=`"2`"" "Supplier import step content must be inside a scrollable content row."
+Assert-Contains $dialogXaml "<Grid Grid.Row=`"2`">" "Supplier import step content must use the bounded content row."
+Assert-NotContains $dialogXaml "<ScrollViewer Grid.Row=`"2`"" "Supplier import must not wrap virtualized grids in an outer ScrollViewer."
+Assert-NotContains $dialogXaml "CanContentScroll=`"False`"" "Supplier import grids must retain logical scrolling and virtualization."
+Assert-Contains $dialogXaml "VirtualizingPanel.VirtualizationMode`" Value=`"Recycling`"" "Supplier import grids must use recycling virtualization."
 Assert-Contains $dialogXaml "<Grid Grid.Row=`"3`" Margin=`"{StaticResource DialogFooterMargin}`"" "Supplier import footer must be a fixed root row."
 Assert-Contains $dialogShellWindow "ApplyOverlayPosition(outerBorder)" "Overlay positioning must account for the actual dialog card size."
 Assert-Contains $dialogShellWindow "CanHostOverlayCard" "Nested overlays must fall back to monitor work area when the owner cannot host the card."
@@ -107,16 +110,15 @@ Assert-Contains $dialogOwnerHelper "window.IsVisible && window.IsEnabled" "Dialo
 Assert-Contains $dialogOwnerHelper "window.IsActive" "DialogOwnerHelper must prefer the active safe owner."
 Assert-Contains $dialogOwnerHelper "LastOrDefault(IsSafeOwner)" "DialogOwnerHelper must fall back only to visible/enabled owners."
 
-$stepScrollStart = $dialogXaml.IndexOf("<ScrollViewer Grid.Row=`"2`"", [System.StringComparison]::Ordinal)
-$stepScrollEnd = if ($stepScrollStart -ge 0) { $dialogXaml.IndexOf("</ScrollViewer>", $stepScrollStart, [System.StringComparison]::Ordinal) } else { -1 }
+$stepContentStart = $dialogXaml.IndexOf("<Grid Grid.Row=`"2`">", [System.StringComparison]::Ordinal)
 $footerStart = $dialogXaml.IndexOf("<Grid Grid.Row=`"3`"", [System.StringComparison]::Ordinal)
-if ($stepScrollStart -lt 0 -or $stepScrollEnd -lt 0 -or $footerStart -lt 0 -or $footerStart -le $stepScrollEnd) {
-    throw "Supplier import footer must stay outside the step ScrollViewer."
+if ($stepContentStart -lt 0 -or $footerStart -lt 0 -or $footerStart -le $stepContentStart) {
+    throw "Supplier import footer must stay after the bounded step content row."
 }
 foreach ($buttonKey in @("supplierExcelImport.back", "supplierExcelImport.analyze", "supplierExcelImport.next", "supplierExcelImport.continueSyncDb", "supplierExcelImport.confirmApply", "common.cancel")) {
     $buttonIndex = $dialogXaml.IndexOf("{loc:Loc $buttonKey}", $footerStart, [System.StringComparison]::Ordinal)
     if ($buttonIndex -lt $footerStart) {
-        throw "Supplier import footer button '$buttonKey' must be outside the ScrollViewer."
+        throw "Supplier import footer button '$buttonKey' must be outside the step content row."
     }
 
     $buttonStart = $dialogXaml.LastIndexOf("<Button", $buttonIndex, [System.StringComparison]::Ordinal)
@@ -201,7 +203,7 @@ Assert-Contains $generalImportViewModel "CanApplyImport" "General catalog import
 Assert-Contains $generalImportViewModel "BuildCurrentAnalyzeFingerprint" "General catalog import must invalidate stale analyzed files/options."
 Assert-Contains $generalImportViewModel "InvalidateAnalyzeResult" "General catalog import must clear stale preview state."
 Assert-Contains $generalImportWorkflow "DiffSummariesMatch" "General catalog import must recompute DB diff before writing."
-Assert-Contains $generalImportWorkflow "Sync DB preview non aggiornato" "General catalog import must reject stale DB sync preview."
+Assert-Contains $generalImportWorkflow "import.previewStale" "General catalog import must reject stale DB sync preview with localized operator text."
 Assert-Contains $generalImportViewCode ".xls" "General catalog import drag/drop must accept legacy .xls files."
 Assert-Contains $productDbImportViewModel "HasCurrentWorkbook" "Legacy product DB import must reject stale analyzed workbooks."
 Assert-Contains $productDbImportViewModel "BuildCurrentWorkbookFingerprint" "Legacy product DB import must fingerprint analyzed workbook files."
@@ -211,6 +213,22 @@ foreach ($required in @("supplierExcelImport.columnOriginalName", "supplierExcel
 }
 foreach ($translated in @("originalColumnName", "canonicalKey", "headerSource", "confidence", "sampleValues", "enabled")) {
     Assert-Contains $localization $translated "Step 2 mapping translation missing $translated."
+}
+foreach ($readOnlySummary in @(
+    "SelectedSheetName",
+    "NewProductsCount",
+    "UpdatedProductsCount",
+    "WarningsCount",
+    "ErrorsCount",
+    "SyncTotalRowsCount",
+    "SyncNewProductsCount",
+    "SyncUpdatedProductsCount",
+    "SyncNoChangeRowsCount",
+    "SyncSkippedRowsCount",
+    "SyncWarningsCount",
+    "SyncErrorsCount"
+)) {
+    Assert-Contains $dialogXaml "{Binding $readOnlySummary, Mode=OneWay}" "Read-only supplier summary binding must stay OneWay: $readOnlySummary."
 }
 Assert-Contains $dialogXaml "SelectedItem=`"{Binding CanonicalKey" "Step 2 canonical override missing."
 Assert-Contains $dialogXaml "Binding=`"{Binding IsEnabled" "Step 2 disable checkbox missing."
@@ -261,10 +279,10 @@ Assert-Contains $viewModel "SyncErrors" "Step 4 blocker list must expose sync pr
 Assert-Contains $viewModel "supplierExcelImport.recalculateBeforeApply" "Apply blocker must require Sync DB recalculation."
 Assert-Contains $workflow "CreateBackupBeforeApplyAsync" "Apply backup missing."
 Assert-Contains $workflow "WalCheckpointAsync" "Apply backup must checkpoint WAL before copying the DB."
-Assert-Contains $workflow "Warning count" "Apply warning count missing."
-Assert-Contains $workflow "Skipped" "Apply skipped count missing."
-Assert-Contains $workflow "Skipped by operator" "Apply summary must count operator-skipped rows."
-Assert-Contains $workflow "No change" "Apply summary must count no-change rows."
+Assert-Contains $workflow "supplierExcelImport.resultWarnings" "Apply warning count missing."
+Assert-Contains $workflow "supplierExcelImport.resultSkipped" "Apply skipped count missing."
+Assert-Contains $workflow "skippedByOperator" "Apply summary must count operator-skipped rows."
+Assert-Contains $workflow "supplierExcelImport.resultNoChange" "Apply summary must count no-change rows."
 Assert-Contains $applier "BeginTransaction" "Apply transaction missing."
 Assert-Contains $applier "tx.Rollback" "Apply rollback missing."
 Assert-Contains $applier "row.IsSkipped" "Data applier must ignore skipped rows defensively."

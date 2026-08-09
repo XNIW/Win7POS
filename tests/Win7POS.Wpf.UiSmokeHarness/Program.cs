@@ -12,7 +12,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -59,6 +61,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             public void Demand(string permissionCode, string operationText)
                 => throw new InvalidOperationException("Harness permission denied.");
             public bool CanOverride(string permissionCode) => false;
+        }
+
+        private sealed class HarnessAllowAllPermissionService : IPermissionService
+        {
+            public bool Has(string permissionCode) => true;
+            public void Demand(string permissionCode, string operationText) { }
+            public bool CanOverride(string permissionCode) => true;
         }
 
         [STAThread]
@@ -177,6 +186,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--product-image-profile-smoke");
             var productImageUiSmoke =
                 HasArg(args, "--product-image-ui-smoke");
+            var finalUiUxCloseout =
+                HasArg(args, "--ui-ux-final-closeout");
             var stagingProfile = ValueAfter(args, "--profile");
             var stagingRunId = ValueAfter(args, "--run-id");
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
@@ -248,6 +259,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                physicalPrinterQa ||
                                HasArg(args, "--capture-ux-artifacts") ||
                                HasArg(args, "--capture-settings-audit") ||
+                               finalUiUxCloseout ||
                                runtimeObservabilitySmoke ||
                                catalogDisplayWarningSmoke ||
                                articleMutationUiSmoke ||
@@ -264,6 +276,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", dataDir);
             Environment.SetEnvironmentVariable("WIN7POS_SAFE_START", "1");
+            if (finalUiUxCloseout)
+            {
+                Environment.SetEnvironmentVariable(
+                    PosAdminWebOptions.BaseUrlEnvironmentVariable,
+                    "http://127.0.0.1:9");
+            }
 
             if (Application.ResourceAssembly == null)
             {
@@ -564,6 +582,21 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var launcher = new HarnessWindow();
                     app.MainWindow = launcher;
                     launcher.Show();
+                    if (finalUiUxCloseout)
+                    {
+                        var outputDirectory = ValueAfter(args, "--output-dir");
+                        if (string.IsNullOrWhiteSpace(outputDirectory))
+                            outputDirectory = dataDir;
+                        var result = await launcher
+                            .CaptureFinalUiUxCloseoutAsync(outputDirectory)
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(outputDirectory, "ui-ux-final-closeout.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
                     if (articleMutationUiSmoke)
                     {
                         var outputDirectory = ValueAfter(args, "--output-dir");
@@ -1701,15 +1734,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var copyWithinViewport = IsRenderedWithin(
                         copyButton,
                         dialogCard);
+                    var phaseTitlePass = phaseTitle.Text ==
+                        PosLocalization.T("onlineFirstLogin.phaseCatalogUnavailable");
+                    var phaseTextPass = phaseText.Text ==
+                        PosLocalization.T("onlineFirstLogin.catalogBlockedSafety");
+                    var statusTextPass = statusText.Text ==
+                        PosLocalization.T("onlineFirstLogin.catalogBlockedSummary");
+                    var detailsCodePass = details.Text.IndexOf(
+                        "db_failure",
+                        StringComparison.Ordinal) >= 0;
+                    var detailsHttpPass = details.Text.IndexOf(
+                        "HTTP: 500",
+                        StringComparison.Ordinal) >= 0;
+                    var detailsSupportPass = details.Text.IndexOf(
+                        "sha256:",
+                        StringComparison.Ordinal) >= 0;
                     var expectedCatalogFailure =
                         expander.Visibility == Visibility.Visible && !expander.IsExpanded &&
                         copyButton.Visibility == Visibility.Visible && copyWithinViewport &&
-                        phaseTitle.Text == PosLocalization.T("onlineFirstLogin.phaseCatalogUnavailable") &&
-                        phaseText.Text == PosLocalization.T("onlineFirstLogin.catalogBlockedSafety") &&
-                        statusText.Text == PosLocalization.T("onlineFirstLogin.catalogBlockedSummary") &&
-                        details.Text.IndexOf("db_failure", StringComparison.Ordinal) >= 0 &&
-                        details.Text.IndexOf("HTTP: 500", StringComparison.Ordinal) >= 0 &&
-                        details.Text.IndexOf("qa-server-500", StringComparison.Ordinal) >= 0;
+                        phaseTitlePass && phaseTextPass && statusTextPass &&
+                        detailsCodePass && detailsHttpPass && detailsSupportPass;
                     if (!expectedCatalogFailure)
                     {
                         throw new InvalidOperationException(
@@ -1720,13 +1764,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             " expanded=" + expander.IsExpanded +
                             " copy=" + copyButton.Visibility +
                             " copyWithin=" + copyWithinViewport +
-                            " phase=" + phaseTitle.Text +
-                            " detailsDbFailure=" +
-                            (details.Text.IndexOf("db_failure", StringComparison.Ordinal) >= 0));
+                            " phaseTitle=" + phaseTitlePass +
+                            " phaseText=" + phaseTextPass +
+                            " status=" + statusTextPass +
+                            " detailsCode=" + detailsCodePass +
+                            " detailsHttp=" + detailsHttpPass +
+                            " detailsSupport=" + detailsSupportPass);
                     }
 
                     SaveVisual(
-                        dialogCard,
+                        dialog.Content as FrameworkElement,
                         Path.Combine(outputDirectory, "runtime-observability-failure-closed-1024x768.png"));
                     expander.IsExpanded = true;
                     contentScroller.ScrollToEnd();
@@ -1736,13 +1783,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (!IsRenderedWithin(expander, dialogCard))
                         throw new InvalidOperationException("Expanded technical details exceeded the smoke viewport.");
                     SaveVisual(
-                        dialogCard,
+                        dialog.Content as FrameworkElement,
                         Path.Combine(outputDirectory, "runtime-observability-failure-open-1024x768.png"));
 
                     copyButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     var copied = Clipboard.GetText();
                     if (copied.IndexOf("db_failure", StringComparison.Ordinal) < 0 ||
-                        copied.IndexOf("qa-server-500", StringComparison.Ordinal) < 0 ||
+                        copied.IndexOf("sha256:", StringComparison.Ordinal) < 0 ||
+                        copied.IndexOf("qa-server-500", StringComparison.Ordinal) >= 0 ||
                         copied.IndexOf("Synthetic HTTP 500 diagnostic", StringComparison.Ordinal) >= 0 ||
                         copied.IndexOf(string.Concat("response ", "body"), StringComparison.OrdinalIgnoreCase) >= 0)
                     {
@@ -1761,7 +1809,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (retryButton.IsEnabled)
                         throw new InvalidOperationException("Retry control remained enabled while busy.");
                     SaveVisual(
-                        dialogCard,
+                        dialog.Content as FrameworkElement,
                         Path.Combine(outputDirectory, "runtime-observability-retry-busy-1024x768.png"));
 
                     foreach (var language in new[] { "en", "es", "it", "zh" })
@@ -1785,7 +1833,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 " retry=" + BoundsIn(retryButton, dialogCard));
                         }
                         SaveVisual(
-                            dialogCard,
+                            dialog.Content as FrameworkElement,
                             Path.Combine(
                                 outputDirectory,
                                 "runtime-observability-layout-" + language + "-closed-1024x768.png"));
@@ -1807,7 +1855,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 " retry=" + BoundsIn(retryButton, dialogCard));
                         }
                         SaveVisual(
-                            dialogCard,
+                            dialog.Content as FrameworkElement,
                             Path.Combine(
                                 outputDirectory,
                                 "runtime-observability-layout-" + language + "-open-1024x768.png"));
@@ -2358,7 +2406,12 @@ WHERE id = @id;",
                     await CaptureHostedElementAsync(
                         paymentView,
                         new Size(1280, 720),
-                        Path.Combine(outputDirectory, "payment-receipt-preview.png")).ConfigureAwait(true);
+                        Path.Combine(outputDirectory, "payment-receipt-preview.png"),
+                        rendered => VerifyInitialFocusContract(
+                            rendered,
+                            ((PaymentView)rendered).FindName("CashBox") as FrameworkElement,
+                            "Payment.CashAmount",
+                            "payment cash input")).ConfigureAwait(true);
                 }
 
                 var printerViewModel = new PrinterSettingsViewModel
@@ -2550,10 +2603,609 @@ WHERE id = @id;",
                 return "PASS: settingsHub=True; settingsHubCompact=True; settingsHubRecovery=True; customerDisplay=True; customerDisplayCompact=True; language=True; shop=True; shopCompact=True; users=True; sync=True; database=True; about=True";
             }
 
+            public async Task<string> CaptureFinalUiUxCloseoutAsync(
+                string outputDirectory)
+            {
+                Directory.CreateDirectory(outputDirectory);
+                await QaFixture.SeedAsync().ConfigureAwait(true);
+
+                var options = PosDbOptions.Default();
+                var factory = new SqliteConnectionFactory(options);
+                await new SettingsRepository(factory)
+                    .SetLastPosLoginShopCodeAsync(QaShopCode)
+                    .ConfigureAwait(true);
+                await new ShopOfficialSnapshotRepository(factory).SaveAsync(
+                    new OfficialShopSnapshot
+                    {
+                        ShopCode = QaShopCode,
+                        ShopId = QaShopId,
+                        ShopName = "QA UI UX Closeout",
+                        Source = "qa_harness",
+                        SyncedAtUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
+                    }).ConfigureAwait(true);
+
+                await CaptureInitializedLoginAsync(
+                    outputDirectory,
+                    factory).ConfigureAwait(true);
+                await CaptureOperatorSwitchAsync(
+                    outputDirectory,
+                    factory).ConfigureAwait(true);
+                await CaptureResponsivePosAsync(outputDirectory).ConfigureAwait(true);
+                await CaptureProductsCloseoutAsync(outputDirectory).ConfigureAwait(true);
+                await CaptureSupplierImportCloseoutAsync(outputDirectory).ConfigureAwait(true);
+                await CaptureRefundCloseoutAsync(outputDirectory).ConfigureAwait(true);
+
+                var uxResult = await CaptureUxArtifactsAsync(outputDirectory)
+                    .ConfigureAwait(true);
+                var settingsResult = await CaptureSettingsAuditAsync(outputDirectory)
+                    .ConfigureAwait(true);
+                var runtimeResult = await RunRuntimeObservabilitySmokeAsync(outputDirectory)
+                    .ConfigureAwait(true);
+
+                var requiredArtifacts = new[]
+                {
+                    "login-remembered-shop.png",
+                    "operator-switch.png",
+                    "pos-empty-1024x768.png",
+                    "pos-empty-1280x720.png",
+                    "pos-empty-1366x768.png",
+                    "pos-empty-1600x900.png",
+                    "pos-empty-1920x1080.png",
+                    "pos-cart-1366x768.png",
+                    "payment-receipt-preview.png",
+                    "products-default.png",
+                    "products-filtered-empty.png",
+                    "product-editor.png",
+                    "supplier-import-step-1.png",
+                    "supplier-import-step-2-analysis.png",
+                    "supplier-import-step-3-mapping-prices.png",
+                    "supplier-import-step-4-review.png",
+                    "sales-register-receipt-preview.png",
+                    "refund-partial.png",
+                    "refund-full-void.png",
+                    "daily-close-receipt-preview.png",
+                    "settings-hub.png",
+                    "sync-center.png",
+                    "database-maintenance.png",
+                    "printer-settings-preview.png",
+                    "user-management.png",
+                    "runtime-observability-failure-closed-1024x768.png",
+                    "runtime-observability-retry-busy-1024x768.png",
+                    "settings-hub-recovery.png"
+                };
+                var missing = requiredArtifacts
+                    .Where(name => !File.Exists(Path.Combine(outputDirectory, name)))
+                    .ToArray();
+                if (missing.Length > 0)
+                {
+                    throw new InvalidOperationException(
+                        "Final UI/UX evidence is incomplete: " + string.Join(",", missing));
+                }
+
+                var screenshotCount = Directory.GetFiles(outputDirectory, "*.png")
+                    .Length;
+                return "PASS: screenshots=" + screenshotCount.ToString(CultureInfo.InvariantCulture) +
+                    "; responsive=1024x768,1280x720,1366x768,1600x900,1920x1080" +
+                    "; focus=login,operatorSwitch,pos,payment,refund" +
+                    "; products=default,filtered,editor" +
+                    "; supplierImport=steps1-4" +
+                    "; refund=partial,fullVoid" +
+                    "; settings=" + settingsResult.StartsWith("PASS", StringComparison.Ordinal) +
+                    "; receiptSurfaces=" + uxResult.StartsWith("PASS", StringComparison.Ordinal) +
+                    "; recoveryError=" + runtimeResult.StartsWith("PASS", StringComparison.Ordinal);
+            }
+
+            private async Task CaptureInitializedLoginAsync(
+                string outputDirectory,
+                SqliteConnectionFactory factory)
+            {
+                var dialog = new PosOnlineFirstLoginDialog(factory)
+                {
+                    Owner = this,
+                    Width = 900,
+                    Height = 650,
+                    MaxWidth = 1024,
+                    MaxHeight = 768
+                };
+                var rendered = new TaskCompletionSource<bool>();
+                EventHandler renderedHandler = null;
+                renderedHandler = (_, __) =>
+                {
+                    dialog.ContentRendered -= renderedHandler;
+                    rendered.TrySetResult(true);
+                };
+                dialog.ContentRendered += renderedHandler;
+                try
+                {
+                    dialog.Show();
+                    await rendered.Task.ConfigureAwait(true);
+                    await WaitForDialogInitializationAsync(dialog).ConfigureAwait(true);
+                    dialog.Activate();
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+                    var shopCode = RequireNamed<TextBox>(dialog, "ShopCodeBox");
+                    var staffCode = RequireNamed<TextBox>(dialog, "StaffCodeBox");
+                    var networkStatus = RequireNamed<TextBlock>(dialog, "NetworkStatusText");
+                    if (!string.Equals(shopCode.Text, QaShopCode, StringComparison.Ordinal) ||
+                        string.IsNullOrWhiteSpace(networkStatus.Text))
+                    {
+                        throw new InvalidOperationException(
+                            "Remembered-shop login focus/network contract failed: shop=" +
+                            shopCode.Text + "; networkPresent=" +
+                            (!string.IsNullOrWhiteSpace(networkStatus.Text)));
+                    }
+                    VerifyInitialFocusContract(
+                        dialog,
+                        staffCode,
+                        "PosAccess.StaffCode",
+                        "remembered-shop login");
+
+                    SaveVisual(
+                        dialog.Content as FrameworkElement,
+                        Path.Combine(outputDirectory, "login-remembered-shop.png"));
+                }
+                finally
+                {
+                    dialog.ContentRendered -= renderedHandler;
+                    if (dialog.IsVisible) dialog.Close();
+                }
+            }
+
+            private async Task CaptureOperatorSwitchAsync(
+                string outputDirectory,
+                SqliteConnectionFactory factory)
+            {
+                var dialog = new OperatorSwitchDialog(factory, null);
+                await dialog.InitializeAsync().ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    dialog,
+                    Path.Combine(outputDirectory, "operator-switch.png"),
+                    verifyRendered: window =>
+                    {
+                        VerifyInitialFocusContract(
+                            window,
+                            RequireNamed<TextBox>(window, "StaffCodeBox"),
+                            "OperatorSwitch.StaffCode",
+                            "operator switch");
+                    }).ConfigureAwait(true);
+            }
+
+            private async Task CaptureResponsivePosAsync(string outputDirectory)
+            {
+                var sizes = new[]
+                {
+                    new Size(1024, 768),
+                    new Size(1280, 720),
+                    new Size(1366, 768),
+                    new Size(1600, 900),
+                    new Size(1920, 1080)
+                };
+                foreach (var size in sizes)
+                {
+                    var view = new PosView
+                    {
+                        DataContext = new PosLayoutPreviewDataContext(),
+                        Width = size.Width,
+                        Height = size.Height
+                    };
+                    var suffix = ((int)size.Width).ToString(CultureInfo.InvariantCulture) +
+                        "x" + ((int)size.Height).ToString(CultureInfo.InvariantCulture);
+                    var outputPath = Path.Combine(
+                        outputDirectory,
+                        "pos-empty-" + suffix + ".png");
+                    Action<FrameworkElement> verify = rendered =>
+                        VerifyPosRenderedSurface(
+                            (PosView)rendered,
+                            size,
+                            expectEmpty: true);
+                    if (size.Width > SystemParameters.WorkArea.Width ||
+                        size.Height > SystemParameters.WorkArea.Height)
+                    {
+                        await CaptureExactSizeElementAsync(
+                            view,
+                            size,
+                            outputPath,
+                            verify).ConfigureAwait(true);
+                    }
+                    else
+                    {
+                        await CaptureHostedElementAsync(
+                            view,
+                            size,
+                            outputPath,
+                            verify).ConfigureAwait(true);
+                    }
+                }
+
+                var populatedSize = new Size(1366, 768);
+                var populated = new PosView
+                {
+                    DataContext = new PosLayoutPreviewDataContext(populated: true),
+                    Width = populatedSize.Width,
+                    Height = populatedSize.Height
+                };
+                await CaptureHostedElementAsync(
+                    populated,
+                    populatedSize,
+                    Path.Combine(outputDirectory, "pos-cart-1366x768.png"),
+                    rendered => VerifyPosRenderedSurface(
+                        (PosView)rendered,
+                        populatedSize,
+                        expectEmpty: false)).ConfigureAwait(true);
+            }
+
+            private static void VerifyPosRenderedSurface(
+                PosView view,
+                Size viewport,
+                bool expectEmpty)
+            {
+                if (Math.Abs(view.ActualWidth - viewport.Width) > 1 ||
+                    Math.Abs(view.ActualHeight - viewport.Height) > 1)
+                {
+                    throw new InvalidOperationException(
+                        "POS rendered viewport differs from requested size.");
+                }
+
+                foreach (var name in new[]
+                {
+                    "PosCheckoutFooter",
+                    "PosToolActionsPanel",
+                    "FooterPayButton",
+                    "BarcodeBox",
+                    "CartListBox"
+                })
+                {
+                    var element = view.FindName(name) as FrameworkElement;
+                    if (element == null || !IsRenderedWithin(element, view))
+                        throw new InvalidOperationException("POS element clipped: " + name);
+                }
+
+                var emptyState = FindVisualDescendants<FrameworkElement>(view)
+                    .FirstOrDefault(element => string.Equals(
+                        AutomationProperties.GetAutomationId(element),
+                        "Pos.EmptyCartState",
+                        StringComparison.Ordinal));
+                if (emptyState == null ||
+                    (emptyState.Visibility == Visibility.Visible) != expectEmpty)
+                {
+                    throw new InvalidOperationException(
+                        "POS empty-state visibility did not match the cart state.");
+                }
+
+                VerifyInitialFocusContract(
+                    view,
+                    view.FindName("BarcodeBox") as FrameworkElement,
+                    "Pos.BarcodeInput",
+                    "POS scanner");
+            }
+
+            private async Task CaptureProductsCloseoutAsync(string outputDirectory)
+            {
+                var service = ProductsWorkflowService.CreateDefault();
+                var viewModel = new ProductsViewModel(
+                    new HarnessAllowAllPermissionService(),
+                    service);
+                await viewModel.LoadAsync().ConfigureAwait(true);
+                if (viewModel.TotalCount <= 0 || viewModel.AreFiltersDirty ||
+                    viewModel.HasActiveFilters)
+                {
+                    throw new InvalidOperationException(
+                        "Products initial filter state is empty or incorrectly marked dirty.");
+                }
+
+                await CaptureHostedElementAsync(
+                    new ProductsView
+                    {
+                        DataContext = viewModel,
+                        Width = 1280,
+                        Height = 720
+                    },
+                    new Size(1280, 720),
+                    Path.Combine(outputDirectory, "products-default.png"),
+                    rendered => VerifyAutomationElements(
+                        rendered,
+                        "Products.Search",
+                        "Products.ApplyFilters",
+                        "Products.Grid",
+                        "Products.Status")).ConfigureAwait(true);
+
+                viewModel.SelectedSupplier = viewModel.Suppliers.FirstOrDefault();
+                viewModel.SelectedCategory = viewModel.Categories.FirstOrDefault();
+                viewModel.SearchText = "QA-NO-MATCH-UI-UX-CLOSEOUT";
+                viewModel.ApplyFiltersCommand.Execute(null);
+                await WaitForConditionAsync(
+                    () => !viewModel.IsBusy && viewModel.IsEmpty &&
+                          viewModel.TotalCount == 0 &&
+                          !viewModel.AreFiltersDirty && viewModel.HasActiveFilters,
+                    TimeSpan.FromSeconds(15),
+                    "Products filtered empty state did not settle.").ConfigureAwait(true);
+                await CaptureHostedElementAsync(
+                    new ProductsView
+                    {
+                        DataContext = viewModel,
+                        Width = 1280,
+                        Height = 720
+                    },
+                    new Size(1280, 720),
+                    Path.Combine(outputDirectory, "products-filtered-empty.png"),
+                    rendered => VerifyAutomationElements(
+                        rendered,
+                        "Products.EmptyState",
+                        "Products.EmptyClearFilters",
+                        "Products.Status")).ConfigureAwait(true);
+
+                var source = (await service.SearchDetailsAsync(string.Empty, 10)
+                    .ConfigureAwait(true)).FirstOrDefault();
+                if (source == null)
+                    throw new InvalidOperationException("Product editor fixture was not found.");
+                var editor = new ProductEditDialog(
+                    await CreateArticleViewModelAsync(
+                        ProductEditMode.Edit,
+                        source,
+                        service).ConfigureAwait(true));
+                await CaptureDialogAsync(
+                    editor,
+                    Path.Combine(outputDirectory, "product-editor.png"),
+                    verifyRendered: window =>
+                    {
+                        VerifyAutomationElements(
+                            window,
+                            "ProductEditor.Barcode",
+                            "ProductEditor.Name",
+                            "ProductEditor.SalePrice",
+                            "ProductEditor.Save",
+                            "ProductEditor.Cancel");
+                        var buttons = FindVisualDescendants<Button>(window).ToArray();
+                        if (!buttons.Any(button => button.IsDefault) ||
+                            !buttons.Any(button => button.IsCancel))
+                        {
+                            throw new InvalidOperationException(
+                                "Product editor default/cancel keyboard contract failed.");
+                        }
+                    }).ConfigureAwait(true);
+            }
+
+            private async Task CaptureSupplierImportCloseoutAsync(
+                string outputDirectory)
+            {
+                var fixturePath = Path.Combine(
+                    outputDirectory,
+                    "supplier-ui-ux-closeout.xlsx");
+                SupplierExcelWpfViewModelSmoke.CreateSupplierFixture(
+                    fixturePath,
+                    "xlsx",
+                    "UiUxCloseout");
+
+                var files = new[]
+                {
+                    "supplier-import-step-1.png",
+                    "supplier-import-step-2-analysis.png",
+                    "supplier-import-step-3-mapping-prices.png",
+                    "supplier-import-step-4-review.png"
+                };
+                for (var step = 0; step < files.Length; step++)
+                {
+                    var dialog = await CreateSupplierDialogAtStepAsync(
+                        fixturePath,
+                        step).ConfigureAwait(true);
+                    var expectedStep = step;
+                    await CaptureDialogAsync(
+                        dialog,
+                        Path.Combine(outputDirectory, files[step]),
+                        verifyRendered: window =>
+                        {
+                            var viewModel = (SupplierExcelImportViewModel)window.DataContext;
+                            if (viewModel.StepIndex != expectedStep)
+                            {
+                                throw new InvalidOperationException(
+                                    "Supplier wizard rendered the wrong step.");
+                            }
+                            VerifyAutomationElements(
+                                window,
+                                "SupplierImport.StepIndicator",
+                                "SupplierImport.Status",
+                                "SupplierImport.Cancel");
+                        }).ConfigureAwait(true);
+                }
+            }
+
+            private static async Task<SupplierExcelImportDialog>
+                CreateSupplierDialogAtStepAsync(
+                    string fixturePath,
+                    int targetStep)
+            {
+                var dialog = new SupplierExcelImportDialog(() => true);
+                var viewModel = (SupplierExcelImportViewModel)dialog.DataContext;
+                viewModel.SelectedPath = fixturePath;
+                if (targetStep >= 1)
+                {
+                    viewModel.AnalyzeCommand.Execute(null);
+                    await WaitForConditionAsync(
+                        () => !viewModel.IsBusy && viewModel.StepIndex == 1,
+                        TimeSpan.FromSeconds(15),
+                        "Supplier wizard analysis did not reach step 2.").ConfigureAwait(true);
+                }
+                if (targetStep >= 2)
+                {
+                    viewModel.NextCommand.Execute(null);
+                    await WaitForConditionAsync(
+                        () => !viewModel.IsBusy && viewModel.StepIndex == 2,
+                        TimeSpan.FromSeconds(15),
+                        "Supplier wizard mapping did not reach step 3.").ConfigureAwait(true);
+                }
+                if (targetStep >= 3)
+                {
+                    viewModel.SyncPreviewCommand.Execute(null);
+                    await WaitForConditionAsync(
+                        () => !viewModel.IsBusy && viewModel.StepIndex == 3 &&
+                              viewModel.SyncPreview != null,
+                        TimeSpan.FromSeconds(15),
+                        "Supplier wizard review did not reach step 4.").ConfigureAwait(true);
+                }
+                return dialog;
+            }
+
+            private async Task CaptureRefundCloseoutAsync(string outputDirectory)
+            {
+                foreach (var fullVoid in new[] { false, true })
+                {
+                    var preview = new RefundPreviewModel
+                    {
+                        OriginalSaleId = 1,
+                        OriginalSaleCode = "QA-REFUND-CLOSEOUT",
+                        OriginalCreatedAtMs = new DateTimeOffset(
+                            2026,
+                            8,
+                            9,
+                            12,
+                            0,
+                            0,
+                            TimeSpan.Zero).ToUnixTimeMilliseconds(),
+                        OriginalTotalMinor = 14691,
+                        MaxRefundableMinor = 14691,
+                        Economics = new ReversalEconomicsSnapshot
+                        {
+                            OriginalGrossClp = 14691,
+                            OriginalDiscountClp = 0,
+                            OriginalTaxClp = 0,
+                            OriginalNetClp = 14691,
+                            PriorGrossClp = 0,
+                            ActualPriorDiscountClp = 0,
+                            ActualPriorTaxClp = 0
+                        },
+                        Lines = new List<RefundPreviewLine>
+                        {
+                            new RefundPreviewLine
+                            {
+                                OriginalLineId = 1,
+                                Barcode = "TEST-CAFFE",
+                                Name = "Caffè più qualità - información",
+                                UnitPriceMinor = 6173,
+                                SoldQty = 2,
+                                RemainingQty = 2
+                            },
+                            new RefundPreviewLine
+                            {
+                                OriginalLineId = 2,
+                                Barcode = "TEST-PINGUINO",
+                                Name = "Confezione città pingüino niño",
+                                UnitPriceMinor = 2345,
+                                SoldQty = 1,
+                                RemainingQty = 1
+                            }
+                        }
+                    };
+                    var viewModel = new RefundViewModel(preview)
+                    {
+                        IsFullVoid = fullVoid
+                    };
+                    if (!fullVoid)
+                        viewModel.Lines[0].QtyToRefund = 1;
+                    viewModel.AllCashCommand.Execute(null);
+                    var dialog = new RefundDialog(viewModel);
+                    await CaptureDialogAsync(
+                        dialog,
+                        Path.Combine(
+                            outputDirectory,
+                            fullVoid ? "refund-full-void.png" : "refund-partial.png"),
+                        verifyRendered: window =>
+                        {
+                            VerifyAutomationElements(
+                                window,
+                                "Refund.BarcodeScan",
+                                "Refund.Lines",
+                                "Refund.CashAmount",
+                                "Refund.Confirm",
+                                "Refund.Cancel");
+                            VerifyInitialFocusContract(
+                                window,
+                                RequireNamed<TextBox>(window, "BarcodeScanBox"),
+                                "Refund.BarcodeScan",
+                                "refund scanner");
+                        }).ConfigureAwait(true);
+                }
+            }
+
+            private static async Task WaitForConditionAsync(
+                Func<bool> predicate,
+                TimeSpan timeout,
+                string failureMessage)
+            {
+                var deadline = DateTime.UtcNow + timeout;
+                while (DateTime.UtcNow < deadline)
+                {
+                    if (predicate()) return;
+                    await Task.Delay(25).ConfigureAwait(true);
+                }
+                if (!predicate())
+                    throw new TimeoutException(failureMessage);
+            }
+
+            private static string FocusedAutomationId(DependencyObject root)
+            {
+                var focused = Keyboard.FocusedElement as DependencyObject;
+                if (focused == null && root != null)
+                {
+                    var scope = FocusManager.GetFocusScope(root);
+                    focused = FocusManager.GetFocusedElement(scope) as DependencyObject;
+                }
+                return focused == null
+                    ? string.Empty
+                    : AutomationProperties.GetAutomationId(focused) ?? string.Empty;
+            }
+
+            private static void VerifyInitialFocusContract(
+                DependencyObject root,
+                FrameworkElement target,
+                string expectedAutomationId,
+                string surface)
+            {
+                if (target == null || !target.Focusable || !target.IsEnabled ||
+                    !string.Equals(
+                        AutomationProperties.GetAutomationId(target),
+                        expectedAutomationId,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        surface + " focus target is missing, disabled, or not identifiable.");
+                }
+
+                var focusId = FocusedAutomationId(root);
+                if (focusId.Length > 0 && !string.Equals(
+                        focusId,
+                        expectedAutomationId,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        surface + " initial focus moved to " + focusId + ".");
+                }
+            }
+
+            private static void VerifyAutomationElements(
+                DependencyObject root,
+                params string[] automationIds)
+            {
+                var present = new HashSet<string>(
+                    FindVisualDescendants<FrameworkElement>(root)
+                        .Select(AutomationProperties.GetAutomationId)
+                        .Where(value => !string.IsNullOrWhiteSpace(value)),
+                    StringComparer.Ordinal);
+                var missing = automationIds.Where(id => !present.Contains(id)).ToArray();
+                if (missing.Length > 0)
+                {
+                    throw new InvalidOperationException(
+                        "Required automation elements were not rendered: " +
+                        string.Join(",", missing));
+                }
+            }
+
             private async Task CaptureDialogAsync(
                 Window dialog,
                 string outputPath,
-                int idleDelayMs = 0)
+                int idleDelayMs = 0,
+                Action<Window> verifyRendered = null)
             {
                 dialog.Owner = this;
                 var rendered = new TaskCompletionSource<bool>();
@@ -2568,11 +3220,13 @@ WHERE id = @id;",
                 {
                     dialog.Show();
                     await rendered.Task.ConfigureAwait(true);
+                    dialog.Activate();
                     await Dispatcher.InvokeAsync(
                         () => { },
                         System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                     if (idleDelayMs > 0)
                         await Task.Delay(idleDelayMs).ConfigureAwait(true);
+                    verifyRendered?.Invoke(dialog);
                     SaveVisual(dialog.Content as FrameworkElement, outputPath);
                 }
                 finally
@@ -2586,7 +3240,8 @@ WHERE id = @id;",
             private async Task CaptureHostedElementAsync(
                 FrameworkElement element,
                 Size viewport,
-                string outputPath)
+                string outputPath,
+                Action<FrameworkElement> verifyRendered = null)
             {
                 if (element is Control control)
                     control.Background = Brushes.White;
@@ -2613,25 +3268,50 @@ WHERE id = @id;",
                 {
                     host.Show();
                     await rendered.Task.ConfigureAwait(true);
+                    host.Activate();
                     await Dispatcher.InvokeAsync(
                         () => { },
                         System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    verifyRendered?.Invoke(element);
                     SaveVisual(element, outputPath);
                 }
                 finally
                 {
                     host.ContentRendered -= renderedHandler;
+                    host.Content = null;
                     if (host.IsVisible) host.Close();
                 }
             }
 
-            private static void SaveVisual(FrameworkElement visual, string outputPath)
+            private async Task CaptureExactSizeElementAsync(
+                FrameworkElement element,
+                Size viewport,
+                string outputPath,
+                Action<FrameworkElement> verifyRendered = null)
+            {
+                if (element is Control control)
+                    control.Background = Brushes.White;
+
+                element.Measure(viewport);
+                element.Arrange(new Rect(new Point(0, 0), viewport));
+                element.UpdateLayout();
+                await Dispatcher.InvokeAsync(
+                    () => { },
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                verifyRendered?.Invoke(element);
+                SaveVisual(element, outputPath, VisualTreeHelper.GetDpi(this));
+            }
+
+            private static void SaveVisual(
+                FrameworkElement visual,
+                string outputPath,
+                DpiScale? dpiOverride = null)
             {
                 if (visual == null || visual.ActualWidth <= 0 || visual.ActualHeight <= 0)
                     throw new InvalidOperationException("Visual capture target has no rendered size.");
 
                 visual.UpdateLayout();
-                var dpi = VisualTreeHelper.GetDpi(visual);
+                var dpi = dpiOverride ?? VisualTreeHelper.GetDpi(visual);
                 var bitmap = new RenderTargetBitmap(
                     Math.Max(1, (int)Math.Ceiling(visual.ActualWidth * dpi.DpiScaleX)),
                     Math.Max(1, (int)Math.Ceiling(visual.ActualHeight * dpi.DpiScaleY)),
@@ -3047,14 +3727,54 @@ WHERE id = @id;",
 
             private sealed class PosLayoutPreviewDataContext
             {
+                private readonly IReadOnlyList<object> _cartItems;
+
+                public PosLayoutPreviewDataContext(bool populated = false)
+                {
+                    _cartItems = populated
+                        ? new object[]
+                        {
+                            new PosViewModel.PosCartLineRow
+                            {
+                                LineKey = "qa-cart-1",
+                                Barcode = "TEST-CAFFE",
+                                Name = "Caffè più qualità - información",
+                                Quantity = 2,
+                                UnitPrice = 6173,
+                                LineTotal = 12346,
+                                StockQty = 48,
+                                DiscountAmountMinor = 1234,
+                                DiscountPercent = 10
+                            },
+                            new PosViewModel.PosCartLineRow
+                            {
+                                LineKey = "qa-cart-2",
+                                Barcode = "TEST-PINGUINO",
+                                Name = "Confezione città pingüino niño",
+                                Quantity = 1,
+                                UnitPrice = 2345,
+                                LineTotal = 2345,
+                                StockQty = 12
+                            }
+                        }
+                        : Array.Empty<object>();
+                    SelectedCartItem = _cartItems.FirstOrDefault();
+                }
+
                 public bool IsBusy => false;
                 public bool IsStatusToastVisible => false;
-                public bool HasDiscount => false;
-                public int ItemsCount => 0;
-                public string FinalTotalDisplay => "0";
+                public bool IsStatusToastDetailsVisible => false;
+                public bool CanDismissStatusToast => true;
+                public bool HasDiscount => _cartItems.Count > 0;
+                public bool IsCartEmpty => _cartItems.Count == 0;
+                public int ItemsCount => _cartItems.Count;
+                public string FinalTotalDisplay => _cartItems.Count == 0 ? "0" : "13.457";
+                public string OriginalTotalDisplay => _cartItems.Count == 0 ? "0" : "14.691";
+                public string DiscountAmountDisplay => _cartItems.Count == 0 ? string.Empty : "Risparmio 1.234";
+                public string PendingInputQuantityDisplay => string.Empty;
                 public string BarcodeInput { get; set; } = string.Empty;
                 public object SelectedCartItem { get; set; }
-                public IEnumerable<object> CartItems => Array.Empty<object>();
+                public IEnumerable<object> CartItems => _cartItems;
             }
 
             private static IEnumerable<T> FindVisualDescendants<T>(DependencyObject root)

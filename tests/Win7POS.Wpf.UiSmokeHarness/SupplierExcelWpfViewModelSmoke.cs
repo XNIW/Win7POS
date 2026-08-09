@@ -377,7 +377,7 @@ namespace Win7POS.Wpf.Import
             };
         }
 
-        private static void CreateSupplierFixture(string path, string format, string source)
+        internal static void CreateSupplierFixture(string path, string format, string source)
         {
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrWhiteSpace(dir))
