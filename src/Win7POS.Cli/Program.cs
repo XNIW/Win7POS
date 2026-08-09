@@ -335,6 +335,12 @@ internal static class Program
                 return;
             }
 
+            if (BackupRestoreSelfTest.TryParse(args, out var backupRestoreRequest))
+            {
+                await BackupRestoreSelfTest.RunAsync(backupRestoreRequest).ConfigureAwait(false);
+                return;
+            }
+
             if (TryParseSupplierExcelDriveSmokeArgs(args, out var supplierExcelDriveSmokeFolder))
             {
                 RunSupplierExcelDriveSmoke(supplierExcelDriveSmokeFolder);
@@ -384,6 +390,9 @@ internal static class Program
         Console.WriteLine("  --catalog-row-invalid-analyzer --db <frozen-pos.db> --evidence-dir <local-evidence-dir>");
         Console.WriteLine("  --sqlite-integrity-selftest");
         Console.WriteLine("  --db-restore-guard-selftest");
+        Console.WriteLine("  --backup-restore-selftest [--keepdb]");
+        Console.WriteLine("  --backup-restore-failure-selftest [--keepdb]");
+        Console.WriteLine("  --backup-restore-perf-selftest [--sizes-mib 32,128,512] [--iterations 5] [--keepdb]");
         Console.WriteLine("  --supplier-excel-drive-smoke <folder>");
         Console.WriteLine("  --supplier-excel-drive-completion-report <folder>");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");

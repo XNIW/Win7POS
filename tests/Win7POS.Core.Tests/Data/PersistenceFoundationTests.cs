@@ -11,7 +11,7 @@ using Win7POS.Data.Repositories;
 namespace Win7POS.Core.Tests.Data;
 
 [TestClass]
-public sealed class PersistenceFoundationTests
+public sealed partial class PersistenceFoundationTests
 {
     [TestMethod]
     public async Task OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues()
@@ -277,9 +277,9 @@ INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
         {
             Root = root;
             Backup = Path.Combine(root, "backup.db");
-            Candidate = Path.Combine(root, "live.db.restore-crash.new");
+            Candidate = Path.Combine(root, "live.db.restore-deadbeef.new");
             Live = Path.Combine(root, "live.db");
-            Rollback = Path.Combine(root, "live.db.restore-crash.old");
+            Rollback = Path.Combine(root, "live.db.restore-deadbeef.old");
         }
 
         public string Backup { get; }

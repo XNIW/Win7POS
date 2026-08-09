@@ -118,7 +118,7 @@ namespace Win7POS.Wpf.Pos
             _sales = new SaleRepository(_factory);
             _settings = new SettingsRepository(_factory);
             _dbMaintenance = new DbMaintenanceRepository(_factory);
-            _onlineBackup = new SqliteOnlineBackup(_factory);
+            _onlineBackup = new SqliteOnlineBackup(_factory, LogBackupRestoreDiagnostic);
             _catalogImportOutbox = new CatalogImportOutboxRepository(_factory);
             _suppliers = new SupplierRepository(_factory);
             _categories = new CategoryRepository(_factory);
@@ -336,14 +336,17 @@ namespace Win7POS.Wpf.Pos
             }).ConfigureAwait(false);
         }
 
-        public async Task<DbRestoreResult> RestoreDbAsync(string backupDbPath)
+        public async Task<DbRestoreResult> RestoreDbAsync(
+            string backupDbPath,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(backupDbPath))
                 throw new ArgumentException("backup path is empty");
             if (!File.Exists(backupDbPath))
                 throw new FileNotFoundException("Backup file not found.", backupDbPath);
 
-            await _gate.WaitAsync().ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             IDisposable authorizationMaintenanceLease = null;
             IDisposable catalogTransitionLease = null;
             var syncSupervisorStopAttempted = false;
@@ -356,8 +359,10 @@ namespace Win7POS.Wpf.Pos
                     await PosOnlineSyncRevocationLatch
                         .EnterAuthorizationMaintenanceAsync()
                         .ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 syncSupervisorStopAttempted = true;
                 await PosOnlineSyncSignalBus.StopAsync().ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 trustedDeviceStore = new PosTrustedDeviceStore();
                 if (trustedDeviceStore.TryRead(out var trustedSession))
                 {
@@ -366,7 +371,7 @@ namespace Win7POS.Wpf.Pos
                         out invalidatedGeneration);
                 }
                 catalogTransitionLease = await new CatalogShopTransitionBarrier(_factory)
-                    .EnterAsync()
+                    .EnterAsync(cancellationToken)
                     .ConfigureAwait(false);
                 var catalogState = new CatalogShopStateRepository(_factory);
                 var liveCatalogEpoch = await catalogState.LoadTransitionEpochAsync().ConfigureAwait(false);
@@ -409,108 +414,27 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 var restoredAt = DateTimeOffset.UtcNow;
-
-                var tempRestorePath = Path.Combine(
-                    AppPaths.BackupsDirectory,
-                    "pos_restore_validate_" + Guid.NewGuid().ToString("N") + ".db");
+                cancellationToken.ThrowIfCancellationRequested();
+                var preBackupPath = AllocateDbBackupPath("pos_pre_restore_");
+                var integrity = string.Empty;
+                var foreignKeys = string.Empty;
+                var integrityOk = false;
+                var postSwapCommitCompleted = false;
+                OperationCanceledException deferredCancellation = null;
                 try
                 {
-                    File.Copy(backupDbPath, tempRestorePath, true);
-                    var validateOptions = new PosDbOptions(tempRestorePath);
-                    DbInitializer.EnsureCreated(validateOptions);
-                    var validateFactory = new SqliteConnectionFactory(validateOptions);
-                    var validationMaintenance = new DbMaintenanceRepository(validateFactory);
-                    var candidateValidation = await validationMaintenance.ValidateAsync().ConfigureAwait(false);
-                    if (!candidateValidation.IsValid)
-                    {
-                        throw new InvalidOperationException(PosLocalization.F(
-                            "dbMaintenance.integrityCheckFailed",
-                            candidateValidation.IntegrityCheck + " / FK: " + candidateValidation.ForeignKeyCheck));
-                    }
-
-                    var restoreSafety = await new RestoreShopSafetyRepository(validateFactory)
-                        .ValidateCandidateAsync(currentShop.ShopId, currentShop.ShopCode)
-                        .ConfigureAwait(false);
-                    if (!restoreSafety.IsValid)
-                    {
-                        throw new InvalidOperationException(restoreSafety.Code);
-                    }
-
-                    SqliteConnectionFactory.ClearAllPools();
-
-                    var preBackupPath = string.Empty;
-                    var integrity = string.Empty;
-                    var foreignKeys = string.Empty;
-                    var integrityOk = false;
-                    await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
-                    {
-                        var livePreSwapSafety = await new RestoreShopSafetyRepository(_factory)
-                            .ValidateLivePreSwapAsync(
-                                currentShop.ShopId,
-                                currentShop.ShopCode,
-                                liveCatalogEpoch)
-                            .ConfigureAwait(false);
-                        if (!livePreSwapSafety.IsValid)
-                        {
-                            _logger.LogWarning(
-                                "POS DB restore blocked by fenced pre-swap validation: " +
-                                livePreSwapSafety.Code);
-                            if (string.Equals(
-                                livePreSwapSafety.Code,
-                                "restore_live_sales_outbox_unresolved",
-                                StringComparison.Ordinal))
-                            {
-                                throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"));
-                            }
-
-                            if (string.Equals(
-                                livePreSwapSafety.Code,
-                                "restore_live_catalog_outbox_unresolved",
-                                StringComparison.Ordinal))
-                            {
-                                throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"));
-                            }
-
-                            if (string.Equals(
-                                livePreSwapSafety.Code,
-                                "restore_live_article_outbox_unresolved",
-                                StringComparison.Ordinal))
-                            {
-                                throw new InvalidOperationException(
-                                    PosLocalization.T(
-                                        "dbMaintenance.restoreBlockedUnresolvedArticleMutations"));
-                            }
-
-                            if (string.Equals(
-                                livePreSwapSafety.Code,
-                                "restore_live_product_image_outbox_unresolved",
-                                StringComparison.Ordinal))
-                            {
-                                throw new InvalidOperationException(
-                                    PosLocalization.T(
-                                        "dbMaintenance.restoreBlockedUnresolvedProductImages"));
-                            }
-
-                            throw new InvalidOperationException(livePreSwapSafety.Code);
-                        }
-
-                        var fencedCandidateSafety = await new RestoreShopSafetyRepository(validateFactory)
-                            .ValidateCandidateAsync(currentShop.ShopId, currentShop.ShopCode)
-                            .ConfigureAwait(false);
-                        if (!fencedCandidateSafety.IsValid)
-                        {
-                            throw new InvalidOperationException(fencedCandidateSafety.Code);
-                        }
-
-                        preBackupPath = await CreateDbBackupNoLockAsync("pos_pre_restore_").ConfigureAwait(false);
-                        await new AtomicRestoreInstaller().InstallAsync(
-                            tempRestorePath,
-                            _options.DbPath,
+                    var coordinator = new SqliteRestoreCoordinator(
+                        _factory,
+                        _onlineBackup,
+                        LogBackupRestoreDiagnostic);
+                    var outcome = await coordinator.RestoreAsync(
+                            backupDbPath,
                             preBackupPath,
-                            async () =>
+                            currentShop.ShopId,
+                            currentShop.ShopCode,
+                            liveCatalogEpoch,
+                            async liveValidation =>
                             {
-                                DbInitializer.EnsureCreated(_options);
-                                var liveValidation = await _dbMaintenance.ValidateAsync().ConfigureAwait(false);
                                 integrity = liveValidation.IntegrityCheck;
                                 foreignKeys = liveValidation.ForeignKeyCheck;
                                 integrityOk = liveValidation.IsValid;
@@ -538,7 +462,7 @@ namespace Win7POS.Wpf.Pos
                                 await _settings.SetBoolAsync(KeyRestoreNeedsSyncReview, true).ConfigureAwait(false);
                                 await _settings.SetStringAsync(KeyRestoreLastCompletedAt, restoredAt.ToString("O", CultureInfo.InvariantCulture)).ConfigureAwait(false);
                                 await _settings.SetStringAsync(KeyRestoreLastPreBackupPath, preBackupPath).ConfigureAwait(false);
-                                await _settings.SetStringAsync(KeyRestoreLastSourcePath, backupDbPath).ConfigureAwait(false);
+                                await _settings.SetStringAsync(KeyRestoreLastSourcePath, Path.GetFileName(backupDbPath)).ConfigureAwait(false);
                                 await _settings.SetStringAsync(KeyRestoreLastIntegrityCheck, integrity).ConfigureAwait(false);
                                 var details = AuditDetails.Kv(
                                     ("backupFile", Path.GetFileName(backupDbPath)),
@@ -557,42 +481,58 @@ namespace Win7POS.Wpf.Pos
                                 // authorization cache is invalid from this point.
                                 PosOnlineSyncRevocationLatch
                                     .InvalidateAuthorizationStateWhileMaintenanceHeld();
-                            }).ConfigureAwait(false);
-                    }).ConfigureAwait(false);
+                                postSwapCommitCompleted = true;
+                            },
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    integrity = outcome.LiveValidation.IntegrityCheck;
+                    foreignKeys = outcome.LiveValidation.ForeignKeyCheck;
+                    integrityOk = outcome.LiveValidation.IsValid;
                     restoreInstalled = true;
-
-                    PosOnlineSyncRevocationLatch.RevokeWhileMaintenanceHeld(
-                        invalidatedGeneration);
-                    trustedDeviceStore.Clear();
-                    if (trustedDeviceStore.HasStoredState())
-                    {
-                        _logger.LogWarning(
-                            "POS DB restore left a stale trusted-session file; " +
-                            "the authorization epoch and inactive generation " +
-                            "tombstone keep it denied.");
-                    }
-
-                    _logger.LogWarning("POS DB restored; sync review required. backupFile=" + Path.GetFileName(backupDbPath) + " preBackupFile=" + Path.GetFileName(preBackupPath));
-                    return new DbRestoreResult
-                    {
-                        ForeignKeyCheck = foreignKeys,
-                        IntegrityCheck = integrity,
-                        IntegrityOk = integrityOk,
-                        PreRestoreBackupPath = preBackupPath,
-                        RestoredFromPath = backupDbPath,
-                        SyncReviewRequired = true
-                    };
                 }
-                finally
+                catch (OperationCanceledException cancellationException)
+                    when (postSwapCommitCompleted)
                 {
-                    try { File.Delete(tempRestorePath); } catch { }
-                    try { File.Delete(tempRestorePath + "-wal"); } catch { }
-                    try { File.Delete(tempRestorePath + "-shm"); } catch { }
+                    // Cancellation observed after the prepared marker is propagated
+                    // only after the atomic protocol has reached a valid terminal state.
+                    restoreInstalled = true;
+                    deferredCancellation = cancellationException;
                 }
+                catch (InvalidOperationException safetyException)
+                    when (IsRestoreSafetyCode(safetyException.Message))
+                {
+                    throw TranslateRestoreSafetyFailure(safetyException);
+                }
+
+                PosOnlineSyncRevocationLatch.RevokeWhileMaintenanceHeld(
+                    invalidatedGeneration);
+                trustedDeviceStore.Clear();
+                if (trustedDeviceStore.HasStoredState())
+                {
+                    _logger.LogWarning(
+                        "POS DB restore left a stale trusted-session file; " +
+                        "the authorization epoch and inactive generation " +
+                        "tombstone keep it denied.");
+                }
+
+                _logger.LogWarning("POS DB restored; sync review required. backupFile=" + Path.GetFileName(backupDbPath) + " preBackupFile=" + Path.GetFileName(preBackupPath));
+                if (deferredCancellation != null)
+                    throw deferredCancellation;
+                return new DbRestoreResult
+                {
+                    ForeignKeyCheck = foreignKeys,
+                    IntegrityCheck = integrity,
+                    IntegrityOk = integrityOk,
+                    PreRestoreBackupPath = preBackupPath,
+                    RestoredFromPath = backupDbPath,
+                    SyncReviewRequired = true
+                };
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "POS DB restore failed");
+                _logger.LogError(
+                    null,
+                    "POS DB restore failed result=" + GetBackupRestoreFailureCode(ex));
                 throw;
             }
             finally
@@ -881,27 +821,26 @@ namespace Win7POS.Wpf.Pos
             return sale.PaidCash > 0 ? "non_stampata_contanti" : "non_stampata_policy_carta";
         }
 
-        public async Task<string> BackupDbAsync()
+        public async Task<string> BackupDbAsync(
+            CancellationToken cancellationToken = default(CancellationToken))
         {
-            await _gate.WaitAsync().ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 DbInitializer.EnsureCreated(_options);
-                AppPaths.EnsureCreated();
+                cancellationToken.ThrowIfCancellationRequested();
+                var outputPath = AllocateDbBackupPath("pos_backup_");
 
-                var fileName = "pos_backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".db";
-                var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
-                var outputDir = Path.GetDirectoryName(outputPath);
-                if (!string.IsNullOrWhiteSpace(outputDir))
-                    Directory.CreateDirectory(outputDir);
-
-                await _onlineBackup.CreateVerifiedAsync(outputPath).ConfigureAwait(false);
+                await _onlineBackup.CreateVerifiedAsync(outputPath, cancellationToken).ConfigureAwait(false);
                 _logger.LogInfo("POS DB backup created: " + Path.GetFileName(outputPath));
                 return outputPath;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "POS DB backup failed");
+                _logger.LogError(
+                    null,
+                    "POS DB backup failed result=" + GetBackupRestoreFailureCode(ex));
                 throw;
             }
             finally
@@ -910,23 +849,85 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        private async Task<string> CreateDbBackupNoLockAsync(string prefix)
+        private string AllocateDbBackupPath(string prefix)
         {
             AppPaths.EnsureCreated();
 
             if (!File.Exists(_options.DbPath))
-                throw new FileNotFoundException("Current POS database not found; restore pre-backup was not created.", _options.DbPath);
+                throw new FileNotFoundException("Current POS database not found; backup path was not allocated.");
 
             var safePrefix = string.IsNullOrWhiteSpace(prefix) ? "pos_backup_" : prefix;
-            var fileName = safePrefix + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture) + ".db";
-            var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
-            var outputDir = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrWhiteSpace(outputDir))
-                Directory.CreateDirectory(outputDir);
+            Directory.CreateDirectory(AppPaths.BackupsDirectory);
+            for (var attempt = 0; attempt < 16; attempt++)
+            {
+                var fileName = safePrefix +
+                    DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture) +
+                    "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".db";
+                var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
+                if (!File.Exists(outputPath))
+                    return outputPath;
+            }
 
-            await _onlineBackup.CreateVerifiedAsync(outputPath).ConfigureAwait(false);
-            _logger.LogInfo("POS DB pre-restore backup created: " + Path.GetFileName(outputPath));
-            return outputPath;
+            throw new IOException("Unable to allocate a unique backup file name.");
+        }
+
+        private void LogBackupRestoreDiagnostic(BackupRestoreDiagnostic diagnostic)
+        {
+            if (diagnostic != null)
+                _logger.LogInfo(diagnostic.ToSafeLogLine());
+        }
+
+        private static string GetBackupRestoreFailureCode(Exception failure)
+        {
+            if (failure is OperationCanceledException)
+                return "cancelled";
+            if (failure is UnauthorizedAccessException)
+                return "access_denied";
+            if (failure is FileNotFoundException)
+                return "source_missing";
+            if (failure is InvalidDataException)
+                return "invalid_database";
+            if (failure is TimeoutException)
+                return "fence_timeout";
+            if (failure is IOException)
+                return "io_failure";
+            if (failure is InvalidOperationException)
+                return "safety_rejected";
+            return "unexpected_failure";
+        }
+
+        private static bool IsRestoreSafetyCode(string code)
+        {
+            return string.Equals(code, "restore_live_sales_outbox_unresolved", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_catalog_outbox_unresolved", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_article_outbox_unresolved", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_product_image_outbox_unresolved", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_shop_changed", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_catalog_shop_mismatch", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_catalog_epoch_changed", StringComparison.Ordinal);
+        }
+
+        private static InvalidOperationException TranslateRestoreSafetyFailure(
+            InvalidOperationException failure)
+        {
+            var code = failure?.Message ?? string.Empty;
+            if (string.Equals(code, "restore_live_sales_outbox_unresolved", StringComparison.Ordinal))
+                return new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"), failure);
+            if (string.Equals(code, "restore_live_catalog_outbox_unresolved", StringComparison.Ordinal))
+                return new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"), failure);
+            if (string.Equals(code, "restore_live_article_outbox_unresolved", StringComparison.Ordinal))
+            {
+                return new InvalidOperationException(
+                    PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedArticleMutations"),
+                    failure);
+            }
+            if (string.Equals(code, "restore_live_product_image_outbox_unresolved", StringComparison.Ordinal))
+            {
+                return new InvalidOperationException(
+                    PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedProductImages"),
+                    failure);
+            }
+            return new InvalidOperationException(code, failure);
         }
 
         public async Task InitializeAsync()

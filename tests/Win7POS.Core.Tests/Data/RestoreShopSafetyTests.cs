@@ -148,12 +148,19 @@ VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-le
     public async Task AtomicInstaller_UsesValidatedCopyAfterSourceMutation()
     {
         using var files = RestoreFiles.Create();
-        File.WriteAllText(files.Source, "validated");
+        WriteProbeDatabase(files.Source, "validated");
+        SqliteConnectionFactory.ClearAllPools();
         File.Copy(files.Source, files.Validated, true);
-        File.WriteAllText(files.Source, "mutated-after-validation");
-        File.WriteAllText(files.Live, "live-before-restore");
+        using (var source = new SqliteConnection("Data Source=" + files.Source))
+        {
+            source.Open();
+            source.Execute(
+                "UPDATE restore_probe SET value='mutated-after-validation' WHERE id=1;");
+        }
+        WriteProbeDatabase(files.Live, "live-before-restore");
         File.WriteAllText(files.Live + "-wal", "stale-wal");
         File.WriteAllText(files.Live + "-shm", "stale-shm");
+        SqliteConnectionFactory.ClearAllPools();
         File.Copy(files.Live, files.Rollback, true);
 
         await new AtomicRestoreInstaller().InstallAsync(
@@ -162,7 +169,7 @@ VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-le
             files.Rollback,
             () => Task.CompletedTask);
 
-        Assert.AreEqual("validated", File.ReadAllText(files.Live));
+        Assert.AreEqual("validated", ReadProbeValue(files.Live));
         Assert.IsFalse(File.Exists(files.Live + "-wal"));
         Assert.IsFalse(File.Exists(files.Live + "-shm"));
         Assert.IsFalse(File.Exists(files.Live + ".restore-in-progress"));
