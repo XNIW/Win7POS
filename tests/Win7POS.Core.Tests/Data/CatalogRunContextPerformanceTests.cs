@@ -77,32 +77,7 @@ WHERE c.remote_category_id = 'category-run'
     public async Task RelinkStagesThousandIdsWithOneBoundedJsonCommand()
     {
         using var db = TestDb.Create();
-        var repository = new RemoteCatalogBatchRepository(db.Factory);
-        using (var seedRun = repository.CreateRunContext())
-        {
-            await seedRun.ApplyAsync(new RemoteCatalogBatch
-            {
-                Categories = new[]
-                {
-                    new RemoteCatalogCategoryWrite
-                    {
-                        RemoteCategoryId = "category-run",
-                        Name = "Run Category"
-                    }
-                },
-                Suppliers = new[]
-                {
-                    new RemoteCatalogSupplierWrite
-                    {
-                        RemoteSupplierId = "supplier-run",
-                        Name = "Run Supplier"
-                    }
-                },
-                Products = new[] { Product("product-bounded-1", "BOUNDED-OLD", 1) }
-            });
-        }
-
-        using var run = repository.CreateRunContext();
+        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
         var products = Enumerable.Range(1, 1000)
             .Select(index => Product(
                 "product-bounded-" + index,
@@ -133,6 +108,48 @@ WHERE c.remote_category_id = 'category-run'
 
         Assert.AreEqual(1000, result.ProductsApplied);
         Assert.AreEqual(1L, run.Diagnostics.RelinkStageSqlCommandCount);
+        Assert.AreEqual(1L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+    }
+
+    [TestMethod]
+    public async Task LegacyRebindPageDoesNotRepeatProtectedProductLookup()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-run",
+                    Name = "Run Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-run",
+                    Name = "Run Supplier"
+                }
+            },
+            Products = new[] { Product("product-legacy-1", "LEGACY-OLD", 1) }
+        });
+
+        using var run = repository.CreateRunContext();
+        var result = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Products = new[]
+            {
+                Product("product-legacy-1", "LEGACY-NEW", 2),
+                Product("product-legacy-2", "LEGACY-002", 2),
+                Product("product-legacy-3", "LEGACY-003", 2)
+            }
+        });
+
+        Assert.AreEqual(3, result.ProductsApplied);
         Assert.AreEqual(1L, run.Diagnostics.ProtectedProductQueryCount);
         Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
     }

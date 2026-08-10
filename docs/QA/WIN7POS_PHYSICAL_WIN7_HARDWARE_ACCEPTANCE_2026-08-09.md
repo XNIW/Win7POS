@@ -60,7 +60,7 @@ execution.
 | Architecture/UI/i18n/supplier static gates | `PASS` | Same log. |
 | Solution and WPF x86 build | `PASS` | 0 warnings, 0 errors; `logs/24-post-remediation-build.log`. |
 | Core/Data automated baseline | `PASS 991/991` | Tree-identical trusted PR #92 prebuilt binaries; no skips. This is not relabelled as a fresh final-SHA run. |
-| Fresh final-source MSTest | `BLOCKED_HOST_POLICY` | Build succeeds; MSTest discovery is blocked by Windows Application Control `0x800711C7`; `logs/22-post-remediation-focused-tests.log`. Expected inventory is 992 after the added regression. Exact-SHA CI is required. |
+| Fresh final-source MSTest | `BLOCKED_HOST_POLICY` | Build succeeds; MSTest discovery is blocked by Windows Application Control `0x800711C7`; `logs/22-post-remediation-focused-tests.log`. Expected inventory is 993 after the added regressions. Exact-SHA CI is required. |
 | CLI selftest | `PASS` | Tree-identical PR #92 binaries, isolated data. |
 | Backup/restore selftests | `PASS` | Normal, fault/cancellation/recovery, and 32/128/512 MiB profiles; `logs/08-cli-same-tree-backup-restore*.log`. |
 | UI smoke | `PASS` | Canonical patched run: 47 screenshots, Release net48/x86; `screenshots/ui-ux-final-closeout-patched-1`. |
