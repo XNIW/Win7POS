@@ -53,7 +53,9 @@ public sealed class CatalogRunContextPerformanceTests
         Assert.AreEqual(2, run.Diagnostics.ReferenceMapRefreshQueryCount);
         Assert.AreEqual(3, run.Diagnostics.ProductIdentityQueryCount);
         Assert.AreEqual(3, run.Diagnostics.PendingStockQueryCount);
-        Assert.AreEqual(11, run.Diagnostics.ScopeSqlQueryCount);
+        Assert.AreEqual(3L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+        Assert.AreEqual(14, run.Diagnostics.ScopeSqlQueryCount);
         Assert.AreEqual(18, run.Diagnostics.LegacyScopeSqlQueryEstimate);
         Assert.AreEqual(1L, run.Diagnostics.ProductIdentityRowsLoaded);
         Assert.AreEqual(3L, run.Diagnostics.StagedProductIdentityCount);
@@ -75,7 +77,32 @@ WHERE c.remote_category_id = 'category-run'
     public async Task RelinkStagesThousandIdsWithOneBoundedJsonCommand()
     {
         using var db = TestDb.Create();
-        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        using (var seedRun = repository.CreateRunContext())
+        {
+            await seedRun.ApplyAsync(new RemoteCatalogBatch
+            {
+                Categories = new[]
+                {
+                    new RemoteCatalogCategoryWrite
+                    {
+                        RemoteCategoryId = "category-run",
+                        Name = "Run Category"
+                    }
+                },
+                Suppliers = new[]
+                {
+                    new RemoteCatalogSupplierWrite
+                    {
+                        RemoteSupplierId = "supplier-run",
+                        Name = "Run Supplier"
+                    }
+                },
+                Products = new[] { Product("product-bounded-1", "BOUNDED-OLD", 1) }
+            });
+        }
+
+        using var run = repository.CreateRunContext();
         var products = Enumerable.Range(1, 1000)
             .Select(index => Product(
                 "product-bounded-" + index,
@@ -106,6 +133,22 @@ WHERE c.remote_category_id = 'category-run'
 
         Assert.AreEqual(1000, result.ProductsApplied);
         Assert.AreEqual(1L, run.Diagnostics.RelinkStageSqlCommandCount);
+        Assert.AreEqual(1L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+    }
+
+    [TestMethod]
+    public void SqliteNoCaseBarcodeKeyFoldsAsciiOnly()
+    {
+        Assert.AreEqual(
+            "abc-123",
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("ABC-123"));
+        Assert.AreEqual(
+            "already-lower",
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("already-lower"));
+        Assert.AreNotEqual(
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("Ä"),
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("ä"));
     }
 
     [TestMethod]
