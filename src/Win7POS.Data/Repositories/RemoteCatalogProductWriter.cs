@@ -214,7 +214,8 @@ WHERE remote_product_id = @remoteProductId
             CatalogProductBatchContext batchContext = null,
             string remoteUpdatedAt = null,
             string remoteCategoryId = null,
-            string remoteSupplierId = null)
+            string remoteSupplierId = null,
+            bool protectedProductLookupCompleted = false)
         {
             if (string.IsNullOrWhiteSpace(remoteProductId))
                 throw new ArgumentException("A remote product identity is required.", nameof(remoteProductId));
@@ -224,11 +225,15 @@ WHERE remote_product_id = @remoteProductId
                 throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
 
             var normalizedRemoteProductId = remoteProductId.Trim();
-            var protectedProductId = await FindProtectedProductIdAsync(
-                conn,
-                tx,
-                normalizedRemoteProductId,
-                p.Barcode).ConfigureAwait(false);
+            long? protectedProductId = null;
+            if (!protectedProductLookupCompleted)
+            {
+                protectedProductId = await FindProtectedProductIdAsync(
+                    conn,
+                    tx,
+                    normalizedRemoteProductId,
+                    p.Barcode).ConfigureAwait(false);
+            }
             if (protectedProductId.HasValue)
             {
                 await UpsertRemoteShadowAsync(

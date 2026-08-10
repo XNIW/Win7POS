@@ -58,3 +58,23 @@ disconnected drawer, authenticated settings or physical Windows 7 validation.
 The retained production-code/spooler evidence for row 15 records the one command,
 normal/empty pre/post queue and absence of a QA database. The later operator
 observation closes only that manual pin-2 row; no automatic retry is permitted.
+
+## 2026-08-09 acceptance execution
+
+- Acceptance code SHA:
+  `b6a92b0d8f6d26ceee4f78a29f39d5862e8ef3ef`.
+- Classification: `BLOCKED_EXTERNAL`.
+- Before and after: `10/25` historical physical PASS rows, `15` open/partial
+  rows; newly closed rows: `0`.
+- No physical Windows 7 device, scanner, Xprinter, drawer, customer display, or
+  dual-monitor station was available. No drawer impulse was sent.
+- No isolated authenticated QA shop/account was supplied. Only public HTTPS
+  reachability was observed from the Windows 11 build host; no authenticated
+  login, catalog, sale, import, refund/void, or idempotency scenario ran.
+- The unsigned branch installer was built and statically validated, but no
+  Win7 install/upgrade/uninstall or signed-artifact smoke was performed.
+- Automated fixtures, 95 retained UI screenshots (47 in the canonical PASS
+  run), synthetic lifecycle/hardware-manager smoke, CI, and release packaging
+  do not promote any external row.
+- Detailed report:
+  `docs/QA/WIN7POS_PHYSICAL_WIN7_HARDWARE_ACCEPTANCE_2026-08-09.md`.
