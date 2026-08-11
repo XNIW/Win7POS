@@ -100,6 +100,39 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
     }
 
     [TestMethod]
+    public async Task CandidateLiveAndReview_RejectUnresolvedCustomerOrderInbox()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var binding = await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        await InsertUnresolvedCustomerOrderAsync(db.Factory, "shop-a");
+        var settings = new SettingsRepository(db.Factory);
+        await settings.SetBoolAsync(
+            RestoreShopSafetyRepository.RestoreNeedsReviewKey,
+            true);
+
+        var safety = new RestoreShopSafetyRepository(db.Factory);
+        var candidate = await safety.ValidateCandidateAsync("shop-a", "SHOP-A");
+        var live = await safety.ValidateLivePreSwapAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+        var review = await safety.CompleteReviewAsync();
+
+        Assert.IsFalse(candidate.IsValid);
+        Assert.AreEqual("restore_candidate_outbox_unresolved", candidate.Code);
+        Assert.IsFalse(live.IsValid);
+        Assert.AreEqual(
+            "restore_live_customer_order_inbox_unresolved",
+            live.Code);
+        Assert.IsFalse(review.IsValid);
+        Assert.AreEqual("restore_review_outbox_unresolved", review.Code);
+        Assert.IsTrue(await settings.GetBoolAsync(
+            RestoreShopSafetyRepository.RestoreNeedsReviewKey));
+    }
+
+    [TestMethod]
     public async Task LivePreSwapValidation_RejectsOutboxCommittedAfterPreliminaryCheck()
     {
         using var db = TestDb.Create();
@@ -319,6 +352,41 @@ WHERE key = 'pos.catalog.exactness.code';"));
             ShopName = shopCode,
             Source = "test"
         });
+    }
+
+    private static async Task InsertUnresolvedCustomerOrderAsync(
+        SqliteConnectionFactory factory,
+        string shopId)
+    {
+        using var connection = factory.Open();
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await connection.ExecuteAsync(@"
+INSERT INTO customer_order_inbox(
+  handoff_id, event_idempotency_key, order_id, shop_id, order_code,
+  event_type, correlation_id, status_version, current_status_version,
+  order_status, fulfillment_mode, currency_code, total_clp, payload_json,
+  payload_hash, lease_token, lease_expires_at, remote_attempt_count, state,
+  ack_outcome, ack_idempotency_key, ack_expected_status_version,
+  received_at, updated_at)
+VALUES(
+  @handoffId, @eventIdempotencyKey, @orderId, @shopId, 'MC-RESTORE',
+  'customer_order.accepted.v1', @correlationId, 2, 2,
+  'accepted', 'pickup', 'CLP', 1000, '{}',
+  @payloadHash, @leaseToken, @leaseExpiresAt, 1, 'ack_pending',
+  'accepted', @ackIdempotencyKey, 2, @nowMs, @nowMs);",
+            new
+            {
+                ackIdempotencyKey = Guid.NewGuid().ToString("D"),
+                correlationId = Guid.NewGuid().ToString("D"),
+                eventIdempotencyKey = Guid.NewGuid().ToString("D"),
+                handoffId = Guid.NewGuid().ToString("D"),
+                leaseExpiresAt = nowMs + 300000,
+                leaseToken = Guid.NewGuid().ToString("D"),
+                nowMs,
+                orderId = Guid.NewGuid().ToString("D"),
+                payloadHash = "sha256:" + new string('a', 64),
+                shopId
+            });
     }
 
     private static void WriteProbeDatabase(string path, string value)

@@ -341,8 +341,10 @@ if ($connectionFactory -notmatch "RunExclusiveMaintenanceAsync" -or
 if ($restoreSafety -notmatch "ValidateLivePreSwapAsync" -or
     $restoreSafety -notmatch "restore_live_sales_outbox_unresolved" -or
     $restoreSafety -notmatch "restore_live_catalog_outbox_unresolved" -or
+    $restoreSafety -notmatch "restore_live_customer_order_inbox_unresolved" -or
     $restoreSafety -notmatch "restore_live_catalog_epoch_changed" -or
-    $restoreSafetyTests -notmatch "LivePreSwapValidation_RejectsOutboxCommittedAfterPreliminaryCheck") {
+    $restoreSafetyTests -notmatch "LivePreSwapValidation_RejectsOutboxCommittedAfterPreliminaryCheck" -or
+    $restoreSafetyTests -notmatch "CandidateLiveAndReview_RejectUnresolvedCustomerOrderInbox") {
     Fail "restore must close the pre-fence outbox/shop/epoch TOCTOU before backup or live swap"
 } else {
     Pass "fenced pre-swap validation closes the outbox/shop/epoch TOCTOU"
@@ -361,6 +363,7 @@ if ($sourceSnapshot -gt $candidateMigration -or
     $restoreSafety -notmatch "restore_shop_mismatch" -or
     $restoreSafety -notmatch "restore_catalog_shop_mismatch" -or
     $restoreSafety -notmatch "restore_candidate_outbox_unresolved" -or
+    $restoreSafety -notmatch "customer_order_inbox" -or
     $restoreSafetyTests -notmatch "CandidateValidation_RejectsCrossShopSnapshotAndAnyUnresolvedOutbox" -or
     $restoreSafetyTests -notmatch "CandidateValidation_RejectsCatalogBindingMismatch") {
     Fail "restore must reject incoherent official/catalog binding and every unresolved candidate outbox before live DB installation"
