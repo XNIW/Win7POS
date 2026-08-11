@@ -180,9 +180,11 @@ if ($catalogPull -notmatch "authenticationDenied\s*&&\s*clearStoredStateOnDenied
     Pass "catalog clears trust only on auth denied"
 }
 
-$retryIndex = $statusReader.IndexOf("if (outbox.Retry > 0 || catalogOutbox.Retry > 0)", [System.StringComparison]::Ordinal)
+$retryIndex = $statusReader.IndexOf("if (outbox.Retry > 0", [System.StringComparison]::Ordinal)
 $catalogUpdatingIndex = $statusReader.IndexOf('"updating"', [System.StringComparison]::Ordinal)
-if ($retryIndex -lt 0 -or $catalogUpdatingIndex -lt 0 -or $retryIndex -gt $catalogUpdatingIndex) {
+if ($retryIndex -lt 0 -or $catalogUpdatingIndex -lt 0 -or
+    $retryIndex -gt $catalogUpdatingIndex -or
+    $statusReader -notmatch 'productImageDrain\.Retry\s*>\s*0') {
     Fail "status summary must surface sales retry before catalog updating/ready text"
 } else {
     Pass "status summary prioritizes sales retry over catalog updating"

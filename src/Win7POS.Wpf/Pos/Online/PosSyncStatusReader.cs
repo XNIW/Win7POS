@@ -450,6 +450,25 @@ namespace Win7POS.Wpf.Pos.Online
                     " | " + T("sync.lastSalesError") + ": " + SafeCode(lastSalesError);
             }
 
+            if (outbox.Retry > 0 ||
+                catalogOutbox.Retry > 0 ||
+                productImageDrain.Retry > 0)
+            {
+                return T("sync.retrySync") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + RetryOutboxText(outbox, catalogOutbox) +
+                    " | " + PendingOutboxText(outbox, catalogOutbox);
+            }
+
+            if (outbox.PendingOrRetry > 0 ||
+                catalogOutbox.PendingOrRetry > 0 ||
+                productImageDrain.Pending > 0)
+            {
+                return T("sync.pendingSync") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + PendingOutboxText(outbox, catalogOutbox);
+            }
+
             if (string.Equals((catalogBootstrapStatus ?? string.Empty).Trim(), "in_progress", StringComparison.OrdinalIgnoreCase))
             {
                 return T("sync.catalogPreparing") +
@@ -485,31 +504,12 @@ namespace Win7POS.Wpf.Pos.Online
                     " | " + ConnectivityText(connectivityState);
             }
 
-            if (outbox.Retry > 0 ||
-                catalogOutbox.Retry > 0 ||
-                productImageDrain.Retry > 0)
-            {
-                return T("sync.retrySync") +
-                    " | " + ConnectivityText(connectivityState) +
-                    " | " + RetryOutboxText(outbox, catalogOutbox) +
-                    " | " + PendingOutboxText(outbox, catalogOutbox);
-            }
-
             if (salesSyncInProgress || productImageDrain.InProgress > 0)
             {
                 return T("sync.inProgress") +
                     " | " + ConnectivityText(connectivityState) +
                     " | " + PendingOutboxText(outbox, catalogOutbox) +
                     " | " + RetryOutboxText(outbox, catalogOutbox);
-            }
-
-            if (outbox.PendingOrRetry > 0 ||
-                catalogOutbox.PendingOrRetry > 0 ||
-                productImageDrain.Pending > 0)
-            {
-                return T("sync.pendingSync") +
-                    " | " + ConnectivityText(connectivityState) +
-                    " | " + PendingOutboxText(outbox, catalogOutbox);
             }
 
             if (string.IsNullOrWhiteSpace(lastCatalog))
