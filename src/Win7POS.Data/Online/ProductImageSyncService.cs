@@ -585,9 +585,9 @@ namespace Win7POS.Data.Online
                 authenticationDenied,
                 offline,
                 state.HasImmediateMore,
-                state.NextRetryAt,
+                state.NextWakeAt,
                 requestCatalogNow,
-                terminal || (!state.HasImmediateMore && state.NextRetryAt == null));
+                terminal || (!state.HasImmediateMore && state.NextWakeAt == null));
         }
 
         private DateTimeOffset NextRetry(ProductImageOperationRow operation)

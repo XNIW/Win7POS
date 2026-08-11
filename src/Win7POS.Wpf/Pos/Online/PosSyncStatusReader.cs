@@ -72,6 +72,9 @@ namespace Win7POS.Wpf.Pos.Online
                 .ConfigureAwait(false);
             var articleDrain = await articleRepository.GetDrainStateAsync()
                 .ConfigureAwait(false);
+            var productImageDrain = await new ProductImageOperationOutboxRepository(_factory)
+                .GetDrainStateAsync(drainNow)
+                .ConfigureAwait(false);
             var completedViewedText = await settings.GetStringAsync(
                 ArticleCompletedViewedSettingKey).ConfigureAwait(false);
             long completedViewed;
@@ -150,6 +153,7 @@ namespace Win7POS.Wpf.Pos.Online
                 outbox.Blocked > 0 ||
                 catalogOutbox.Blocked > 0 ||
                 articleOutbox.FailedBlocked > 0 ||
+                productImageDrain.Blocked > 0 ||
                 restoreNeedsReview ||
                 !string.IsNullOrWhiteSpace(policyWarning) ||
                 !catalogSaleSafety.IsSaleSafe ||
@@ -173,7 +177,8 @@ namespace Win7POS.Wpf.Pos.Online
                 catalogSaleSafeAt,
                 lastSalesError,
                 catalogExactness,
-                catalogSaleSafety);
+                catalogSaleSafety,
+                productImageDrain);
             var articleUnresolved = articleOutbox.WaitingDependency +
                 articleOutbox.Pending +
                 articleOutbox.InProgress +
@@ -183,6 +188,14 @@ namespace Win7POS.Wpf.Pos.Online
                 ? baseSummary + " | " + T("sync.articleChanges") + ": " +
                     articleUnresolved.ToString(CultureInfo.InvariantCulture)
                 : baseSummary;
+            var productImageUnresolved = productImageDrain.Pending +
+                productImageDrain.Retry +
+                productImageDrain.Blocked +
+                productImageDrain.InProgress;
+            if (productImageUnresolved > 0)
+            {
+                summaryText += " | " + ProductImageStatusText(productImageDrain);
+            }
 
             return new PosSyncStatusSnapshot
             {
@@ -253,7 +266,7 @@ namespace Win7POS.Wpf.Pos.Online
                 ConnectivityText = ConnectivityText(connectivityState),
                 DeviceText = DeviceText(trustedSession),
                 IsTrusted = trustedSession != null,
-                IsSyncing = salesSyncInProgress,
+                IsSyncing = salesSyncInProgress || productImageDrain.InProgress > 0,
                 ImportBlocked = catalogOutbox.Blocked,
                 ImportInProgress = catalogOutbox.InProgress,
                 ImportLastAckText = FormatEpochMilliseconds(catalogOutbox.LastAckedAt),
@@ -261,6 +274,16 @@ namespace Win7POS.Wpf.Pos.Online
                 ImportPending = catalogOutbox.Pending,
                 ImportRemainingDue = importDrain.RemainingDue,
                 ImportRetry = catalogOutbox.Retry,
+                ProductImageBlocked = productImageDrain.Blocked,
+                ProductImageInProgress = productImageDrain.InProgress,
+                ProductImageNextRetryText = FormatEpochMilliseconds(
+                    productImageDrain.NextRetryAt),
+                ProductImageNextWakeText = FormatEpochMilliseconds(
+                    productImageDrain.NextWakeAt),
+                ProductImagePending = productImageDrain.Pending,
+                ProductImageRemainingDue = productImageDrain.RemainingDue,
+                ProductImageRetry = productImageDrain.Retry,
+                ProductImageWaitingDependencies = productImageDrain.WaitingDependencies,
                 LastCatalogSyncText = T("sync.lastCatalog") + ": " + FormatIso(lastCatalog),
                 LastOnlineText = T("sync.sessionVerified") + ": " + FormatIso(trustedSession?.LastOkServerAt),
                 LastSalesSyncText = T("sync.lastSaleSent") + ": " + FormatIso(lastSales),
@@ -400,7 +423,8 @@ namespace Win7POS.Wpf.Pos.Online
             string catalogSaleSafeAt,
             string lastSalesError,
             CatalogExactnessState catalogExactness,
-            CatalogSaleSafetyEvaluation catalogSaleSafety)
+            CatalogSaleSafetyEvaluation catalogSaleSafety,
+            ProductImageOutboxDrainState productImageDrain)
         {
             if (string.Equals((catalogBootstrapStatus ?? string.Empty).Trim(), "failed_auth_denied", StringComparison.OrdinalIgnoreCase))
             {
@@ -408,27 +432,15 @@ namespace Win7POS.Wpf.Pos.Online
                     " | " + PendingOutboxText(outbox, catalogOutbox);
             }
 
-            if (outbox.Blocked > 0 || catalogOutbox.Blocked > 0 || restoreNeedsReview)
+            if (outbox.Blocked > 0 ||
+                catalogOutbox.Blocked > 0 ||
+                productImageDrain.Blocked > 0 ||
+                restoreNeedsReview)
             {
                 return T("sync.requiresAttention") +
                     " | " + ConnectivityText(connectivityState) +
                     " | " + PendingOutboxText(outbox, catalogOutbox) +
                     " | " + BlockedOutboxText(outbox, catalogOutbox);
-            }
-
-            if (outbox.Retry > 0 || catalogOutbox.Retry > 0)
-            {
-                return T("sync.retrySync") +
-                    " | " + ConnectivityText(connectivityState) +
-                    " | " + RetryOutboxText(outbox, catalogOutbox) +
-                    " | " + PendingOutboxText(outbox, catalogOutbox);
-            }
-
-            if (outbox.PendingOrRetry > 0 || catalogOutbox.PendingOrRetry > 0)
-            {
-                return T("sync.pendingSync") +
-                    " | " + ConnectivityText(connectivityState) +
-                    " | " + PendingOutboxText(outbox, catalogOutbox);
             }
 
             if (!string.IsNullOrWhiteSpace(lastSalesError))
@@ -473,12 +485,31 @@ namespace Win7POS.Wpf.Pos.Online
                     " | " + ConnectivityText(connectivityState);
             }
 
-            if (salesSyncInProgress)
+            if (outbox.Retry > 0 ||
+                catalogOutbox.Retry > 0 ||
+                productImageDrain.Retry > 0)
+            {
+                return T("sync.retrySync") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + RetryOutboxText(outbox, catalogOutbox) +
+                    " | " + PendingOutboxText(outbox, catalogOutbox);
+            }
+
+            if (salesSyncInProgress || productImageDrain.InProgress > 0)
             {
                 return T("sync.inProgress") +
                     " | " + ConnectivityText(connectivityState) +
                     " | " + PendingOutboxText(outbox, catalogOutbox) +
                     " | " + RetryOutboxText(outbox, catalogOutbox);
+            }
+
+            if (outbox.PendingOrRetry > 0 ||
+                catalogOutbox.PendingOrRetry > 0 ||
+                productImageDrain.Pending > 0)
+            {
+                return T("sync.pendingSync") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + PendingOutboxText(outbox, catalogOutbox);
             }
 
             if (string.IsNullOrWhiteSpace(lastCatalog))
@@ -500,6 +531,17 @@ namespace Win7POS.Wpf.Pos.Online
                 " | " + T("sync.lastCatalog") + ": " + FormatIso(lastCatalog) +
                 " | " + T("sync.lastSaleSent") + ": " + FormatIso(lastSales) +
                 " | " + PendingOutboxText(outbox, catalogOutbox);
+        }
+
+        private static string ProductImageStatusText(ProductImageOutboxDrainState state)
+        {
+            return T("sync.productImageStatus") + ": " +
+                PosLocalization.F(
+                    "sync.center.queueCounts",
+                    state.Pending,
+                    state.Retry,
+                    state.Blocked,
+                    state.InProgress);
         }
 
         private static string PendingOutboxText(
@@ -1038,6 +1080,14 @@ namespace Win7POS.Wpf.Pos.Online
         public long ImportPending { get; set; }
         public long ImportRemainingDue { get; set; }
         public long ImportRetry { get; set; }
+        public long ProductImageBlocked { get; set; }
+        public long ProductImageInProgress { get; set; }
+        public string ProductImageNextRetryText { get; set; } = string.Empty;
+        public string ProductImageNextWakeText { get; set; } = string.Empty;
+        public long ProductImagePending { get; set; }
+        public long ProductImageRemainingDue { get; set; }
+        public long ProductImageRetry { get; set; }
+        public long ProductImageWaitingDependencies { get; set; }
         public string LastCatalogSyncText { get; set; } = string.Empty;
         public string LastOnlineText { get; set; } = string.Empty;
         public string LastSalesSyncText { get; set; } = string.Empty;

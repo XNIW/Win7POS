@@ -34,6 +34,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _importDrainText = string.Empty;
         private string _importQueueText = string.Empty;
         private string _lastUpdatedText = string.Empty;
+        private string _productImageDrainText = string.Empty;
+        private string _productImageQueueText = string.Empty;
         private string _salesErrorText = string.Empty;
         private string _salesDrainText = string.Empty;
         private string _salesLastAckText = string.Empty;
@@ -64,6 +66,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string ImportQueueText { get => _importQueueText; private set => Set(ref _importQueueText, value); }
         public string LastUpdatedText { get => _lastUpdatedText; private set => Set(ref _lastUpdatedText, value); }
         public PosSyncStatusSnapshot Snapshot => _snapshot;
+        public string ProductImageDrainText { get => _productImageDrainText; private set => Set(ref _productImageDrainText, value); }
+        public string ProductImageQueueText { get => _productImageQueueText; private set => Set(ref _productImageQueueText, value); }
         public string SalesErrorText { get => _salesErrorText; private set => Set(ref _salesErrorText, value); }
         public string SalesDrainText { get => _salesDrainText; private set => Set(ref _salesDrainText, value); }
         public string SalesLastAckText { get => _salesLastAckText; private set => Set(ref _salesLastAckText, value); }
@@ -140,6 +144,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 status.ArticleRemainingDue,
                 status.ArticleNextRetryText);
             ArticleStatusText = status.ArticleStatusText;
+            ProductImageQueueText = QueueText(
+                status.ProductImagePending,
+                status.ProductImageRetry,
+                status.ProductImageBlocked,
+                status.ProductImageInProgress);
+            ProductImageDrainText = ProductImageDrainTextFor(status);
             OnPropertyChanged(nameof(CatalogHasMore));
             OnPropertyChanged(nameof(Snapshot));
         }
@@ -192,8 +202,35 @@ namespace Win7POS.Wpf.Pos.Dialogs
             text.AppendLine("articles.affected=" + _snapshot.ArticleAffectedCount.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("articles.completed_since_view=" + _snapshot.ArticleCompletedSinceLastView.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("articles.last_code=" + SafeCode(_snapshot.ArticleLastTypedCode));
-            text.Append("articles.next_retry_at=" + SafeCode(_snapshot.ArticleNextRetryText));
+            text.AppendLine("articles.next_retry_at=" + SafeCode(_snapshot.ArticleNextRetryText));
+            text.AppendLine("product_images.pending=" + _snapshot.ProductImagePending.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("product_images.retry=" + _snapshot.ProductImageRetry.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("product_images.blocked=" + _snapshot.ProductImageBlocked.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("product_images.in_progress=" + _snapshot.ProductImageInProgress.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("product_images.remaining_due=" + _snapshot.ProductImageRemainingDue.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("product_images.waiting_catalog=" + _snapshot.ProductImageWaitingDependencies.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("product_images.next_retry_at=" + SafeCode(_snapshot.ProductImageNextRetryText));
+            text.Append("product_images.next_wake_at=" + SafeCode(_snapshot.ProductImageNextWakeText));
             return text.ToString();
+        }
+
+        private static string ProductImageDrainTextFor(PosSyncStatusSnapshot status)
+        {
+            var text = status.ProductImageRetry > 0
+                ? PosLocalization.F(
+                    "sync.center.drainState",
+                    status.ProductImageRemainingDue,
+                    status.ProductImageNextRetryText)
+                : PosLocalization.F(
+                    "sync.center.drainStateNoRetry",
+                    status.ProductImageRemainingDue);
+            if (status.ProductImageWaitingDependencies > 0)
+            {
+                text += " | " + PosLocalization.F(
+                    "sync.center.waitingForCatalog",
+                    status.ProductImageWaitingDependencies);
+            }
+            return text;
         }
 
         private static string Field(string labelKey, string value)
