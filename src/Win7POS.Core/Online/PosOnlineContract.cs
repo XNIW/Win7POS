@@ -9,6 +9,7 @@ namespace Win7POS.Core.Online
             "pos-customer-order-ack-v1";
         public const string CustomerOrderHandoffSchemaVersion =
             "pos-customer-order-handoff-v1";
+        public const bool CustomerOrderHandoffEnabledByDefault = false;
         public const int CustomerOrderMaximumBatchCount = 25;
         public const string ArticleMutationSchemaVersion =
             PosArticleMutationContract.SchemaVersion;

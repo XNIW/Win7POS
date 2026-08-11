@@ -23,9 +23,14 @@ namespace Win7POS.Data.Online
             PosCustomerOrderAckRequest,
             CancellationToken,
             Task<PosOnlineResult<PosCustomerOrderAckResponse>>> _ackSender;
+        private readonly bool _enabled;
 
         public PosCustomerOrderSyncService(SqliteConnectionFactory factory)
-            : this(factory, null, null)
+            : this(
+                factory,
+                null,
+                null,
+                PosOnlineContract.CustomerOrderHandoffEnabledByDefault)
         {
         }
 
@@ -40,12 +45,14 @@ namespace Win7POS.Data.Online
                 PosAdminWebOptions,
                 PosCustomerOrderAckRequest,
                 CancellationToken,
-                Task<PosOnlineResult<PosCustomerOrderAckResponse>>> ackSender)
+                Task<PosOnlineResult<PosCustomerOrderAckResponse>>> ackSender,
+            bool enabled = true)
         {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             _inbox = new CustomerOrderInboxRepository(factory);
             _claimSender = claimSender ?? SendClaimAsync;
             _ackSender = ackSender ?? SendAckAsync;
+            _enabled = enabled;
         }
 
         public async Task<OutboxDrainResult> SyncPendingAsync(
@@ -57,6 +64,7 @@ namespace Win7POS.Data.Online
             if (options == null) throw new ArgumentNullException(nameof(options));
             if (executionContext == null)
                 throw new ArgumentNullException(nameof(executionContext));
+            if (!_enabled) return OutboxDrainResult.Empty();
 
             var run = new RunAccumulator();
             if (!await DrainDueAcksAsync(

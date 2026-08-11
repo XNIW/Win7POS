@@ -14,6 +14,28 @@ namespace Win7POS.Core.Tests.Online;
 public sealed class PosCustomerOrderSyncServiceTests
 {
     [TestMethod]
+    public async Task CustomerOrderHandoff_DefaultOffPerformsNoRemoteOrInboxWork()
+    {
+        using var db = TestDb.Create();
+        var generation = Generation();
+        await ActivateAsync(db, generation);
+
+        var result = await RunOnceAsync(
+            db,
+            generation,
+            new PosCustomerOrderSyncService(db.Factory));
+
+        Assert.AreEqual(SyncFailureKind.None, result.FailureKind);
+        Assert.AreEqual(0, result.Attempted);
+        Assert.AreEqual(0L, result.RemainingDue);
+        using var connection = db.Factory.Open();
+        Assert.AreEqual(
+            0L,
+            await connection.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM customer_order_inbox;"));
+    }
+
+    [TestMethod]
     public async Task ClaimAckReplay_PersistsOnePrivacyBoundedInboxAndCreatesNoSale()
     {
         using var db = TestDb.Create();
