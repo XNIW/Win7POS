@@ -847,6 +847,8 @@ namespace Win7POS.Wpf.Pos.Online
                     return RunArticleMutationsAsync(context, cancellationToken);
                 case OnlineSyncLane.ProductImageOutbox:
                     return RunProductImagesAsync(context, cancellationToken);
+                case OnlineSyncLane.CustomerOrders:
+                    return RunCustomerOrdersAsync(context, cancellationToken);
                 default:
                     return Task.FromResult(new OnlineSyncLaneOutcome(
                         false,
@@ -1069,6 +1071,22 @@ namespace Win7POS.Wpf.Pos.Online
                     options,
                     context.Generation,
                     context,
+                    cancellationToken).ConfigureAwait(false);
+            return FromOutbox(result, requestCatalogNow: false);
+        }
+
+        private async Task<OnlineSyncLaneOutcome> RunCustomerOrdersAsync(
+            OnlineSyncLaneExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            if (!PosAdminWebOptions.TryLoad(out var options, out _))
+                return new OnlineSyncLaneOutcome(false, "admin_web_config_missing");
+            var result = await new PosCustomerOrderSyncService(_factory)
+                .SyncPendingAsync(
+                    options,
+                    context,
+                    typeof(PosOnlineSyncSupervisorHost)
+                        .Assembly.GetName().Version?.ToString(),
                     cancellationToken).ConfigureAwait(false);
             return FromOutbox(result, requestCatalogNow: false);
         }

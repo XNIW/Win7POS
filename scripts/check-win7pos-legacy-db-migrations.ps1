@@ -125,7 +125,8 @@ $expectedIds = @(
     "0008-online-sync-generation",
     "0009-catalog-authoritative-id-stage",
     "0010-article-mutation-outbox",
-    "0011-product-image-outbox"
+    "0011-product-image-outbox",
+    "0012-customer-order-inbox"
 )
 if (($ids -join "|") -ne ($expectedIds -join "|")) {
     Fail "registry is not the expected append-only ordered migration sequence"
@@ -145,7 +146,8 @@ $expectedChecksums = @(
     "a951929521bdb7a73d82fcc308bd2e800ccb4888b6c16c829f51c2b93f49a488",
     "68d57cd65b2d56456d5b2ab5eee83237477aefc85f93aa2d81e5f64699fae659",
     "a881c8100282eef1352df3db13a249eaa200be0ee3fa023b93bfb46ae28197e6",
-    "59eff792775e9c2e65f15d158a75ab80430bed6d69c409e9bfb97a425e5f74d0"
+    "59eff792775e9c2e65f15d158a75ab80430bed6d69c409e9bfb97a425e5f74d0",
+    "1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or
