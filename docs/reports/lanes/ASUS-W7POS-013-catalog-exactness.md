@@ -18,7 +18,15 @@ The contract, compatibility checks, repository invariants, pull-service wiring, 
 | ASUS-W7POS-013.2 full/delta exactness audit | DONE | `bb4178b` | local exactness and safety tests | Includes duplicate, invalid, metadata, reference-map, orphan, pending-price, tombstone, and non-authoritative-active invariants |
 | ASUS-W7POS-013.3 pull-service fail-closed integration | DONE | `bb4178b` | service policy tests and checker | Skipped rows, unstable pages, mismatches, and unsafe final audits prevent cursor/sale-safe commit |
 | ASUS-W7POS-013.4 persistence, repair, and UI diagnostics | DONE | `bb4178b` | shop-bound repository tests; sync-status UI checker | Authorized explicit repair clears cursor/sale-safe and reruns a controlled full refresh |
-| ASUS-W7POS-013.5 Admin Console versus staging SQLite proof | BLOCKED_EXTERNAL | — | `C:\Dev\Win7POS-QA\2026-07-14_ASUS_RUNTIME\evidence\staging-admin-login-blocked.png` | Authentication is required to capture authoritative products/categories/suppliers/prices and run the bound staging audit |
+| ASUS-W7POS-013.5 Authoritative staging-versus-SQLite proof | DONE | `2eeb58b` | `docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md` | Exact-main staging drained 676 pages; products/categories/suppliers/prices and identities matched, repair was false and sale-safe was true |
+
+Final task state: `DONE`.
+Phase: `DONE`.
+Resolution: `USER_CONFIRMED_CLOSURE`.
+Final staging acceptance: `PASS`.
+P0/P1/P2/P3: `0/0/0/0`.
+Cross-repository cleanup: `READY_FOR_MAC_FINAL_CLEANUP`.
+Windows 7 physical: `EXTERNAL_PENDING`.
 
 ## Contract and verification semantics
 
@@ -121,4 +129,6 @@ After authorized credentials are available, the runtime proof must capture a red
 - final `hasMore`: required false;
 - shop binding and sale-safe evidence: required coherent.
 
-Until those observations exist, staging catalog exactness and the 19,762 comparison remain `BLOCKED_EXTERNAL`, not PASS.
+The observations now exist in the final acceptance handoff above. The historical
+19,762 brief is superseded by the authoritative staging manifest observed in
+that run; catalog exactness is `PASS`.

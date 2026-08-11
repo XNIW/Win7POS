@@ -49,8 +49,8 @@ namespace Win7POS.Data.Online
             bool offline = false,
             bool hasMore = false,
             bool receivedChanges = false,
-            int pages = 0,
-            int rows = 0,
+            long pages = 0,
+            long rows = 0,
             long durationMilliseconds = 0,
             string resumeCursor = null,
             string code = null,
@@ -92,10 +92,10 @@ namespace Win7POS.Data.Online
         public long? NextOutboxRetryAt { get; }
         public bool Offline { get; }
         public bool OutboxWorkRemaining { get; }
-        public int Pages { get; }
+        public long Pages { get; }
         public bool ReceivedChanges { get; }
         public string ResumeCursor { get; }
-        public int Rows { get; }
+        public long Rows { get; }
         public bool Success { get; }
 
         private static int? NormalizePositiveSeconds(int? value)

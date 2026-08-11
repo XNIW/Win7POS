@@ -53,7 +53,9 @@ SELECT last_insert_rowid();", product, _tx).ConfigureAwait(false);
             else
             {
                 existing = await _products.GetByBarcodeAsync(product.Barcode).ConfigureAwait(false);
-                await _products.UpsertAsync(product).ConfigureAwait(false);
+                await _products.UpsertAsync(
+                    product,
+                    ProductWriteOrigin.SupplierImportApply).ConfigureAwait(false);
             }
 
             return existing == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
@@ -124,7 +126,17 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
 
             var p = new Product { Barcode = barcode, Name = name, UnitPrice = unitPrice };
             var existingP = await _products.GetByBarcodeAsync(barcode).ConfigureAwait(false);
-            await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode, name2, purchasePrice, null, supplierName, null, categoryName, stockQty).ConfigureAwait(false);
+            await _products.UpsertProductAndMetaInTransactionAsync(
+                p,
+                articleCode,
+                name2,
+                purchasePrice,
+                null,
+                supplierName,
+                null,
+                categoryName,
+                stockQty,
+                ProductWriteOrigin.SupplierImportApply).ConfigureAwait(false);
             return existingP == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
         }
 

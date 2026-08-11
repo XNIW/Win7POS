@@ -27,10 +27,12 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{loc:Loc import.file}" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
-                <TextBox Grid.Column="1" Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="36" Style="{StaticResource ModernTextBoxStyle}"/>
+                <TextBlock x:Name="ImportFileLabel" Text="{loc:Loc import.file}" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
+                <TextBox Grid.Column="1" Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="36" Style="{StaticResource ModernTextBoxStyle}"
+                         AutomationProperties.AutomationId="CatalogImport.FilePath" AutomationProperties.LabeledBy="{Binding ElementName=ImportFileLabel}"/>
                 <Button Grid.Column="2" Margin="12,0,0,0" MinWidth="100" Style="{StaticResource OutlineButtonStyle}"
-                        Command="{Binding BrowseCommand}">
+                        Command="{Binding BrowseCommand}"
+                        AutomationProperties.AutomationId="CatalogImport.Browse" AutomationProperties.Name="{loc:Loc common.browse}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc common.browse}" Margin="8,0,0,0"/>
@@ -110,21 +112,26 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <Button MinWidth="120" MinHeight="36" Style="{StaticResource PrimaryButtonStyle}"
-                    Command="{Binding AnalyzeCommand}">
+                    Command="{Binding AnalyzeCommand}"
+                    AutomationProperties.AutomationId="CatalogImport.Analyze" AutomationProperties.Name="{loc:Loc import.analyze}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc import.analyze}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
             <Button Grid.Column="1" Margin="10,0,0,0" MinWidth="120" MinHeight="36" Style="{StaticResource SecondaryButtonStyle}"
-                    Command="{Binding ApplyCommand}">
+                    Command="{Binding ApplyCommand}"
+                    AutomationProperties.AutomationId="CatalogImport.Apply" AutomationProperties.Name="{loc:Loc import.apply}"
+                    AutomationProperties.HelpText="{Binding Status}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc import.apply}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
             <ProgressBar Grid.Column="3" Height="16" VerticalAlignment="Center"
-                         IsIndeterminate="True">
+                         IsIndeterminate="True"
+                         AutomationProperties.AutomationId="CatalogImport.Progress"
+                         AutomationProperties.Name="{loc:Loc import.operationInProgress}">
                 <ProgressBar.Style>
                     <Style TargetType="ProgressBar">
                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -136,7 +143,8 @@
                     </Style>
                 </ProgressBar.Style>
             </ProgressBar>
-            <TextBlock Grid.Column="5" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis"/>
+            <TextBlock Grid.Column="5" VerticalAlignment="Center" Text="{Binding Status}" TextWrapping="Wrap"
+                       AutomationProperties.AutomationId="CatalogImport.Status" AutomationProperties.LiveSetting="Polite"/>
         </Grid>
 
         <!-- Summary -->
@@ -166,11 +174,23 @@
                 </TextBlock>
                 <DataGrid Grid.Row="1"
                           ItemsSource="{Binding DiffItems}"
-                          AutoGenerateColumns="True"
+                          AutoGenerateColumns="False"
                           IsReadOnly="True"
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
-                          GridLinesVisibility="All">
+                          GridLinesVisibility="All"
+                          EnableRowVirtualization="True"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          AutomationProperties.AutomationId="CatalogImport.PreviewGrid">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode}" Width="130"/>
+                        <DataGridTextColumn Header="{loc:Loc import.previewIncomingName}" Binding="{Binding IncomingName}" Width="2*"/>
+                        <DataGridTextColumn Header="{loc:Loc import.previewIncomingPrice}" Binding="{Binding IncomingPrice}" Width="110"/>
+                        <DataGridTextColumn Header="{loc:Loc import.previewExistingName}" Binding="{Binding ExistingName}" Width="2*"/>
+                        <DataGridTextColumn Header="{loc:Loc import.previewExistingPrice}" Binding="{Binding ExistingPrice}" Width="110"/>
+                        <DataGridTextColumn Header="{loc:Loc import.previewChange}" Binding="{Binding Kind}" Width="120"/>
+                    </DataGrid.Columns>
                     <DataGrid.RowStyle>
                         <StaticResource ResourceKey="SelectableDataGridRowStyle"/>
                     </DataGrid.RowStyle>

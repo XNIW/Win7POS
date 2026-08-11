@@ -403,14 +403,14 @@ public sealed class ReceiptContentPolicyTests
                     SalesReceiptContentPolicy.MaxSaleLineBarcodeCharacters + 1),
                 Name = "Unsafe barcode",
                 UnitPrice = 100
-            }));
+            }, ProductWriteOrigin.TestFixture));
         await Assert.ThrowsExactlyAsync<ReceiptContentValidationException>(() =>
             repository.UpsertAsync(new Product
             {
                 Barcode = "UNSAFE-NAME",
                 Name = "bad\uD800",
                 UnitPrice = 100
-            }));
+            }, ProductWriteOrigin.TestFixture));
 
         using var verify = db.Factory.Open();
         Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM products;"));

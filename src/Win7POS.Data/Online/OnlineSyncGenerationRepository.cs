@@ -545,6 +545,11 @@ WHERE singleton_id = 1
             long nowMs,
             string code)
         {
+            var articleUpdatedAt = DateTimeOffset
+                .FromUnixTimeMilliseconds(nowMs)
+                .UtcDateTime.ToString(
+                    "yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'",
+                    System.Globalization.CultureInfo.InvariantCulture);
             await connection.ExecuteAsync(@"
 UPDATE sales_sync_outbox
 SET status = 'retry',
@@ -577,8 +582,38 @@ SET status = 'retry',
     claim_generation_id = NULL,
     claim_token = NULL,
     updated_at = @nowMs
-WHERE status = 'in_progress';",
-                new { nowMs, code },
+WHERE status = 'in_progress';
+
+UPDATE article_mutation_outbox
+SET state = 'retry_wait',
+    next_attempt_at = @nowMs,
+    last_typed_code = @code,
+    claim_generation_id = NULL,
+    claim_token = NULL,
+    updated_at = @articleUpdatedAt
+WHERE state = 'in_progress';
+
+UPDATE article_mutation_attempts
+SET completed_at = @articleUpdatedAt,
+    outcome = @code
+WHERE completed_at IS NULL
+  AND mutation_id IN (
+    SELECT mutation_id
+    FROM article_mutation_outbox
+    WHERE state = 'retry_wait'
+      AND last_typed_code = @code
+  );
+
+UPDATE customer_order_inbox
+SET state = 'retry_wait',
+    ack_next_retry_at = @nowMs,
+    ack_last_error_code = @code,
+    ack_claim_generation_id = NULL,
+    ack_claim_generation_fingerprint = NULL,
+    ack_claim_token = NULL,
+    updated_at = @nowMs
+WHERE state = 'ack_in_progress';",
+                new { nowMs, code, articleUpdatedAt },
                 transaction).ConfigureAwait(false);
         }
 
@@ -589,6 +624,11 @@ WHERE status = 'in_progress';",
             long nowMs,
             string code)
         {
+            var articleUpdatedAt = DateTimeOffset
+                .FromUnixTimeMilliseconds(nowMs)
+                .UtcDateTime.ToString(
+                    "yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'",
+                    System.Globalization.CultureInfo.InvariantCulture);
             await connection.ExecuteAsync(@"
 UPDATE sales_sync_outbox
 SET status = 'retry',
@@ -623,8 +663,40 @@ SET status = 'retry',
     claim_token = NULL,
     updated_at = @nowMs
 WHERE status = 'in_progress'
-  AND claim_generation_id = @generationId;",
-                new { generationId, nowMs, code },
+  AND claim_generation_id = @generationId;
+
+UPDATE article_mutation_outbox
+SET state = 'retry_wait',
+    next_attempt_at = @nowMs,
+    last_typed_code = @code,
+    claim_generation_id = NULL,
+    claim_token = NULL,
+    updated_at = @articleUpdatedAt
+WHERE state = 'in_progress'
+  AND claim_generation_id = @generationId;
+
+UPDATE article_mutation_attempts
+SET completed_at = @articleUpdatedAt,
+    outcome = @code
+WHERE completed_at IS NULL
+  AND mutation_id IN (
+    SELECT mutation_id
+    FROM article_mutation_outbox
+    WHERE state = 'retry_wait'
+      AND last_typed_code = @code
+  );
+
+UPDATE customer_order_inbox
+SET state = 'retry_wait',
+    ack_next_retry_at = @nowMs,
+    ack_last_error_code = @code,
+    ack_claim_generation_id = NULL,
+    ack_claim_generation_fingerprint = NULL,
+    ack_claim_token = NULL,
+    updated_at = @nowMs
+WHERE state = 'ack_in_progress'
+  AND ack_claim_generation_id = @generationId;",
+                new { generationId, nowMs, code, articleUpdatedAt },
                 transaction).ConfigureAwait(false);
         }
 

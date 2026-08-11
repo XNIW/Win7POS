@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Globalization;
+using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Win7POS.Core.Online;
@@ -11,11 +14,19 @@ namespace Win7POS.Data.Repositories
     {
         public const string PosLoginLastShopCodeKey = "pos.login.last_shop_code";
 
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> MonotonicReservationGates =
+            new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
+
         private readonly SqliteConnectionFactory _factory;
+        private readonly SemaphoreSlim _monotonicReservationGate;
 
         public SettingsRepository(SqliteConnectionFactory factory)
         {
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+            var normalizedDbPath = Path.GetFullPath(_factory.DbPath);
+            _monotonicReservationGate = MonotonicReservationGates.GetOrAdd(
+                normalizedDbPath,
+                _ => new SemaphoreSlim(1, 1));
         }
 
         public async Task<string> GetStringAsync(string key)
@@ -137,54 +148,62 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
             if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("key is empty");
             if (requested <= 0) throw new ArgumentOutOfRangeException(nameof(requested));
 
-            using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction(deferred: false);
+            await _monotonicReservationGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var raw = await conn.QuerySingleOrDefaultAsync<string>(
-                    "SELECT value FROM app_settings WHERE key = @key",
-                    new { key },
-                    tx).ConfigureAwait(false);
+                using var conn = _factory.Open();
+                using var tx = conn.BeginTransaction(deferred: false);
+                try
+                {
+                    var raw = await conn.QuerySingleOrDefaultAsync<string>(
+                        "SELECT value FROM app_settings WHERE key = @key",
+                        new { key },
+                        tx).ConfigureAwait(false);
 
-                var current = 0;
-                if (raw != null &&
-                    (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out current) ||
-                     current < 0))
-                {
-                    throw new InvalidOperationException(
-                        "The monotonic integer setting is invalid and cannot be reserved safely.");
-                }
-
-                int reserved;
-                if (requested > current)
-                {
-                    reserved = requested;
-                }
-                else
-                {
-                    if (current == int.MaxValue)
+                    var current = 0;
+                    if (raw != null &&
+                        (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out current) ||
+                         current < 0))
+                    {
                         throw new InvalidOperationException(
-                            "The monotonic integer setting is exhausted and cannot be reserved safely.");
-                    reserved = checked(current + 1);
-                }
+                            "The monotonic integer setting is invalid and cannot be reserved safely.");
+                    }
 
-                await conn.ExecuteAsync(@"
+                    int reserved;
+                    if (requested > current)
+                    {
+                        reserved = requested;
+                    }
+                    else
+                    {
+                        if (current == int.MaxValue)
+                            throw new InvalidOperationException(
+                                "The monotonic integer setting is exhausted and cannot be reserved safely.");
+                        reserved = checked(current + 1);
+                    }
+
+                    await conn.ExecuteAsync(@"
 INSERT INTO app_settings(key, value) VALUES(@key, @value)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-                    new
-                    {
-                        key,
-                        value = reserved.ToString(CultureInfo.InvariantCulture)
-                    },
-                    tx).ConfigureAwait(false);
-                tx.Commit();
-                return reserved;
+                        new
+                        {
+                            key,
+                            value = reserved.ToString(CultureInfo.InvariantCulture)
+                        },
+                        tx).ConfigureAwait(false);
+                    tx.Commit();
+                    return reserved;
+                }
+                catch
+                {
+                    try { tx.Rollback(); }
+                    catch { }
+                    throw;
+                }
             }
-            catch
+            finally
             {
-                try { tx.Rollback(); }
-                catch { }
-                throw;
+                _monotonicReservationGate.Release();
             }
         }
 

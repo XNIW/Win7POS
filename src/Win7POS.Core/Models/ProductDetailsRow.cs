@@ -10,6 +10,7 @@ namespace Win7POS.Core.Models
         public string Name { get; set; } = string.Empty;
         public long UnitPrice { get; set; }
         public bool IsActive { get; set; } = true;
+        public bool HasMeta { get; set; } = true;
 
         // from product_meta (nullable when no meta)
         public string ArticleCode { get; set; } = string.Empty;
@@ -20,5 +21,8 @@ namespace Win7POS.Core.Models
         public string SupplierName { get; set; } = string.Empty;
         public int? CategoryId { get; set; }
         public string CategoryName { get; set; } = string.Empty;
+        public string RemoteProductId { get; set; }
+        public string PrimaryImageVersionId { get; set; }
+        public string PrimaryImageUpdatedAt { get; set; }
     }
 }

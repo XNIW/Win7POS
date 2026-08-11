@@ -222,7 +222,16 @@ if ($completeSignInMethod -notmatch "EnsureCatalogSaleSafeForAccessAsync[\s\S]*D
 if ($catalogPull -notmatch "pos\.catalog\.sale_safe_at" -or $catalogPull -notmatch "pos\.catalog\.initial_completed_at") { Fail "catalog sale-safe completion settings missing" } else { Pass "catalog sale-safe completion settings present" }
 if ($catalogPull -notmatch "authenticationDenied\s*&&\s*clearStoredStateOnDenied[\s\S]{0,160}_store\.Clear\(\)" -or
     $catalogPull -notmatch "result\.Denied\s*\|\|[\s\S]{0,100}SharedAuthStopPolicy\.IsAuthenticationDenied\(resultCode\)") { Fail "catalog trust clear must be guarded by transport or body auth denial" } else { Pass "catalog trust clear guarded by auth denial" }
-if ($dialog -notmatch "new\s+CancellationTokenSource\(TimeSpan\.FromMinutes\(6\)\)") { Fail "online first-login/catalog timeout must allow the large initial catalog" } else { Pass "online first-login/catalog uses the long bootstrap timeout" }
+if ($dialog -notmatch "InitialCatalogTimeoutMinutes\s*=\s*12" -or
+    ([regex]::Matches(
+        $dialog,
+        "TimeSpan\.FromMinutes\(InitialCatalogTimeoutMinutes\)"
+    ).Count -ne 2)) {
+    Fail "online first-login and retry must allow finalization after the large initial catalog"
+}
+else {
+    Pass "online first-login and retry use the evidence-backed catalog timeout"
+}
 if ($userRepo -notmatch "UpsertRemoteStaffMirrorAsync") { Fail "UserRepository remote staff upsert missing" } else { Pass "UserRepository remote staff upsert present" }
 if ($initializer -notmatch "remote_staff_id") { Fail "remote staff id column missing" } else { Pass "remote staff id column present" }
 if ($initializer -notmatch "remote_credential_version") { Fail "remote credential version column missing" } else { Pass "remote credential version column present" }

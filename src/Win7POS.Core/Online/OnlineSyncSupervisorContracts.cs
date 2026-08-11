@@ -9,7 +9,10 @@ namespace Win7POS.Core.Online
         Heartbeat = 0,
         SalesOutbox = 1,
         CatalogImportOutbox = 2,
-        CatalogDelta = 3
+        CatalogDelta = 3,
+        ArticleMutationOutbox = 4,
+        ProductImageOutbox = 5,
+        CustomerOrders = 6
     }
 
     public enum OnlineSyncLaneTrigger
@@ -142,9 +145,10 @@ namespace Win7POS.Core.Online
             bool requestCatalogNow = false,
             int? nextPollAfterSeconds = null,
             bool terminal = false,
-            int catalogPagesProcessed = 0,
-            int catalogRowsApplied = 0,
-            bool catalogSaleSafe = false)
+            long catalogPagesProcessed = 0,
+            long catalogRowsApplied = 0,
+            bool catalogSaleSafe = false,
+            PosRuntimeDiagnostic catalogDiagnostic = null)
         {
             if (nextRetryAt.HasValue && nextRetryAt.Value < 0)
                 throw new ArgumentOutOfRangeException(nameof(nextRetryAt));
@@ -167,13 +171,15 @@ namespace Win7POS.Core.Online
             CatalogPagesProcessed = catalogPagesProcessed;
             CatalogRowsApplied = catalogRowsApplied;
             CatalogSaleSafe = catalogSaleSafe;
+            CatalogDiagnostic = catalogDiagnostic;
         }
 
         public bool AuthenticationDenied { get; }
         public bool CatalogHasMore { get; }
-        public int CatalogPagesProcessed { get; }
-        public int CatalogRowsApplied { get; }
+        public long CatalogPagesProcessed { get; }
+        public long CatalogRowsApplied { get; }
         public bool CatalogSaleSafe { get; }
+        public PosRuntimeDiagnostic CatalogDiagnostic { get; }
         public string Code { get; }
         public bool HasImmediateMore { get; }
         public long? NextRetryAt { get; }
@@ -183,12 +189,15 @@ namespace Win7POS.Core.Online
         public bool Success { get; }
         public bool Terminal { get; }
 
-        public static OnlineSyncLaneOutcome AuthDenied(string code = "auth_denied")
+        public static OnlineSyncLaneOutcome AuthDenied(
+            string code = "auth_denied",
+            PosRuntimeDiagnostic catalogDiagnostic = null)
         {
             return new OnlineSyncLaneOutcome(
                 success: false,
                 code: code,
-                authenticationDenied: true);
+                authenticationDenied: true,
+                catalogDiagnostic: catalogDiagnostic);
         }
 
         private static string NormalizeCode(string value)
@@ -299,7 +308,10 @@ namespace Win7POS.Core.Online
 
             var jitter = Math.Max(0d, Math.Min(1d, jitterSample));
             if ((lane == OnlineSyncLane.SalesOutbox ||
-                 lane == OnlineSyncLane.CatalogImportOutbox) &&
+                 lane == OnlineSyncLane.CatalogImportOutbox ||
+                 lane == OnlineSyncLane.ArticleMutationOutbox ||
+                 lane == OnlineSyncLane.ProductImageOutbox ||
+                 lane == OnlineSyncLane.CustomerOrders) &&
                 outcome.HasImmediateMore)
             {
                 return new OnlineSyncLaneScheduleDecision(
@@ -339,6 +351,17 @@ namespace Win7POS.Core.Online
                     return new OnlineSyncLaneScheduleDecision(
                         true,
                         TimeSpan.FromSeconds(seconds),
+                        0);
+                }
+
+                if (lane == OnlineSyncLane.CustomerOrders)
+                {
+                    // Orders can arrive after an empty claim and this pull-only
+                    // lane has no local commit signal. A slow jittered poll keeps
+                    // delivery live without turning the lane into a tight loop.
+                    return new OnlineSyncLaneScheduleDecision(
+                        true,
+                        TimeSpan.FromSeconds(25d + (10d * jitter)),
                         0);
                 }
 

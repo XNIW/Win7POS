@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
@@ -10,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shell;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Chrome
 {
@@ -199,8 +201,9 @@ namespace Win7POS.Wpf.Chrome
                     Content = "✕",
                     Width = 36,
                     Height = 30,
-                    ToolTip = "Chiudi"
+                    ToolTip = PosLocalization.T("common.close")
                 };
+                AutomationProperties.SetName(closeButton, PosLocalization.T("common.close"));
                 var closeStyle = (Style)Application.Current.FindResource("DialogCaptionCloseButtonStyle");
                 if (closeStyle != null)
                     closeButton.Style = closeStyle;

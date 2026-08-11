@@ -17,9 +17,18 @@ namespace Win7POS.Data.Online
             SqliteConnection conn,
             SqliteTransaction tx)
         {
+            return await ResolveRequiredAsync(conn, tx, null).ConfigureAwait(false);
+        }
+
+        internal static async Task<OutboxShopBinding> ResolveRequiredAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            Action commandStarting)
+        {
             if (conn == null) throw new ArgumentNullException(nameof(conn));
             if (tx == null) throw new ArgumentNullException(nameof(tx));
 
+            commandStarting?.Invoke();
             var rows = await conn.QueryAsync<OutboxShopSetting>(@"
 SELECT key AS Key, TRIM(value) AS Value
 FROM app_settings

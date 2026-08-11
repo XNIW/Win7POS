@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
@@ -48,7 +49,8 @@ namespace Win7POS.Wpf.Pos.Online
             PosFirstLoginRequest request,
             string localCredential,
             CancellationToken cancellationToken,
-            IProgress<PosCatalogPullProgress> progress = null)
+            IProgress<PosCatalogPullProgress> progress = null,
+            Action requestReachedServerObserved = null)
         {
             if (options == null)
             {
@@ -66,8 +68,19 @@ namespace Win7POS.Wpf.Pos.Online
                     false);
             }
 
+            var currentStage = "request_build";
+            var firstLoginSucceeded = false;
+            var trustedSessionPersisted = false;
+            var catalogStarted = false;
+            string clientRequestId = null;
+            string serverRequestId = null;
+            string cfRay = null;
+            int? httpStatus = null;
+            var requestReachedServer = false;
+
             try
             {
+                currentStage = "trusted_session_persistence";
                 var authenticatedTransition = await _syncHost
                     .BeginAuthenticatedTrustTransitionAsync(cancellationToken)
                     .ConfigureAwait(false);
@@ -82,7 +95,28 @@ namespace Win7POS.Wpf.Pos.Online
                 PosOnlineResult<PosFirstLoginResponse> result;
                 using (var client = new PosAdminWebClient(options))
                 {
+                    currentStage = "server_response";
                     result = await client.FirstLoginAsync(request, cancellationToken).ConfigureAwait(false);
+                    requestReachedServer =
+                        result != null && result.RequestReachedServer;
+                    if (requestReachedServer)
+                    {
+                        requestReachedServerObserved?.Invoke();
+                    }
+                }
+
+                clientRequestId = result?.ClientRequestId;
+                serverRequestId = result?.ServerRequestId;
+                cfRay = result?.CfRay;
+                httpStatus = result?.HttpStatus;
+                if (result == null)
+                {
+                    return PosOnlineBootstrapResult.Failure(
+                        "invalid_response",
+                        PosLocalization.T("onlineFirstLogin.invalidResponse"),
+                        false,
+                        failureStage: "invalid_response",
+                        rootCode: "invalid_response");
                 }
 
                 if (!result.Success || result.Value == null)
@@ -109,19 +143,44 @@ namespace Win7POS.Wpf.Pos.Online
                     }
                     _logger.LogWarning(
                         "POS online bootstrap failed: category=online.bootstrap code=" + SafeAuditValue(result.Code) +
-                        ", clientRequestId=" + SafeAuditValue(result.ClientRequestId) +
-                        ", serverRequestId=" + SafeAuditValue(result.ServerRequestId) +
-                        ", cfRay=" + SafeAuditValue(result.CfRay));
-                    return PosOnlineBootstrapResult.Failure(
-                        result.Code,
-                        LocalizeOnlineResultMessage(result),
-                        result.Denied,
-                        result.ClientRequestId,
-                        result.ServerRequestId,
-                        result.CfRay);
+                        ", clientRequestId=" + PosTechnicalIdentifier.Redact(result.ClientRequestId) +
+                        ", serverRequestId=" + PosTechnicalIdentifier.Redact(result.ServerRequestId) +
+                        ", cfRay=" + PosTechnicalIdentifier.Redact(result.CfRay));
+                    return CreateFirstLoginFailure(result);
                 }
 
                 var response = result.Value;
+                currentStage = "first_login_contract";
+                PosAuthoritativeReceiptClock authoritativeReceiptClock;
+                try
+                {
+                    authoritativeReceiptClock =
+                        _trustedDeviceStore.CaptureOnlineReceiptClock(
+                            !string.IsNullOrWhiteSpace(
+                                response.EffectiveOfflineAuthorizationExpiresAt));
+                }
+                catch (InvalidDataException ex)
+                {
+                    _logger.LogWarning(
+                        "POS online bootstrap could not capture the authoritative receipt clock.",
+                        ex);
+                    return PosOnlineBootstrapResult.Failure(
+                        "trusted_time_continuity_lost",
+                        PosLocalization.T("onlineFirstLogin.localRequestError"),
+                        false,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay,
+                        failureStage: "trusted_session_persistence",
+                        rootCode: "trusted_time_continuity_lost",
+                        httpStatus: result.HttpStatus,
+                        deviceApprovalState: PosBootstrapDiagnosticsPolicy.GetDeviceApprovalState(
+                            null,
+                            response.Device?.Status),
+                        requestReachedServer: result.RequestReachedServer,
+                        firstLoginSucceeded: true,
+                        exceptionType: SafeExceptionType(ex));
+                }
                 try
                 {
                     ReceiptShopMetadataPolicy.EnsureValidRemoteShop(response?.Shop);
@@ -137,7 +196,12 @@ namespace Win7POS.Wpf.Pos.Online
                         false,
                         result.ClientRequestId,
                         result.ServerRequestId,
-                        result.CfRay);
+                        result.CfRay,
+                        failureStage: "first_login_contract",
+                        rootCode: "shop_metadata_invalid",
+                        httpStatus: result.HttpStatus,
+                        requestReachedServer: result.RequestReachedServer,
+                        exceptionType: SafeExceptionType(ex));
                 }
                 if (!ValidateFirstLoginResponse(response))
                 {
@@ -148,8 +212,14 @@ namespace Win7POS.Wpf.Pos.Online
                         false,
                         result.ClientRequestId,
                         result.ServerRequestId,
-                        result.CfRay);
+                        result.CfRay,
+                        failureStage: "invalid_response",
+                        rootCode: "invalid_response",
+                        httpStatus: result.HttpStatus,
+                        requestReachedServer: result.RequestReachedServer);
                 }
+
+                firstLoginSucceeded = true;
 
                 var policyCompatibility = PosOnlineCompatibilityValidator.ValidatePolicy(response.Policy);
                 if (!string.IsNullOrWhiteSpace(policyCompatibility))
@@ -163,10 +233,15 @@ namespace Win7POS.Wpf.Pos.Online
                         false,
                         result.ClientRequestId,
                         result.ServerRequestId,
-                        result.CfRay);
+                        result.CfRay,
+                        failureStage: "first_login_contract",
+                        rootCode: policyCompatibility,
+                        httpStatus: result.HttpStatus,
+                        requestReachedServer: result.RequestReachedServer);
                 }
 
                 PosShopTransitionDecision shopTransition;
+                currentStage = "shop_transition";
                 try
                 {
                     PosTrustedDeviceSession trustedSession = null;
@@ -200,7 +275,16 @@ namespace Win7POS.Wpf.Pos.Online
                         false,
                         result.ClientRequestId,
                         result.ServerRequestId,
-                        result.CfRay);
+                        result.CfRay,
+                        failureStage: "shop_transition",
+                        rootCode: "local_persistence_failed",
+                        httpStatus: result.HttpStatus,
+                        deviceApprovalState: PosBootstrapDiagnosticsPolicy.GetDeviceApprovalState(
+                            null,
+                            response.Device?.Status),
+                        requestReachedServer: result.RequestReachedServer,
+                        firstLoginSucceeded: true,
+                        exceptionType: SafeExceptionType(ex));
                 }
 
                 if (!shopTransition.Allowed)
@@ -215,16 +299,38 @@ namespace Win7POS.Wpf.Pos.Online
                         false,
                         result.ClientRequestId,
                         result.ServerRequestId,
-                        result.CfRay);
+                        result.CfRay,
+                        failureStage: "shop_transition",
+                        rootCode: shopTransition.Code,
+                        httpStatus: result.HttpStatus,
+                        deviceApprovalState: PosBootstrapDiagnosticsPolicy.GetDeviceApprovalState(
+                            null,
+                            response.Device?.Status),
+                        requestReachedServer: result.RequestReachedServer,
+                        firstLoginSucceeded: true);
                 }
 
                 progress?.Report(PosCatalogPullProgress.ForPhase("access_verified"));
+                currentStage = "trusted_session_persistence";
                 var activatedGenerationId = OnlineSyncGeneration.CreateGenerationId();
+                if (authenticatedTransition.ExpectedCurrentState.Exists &&
+                    authenticatedTransition.ExpectedCurrentState.Active &&
+                    _trustedDeviceStore.TryGetReusableGenerationId(
+                        response,
+                        authenticatedTransition.ExpectedCurrentState.Fingerprint,
+                        out var reusableGenerationId))
+                {
+                    // An exact response retry (for example after a lost local
+                    // acknowledgement) must retain the original generation so
+                    // the process monotonic high-water cannot be reset.
+                    activatedGenerationId = reusableGenerationId;
+                }
                 try
                 {
                     var generation = await _syncHost.ActivateAuthenticatedTrustAsync(
                             response,
                             activatedGenerationId,
+                            authoritativeReceiptClock,
                             authenticatedTransition,
                             async () =>
                             {
@@ -273,7 +379,15 @@ namespace Win7POS.Wpf.Pos.Online
                             false,
                             result.ClientRequestId,
                             result.ServerRequestId,
-                            result.CfRay);
+                            result.CfRay,
+                            failureStage: "trusted_session_persistence",
+                            rootCode: "authentication_superseded",
+                            httpStatus: result.HttpStatus,
+                            deviceApprovalState: PosBootstrapDiagnosticsPolicy.GetDeviceApprovalState(
+                                null,
+                                response.Device?.Status),
+                            requestReachedServer: result.RequestReachedServer,
+                            firstLoginSucceeded: true);
                     }
                     if (!string.Equals(
                         generation.GenerationId,
@@ -283,6 +397,7 @@ namespace Win7POS.Wpf.Pos.Online
                         throw new InvalidOperationException(
                             "The authenticated sync generation identity changed.");
                     }
+                    trustedSessionPersisted = true;
                 }
                 catch (Exception ex)
                 {
@@ -297,13 +412,22 @@ namespace Win7POS.Wpf.Pos.Online
                         false,
                         result.ClientRequestId,
                         result.ServerRequestId,
-                        result.CfRay);
+                        result.CfRay,
+                        failureStage: "trusted_session_persistence",
+                        rootCode: "local_persistence_failed",
+                        httpStatus: result.HttpStatus,
+                        deviceApprovalState: PosBootstrapDiagnosticsPolicy.GetDeviceApprovalState(
+                            null,
+                            response.Device?.Status),
+                        requestReachedServer: result.RequestReachedServer,
+                        firstLoginSucceeded: true,
+                        exceptionType: SafeExceptionType(ex));
                 }
 
                 _logger.LogInfo(
                     "POS online bootstrap success: category=online.bootstrap clientRequestId=" +
-                    SafeAuditValue(result.ClientRequestId) +
-                    ", serverRequestId=" + SafeAuditValue(result.ServerRequestId) +
+                    PosTechnicalIdentifier.Redact(result.ClientRequestId) +
+                    ", serverRequestId=" + PosTechnicalIdentifier.Redact(result.ServerRequestId) +
                     ", shopCodePresent=" + BoolText(!string.IsNullOrWhiteSpace(response.Shop.ShopCode)) +
                     ", staffCodePresent=" + BoolText(!string.IsNullOrWhiteSpace(response.Staff.StaffCode)) +
                     ", role_key=" + SafeAuditValue(response.Staff.RoleKey));
@@ -319,6 +443,7 @@ namespace Win7POS.Wpf.Pos.Online
 
                 try
                 {
+                    currentStage = "session_creation";
                     var salesDrain = await _syncHost
                         .TriggerAsync(
                             OnlineSyncLane.SalesOutbox,
@@ -335,7 +460,42 @@ namespace Win7POS.Wpf.Pos.Online
                             true,
                             result.ClientRequestId,
                             result.ServerRequestId,
-                            result.CfRay);
+                            result.CfRay,
+                            failureStage: "session_creation",
+                            rootCode: "auth_denied",
+                            httpStatus: result.HttpStatus,
+                            deviceApprovalState: "approved",
+                            requestReachedServer: result.RequestReachedServer,
+                            firstLoginSucceeded: true,
+                            trustedSessionPersisted: true,
+                            catalogStarted: false);
+                    }
+
+                    var customerOrderDrain = await _syncHost
+                        .TriggerAsync(
+                            OnlineSyncLane.CustomerOrders,
+                            OnlineSyncLaneTrigger.StartOfDay,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (customerOrderDrain.AuthenticationDenied)
+                    {
+                        _logger.LogWarning(
+                            "Bootstrap stopped after customer-order sync authorization denial: category=online.bootstrap.customer_order code=auth_denied");
+                        return PosOnlineBootstrapResult.Failure(
+                            "auth_denied",
+                            PosLocalization.T("onlineFirstLogin.authorizationFailed"),
+                            true,
+                            result.ClientRequestId,
+                            result.ServerRequestId,
+                            result.CfRay,
+                            failureStage: "session_creation",
+                            rootCode: "auth_denied",
+                            httpStatus: result.HttpStatus,
+                            deviceApprovalState: "approved",
+                            requestReachedServer: result.RequestReachedServer,
+                            firstLoginSucceeded: true,
+                            trustedSessionPersisted: true,
+                            catalogStarted: false);
                     }
                 }
                 catch (OperationCanceledException)
@@ -344,12 +504,15 @@ namespace Win7POS.Wpf.Pos.Online
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning("Bootstrap sales sync skipped.", ex);
+                    _logger.LogWarning("Bootstrap outbox sync skipped.", ex);
                 }
 
                 try
                 {
+                    currentStage = "catalog_start";
                     progress?.Report(PosCatalogPullProgress.ForPhase("catalog"));
+                    catalogStarted = true;
+                    currentStage = "catalog_pull";
                     var catalogLane = await _syncHost
                         .TriggerAsync(
                             OnlineSyncLane.CatalogDelta,
@@ -363,13 +526,15 @@ namespace Win7POS.Wpf.Pos.Online
                         catalogSaleSafe
                         ? PosCatalogPullOutcome.CompletedOk(
                             catalogLane.CatalogPagesProcessed,
-                            productsApplied: catalogLane.CatalogRowsApplied)
+                            productsApplied: catalogLane.CatalogRowsApplied,
+                            diagnostic: catalogLane.CatalogDiagnostic)
                         : PosCatalogPullOutcome.Failure(
                             catalogLane.Code,
                             catalogLane.AuthenticationDenied,
                             catalogLane.CatalogHasMore,
                             catalogLane.CatalogPagesProcessed,
-                            productsApplied: catalogLane.CatalogRowsApplied);
+                            productsApplied: catalogLane.CatalogRowsApplied,
+                            diagnostic: catalogLane.CatalogDiagnostic);
                     if (catalogOutcome.Completed && catalogOutcome.CatalogSaleSafe)
                     {
                         progress?.Report(PosCatalogPullProgress.ForPhase("finalizing"));
@@ -377,7 +542,11 @@ namespace Win7POS.Wpf.Pos.Online
                             catalogOutcome,
                             result.ClientRequestId,
                             result.ServerRequestId,
-                            result.CfRay);
+                            result.CfRay,
+                            result.HttpStatus,
+                            PosBootstrapDiagnosticsPolicy.GetDeviceApprovalState(
+                                null,
+                                response.Device?.Status));
                     }
 
                     if (!catalogOutcome.Completed)
@@ -387,7 +556,10 @@ namespace Win7POS.Wpf.Pos.Online
                             SafeAuditValue(catalogOutcome.StatusCode) +
                             ", pages=" + catalogOutcome.PagesProcessed.ToString() +
                             ", hasMore=" + catalogOutcome.HasMore.ToString() +
-                            ", authDenied=" + catalogOutcome.AuthDenied.ToString());
+                            ", authDenied=" + catalogOutcome.AuthDenied.ToString() +
+                            ", stage=" + SafeAuditValue(catalogOutcome.Diagnostic?.Stage) +
+                            ", httpStatus=" + (catalogOutcome.Diagnostic?.HttpStatus?.ToString() ?? "none") +
+                            ", incidentId=" + SafeAuditValue(catalogOutcome.Diagnostic?.LocalIncidentId));
                     }
 
                     return PosOnlineBootstrapResult.CatalogIncomplete(
@@ -396,11 +568,15 @@ namespace Win7POS.Wpf.Pos.Online
                             ? PosLocalization.T("onlineFirstLogin.catalogAuthDenied")
                             : PosLocalization.T("onlineFirstLogin.catalogIncomplete"),
                         catalogOutcome.AuthDenied,
-                        !catalogOutcome.AuthDenied,
+                        CatalogRetryPolicy.ShouldOfferManualRetry(
+                            catalogOutcome.StatusCode,
+                            catalogOutcome.AuthDenied),
                         catalogOutcome,
                         result.ClientRequestId,
                         result.ServerRequestId,
-                        result.CfRay);
+                        result.CfRay,
+                        result.HttpStatus,
+                        result.RequestReachedServer);
                 }
                 catch (OperationCanceledException)
                 {
@@ -417,7 +593,9 @@ namespace Win7POS.Wpf.Pos.Online
                         null,
                         result.ClientRequestId,
                         result.ServerRequestId,
-                        result.CfRay);
+                        result.CfRay,
+                        result.HttpStatus,
+                        result.RequestReachedServer);
                 }
             }
             catch (OperationCanceledException)
@@ -425,16 +603,90 @@ namespace Win7POS.Wpf.Pos.Online
                 return PosOnlineBootstrapResult.Failure(
                     "timeout",
                     PosLocalization.T("onlineFirstLogin.timeout"),
-                    false);
+                    false,
+                    clientRequestId,
+                    serverRequestId,
+                    cfRay,
+                    failureStage: currentStage == "catalog_pull" ? "timeout" : currentStage,
+                    rootCode: "timeout",
+                    httpStatus: httpStatus,
+                    retryable: true,
+                    exceptionType: "OperationCanceledException",
+                    requestReachedServer: requestReachedServer,
+                    firstLoginSucceeded: firstLoginSucceeded,
+                    trustedSessionPersisted: trustedSessionPersisted,
+                    catalogStarted: catalogStarted);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("POS online bootstrap non completato.", ex);
                 return PosOnlineBootstrapResult.Failure(
-                    "failure",
+                    "unexpected",
                     PosLocalization.T("onlineFirstLogin.connectionFailed"),
-                    false);
+                    false,
+                    clientRequestId,
+                    serverRequestId,
+                    cfRay,
+                    failureStage: currentStage,
+                    rootCode: "unexpected",
+                    httpStatus: httpStatus,
+                    exceptionType: SafeExceptionType(ex),
+                    requestReachedServer: requestReachedServer,
+                    firstLoginSucceeded: firstLoginSucceeded,
+                    trustedSessionPersisted: trustedSessionPersisted,
+                    catalogStarted: catalogStarted);
             }
+        }
+
+        private static PosOnlineBootstrapResult CreateFirstLoginFailure(
+            PosOnlineResult<PosFirstLoginResponse> result)
+        {
+            var rootCode = PosBootstrapDiagnosticsPolicy.GetRootCode(
+                result?.Code,
+                result?.HttpStatus);
+            var authenticationDenied = result != null &&
+                (result.Denied || SharedAuthStopPolicy.IsAuthenticationDenied(result.Code));
+            var stage = PosBootstrapDiagnosticsPolicy.GetFailureStage(
+                rootCode,
+                result?.HttpStatus,
+                result != null && result.RequestReachedServer);
+            var diagnostic = new PosRuntimeDiagnostic(
+                "online.bootstrap",
+                stage,
+                rootCode,
+                result?.HttpStatus,
+                result != null && result.Retryable,
+                authenticationDenied,
+                1,
+                null,
+                0,
+                0,
+                0,
+                false,
+                false,
+                result?.ClientRequestId,
+                result?.ServerRequestId,
+                result?.CfRay,
+                PosRuntimeDiagnostic.CreateLocalIncidentId(),
+                DateTimeOffset.UtcNow,
+                result?.ElapsedMilliseconds ?? 0,
+                result?.ExceptionType,
+                "first_login_failed");
+            return PosOnlineBootstrapResult.Failure(
+                result?.Code,
+                LocalizeOnlineResultMessage(result),
+                authenticationDenied,
+                result?.ClientRequestId,
+                result?.ServerRequestId,
+                result?.CfRay,
+                diagnostic,
+                stage,
+                rootCode,
+                result?.HttpStatus,
+                result != null && result.Retryable,
+                PosBootstrapDiagnosticsPolicy.GetDeviceApprovalState(rootCode, null),
+                result?.ExceptionType,
+                result != null && result.RequestReachedServer);
         }
 
         private static string LocalizeOnlineResultMessage<TResponse>(PosOnlineResult<TResponse> result)
@@ -479,6 +731,31 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             return normalized;
+        }
+
+        private static string SafeExceptionType(Exception exception)
+        {
+            if (exception == null)
+            {
+                return string.Empty;
+            }
+
+            var name = exception.GetType().Name ?? string.Empty;
+            var builder = new System.Text.StringBuilder(Math.Min(name.Length, 120));
+            foreach (var character in name)
+            {
+                if (builder.Length >= 120)
+                {
+                    break;
+                }
+
+                if (char.IsLetterOrDigit(character) || character == '.' || character == '_')
+                {
+                    builder.Append(character);
+                }
+            }
+
+            return builder.ToString();
         }
 
         private static string BoolText(bool value)
@@ -526,7 +803,20 @@ namespace Win7POS.Wpf.Pos.Online
             bool requiresRetry,
             string clientRequestId,
             string serverRequestId,
-            string cfRay)
+            string cfRay,
+            PosRuntimeDiagnostic diagnostic,
+            string failureStage,
+            string rootCode,
+            int? httpStatus,
+            int? firstLoginHttpStatus,
+            bool authenticationDenied,
+            bool retryable,
+            string deviceApprovalState,
+            string exceptionType,
+            bool requestReachedServer,
+            bool firstLoginSucceeded,
+            bool trustedSessionPersisted,
+            bool catalogStarted)
         {
             CanOpenPos = canOpenPos;
             CatalogCompleted = catalogCompleted;
@@ -541,6 +831,27 @@ namespace Win7POS.Wpf.Pos.Online
             RequiresRetry = requiresRetry;
             ServerRequestId = serverRequestId ?? string.Empty;
             Success = success;
+            Diagnostic = diagnostic;
+            FailureStage = string.IsNullOrWhiteSpace(failureStage) ? "completed" : failureStage;
+            RootCode = string.IsNullOrWhiteSpace(rootCode) ? "unknown" : rootCode;
+            HttpStatus = httpStatus.HasValue && httpStatus.Value >= 100 && httpStatus.Value <= 599
+                ? httpStatus
+                : null;
+            FirstLoginHttpStatus = firstLoginHttpStatus.HasValue &&
+                firstLoginHttpStatus.Value >= 100 &&
+                firstLoginHttpStatus.Value <= 599
+                ? firstLoginHttpStatus
+                : null;
+            AuthenticationDenied = authenticationDenied;
+            Retryable = retryable && !authenticationDenied;
+            DeviceApprovalState = string.IsNullOrWhiteSpace(deviceApprovalState)
+                ? "unknown"
+                : deviceApprovalState;
+            ExceptionType = exceptionType ?? string.Empty;
+            RequestReachedServer = requestReachedServer;
+            FirstLoginSucceeded = firstLoginSucceeded;
+            TrustedSessionPersisted = trustedSessionPersisted;
+            CatalogStarted = catalogStarted;
         }
 
         public bool CanOpenPos { get; }
@@ -552,16 +863,31 @@ namespace Win7POS.Wpf.Pos.Online
         public string ClientRequestId { get; }
         public string Code { get; }
         public bool Denied { get; }
+        public PosRuntimeDiagnostic Diagnostic { get; }
         public string Message { get; }
         public bool RequiresRetry { get; }
         public string ServerRequestId { get; }
         public bool Success { get; }
+        public string FailureStage { get; }
+        public string RootCode { get; }
+        public int? HttpStatus { get; }
+        public int? FirstLoginHttpStatus { get; }
+        public bool AuthenticationDenied { get; }
+        public bool Retryable { get; }
+        public string DeviceApprovalState { get; }
+        public string ExceptionType { get; }
+        public bool RequestReachedServer { get; }
+        public bool FirstLoginSucceeded { get; }
+        public bool TrustedSessionPersisted { get; }
+        public bool CatalogStarted { get; }
 
         public static PosOnlineBootstrapResult Ok(
             PosCatalogPullOutcome catalogOutcome,
             string clientRequestId = null,
             string serverRequestId = null,
-            string cfRay = null)
+            string cfRay = null,
+            int? httpStatus = null,
+            string deviceApprovalState = "approved")
         {
             return new PosOnlineBootstrapResult(
                 true,
@@ -576,7 +902,20 @@ namespace Win7POS.Wpf.Pos.Online
                 false,
                 clientRequestId,
                 serverRequestId,
-                cfRay);
+                cfRay,
+                catalogOutcome?.Diagnostic,
+                "completed",
+                "success",
+                httpStatus,
+                httpStatus,
+                false,
+                false,
+                deviceApprovalState,
+                string.Empty,
+                true,
+                true,
+                true,
+                true);
         }
 
         public static PosOnlineBootstrapResult Failure(
@@ -585,24 +924,59 @@ namespace Win7POS.Wpf.Pos.Online
             bool denied,
             string clientRequestId = null,
             string serverRequestId = null,
-            string cfRay = null)
+            string cfRay = null,
+            PosRuntimeDiagnostic diagnostic = null,
+            string failureStage = null,
+            string rootCode = null,
+            int? httpStatus = null,
+            bool retryable = false,
+            string deviceApprovalState = null,
+            string exceptionType = null,
+            bool requestReachedServer = false,
+            bool firstLoginSucceeded = false,
+            bool trustedSessionPersisted = false,
+            bool catalogStarted = false)
         {
+            var resolvedCode = string.IsNullOrWhiteSpace(code) ? "unknown" : code;
+            var resolvedRootCode = PosBootstrapDiagnosticsPolicy.GetRootCode(rootCode ?? resolvedCode, httpStatus);
+            var resolvedAuthenticationDenied = denied;
             return new PosOnlineBootstrapResult(
                 false,
-                string.IsNullOrWhiteSpace(code) ? "failure" : code,
+                resolvedCode,
                 string.IsNullOrWhiteSpace(message)
                     ? PosLocalization.T("onlineFirstLogin.connectionFailed")
                     : message,
                 denied,
                 false,
                 false,
-                string.IsNullOrWhiteSpace(code) ? "failure" : code,
-                string.IsNullOrWhiteSpace(code) ? "failure" : code,
+                resolvedCode,
+                resolvedCode,
                 false,
                 false,
                 clientRequestId,
                 serverRequestId,
-                cfRay);
+                cfRay,
+                diagnostic,
+                failureStage ?? PosBootstrapDiagnosticsPolicy.GetFailureStage(
+                    resolvedRootCode,
+                    httpStatus,
+                    requestReachedServer),
+                resolvedRootCode,
+                httpStatus,
+                httpStatus,
+                resolvedAuthenticationDenied,
+                retryable || PosBootstrapDiagnosticsPolicy.IsRetryable(
+                    resolvedRootCode,
+                    httpStatus,
+                    resolvedAuthenticationDenied),
+                deviceApprovalState ?? PosBootstrapDiagnosticsPolicy.GetDeviceApprovalState(
+                    resolvedRootCode,
+                    null),
+                exceptionType,
+                requestReachedServer,
+                firstLoginSucceeded,
+                trustedSessionPersisted,
+                catalogStarted);
         }
 
         public static PosOnlineBootstrapResult CatalogIncomplete(
@@ -613,11 +987,16 @@ namespace Win7POS.Wpf.Pos.Online
             PosCatalogPullOutcome catalogOutcome,
             string clientRequestId = null,
             string serverRequestId = null,
-            string cfRay = null)
+            string cfRay = null,
+            int? httpStatus = null,
+            bool requestReachedServer = true)
         {
             var status = string.IsNullOrWhiteSpace(catalogOutcome?.StatusCode)
                 ? (string.IsNullOrWhiteSpace(code) ? "catalog_incomplete" : code)
                 : catalogOutcome.StatusCode;
+            var effectiveHttpStatus = catalogOutcome?.Diagnostic?.HttpStatus ?? httpStatus;
+            var effectiveRequestReachedServer = requestReachedServer ||
+                catalogOutcome?.Diagnostic?.HttpStatus.HasValue == true;
 
             return new PosOnlineBootstrapResult(
                 !denied,
@@ -632,9 +1011,22 @@ namespace Win7POS.Wpf.Pos.Online
                 status,
                 false,
                 requiresRetry && !denied,
-                clientRequestId,
-                serverRequestId,
-                cfRay);
+                catalogOutcome?.Diagnostic?.ClientRequestId ?? clientRequestId,
+                catalogOutcome?.Diagnostic?.ServerRequestId ?? serverRequestId,
+                catalogOutcome?.Diagnostic?.CfRay ?? cfRay,
+                catalogOutcome?.Diagnostic,
+                "catalog_pull",
+                PosBootstrapDiagnosticsPolicy.GetRootCode(code ?? status, effectiveHttpStatus),
+                effectiveHttpStatus,
+                httpStatus,
+                denied,
+                requiresRetry,
+                "approved",
+                catalogOutcome?.Diagnostic?.ExceptionType ?? string.Empty,
+                effectiveRequestReachedServer,
+                true,
+                true,
+                true);
         }
     }
 }

@@ -70,6 +70,7 @@ function Test-SolutionProjectInventory {
         "src/Win7POS.Cli/Win7POS.Cli.csproj" = "CLI diagnostics"
         "tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj" = "Automated tests"
         "tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj" = "Performance test"
+        "tests/Win7POS.Wpf.Imaging.Tests/Win7POS.Wpf.Imaging.Tests.csproj" = "Offline WPF imaging tests"
         "tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj" = "QA-only WPF harness"
     }
 
@@ -119,6 +120,7 @@ function Test-ProjectReferenceShape {
         "src/Win7POS.Cli/Win7POS.Cli.csproj" = @("..\Win7POS.Core\Win7POS.Core.csproj", "..\Win7POS.Data\Win7POS.Data.csproj")
         "tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj" = @("..\..\src\Win7POS.Core\Win7POS.Core.csproj", "..\..\src\Win7POS.Data\Win7POS.Data.csproj")
         "tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj" = @("..\..\src\Win7POS.Core\Win7POS.Core.csproj", "..\..\src\Win7POS.Data\Win7POS.Data.csproj")
+        "tests/Win7POS.Wpf.Imaging.Tests/Win7POS.Wpf.Imaging.Tests.csproj" = @("..\..\src\Win7POS.Core\Win7POS.Core.csproj", "..\..\src\Win7POS.Data\Win7POS.Data.csproj", "..\..\src\Win7POS.Wpf\Win7POS.Wpf.csproj")
         "tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj" = @("..\..\src\Win7POS.Core\Win7POS.Core.csproj", "..\..\src\Win7POS.Data\Win7POS.Data.csproj", "..\..\src\Win7POS.Wpf\Win7POS.Wpf.csproj")
     }
 
@@ -188,6 +190,12 @@ function Test-ProjectTargetShape {
     Test-ProjectProperty "Catalog performance targets net10.0 and net48" "tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj" "TargetFrameworks" "net10.0;net48"
     Test-ProjectProperty "Catalog performance net48 target is x86" "tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj" "PlatformTarget" "x86"
     Test-ProjectProperty "Catalog performance net48 prefers 32-bit" "tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj" "Prefer32Bit" "true"
+    Test-ProjectProperty "WPF imaging tests target net48" "tests/Win7POS.Wpf.Imaging.Tests/Win7POS.Wpf.Imaging.Tests.csproj" "TargetFramework" "net48"
+    Test-ProjectProperty "WPF imaging tests enable WPF" "tests/Win7POS.Wpf.Imaging.Tests/Win7POS.Wpf.Imaging.Tests.csproj" "UseWPF" "true"
+    Test-ProjectProperty "WPF imaging tests declare x86 platform" "tests/Win7POS.Wpf.Imaging.Tests/Win7POS.Wpf.Imaging.Tests.csproj" "Platforms" "x86"
+    Test-ProjectProperty "WPF imaging tests target x86" "tests/Win7POS.Wpf.Imaging.Tests/Win7POS.Wpf.Imaging.Tests.csproj" "PlatformTarget" "x86"
+    Test-ProjectProperty "WPF imaging tests prefer 32-bit" "tests/Win7POS.Wpf.Imaging.Tests/Win7POS.Wpf.Imaging.Tests.csproj" "Prefer32Bit" "true"
+    Test-ProjectProperty "WPF imaging tests use C# 8" "tests/Win7POS.Wpf.Imaging.Tests/Win7POS.Wpf.Imaging.Tests.csproj" "LangVersion" "8.0"
     Test-ProjectProperty "WPF targets net48" "src/Win7POS.Wpf/Win7POS.Wpf.csproj" "TargetFramework" "net48"
     Test-ProjectProperty "WPF UseWPF enabled" "src/Win7POS.Wpf/Win7POS.Wpf.csproj" "UseWPF" "true"
     Test-ProjectProperty "WPF declares x86 platform" "src/Win7POS.Wpf/Win7POS.Wpf.csproj" "Platforms" "x86"
@@ -354,7 +362,7 @@ Test-NoPattern `
 Test-NoPattern `
     "Data has no WPF/UI references" `
     "src/Win7POS.Data" `
-    "\bSystem\.Windows\b|\bWindows\.Forms\b|\bMicrosoft\.Win32\b|\bPrintDialog\b|\bPrintQueue\b|\bLocalPrintServer\b|\bPresentationFramework\b"
+    "\bSystem\.Windows\b|\bWindows\.Forms\b|\bMicrosoft\.Win32\b(?!\.SafeHandles)|\bPrintDialog\b|\bPrintQueue\b|\bLocalPrintServer\b|\bPresentationFramework\b"
 
 Test-NoPattern `
     "WPF has no direct SQLite/Dapper usage" `

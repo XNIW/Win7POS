@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "pos-product-image-v1",
+  "operation": "remove",
+  "operationId": "task149-fixture-remove-001",
+  "idempotencyKey": "task149-idem-remove-001",
+  "payloadHash": "sha256:959e41fe62cfabbe86986ecb53c9566a0b4d9cd7e238eca39fa973a8c66f5c50",
+  "appVersion": "win7pos-phase-b-fixture",
+  "shopId": "10000000-0000-4000-8000-000000000149",
+  "shopDeviceId": "50000000-0000-4000-8000-000000000149",
+  "staffId": "60000000-0000-4000-8000-000000000149",
+  "staffCredentialVersion": 7,
+  "posSessionId": "70000000-0000-4000-8000-000000000149",
+  "deviceToken": "fixture-device-token-not-a-secret",
+  "sessionToken": "fixture-session-token-not-a-secret",
+  "productId": "20000000-0000-4000-8000-000000000149",
+  "expectedCurrentVersionId": "40000000-0000-4000-8000-000000000149"
+}

@@ -1,12 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
@@ -18,6 +23,8 @@ namespace Win7POS.Data.Repositories
     /// </summary>
     public sealed class RemoteCatalogBatchRepository
     {
+        private const int AuthoritativeStageRowsPerChunk = 200;
+        private const int RelinkStageRowsPerCommand = 1000;
         private readonly SqliteConnectionFactory _factory;
 
         public RemoteCatalogBatchRepository(SqliteConnectionFactory factory)
@@ -44,28 +51,101 @@ namespace Win7POS.Data.Repositories
             }
         }
 
+        public async Task<CatalogAuthoritativeStageEvidence> StageAuthoritativePageAsync(
+            RemoteCatalogBatch batch,
+            CancellationToken cancellationToken = default,
+            RemoteCatalogCommitFence commitFence = null,
+            bool loadCumulativeEvidence = true)
+        {
+            if (batch == null) throw new ArgumentNullException(nameof(batch));
+            ValidateBatchContent(batch);
+            ValidateAuthoritativeStage(batch, commitFence, required: true);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var conn = _factory.Open();
+                using var tx = conn.BeginTransaction(deferred: false);
+                try
+                {
+                    await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
+                    await ReplaceAuthoritativeStagePageAsync(
+                        conn,
+                        tx,
+                        batch,
+                        commitFence).ConfigureAwait(false);
+                    var evidence = loadCumulativeEvidence
+                        ? await LoadAuthoritativeStageEvidenceAsync(
+                            conn,
+                            tx,
+                            batch.AuthoritativeStagePage,
+                            commitFence).ConfigureAwait(false)
+                        : null;
+                    tx.Commit();
+                    return evidence;
+                }
+                catch
+                {
+                    try { tx.Rollback(); } catch { }
+                    throw;
+                }
+            }
+            finally
+            {
+                CatalogMutationGate.Instance.Release();
+            }
+        }
+
         internal async Task<RemoteCatalogBatchApplyResult> ApplyWithinRunAsync(
             RemoteCatalogApplyRunContext runContext,
             RemoteCatalogBatch batch,
             CancellationToken cancellationToken,
-            RemoteCatalogCommitFence commitFence)
+            RemoteCatalogCommitFence commitFence,
+            SqliteTransaction runTransaction = null)
         {
             if (runContext == null) throw new ArgumentNullException(nameof(runContext));
             if (batch == null) throw new ArgumentNullException(nameof(batch));
             ValidateBatchContent(batch);
+            ValidateAuthoritativeStage(batch, commitFence, required: false);
 
+            var ownsTransaction = runTransaction == null;
             cancellationToken.ThrowIfCancellationRequested();
-            await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (ownsTransaction)
+            {
+                await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var conn = runContext.Connection;
-                using var tx = conn.BeginTransaction(deferred: false);
-                runContext.BindTransaction(tx);
+                var tx = runTransaction ?? conn.BeginTransaction(deferred: false);
+                if (ownsTransaction)
+                {
+                    runContext.BindTransaction(tx);
+                }
                 try
                 {
                     await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
+                    if (batch.ReuseValidatedAuthoritativeStagePage)
+                    {
+                        await RequireValidatedAuthoritativeStagePageAsync(
+                            conn,
+                            tx,
+                            batch.AuthoritativeStagePage,
+                            commitFence).ConfigureAwait(false);
+                    }
+                    else if (batch.AuthoritativeStagePage != null)
+                    {
+                        await ReplaceAuthoritativeStagePageAsync(
+                            conn,
+                            tx,
+                            batch,
+                            commitFence).ConfigureAwait(false);
+                    }
                     var result = new RemoteCatalogBatchApplyResult();
+                    var pageRemotePriceApply = new RemotePriceApplyDiagnostics();
                     var appliedCategoryTombstoneIds = new HashSet<string>(StringComparer.Ordinal);
                     var appliedSupplierTombstoneIds = new HashSet<string>(StringComparer.Ordinal);
                     var pendingPriceCollisionIds = new HashSet<long>();
@@ -93,7 +173,7 @@ namespace Win7POS.Data.Repositories
                             string.IsNullOrWhiteSpace(category.RemoteCategoryId) ||
                             string.IsNullOrWhiteSpace(category.Name))
                         {
-                            result.CategoriesSkipped += 1;
+                            result.CategoriesSkipped = checked(result.CategoriesSkipped + 1L);
                             continue;
                         }
 
@@ -104,7 +184,11 @@ namespace Win7POS.Data.Repositories
                             category.Name,
                             category.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.CategoriesApplied += 1;
+                            result.CategoriesApplied = checked(result.CategoriesApplied + 1L);
+                        }
+                        else if (batch.AuthoritativeFullRefresh)
+                        {
+                            result.CategoriesSkipped = checked(result.CategoriesSkipped + 1L);
                         }
                     }
 
@@ -114,7 +198,7 @@ namespace Win7POS.Data.Repositories
                             string.IsNullOrWhiteSpace(supplier.RemoteSupplierId) ||
                             string.IsNullOrWhiteSpace(supplier.Name))
                         {
-                            result.SuppliersSkipped += 1;
+                            result.SuppliersSkipped = checked(result.SuppliersSkipped + 1L);
                             continue;
                         }
 
@@ -125,7 +209,11 @@ namespace Win7POS.Data.Repositories
                             supplier.Name,
                             supplier.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.SuppliersApplied += 1;
+                            result.SuppliersApplied = checked(result.SuppliersApplied + 1L);
+                        }
+                        else if (batch.AuthoritativeFullRefresh)
+                        {
+                            result.SuppliersSkipped = checked(result.SuppliersSkipped + 1L);
                         }
                     }
 
@@ -168,9 +256,66 @@ namespace Win7POS.Data.Repositories
                             group => group.Key,
                             group => NormalizeBarcode(group.First().Barcode),
                             StringComparer.Ordinal);
+                    var protectedProducts = await runContext
+                        .LoadPageProtectedProductsAsync(tx)
+                        .ConfigureAwait(false);
+                    var protectedProductIdsByRemoteId = new Dictionary<string, long>(
+                        StringComparer.Ordinal);
+                    var protectedProductIdsByBarcode = new Dictionary<string, long>(
+                        StringComparer.Ordinal);
+                    foreach (var protectedProduct in protectedProducts.OrderBy(row => row.ProductId))
+                    {
+                        if (!string.IsNullOrWhiteSpace(protectedProduct.RemoteProductId) &&
+                            !protectedProductIdsByRemoteId.ContainsKey(protectedProduct.RemoteProductId))
+                        {
+                            protectedProductIdsByRemoteId.Add(
+                                protectedProduct.RemoteProductId,
+                                protectedProduct.ProductId);
+                        }
+                        if (!string.IsNullOrWhiteSpace(protectedProduct.Barcode))
+                        {
+                            var protectedBarcodeKey = NormalizeSqliteNoCaseBarcodeKey(
+                                protectedProduct.Barcode);
+                            if (!protectedProductIdsByBarcode.ContainsKey(protectedBarcodeKey))
+                            {
+                                protectedProductIdsByBarcode.Add(
+                                    protectedBarcodeKey,
+                                    protectedProduct.ProductId);
+                            }
+                        }
+                    }
                     var preparedProductCommands = runContext.ProductCommands;
                     var preparedReferenceCommand = runContext.ReferenceCommand;
-                    foreach (var product in batch.Products ?? Array.Empty<RemoteCatalogProductWrite>())
+                    var pageProducts = batch.Products ?? Array.Empty<RemoteCatalogProductWrite>();
+                    var pageRequiresLegacyProductPath = await runContext
+                        .PageRequiresLegacyProductRebindAsync(tx)
+                        .ConfigureAwait(false);
+                    if (!pageRequiresLegacyProductPath)
+                    {
+                        var validIdentities = pageProducts
+                            .Where(product =>
+                                product != null &&
+                                !string.IsNullOrWhiteSpace(product.Barcode) &&
+                                !string.IsNullOrWhiteSpace(product.RemoteProductId))
+                            .Select(product => new
+                            {
+                                Barcode = NormalizeBarcode(product.Barcode),
+                                RemoteProductId = product.RemoteProductId.Trim()
+                            })
+                            .ToArray();
+                        pageRequiresLegacyProductPath =
+                            validIdentities
+                                .GroupBy(identity => identity.Barcode, StringComparer.OrdinalIgnoreCase)
+                                .Any(group => group.Count() > 1) ||
+                            validIdentities
+                                .GroupBy(identity => identity.RemoteProductId, StringComparer.Ordinal)
+                                .Any(group => group.Count() > 1);
+                    }
+
+                    var cleanProducts =
+                        new List<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite>(
+                            pageProducts.Count);
+                    foreach (var product in pageProducts)
                     {
                         var normalizedBarcode = NormalizeBarcode(product?.Barcode);
                         var normalizedRemoteProductId = (product?.RemoteProductId ?? string.Empty).Trim();
@@ -178,8 +323,15 @@ namespace Win7POS.Data.Repositories
                             normalizedBarcode.Length == 0 ||
                             normalizedRemoteProductId.Length == 0)
                         {
-                            result.ProductsSkipped += 1;
+                            result.ProductsSkipped = checked(result.ProductsSkipped + 1L);
                             continue;
+                        }
+                        if (!string.IsNullOrWhiteSpace(product.ImageWarningCode))
+                        {
+                            // Optional image metadata is isolated from the
+                            // sale-critical product row. Preserve the last good
+                            // image projection and continue applying the product.
+                            result.ImageWarnings = checked(result.ImageWarnings + 1L);
                         }
 
                         if (activeRemoteIdsByBarcode.TryGetValue(
@@ -196,8 +348,8 @@ namespace Win7POS.Data.Repositories
                             // Replacing a different live remote identity would collapse two
                             // authoritative products, so fail this row closed and let the pull
                             // service request a full repair before advancing its cursor.
-                            result.ProductsSkipped += 1;
-                            result.ProductIdentityConflicts += 1;
+                            result.ProductsSkipped = checked(result.ProductsSkipped + 1L);
+                            result.ProductIdentityConflicts = checked(result.ProductIdentityConflicts + 1L);
                             continue;
                         }
 
@@ -217,30 +369,144 @@ namespace Win7POS.Data.Repositories
                             supplierId = resolvedSupplierId;
                         }
 
-                        await ProductRepository.UpsertProductAndMetaInTransactionCoreAsync(
-                            conn,
-                            tx,
-                            new Product
-                            {
-                                Barcode = product.Barcode.Trim(),
-                                Name = product.Name,
-                                UnitPrice = product.UnitPrice
-                            },
-                            product.ArticleCode,
-                            product.SecondName,
-                            product.PurchasePrice,
-                            supplierId,
-                            product.SupplierName,
-                            categoryId,
-                            product.CategoryName,
-                            product.StockQuantity,
-                            normalizedRemoteProductId,
-                            preparedProductCommands,
-                            productBatchContext).ConfigureAwait(false);
-                        await preparedReferenceCommand.UpsertAsync(
-                            normalizedRemoteProductId,
-                            product.RemoteCategoryId,
-                            product.RemoteSupplierId).ConfigureAwait(false);
+                        SalesReceiptContentPolicy.EnsureValidProductIdentity(
+                            normalizedBarcode,
+                            product.Name);
+                        if (ProductIdentityPolicy.IsReservedBarcode(normalizedBarcode))
+                        {
+                            throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
+                        }
+
+                        long protectedId;
+                        long? protectedProductId =
+                            protectedProductIdsByRemoteId.TryGetValue(
+                                normalizedRemoteProductId,
+                                out protectedId)
+                                ? protectedId
+                                : protectedProductIdsByBarcode.TryGetValue(
+                                    NormalizeSqliteNoCaseBarcodeKey(normalizedBarcode),
+                                    out protectedId)
+                                    ? protectedId
+                                    : (long?)null;
+                        if (protectedProductId.HasValue)
+                        {
+                            await RemoteCatalogProductWriter.UpsertRemoteShadowAsync(
+                                conn,
+                                tx,
+                                protectedProductId,
+                                normalizedRemoteProductId,
+                                normalizedBarcode,
+                                product.ArticleCode,
+                                product.Name,
+                                product.SecondName,
+                                product.RemoteCategoryId,
+                                product.RemoteSupplierId,
+                                product.UnitPrice,
+                                product.PurchasePrice,
+                                product.StockQuantity,
+                                true,
+                                product.RemoteUpdatedAt).ConfigureAwait(false);
+                            await preparedReferenceCommand.UpsertAsync(
+                                normalizedRemoteProductId,
+                                product.RemoteCategoryId,
+                                product.RemoteSupplierId).ConfigureAwait(false);
+                            await RemoteCatalogProductWriter.ApplyImageProjectionInTransactionAsync(
+                                conn,
+                                tx,
+                                protectedProductId,
+                                normalizedRemoteProductId,
+                                product.ApplyImageProjection,
+                                product.PrimaryImageVersionId,
+                                product.PrimaryImageUpdatedAt,
+                                product.RemoteUpdatedAt,
+                                updateProduct: false).ConfigureAwait(false);
+                            relinkProductRemoteIds.Add(normalizedRemoteProductId);
+                            result.ProductsApplied = checked(result.ProductsApplied + 1L);
+                            continue;
+                        }
+
+                        var hasPendingLocalStock = productBatchContext.HasPendingLocalStock(
+                            normalizedBarcode,
+                            normalizedRemoteProductId);
+                        if (!pageRequiresLegacyProductPath && !hasPendingLocalStock)
+                        {
+                            var supplierRef = await productBatchContext.ResolveSupplierAsync(
+                                conn,
+                                tx,
+                                supplierId,
+                                product.SupplierName).ConfigureAwait(false);
+                            var categoryRef = await productBatchContext.ResolveCategoryAsync(
+                                conn,
+                                tx,
+                                categoryId,
+                                product.CategoryName).ConfigureAwait(false);
+                            cleanProducts.Add(
+                                new RemoteCatalogProductWriter.RemoteCatalogSetProductWrite
+                                {
+                                    ArticleCode = product.ArticleCode ?? string.Empty,
+                                    ApplyImageProjection = product.ApplyImageProjection,
+                                    Barcode = normalizedBarcode,
+                                    CategoryId = categoryRef.Id,
+                                    CategoryName = categoryRef.Name ?? string.Empty,
+                                    Name = product.Name,
+                                    PurchasePrice = product.PurchasePrice,
+                                    PrimaryImageUpdatedAt = product.PrimaryImageUpdatedAt ?? string.Empty,
+                                    PrimaryImageVersionId = product.PrimaryImageVersionId ?? string.Empty,
+                                    RemoteCategoryId =
+                                        (product.RemoteCategoryId ?? string.Empty).Trim(),
+                                    RemoteProductId = normalizedRemoteProductId,
+                                    RemoteSupplierId =
+                                        (product.RemoteSupplierId ?? string.Empty).Trim(),
+                                    RemoteUpdatedAt =
+                                        (product.RemoteUpdatedAt ?? string.Empty).Trim(),
+                                    SecondName = product.SecondName ?? string.Empty,
+                                    StockQuantity = product.StockQuantity,
+                                    SupplierId = supplierRef.Id,
+                                    SupplierName = supplierRef.Name ?? string.Empty,
+                                    UnitPrice = product.UnitPrice
+                                });
+                        }
+                        else
+                        {
+                            await RemoteCatalogProductWriter.UpsertProductAndMetaInTransactionCoreAsync(
+                                conn,
+                                tx,
+                                new Product
+                                {
+                                    Barcode = normalizedBarcode,
+                                    Name = product.Name,
+                                    UnitPrice = product.UnitPrice
+                                },
+                                product.ArticleCode,
+                                product.SecondName,
+                                product.PurchasePrice,
+                                supplierId,
+                                product.SupplierName,
+                                categoryId,
+                                product.CategoryName,
+                                product.StockQuantity,
+                                normalizedRemoteProductId,
+                                preparedProductCommands,
+                                productBatchContext,
+                                remoteUpdatedAt: product.RemoteUpdatedAt,
+                                remoteCategoryId: product.RemoteCategoryId,
+                                remoteSupplierId: product.RemoteSupplierId,
+                                protectedProductLookupCompleted: true).ConfigureAwait(false);
+                            await preparedReferenceCommand.UpsertAsync(
+                                normalizedRemoteProductId,
+                                product.RemoteCategoryId,
+                                product.RemoteSupplierId).ConfigureAwait(false);
+                            await RemoteCatalogProductWriter.ApplyImageProjectionInTransactionAsync(
+                                conn,
+                                tx,
+                                null,
+                                normalizedRemoteProductId,
+                                product.ApplyImageProjection,
+                                product.PrimaryImageVersionId,
+                                product.PrimaryImageUpdatedAt,
+                                product.RemoteUpdatedAt,
+                                updateProduct: true).ConfigureAwait(false);
+                        }
                         if (activeBarcodeByRemoteId.TryGetValue(
                                 normalizedRemoteProductId,
                                 out var previousBarcode) &&
@@ -262,30 +528,40 @@ namespace Win7POS.Data.Repositories
                         currentRemoteProductIds.Add(normalizedRemoteProductId);
                         activeBarcodeByRemoteId[normalizedRemoteProductId] = normalizedBarcode;
                         relinkProductRemoteIds.Add(normalizedRemoteProductId);
-                        result.ProductsApplied += 1;
+                        result.ProductsApplied = checked(result.ProductsApplied + 1L);
                     }
 
-                    var pendingReplay = await ProductRepository
-                        .ApplyPendingRemotePricesInTransactionAsync(conn, tx)
+                    await runContext.StageCleanProductsAsync(cleanProducts).ConfigureAwait(false);
+                    await RemoteCatalogProductWriter.ApplyCleanProductsSetBasedInTransactionAsync(
+                        conn,
+                        tx,
+                        cleanProducts).ConfigureAwait(false);
+
+                    var pendingReplay = await RemotePriceHistoryRepository
+                        .ApplyPendingRemotePricesInTransactionAsync(
+                            conn,
+                            tx,
+                            pageRemotePriceApply)
                         .ConfigureAwait(false);
-                    result.PendingPricesApplied += pendingReplay.Applied;
+                    result.PendingPricesApplied = checked(result.PendingPricesApplied + pendingReplay.Applied);
                     pendingPriceCollisionIds.UnionWith(pendingReplay.CollisionIds);
 
                     foreach (var tombstone in batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
                     {
                         if (tombstone == null || string.IsNullOrWhiteSpace(tombstone.RemoteProductId))
                         {
-                            result.TombstonesSkipped += 1;
+                            result.TombstonesSkipped = checked(result.TombstonesSkipped + 1L);
                             continue;
                         }
 
-                        if (await ProductRepository.ApplyRemoteProductTombstoneInTransactionAsync(
+                        if (await RemoteCatalogProductWriter.ApplyRemoteProductTombstoneInTransactionAsync(
                             conn,
-                            tx,
-                            tombstone.RemoteProductId,
-                            tombstone.RemoteDeletedAt).ConfigureAwait(false))
+                             tx,
+                             tombstone.RemoteProductId,
+                             tombstone.RemoteDeletedAt,
+                             tombstone.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.ProductTombstonesApplied += 1;
+                            result.ProductTombstonesApplied = checked(result.ProductTombstonesApplied + 1L);
                         }
                     }
 
@@ -306,7 +582,7 @@ AND NOT EXISTS (
                     {
                         if (tombstone == null || string.IsNullOrWhiteSpace(tombstone.RemoteCategoryId))
                         {
-                            result.TombstonesSkipped += 1;
+                            result.TombstonesSkipped = checked(result.TombstonesSkipped + 1L);
                             continue;
                         }
 
@@ -317,7 +593,7 @@ AND NOT EXISTS (
                             tombstone.RemoteDeletedAt,
                             tombstone.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.CategoryTombstonesApplied += 1;
+                            result.CategoryTombstonesApplied = checked(result.CategoryTombstonesApplied + 1L);
                             appliedCategoryTombstoneIds.Add(tombstone.RemoteCategoryId.Trim());
                         }
                     }
@@ -326,7 +602,7 @@ AND NOT EXISTS (
                     {
                         if (tombstone == null || string.IsNullOrWhiteSpace(tombstone.RemoteSupplierId))
                         {
-                            result.TombstonesSkipped += 1;
+                            result.TombstonesSkipped = checked(result.TombstonesSkipped + 1L);
                             continue;
                         }
 
@@ -337,87 +613,134 @@ AND NOT EXISTS (
                             tombstone.RemoteDeletedAt,
                             tombstone.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.SupplierTombstonesApplied += 1;
+                            result.SupplierTombstonesApplied = checked(result.SupplierTombstonesApplied + 1L);
                             appliedSupplierTombstoneIds.Add(tombstone.RemoteSupplierId.Trim());
                         }
                     }
 
-                    result.ProductReferencesRelinked += await RelinkRemoteProductReferencesAsync(
+                    var relinkResult = await RelinkRemoteProductReferencesAsync(
                         conn,
                         tx,
                         relinkProductRemoteIds,
                         relinkCategoryRemoteIds,
                         relinkSupplierRemoteIds).ConfigureAwait(false);
+                    result.ProductReferencesRelinked = checked(
+                        result.ProductReferencesRelinked + relinkResult.RowsAffected);
 
-                    foreach (var price in batch.Prices ?? Array.Empty<RemoteCatalogPriceWrite>())
-                    {
-                        if (price == null)
-                        {
-                            result.PricesSkipped += 1;
-                            continue;
-                        }
-
-                        if (batch.AuthoritativeFullRefresh &&
-                            !string.IsNullOrWhiteSpace(price.RemotePriceId))
-                        {
-                            if (!await ProductRepository.PrepareAuthoritativeRemotePriceRepairAsync(
-                                    conn,
-                                    tx,
-                                    price.RemoteProductId,
-                                    price.RemotePriceId,
-                                    price.Type,
-                                    price.Price,
-                                    price.EffectiveAt,
-                                    price.Source).ConfigureAwait(false))
-                            {
-                                result.PricesSkipped += 1;
-                                continue;
-                            }
-                        }
-
-                        var applied = await ProductRepository.UpsertOrQueueRemotePriceHistoryInTransactionAsync(
+                    var prices = batch.Prices ?? Array.Empty<RemoteCatalogPriceWrite>();
+                    var setBasedPrices = await RemotePriceHistoryRepository
+                        .TryApplyRemotePricesSetBasedInTransactionAsync(
                             conn,
                             tx,
-                            price.RemoteProductId,
-                            price.RemotePriceId,
-                            price.Type,
-                            price.Price,
-                            price.EffectiveAt,
-                            price.Source).ConfigureAwait(false);
-                        if (applied.Applied) result.PricesApplied += 1;
-                        if (applied.Queued) result.PricesQueued += 1;
-                        if (!applied.Applied && !applied.Queued) result.PricesSkipped += 1;
+                            prices,
+                            pageRemotePriceApply)
+                        .ConfigureAwait(false);
+                    if (setBasedPrices != null)
+                    {
+                        result.PricesApplied = checked(result.PricesApplied + setBasedPrices.Applied);
+                        result.PricesQueued = checked(result.PricesQueued + setBasedPrices.Queued);
+                        result.PricesSkipped = checked(result.PricesSkipped + setBasedPrices.Skipped);
+                    }
+                    else
+                    {
+                        foreach (var price in prices)
+                        {
+                            if (price == null)
+                            {
+                                result.PricesSkipped = checked(result.PricesSkipped + 1L);
+                                continue;
+                            }
+
+                            if (batch.AuthoritativeFullRefresh &&
+                                !string.IsNullOrWhiteSpace(price.RemotePriceId))
+                            {
+                                if (!await RemotePriceHistoryRepository.PrepareAuthoritativeRemotePriceRepairAsync(
+                                        conn,
+                                        tx,
+                                        price.RemoteProductId,
+                                        price.RemotePriceId,
+                                        price.Type,
+                                        price.Price,
+                                        price.EffectiveAt,
+                                        price.Source,
+                                        pageRemotePriceApply).ConfigureAwait(false))
+                                {
+                                    result.PricesSkipped = checked(result.PricesSkipped + 1L);
+                                    continue;
+                                }
+                            }
+
+                            var applied = await RemotePriceHistoryRepository.UpsertOrQueueRemotePriceHistoryInTransactionAsync(
+                                conn,
+                                tx,
+                                price.RemoteProductId,
+                                price.RemotePriceId,
+                                price.Type,
+                                price.Price,
+                                price.EffectiveAt,
+                                price.Source,
+                                pageRemotePriceApply).ConfigureAwait(false);
+                            if (applied.Applied) result.PricesApplied = checked(result.PricesApplied + 1L);
+                            if (applied.Queued) result.PricesQueued = checked(result.PricesQueued + 1L);
+                            if (!applied.Applied && !applied.Queued) result.PricesSkipped = checked(result.PricesSkipped + 1L);
+                        }
                     }
 
-                    pendingReplay = await ProductRepository
-                        .ApplyPendingRemotePricesInTransactionAsync(conn, tx)
+                    pendingReplay = await RemotePriceHistoryRepository
+                        .ApplyPendingRemotePricesInTransactionAsync(
+                            conn,
+                            tx,
+                            pageRemotePriceApply)
                         .ConfigureAwait(false);
-                    result.PendingPricesApplied += pendingReplay.Applied;
+                    result.PendingPricesApplied = checked(result.PendingPricesApplied + pendingReplay.Applied);
                     pendingPriceCollisionIds.UnionWith(pendingReplay.CollisionIds);
-                    result.PricesSkipped += pendingPriceCollisionIds.Count;
+                    result.PricesSkipped = checked(result.PricesSkipped + pendingPriceCollisionIds.Count);
 
                     pageState.ProductContext = productBatchContext.WithoutPendingStock();
                     pageState.RemoveTombstonedReferences(
                         appliedCategoryTombstoneIds,
                         appliedSupplierTombstoneIds);
-                    tx.Commit();
-                    runContext.CommitPageState(pageState);
-                    runContext.RecordPageApplied();
+                    if (ownsTransaction)
+                    {
+                        tx.Commit();
+                        runContext.RecordCommittedTransaction();
+                        runContext.RecordRelinkStageCommands(relinkResult.StageCommandCount);
+                        runContext.RecordRemotePriceApply(pageRemotePriceApply);
+                        runContext.CommitPageState(pageState);
+                        runContext.RecordPageApplied();
+                    }
+                    else
+                    {
+                        runContext.RecordUncommittedAtomicPage(
+                            relinkResult.StageCommandCount,
+                            pageRemotePriceApply,
+                            pageState);
+                    }
                     return result;
                 }
                 catch
                 {
-                    try { tx.Rollback(); } catch { }
+                    if (ownsTransaction)
+                    {
+                        try { tx.Rollback(); } catch { }
+                    }
                     throw;
                 }
                 finally
                 {
-                    runContext.BindTransaction(null);
+                    if (ownsTransaction)
+                    {
+                        runContext.BindTransaction(null);
+                        tx.Dispose();
+                    }
                 }
             }
             finally
             {
-                ProductRepository.CatalogMetaWriteGate.Release();
+                if (ownsTransaction)
+                {
+                    CatalogMutationGate.Instance.Release();
+                }
             }
         }
 
@@ -468,6 +791,7 @@ AND NOT EXISTS (
                 if (row == null) continue;
                 RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteDeletedAt, "product_tombstone.deleted_at");
                 EnsureSafe(row.RemoteProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "product_tombstone.remote_id");
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteUpdatedAt, "product_tombstone.updated_at");
             }
 
             foreach (var row in batch.CategoryTombstones ?? Array.Empty<RemoteCatalogCategoryTombstoneWrite>())
@@ -491,11 +815,762 @@ AND NOT EXISTS (
         {
             if (!RemoteCatalogContentPolicy.IsOptionalText(value, maximumLength))
             {
-                throw new InvalidDataException("Remote catalog field rejected before persistence: " + field + ".");
+                    throw new InvalidDataException("Remote catalog field rejected before persistence: " + field + ".");
             }
         }
 
-        private static async Task RequireCommitFenceAsync(
+        private static void ValidateAuthoritativeStage(
+            RemoteCatalogBatch batch,
+            RemoteCatalogCommitFence commitFence,
+            bool required)
+        {
+            var stage = batch?.AuthoritativeStagePage;
+            if (stage == null)
+            {
+                if (batch?.ReuseValidatedAuthoritativeStagePage == true)
+                {
+                    throw new InvalidDataException(
+                        "Validated authoritative catalog stage reuse requires a stage page.");
+                }
+                if (required)
+                    throw new InvalidDataException("Authoritative catalog stage page is required.");
+                return;
+            }
+
+            if (!batch.AuthoritativeFullRefresh)
+                throw new InvalidDataException("Authoritative catalog stage requires a full refresh batch.");
+            if (commitFence == null)
+                throw new InvalidDataException("Authoritative catalog stage requires a commit fence.");
+
+            var runId = (stage.FullRunId ?? string.Empty).Trim();
+            if (runId.Length == 0 ||
+                runId.Length > 64 ||
+                !string.Equals(runId, stage.FullRunId, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Authoritative catalog full run identity is invalid.");
+            }
+
+            if (stage.PageNumber <= 0)
+                throw new InvalidDataException("Authoritative catalog page number is invalid.");
+            if (commitFence.ExpectedEpoch < 0 ||
+                string.IsNullOrWhiteSpace(commitFence.ShopId) ||
+                string.IsNullOrWhiteSpace(commitFence.ShopCode))
+            {
+                throw new InvalidDataException("Authoritative catalog shop fence is invalid.");
+            }
+
+            var generationId = (commitFence.GenerationId ?? string.Empty).Trim();
+            var generationFingerprint = (commitFence.GenerationFingerprint ?? string.Empty).Trim();
+            if ((generationId.Length == 0) != (generationFingerprint.Length == 0))
+                throw new InvalidDataException("Authoritative catalog generation fence is incomplete.");
+        }
+
+        private static async Task ReplaceAuthoritativeStagePageAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            RemoteCatalogBatch batch,
+            RemoteCatalogCommitFence commitFence)
+        {
+            var stage = batch.AuthoritativeStagePage;
+            var identity = CatalogAuthoritativeStageIdentity.Create(stage, commitFence);
+            var stagedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            identity.ScopeId = await EnsureAuthoritativeStageScopeAsync(
+                conn,
+                tx,
+                identity,
+                stagedAt).ConfigureAwait(false);
+            await conn.ExecuteAsync(@"
+DELETE FROM catalog_authoritative_id_stage
+WHERE scope_id = @ScopeId
+  AND page_number = @PageNumber;",
+                identity,
+                tx).ConfigureAwait(false);
+
+            var occurrences = new Dictionary<CatalogAuthoritativeStageKey, int>();
+            AddStageOccurrences(
+                occurrences,
+                "product",
+                batch.Products,
+                row => row?.RemoteProductId,
+                RemoteCatalogBatchMapper.ProductStageFingerprint,
+                row => row?.RemoteCategoryId,
+                row => row?.RemoteSupplierId);
+            AddStageOccurrences(
+                occurrences,
+                "category",
+                batch.Categories,
+                row => row?.RemoteCategoryId,
+                CategoryStageFingerprint);
+            AddStageOccurrences(
+                occurrences,
+                "supplier",
+                batch.Suppliers,
+                row => row?.RemoteSupplierId,
+                SupplierStageFingerprint);
+            AddStageOccurrences(
+                occurrences,
+                "price",
+                batch.Prices,
+                row => row?.RemotePriceId,
+                PriceStageFingerprint,
+                selectProductRemoteId: row => row?.RemoteProductId);
+            AddStageOccurrences(
+                occurrences,
+                "product_tombstone",
+                batch.ProductTombstones,
+                row => row?.RemoteProductId,
+                ProductTombstoneStageFingerprint);
+            AddStageOccurrences(
+                occurrences,
+                "category_tombstone",
+                batch.CategoryTombstones,
+                row => row?.RemoteCategoryId,
+                CategoryTombstoneStageFingerprint);
+            AddStageOccurrences(
+                occurrences,
+                "supplier_tombstone",
+                batch.SupplierTombstones,
+                row => row?.RemoteSupplierId,
+                SupplierTombstoneStageFingerprint);
+
+            await conn.ExecuteAsync(@"
+INSERT INTO catalog_authoritative_id_stage(
+  scope_id,
+  page_number,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id,
+  occurrence_count,
+  has_more,
+  staged_at)
+VALUES(
+  @scopeId,
+  @pageNumber,
+  'page',
+  '',
+  '',
+  '',
+  '',
+  '',
+  0,
+  @hasMore,
+  @stagedAt);",
+                new
+                {
+                    scopeId = identity.ScopeId,
+                    pageNumber = identity.PageNumber,
+                    hasMore = stage.HasMore ? 1 : 0,
+                    stagedAt
+                },
+                tx).ConfigureAwait(false);
+            await InsertStageOccurrencesAsync(
+                conn,
+                tx,
+                identity,
+                occurrences,
+                stagedAt).ConfigureAwait(false);
+        }
+
+        private static async Task RequireValidatedAuthoritativeStagePageAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogAuthoritativeStagePage stage,
+            RemoteCatalogCommitFence commitFence)
+        {
+            var identity = CatalogAuthoritativeStageIdentity.Create(stage, commitFence);
+            var scopes = (await conn.QueryAsync<CatalogAuthoritativeStageScopeRow>(@"
+SELECT scope_id AS ScopeId,
+       transition_epoch AS TransitionEpoch
+FROM catalog_authoritative_stage_scope
+WHERE shop_id = @ShopId
+  AND shop_code = @ShopCode
+  AND generation_id = @GenerationId
+  AND generation_fingerprint = @GenerationFingerprint
+  AND full_run_id = @FullRunId;",
+                identity,
+                tx).ConfigureAwait(false)).ToArray();
+            if (scopes.Length != 1)
+            {
+                throw new InvalidDataException(
+                    "Validated authoritative catalog stage scope is missing or ambiguous.");
+            }
+
+            var scope = scopes[0];
+            if (scope.TransitionEpoch != identity.TransitionEpoch)
+            {
+                // Full-refresh preflight deliberately runs before the destructive repair
+                // boundary increments the shop epoch. Adopt the already validated scope
+                // into that new epoch once; its generation fingerprint and run identity
+                // remain unchanged, and the surrounding page transaction rolls this back
+                // if any subsequent catalog mutation fails.
+                var adopted = await conn.ExecuteAsync(@"
+UPDATE catalog_authoritative_stage_scope
+SET transition_epoch = @transitionEpoch
+WHERE scope_id = @scopeId
+  AND transition_epoch = @previousTransitionEpoch;",
+                    new
+                    {
+                        transitionEpoch = identity.TransitionEpoch,
+                        scopeId = scope.ScopeId,
+                        previousTransitionEpoch = scope.TransitionEpoch
+                    },
+                    tx).ConfigureAwait(false);
+                if (adopted != 1)
+                {
+                    throw new InvalidDataException(
+                        "Validated authoritative catalog stage scope could not be adopted.");
+                }
+            }
+
+            var markerCount = await conn.QuerySingleAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage staged
+WHERE staged.scope_id = @scopeId
+  AND staged.page_number = @PageNumber
+  AND staged.entity_kind = 'page'
+  AND staged.remote_id = ''
+  AND staged.has_more = @hasMore;",
+                new
+                {
+                    scopeId = scope.ScopeId,
+                    identity.PageNumber,
+                    hasMore = stage.HasMore ? 1 : 0
+                },
+                tx).ConfigureAwait(false);
+            if (markerCount != 1)
+            {
+                throw new InvalidDataException(
+                    "Validated authoritative catalog stage page is missing or ambiguous.");
+            }
+        }
+
+        private static async Task<long> EnsureAuthoritativeStageScopeAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogAuthoritativeStageIdentity identity,
+            long createdAt)
+        {
+            await conn.ExecuteAsync(@"
+INSERT OR IGNORE INTO catalog_authoritative_stage_scope(
+  shop_id,
+  shop_code,
+  transition_epoch,
+  generation_id,
+  generation_fingerprint,
+  full_run_id,
+  created_at)
+VALUES(
+  @ShopId,
+  @ShopCode,
+  @TransitionEpoch,
+  @GenerationId,
+  @GenerationFingerprint,
+  @FullRunId,
+  @createdAt);",
+                new
+                {
+                    identity.ShopId,
+                    identity.ShopCode,
+                    identity.TransitionEpoch,
+                    identity.GenerationId,
+                    identity.GenerationFingerprint,
+                    identity.FullRunId,
+                    createdAt
+                },
+                tx).ConfigureAwait(false);
+            return await conn.QuerySingleAsync<long>(@"
+SELECT scope_id
+FROM catalog_authoritative_stage_scope
+WHERE shop_id = @ShopId
+  AND shop_code = @ShopCode
+  AND transition_epoch = @TransitionEpoch
+  AND generation_id = @GenerationId
+  AND generation_fingerprint = @GenerationFingerprint
+  AND full_run_id = @FullRunId;",
+                identity,
+                tx).ConfigureAwait(false);
+        }
+
+        private static async Task InsertStageOccurrencesAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogAuthoritativeStageIdentity identity,
+            IReadOnlyDictionary<CatalogAuthoritativeStageKey, int> occurrences,
+            long stagedAt)
+        {
+            if (occurrences == null || occurrences.Count == 0) return;
+
+            using var command = conn.CreateCommand();
+            command.Transaction = tx;
+            var rows = occurrences.ToArray();
+            var chunkCount =
+                (rows.Length + AuthoritativeStageRowsPerChunk - 1) /
+                AuthoritativeStageRowsPerChunk;
+            var commandText = new StringBuilder(chunkCount * 1400);
+            for (var chunk = 0; chunk < chunkCount; chunk += 1)
+            {
+                commandText.Append(@"
+WITH incoming AS (
+  SELECT
+    CAST(json_extract(value, '$[0]') AS TEXT) AS entity_kind,
+    CAST(json_extract(value, '$[1]') AS TEXT) AS remote_id,
+    CAST(json_extract(value, '$[2]') AS TEXT) AS content_fingerprint,
+    CAST(json_extract(value, '$[3]') AS TEXT) AS category_remote_id,
+    CAST(json_extract(value, '$[4]') AS TEXT) AS supplier_remote_id,
+    CAST(json_extract(value, '$[5]') AS TEXT) AS product_remote_id,
+    CAST(json_extract(value, '$[6]') AS INTEGER) AS occurrence_count
+  FROM json_each(@rowsJson");
+                commandText.Append(chunk.ToString(CultureInfo.InvariantCulture));
+                commandText.Append(@")
+)
+INSERT INTO catalog_authoritative_id_stage(
+  scope_id,
+  page_number,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id,
+  occurrence_count,
+  has_more,
+  staged_at)
+SELECT
+  @scopeId,
+  @pageNumber,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id,
+  occurrence_count,
+  NULL,
+  @stagedAt
+FROM incoming;
+");
+            }
+            command.CommandText = commandText.ToString();
+            AddParameter(command, "@scopeId", identity.ScopeId);
+            AddParameter(command, "@pageNumber", identity.PageNumber);
+            AddParameter(command, "@stagedAt", stagedAt);
+            for (var chunk = 0; chunk < chunkCount; chunk += 1)
+            {
+                var offset = chunk * AuthoritativeStageRowsPerChunk;
+                var rowCount = Math.Min(
+                    AuthoritativeStageRowsPerChunk,
+                    rows.Length - offset);
+                AddParameter(
+                    command,
+                    "@rowsJson" + chunk.ToString(CultureInfo.InvariantCulture),
+                    BuildAuthoritativeStageRowsJson(rows, offset, rowCount));
+            }
+            command.Prepare();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        private static string BuildAuthoritativeStageRowsJson(
+            IReadOnlyList<KeyValuePair<CatalogAuthoritativeStageKey, int>> rows,
+            int offset,
+            int rowCount)
+        {
+            var rowsJson = new StringBuilder(Math.Max(256, rowCount * 96));
+            rowsJson.Append('[');
+            for (var index = 0; index < rowCount; index += 1)
+            {
+                if (index > 0) rowsJson.Append(',');
+                var occurrence = rows[offset + index];
+                rowsJson.Append('[');
+                AppendJsonString(rowsJson, occurrence.Key.EntityKind);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.RemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.ContentFingerprint);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.CategoryRemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.SupplierRemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.ProductRemoteId);
+                rowsJson.Append(',');
+                rowsJson.Append(occurrence.Value.ToString(CultureInfo.InvariantCulture));
+                rowsJson.Append(']');
+            }
+            rowsJson.Append(']');
+            return rowsJson.ToString();
+        }
+
+        internal static void AppendJsonString(StringBuilder target, string value)
+        {
+            target.Append('"');
+            foreach (var character in value ?? string.Empty)
+            {
+                switch (character)
+                {
+                    case '"': target.Append("\\\""); break;
+                    case '\\': target.Append("\\\\"); break;
+                    case '\b': target.Append("\\b"); break;
+                    case '\f': target.Append("\\f"); break;
+                    case '\n': target.Append("\\n"); break;
+                    case '\r': target.Append("\\r"); break;
+                    case '\t': target.Append("\\t"); break;
+                    default:
+                        if (char.IsControl(character))
+                        {
+                            target.Append("\\u");
+                            target.Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
+                        }
+                        else
+                        {
+                            target.Append(character);
+                        }
+                        break;
+                }
+            }
+            target.Append('"');
+        }
+
+        private static SqliteParameter AddParameter(
+            SqliteCommand command,
+            string name,
+            object value)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value ?? DBNull.Value;
+            command.Parameters.Add(parameter);
+            return parameter;
+        }
+
+        private static void AddStageOccurrences<T>(
+            IDictionary<CatalogAuthoritativeStageKey, int> occurrences,
+            string entityKind,
+            IEnumerable<T> values,
+            Func<T, string> selectRemoteId,
+            Func<T, string> selectFingerprint,
+            Func<T, string> selectCategoryRemoteId = null,
+            Func<T, string> selectSupplierRemoteId = null,
+            Func<T, string> selectProductRemoteId = null)
+        {
+            foreach (var value in values ?? Array.Empty<T>())
+            {
+                var key = new CatalogAuthoritativeStageKey(
+                    entityKind,
+                    (selectRemoteId(value) ?? string.Empty).Trim(),
+                    selectFingerprint(value) ?? string.Empty,
+                    (selectCategoryRemoteId?.Invoke(value) ?? string.Empty).Trim(),
+                    (selectSupplierRemoteId?.Invoke(value) ?? string.Empty).Trim(),
+                    (selectProductRemoteId?.Invoke(value) ?? string.Empty).Trim());
+                occurrences.TryGetValue(key, out var count);
+                occurrences[key] = checked(count + 1);
+            }
+        }
+
+        private const string InvalidStageFingerprint = "invalid";
+
+        private static string CategoryStageFingerprint(RemoteCatalogCategoryWrite row)
+        {
+            return row == null ||
+                string.IsNullOrWhiteSpace(row.RemoteCategoryId) ||
+                string.IsNullOrWhiteSpace(row.Name)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.Name, row.RemoteUpdatedAt);
+        }
+
+        private static string SupplierStageFingerprint(RemoteCatalogSupplierWrite row)
+        {
+            return row == null ||
+                string.IsNullOrWhiteSpace(row.RemoteSupplierId) ||
+                string.IsNullOrWhiteSpace(row.Name)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.Name, row.RemoteUpdatedAt);
+        }
+
+        private static string PriceStageFingerprint(RemoteCatalogPriceWrite row)
+        {
+            return row == null ||
+                string.IsNullOrWhiteSpace(row.RemotePriceId) ||
+                string.IsNullOrWhiteSpace(row.RemoteProductId) ||
+                string.IsNullOrWhiteSpace(row.Type) ||
+                row.Price < 0
+                ? InvalidStageFingerprint
+                : string.Empty;
+        }
+
+        private static string ProductTombstoneStageFingerprint(RemoteCatalogProductTombstoneWrite row)
+        {
+            return row == null || string.IsNullOrWhiteSpace(row.RemoteProductId)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.RemoteDeletedAt, row.RemoteUpdatedAt);
+        }
+
+        private static string CategoryTombstoneStageFingerprint(RemoteCatalogCategoryTombstoneWrite row)
+        {
+            return row == null || string.IsNullOrWhiteSpace(row.RemoteCategoryId)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.RemoteDeletedAt, row.RemoteUpdatedAt);
+        }
+
+        private static string SupplierTombstoneStageFingerprint(RemoteCatalogSupplierTombstoneWrite row)
+        {
+            return row == null || string.IsNullOrWhiteSpace(row.RemoteSupplierId)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.RemoteDeletedAt, row.RemoteUpdatedAt);
+        }
+
+        private static string Fingerprint(params string[] values)
+        {
+            using var sha = SHA256.Create();
+            var builder = new StringBuilder();
+            foreach (var value in values ?? Array.Empty<string>())
+            {
+                var normalized = (value ?? string.Empty).Trim();
+                builder.Append(normalized.Length.ToString(CultureInfo.InvariantCulture));
+                builder.Append(':');
+                builder.Append(normalized);
+                builder.Append(';');
+            }
+
+            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(builder.ToString()));
+            var result = new StringBuilder(bytes.Length * 2);
+            foreach (var item in bytes)
+                result.Append(item.ToString("x2", CultureInfo.InvariantCulture));
+            return result.ToString();
+        }
+
+        private static async Task<CatalogAuthoritativeStageEvidence> LoadAuthoritativeStageEvidenceAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogAuthoritativeStagePage stage,
+            RemoteCatalogCommitFence commitFence)
+        {
+            var identity = CatalogAuthoritativeStageIdentity.Create(stage, commitFence);
+            var row = await conn.QuerySingleAsync<CatalogAuthoritativeStageEvidenceRow>(@"
+WITH scoped AS (
+  SELECT entity_kind, remote_id, content_fingerprint,
+         category_remote_id, supplier_remote_id, product_remote_id,
+         occurrence_count
+  FROM catalog_authoritative_id_stage item
+  JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+  WHERE scope.shop_id = @ShopId
+    AND scope.shop_code = @ShopCode
+    AND scope.transition_epoch = @TransitionEpoch
+    AND scope.generation_id = @GenerationId
+    AND scope.generation_fingerprint = @GenerationFingerprint
+    AND scope.full_run_id = @FullRunId
+)
+SELECT
+  COUNT(DISTINCT CASE WHEN entity_kind = 'product' THEN remote_id END) AS Products,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'category' THEN remote_id END) AS Categories,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'supplier' THEN remote_id END) AS Suppliers,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'price' THEN remote_id END) AS Prices,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'product_tombstone' THEN remote_id END) AS ProductTombstones,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'category_tombstone' THEN remote_id END) AS CategoryTombstones,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'supplier_tombstone' THEN remote_id END) AS SupplierTombstones,
+  COALESCE(SUM(CASE WHEN entity_kind = 'product' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidProducts,
+  COALESCE(SUM(CASE WHEN entity_kind = 'category' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidCategories,
+  COALESCE(SUM(CASE WHEN entity_kind = 'supplier' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidSuppliers,
+  COALESCE(SUM(CASE WHEN entity_kind = 'price' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidPrices,
+  COALESCE(SUM(CASE WHEN entity_kind = 'product_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidProductTombstones,
+  COALESCE(SUM(CASE WHEN entity_kind = 'category_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidCategoryTombstones,
+  COALESCE(SUM(CASE WHEN entity_kind = 'supplier_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidSupplierTombstones,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'category'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS CategoryConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'supplier'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS SupplierConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'product_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS ProductTombstoneConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'category_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS CategoryTombstoneConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'supplier_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS SupplierTombstoneConflicts,
+  (SELECT COUNT(1) FROM scoped active
+   JOIN scoped tombstone ON tombstone.remote_id = active.remote_id
+   WHERE active.entity_kind = 'product' AND tombstone.entity_kind = 'product_tombstone')
+    AS ProductActiveTombstoneConflicts,
+  (SELECT COUNT(1) FROM scoped active
+   JOIN scoped tombstone ON tombstone.remote_id = active.remote_id
+   WHERE active.entity_kind = 'category' AND tombstone.entity_kind = 'category_tombstone')
+    AS CategoryActiveTombstoneConflicts,
+  (SELECT COUNT(1) FROM scoped active
+   JOIN scoped tombstone ON tombstone.remote_id = active.remote_id
+   WHERE active.entity_kind = 'supplier' AND tombstone.entity_kind = 'supplier_tombstone')
+    AS SupplierActiveTombstoneConflicts
+FROM scoped;",
+                identity,
+                tx).ConfigureAwait(false);
+
+            return new CatalogAuthoritativeStageEvidence(
+                new CatalogPaginationLaneCounts(
+                    row.Products,
+                    row.Categories,
+                    row.Suppliers,
+                    row.Prices,
+                    row.ProductTombstones,
+                    row.CategoryTombstones,
+                    row.SupplierTombstones),
+                FirstStageConflictCode(row));
+        }
+
+        private static string FirstStageConflictCode(CatalogAuthoritativeStageEvidenceRow row)
+        {
+            if (row.InvalidProducts > 0) return "catalog_product_row_invalid";
+            if (row.InvalidCategories > 0) return "catalog_category_row_invalid";
+            if (row.InvalidSuppliers > 0) return "catalog_supplier_row_invalid";
+            if (row.InvalidPrices > 0) return "catalog_price_row_invalid";
+            if (row.InvalidProductTombstones > 0) return "catalog_product_tombstone_invalid";
+            if (row.InvalidCategoryTombstones > 0) return "catalog_category_tombstone_invalid";
+            if (row.InvalidSupplierTombstones > 0) return "catalog_supplier_tombstone_invalid";
+            if (row.CategoryConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.CategoryConflictCode;
+            if (row.SupplierConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.SupplierConflictCode;
+            if (row.ProductTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.ProductTombstoneConflictCode;
+            if (row.CategoryTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.CategoryTombstoneConflictCode;
+            if (row.SupplierTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.SupplierTombstoneConflictCode;
+            if (row.ProductActiveTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.ProductActiveTombstoneConflictCode;
+            if (row.CategoryActiveTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.CategoryActiveTombstoneConflictCode;
+            if (row.SupplierActiveTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.SupplierActiveTombstoneConflictCode;
+            return string.Empty;
+        }
+
+        private sealed class CatalogAuthoritativeStageIdentity
+        {
+            public string FullRunId { get; private set; } = string.Empty;
+            public string GenerationFingerprint { get; private set; } = string.Empty;
+            public string GenerationId { get; private set; } = string.Empty;
+            public long PageNumber { get; private set; }
+            public long ScopeId { get; set; }
+            public string ShopCode { get; private set; } = string.Empty;
+            public string ShopId { get; private set; } = string.Empty;
+            public long TransitionEpoch { get; private set; }
+
+            public static CatalogAuthoritativeStageIdentity Create(
+                CatalogAuthoritativeStagePage stage,
+                RemoteCatalogCommitFence commitFence)
+            {
+                return new CatalogAuthoritativeStageIdentity
+                {
+                    FullRunId = stage.FullRunId.Trim(),
+                    GenerationFingerprint = (commitFence.GenerationFingerprint ?? string.Empty).Trim(),
+                    GenerationId = (commitFence.GenerationId ?? string.Empty).Trim(),
+                    PageNumber = stage.PageNumber,
+                    ShopCode = commitFence.ShopCode.Trim(),
+                    ShopId = commitFence.ShopId.Trim(),
+                    TransitionEpoch = commitFence.ExpectedEpoch
+                };
+            }
+        }
+
+        private sealed class CatalogAuthoritativeStageKey : IEquatable<CatalogAuthoritativeStageKey>
+        {
+            public CatalogAuthoritativeStageKey(
+                string entityKind,
+                string remoteId,
+                string contentFingerprint,
+                string categoryRemoteId,
+                string supplierRemoteId,
+                string productRemoteId)
+            {
+                EntityKind = entityKind ?? string.Empty;
+                RemoteId = remoteId ?? string.Empty;
+                ContentFingerprint = contentFingerprint ?? string.Empty;
+                CategoryRemoteId = categoryRemoteId ?? string.Empty;
+                SupplierRemoteId = supplierRemoteId ?? string.Empty;
+                ProductRemoteId = productRemoteId ?? string.Empty;
+            }
+
+            public string CategoryRemoteId { get; }
+            public string ContentFingerprint { get; }
+            public string EntityKind { get; }
+            public string ProductRemoteId { get; }
+            public string RemoteId { get; }
+            public string SupplierRemoteId { get; }
+
+            public bool Equals(CatalogAuthoritativeStageKey other)
+            {
+                return other != null &&
+                    string.Equals(EntityKind, other.EntityKind, StringComparison.Ordinal) &&
+                    string.Equals(RemoteId, other.RemoteId, StringComparison.Ordinal) &&
+                    string.Equals(ContentFingerprint, other.ContentFingerprint, StringComparison.Ordinal) &&
+                    string.Equals(CategoryRemoteId, other.CategoryRemoteId, StringComparison.Ordinal) &&
+                    string.Equals(SupplierRemoteId, other.SupplierRemoteId, StringComparison.Ordinal) &&
+                    string.Equals(ProductRemoteId, other.ProductRemoteId, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object obj)
+            {
+                return Equals(obj as CatalogAuthoritativeStageKey);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    var hash = StringComparer.Ordinal.GetHashCode(EntityKind);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(RemoteId);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(ContentFingerprint);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(CategoryRemoteId);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(SupplierRemoteId);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(ProductRemoteId);
+                    return hash;
+                }
+            }
+        }
+
+        private sealed class CatalogAuthoritativeStageEvidenceRow
+        {
+            public long Categories { get; set; }
+            public long CategoryActiveTombstoneConflicts { get; set; }
+            public long CategoryConflicts { get; set; }
+            public long CategoryTombstoneConflicts { get; set; }
+            public long CategoryTombstones { get; set; }
+            public long InvalidCategories { get; set; }
+            public long InvalidCategoryTombstones { get; set; }
+            public long InvalidPrices { get; set; }
+            public long InvalidProducts { get; set; }
+            public long InvalidProductTombstones { get; set; }
+            public long InvalidSuppliers { get; set; }
+            public long InvalidSupplierTombstones { get; set; }
+            public long Prices { get; set; }
+            public long ProductActiveTombstoneConflicts { get; set; }
+            public long Products { get; set; }
+            public long ProductTombstoneConflicts { get; set; }
+            public long ProductTombstones { get; set; }
+            public long SupplierActiveTombstoneConflicts { get; set; }
+            public long SupplierConflicts { get; set; }
+            public long Suppliers { get; set; }
+            public long SupplierTombstoneConflicts { get; set; }
+            public long SupplierTombstones { get; set; }
+        }
+
+        internal static async Task RequireCommitFenceAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             RemoteCatalogCommitFence commitFence)
@@ -593,7 +1668,7 @@ WHERE singleton_id = 1 AND active = 1;",
                 tx);
         }
 
-        private static Task<int> RelinkRemoteProductReferencesAsync(
+        private static Task<RemoteCatalogRelinkResult> RelinkRemoteProductReferencesAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             IReadOnlyCollection<string> productRemoteIds,
@@ -604,7 +1679,7 @@ WHERE singleton_id = 1 AND active = 1;",
                 (categoryRemoteIds?.Count ?? 0) == 0 &&
                 (supplierRemoteIds?.Count ?? 0) == 0)
             {
-                return Task.FromResult(0);
+                return Task.FromResult(new RemoteCatalogRelinkResult());
             }
 
             return RelinkRemoteProductReferencesCoreAsync(
@@ -615,7 +1690,7 @@ WHERE singleton_id = 1 AND active = 1;",
                 supplierRemoteIds ?? Array.Empty<string>());
         }
 
-        private static async Task<int> RelinkRemoteProductReferencesCoreAsync(
+        private static async Task<RemoteCatalogRelinkResult> RelinkRemoteProductReferencesCoreAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             IReadOnlyCollection<string> productRemoteIds,
@@ -641,23 +1716,11 @@ DELETE FROM temp_catalog_relink_supplier_ids;
 DELETE FROM temp_catalog_relink_barcodes;",
                 transaction: tx).ConfigureAwait(false);
 
-            await FillTempRelinkIdsAsync(
+            var stageCommandCount = await FillTempRelinkIdsAsync(
                 conn,
                 tx,
-                "temp_catalog_relink_product_ids",
-                "remote_product_id",
-                productRemoteIds).ConfigureAwait(false);
-            await FillTempRelinkIdsAsync(
-                conn,
-                tx,
-                "temp_catalog_relink_category_ids",
-                "remote_category_id",
-                categoryRemoteIds).ConfigureAwait(false);
-            await FillTempRelinkIdsAsync(
-                conn,
-                tx,
-                "temp_catalog_relink_supplier_ids",
-                "remote_supplier_id",
+                productRemoteIds,
+                categoryRemoteIds,
                 supplierRemoteIds).ConfigureAwait(false);
 
             await conn.ExecuteAsync(@"
@@ -678,10 +1741,16 @@ SELECT p.barcode
 FROM products p
 JOIN temp_catalog_relink_product_ids target
   ON target.remote_product_id = p.remote_product_id
-WHERE COALESCE(p.is_active, 1) = 1;",
+WHERE COALESCE(p.is_active, 1) = 1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM article_mutation_outbox mutation
+    WHERE mutation.local_product_id = p.id
+      AND mutation.state <> 'completed'
+  );",
                 transaction: tx).ConfigureAwait(false);
 
-            return await conn.ExecuteAsync(@"
+            var rowsAffected = await conn.ExecuteAsync(@"
 UPDATE product_meta
 SET category_id = (
       SELECT c.id
@@ -740,36 +1809,124 @@ WHERE barcode IN (
   FROM temp_catalog_relink_barcodes
 );",
                 transaction: tx).ConfigureAwait(false);
+            return new RemoteCatalogRelinkResult
+            {
+                RowsAffected = rowsAffected,
+                StageCommandCount = stageCommandCount
+            };
         }
 
-        private static async Task FillTempRelinkIdsAsync(
+        private sealed class CatalogAuthoritativeStageScopeRow
+        {
+            public long ScopeId { get; set; }
+            public long TransitionEpoch { get; set; }
+        }
+
+        private static async Task<int> FillTempRelinkIdsAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
-            string tableName,
-            string columnName,
-            IEnumerable<string> values)
+            IEnumerable<string> productRemoteIds,
+            IEnumerable<string> categoryRemoteIds,
+            IEnumerable<string> supplierRemoteIds)
         {
+            var productIds = NormalizeRelinkIds(productRemoteIds);
+            var categoryIds = NormalizeRelinkIds(categoryRemoteIds);
+            var supplierIds = NormalizeRelinkIds(supplierRemoteIds);
+            var rowCount = Math.Max(productIds.Length, Math.Max(categoryIds.Length, supplierIds.Length));
+            if (rowCount == 0)
+            {
+                return 0;
+            }
+
             using var command = conn.CreateCommand();
             command.Transaction = tx;
-            command.CommandText =
-                "INSERT OR IGNORE INTO " + tableName + "(" + columnName + ") VALUES(@value);";
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@value";
-            command.Parameters.Add(parameter);
+            command.CommandText = @"
+INSERT OR IGNORE INTO temp_catalog_relink_product_ids(remote_product_id)
+SELECT CAST(value AS TEXT)
+FROM json_each(@productIdsJson);
+
+INSERT OR IGNORE INTO temp_catalog_relink_category_ids(remote_category_id)
+SELECT CAST(value AS TEXT)
+FROM json_each(@categoryIdsJson);
+
+INSERT OR IGNORE INTO temp_catalog_relink_supplier_ids(remote_supplier_id)
+SELECT CAST(value AS TEXT)
+FROM json_each(@supplierIdsJson);";
+            command.Parameters.Add("@productIdsJson", SqliteType.Text).Value = "[]";
+            command.Parameters.Add("@categoryIdsJson", SqliteType.Text).Value = "[]";
+            command.Parameters.Add("@supplierIdsJson", SqliteType.Text).Value = "[]";
             command.Prepare();
-            foreach (var value in (values ?? Enumerable.Empty<string>())
+
+            var commandCount = 0;
+            for (var offset = 0; offset < rowCount; offset += RelinkStageRowsPerCommand)
+            {
+                command.Parameters["@productIdsJson"].Value =
+                    BuildRelinkIdsJson(productIds, offset, RelinkStageRowsPerCommand);
+                command.Parameters["@categoryIdsJson"].Value =
+                    BuildRelinkIdsJson(categoryIds, offset, RelinkStageRowsPerCommand);
+                command.Parameters["@supplierIdsJson"].Value =
+                    BuildRelinkIdsJson(supplierIds, offset, RelinkStageRowsPerCommand);
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                commandCount += 1;
+            }
+            return commandCount;
+        }
+
+        private static string[] NormalizeRelinkIds(IEnumerable<string> values)
+        {
+            return (values ?? Enumerable.Empty<string>())
                 .Select(item => (item ?? string.Empty).Trim())
                 .Where(item => item.Length > 0)
-                .Distinct(StringComparer.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static string BuildRelinkIdsJson(
+            IReadOnlyList<string> values,
+            int offset,
+            int maximumCount)
+        {
+            var count = Math.Min(maximumCount, Math.Max(0, values.Count - offset));
+            var json = new StringBuilder(Math.Max(2, count * 40));
+            json.Append('[');
+            for (var index = 0; index < count; index += 1)
             {
-                parameter.Value = value;
-                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                if (index > 0)
+                {
+                    json.Append(',');
+                }
+                AppendJsonString(json, values[offset + index]);
             }
+            json.Append(']');
+            return json.ToString();
+        }
+
+        private sealed class RemoteCatalogRelinkResult
+        {
+            internal int RowsAffected { get; set; }
+            internal int StageCommandCount { get; set; }
         }
 
         private static string NormalizeBarcode(string value)
         {
             return (value ?? string.Empty).Trim();
+        }
+
+        internal static string NormalizeSqliteNoCaseBarcodeKey(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value ?? string.Empty;
+
+            char[] normalized = null;
+            for (var index = 0; index < value.Length; index++)
+            {
+                var character = value[index];
+                if (character < 'A' || character > 'Z') continue;
+
+                if (normalized == null) normalized = value.ToCharArray();
+                normalized[index] = (char)(character + ('a' - 'A'));
+            }
+
+            return normalized == null ? value : new string(normalized);
         }
 
         internal sealed class RemoteProductReferencePreparedCommand : IDisposable
@@ -822,26 +1979,38 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
                 await _command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
         }
+
     }
 
     /// <summary>
     /// Holds the SQLite connection, prepared statements and small reference maps for one
-    /// catalog sync run. Each page still owns an independent transaction and commit fence.
+    /// catalog sync run. Delta pages keep independent transactions; a fully downloaded and
+    /// validated authoritative refresh may opt into one rollback-safe run transaction.
     /// </summary>
     public sealed class RemoteCatalogApplyRunContext : IDisposable
     {
+        private const int ProductIdentityStageRowsPerChunk = 200;
+        private const int ProductIdentityStageChunkCount = 10;
+        private const int ProductStageRowsPerChunk = 100;
+        private const int ProductStageChunkCount = 10;
         private readonly RemoteCatalogBatchRepository _repository;
         private readonly SemaphoreSlim _singleFlight = new SemaphoreSlim(1, 1);
-        private readonly SqliteCommand _clearPageProducts;
         private readonly SqliteCommand _stagePageProduct;
+        private readonly SqliteCommand _stagePageSetProduct;
+        private SqliteTransaction _atomicTransaction;
+        private RemotePriceApplyDiagnostics _atomicRemotePriceApply =
+            new RemotePriceApplyDiagnostics();
+        private long _atomicRelinkStageCommandCount;
+        private long _atomicPageCount;
+        private bool _atomicMutationGateHeld;
         private Dictionary<string, int> _categoryIdsByRemoteId =
             new Dictionary<string, int>(StringComparer.Ordinal);
         private Dictionary<string, int> _supplierIdsByRemoteId =
             new Dictionary<string, int>(StringComparer.Ordinal);
-        private ProductRepository.CatalogProductBatchContext _productContext =
-            ProductRepository.CatalogProductBatchContext.FromReferences(
-                Array.Empty<ProductRepository.ProductMetaReference>(),
-                Array.Empty<ProductRepository.ProductMetaReference>());
+        private RemoteCatalogProductWriter.CatalogProductBatchContext _productContext =
+            RemoteCatalogProductWriter.CatalogProductBatchContext.FromReferences(
+                Array.Empty<ProductMetaReference>(),
+                Array.Empty<ProductMetaReference>());
         private bool _disposed;
         private bool _referencesLoaded;
 
@@ -864,27 +2033,54 @@ CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_product_identities (
   PRIMARY KEY(barcode, remote_product_id)
 );
 CREATE INDEX IF NOT EXISTS temp_catalog_page_product_remote_id_idx
-  ON temp_catalog_page_product_identities(remote_product_id);";
+  ON temp_catalog_page_product_identities(remote_product_id);
+CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_products(
+  ordinal INTEGER PRIMARY KEY NOT NULL,
+  barcode TEXT NOT NULL COLLATE NOCASE,
+  name TEXT NOT NULL,
+  unit_price INTEGER NOT NULL,
+  remote_product_id TEXT NOT NULL,
+  article_code TEXT NOT NULL,
+  second_name TEXT NOT NULL,
+  purchase_price INTEGER NOT NULL,
+  supplier_id INTEGER,
+  supplier_name TEXT NOT NULL,
+  category_id INTEGER,
+  category_name TEXT NOT NULL,
+  stock_quantity INTEGER NOT NULL,
+  remote_category_id TEXT NOT NULL,
+  remote_supplier_id TEXT NOT NULL,
+  remote_updated_at TEXT NOT NULL,
+  apply_image_projection INTEGER NOT NULL,
+  primary_image_version_id TEXT NOT NULL,
+  primary_image_updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS temp_catalog_page_products_remote_id_idx
+  ON temp_catalog_page_products(remote_product_id);
+CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_remote_prices(
+  ordinal INTEGER PRIMARY KEY NOT NULL,
+  remote_price_id TEXT NOT NULL,
+  remote_product_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  effective_at TEXT NOT NULL,
+  source TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_remote_id_idx
+  ON temp_catalog_page_remote_prices(remote_price_id);
+CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
+  ON temp_catalog_page_remote_prices(remote_product_id);";
                     create.ExecuteNonQuery();
                 }
 
-                ProductCommands = new ProductRepository.CatalogProductPreparedCommands(
+                ProductCommands = new RemoteCatalogProductWriter.CatalogProductPreparedCommands(
                     Connection,
                     null);
                 ReferenceCommand = new RemoteCatalogBatchRepository.RemoteProductReferencePreparedCommand(
                     Connection,
                     null);
-                _clearPageProducts = Connection.CreateCommand();
-                _clearPageProducts.CommandText =
-                    "DELETE FROM temp_catalog_page_product_identities;";
-                _clearPageProducts.Prepare();
-                _stagePageProduct = Connection.CreateCommand();
-                _stagePageProduct.CommandText = @"
-INSERT OR IGNORE INTO temp_catalog_page_product_identities(barcode, remote_product_id)
-VALUES(@barcode, @remoteProductId);";
-                _stagePageProduct.Parameters.Add(new SqliteParameter("@barcode", string.Empty));
-                _stagePageProduct.Parameters.Add(new SqliteParameter("@remoteProductId", string.Empty));
-                _stagePageProduct.Prepare();
+                _stagePageProduct = CreateProductIdentityStageCommand(Connection);
+                _stagePageSetProduct = CreateProductStageCommand(Connection);
                 Diagnostics.PreparedCommandCount = 8;
                 Diagnostics.ContextSqlCommandCount = 1;
             }
@@ -899,7 +2095,7 @@ VALUES(@barcode, @remoteProductId);";
             new CatalogApplyRunDiagnostics();
 
         internal SqliteConnection Connection { get; }
-        internal ProductRepository.CatalogProductPreparedCommands ProductCommands { get; }
+        internal RemoteCatalogProductWriter.CatalogProductPreparedCommands ProductCommands { get; }
         internal RemoteCatalogBatchRepository.RemoteProductReferencePreparedCommand ReferenceCommand { get; }
 
         public async Task<RemoteCatalogBatchApplyResult> ApplyAsync(
@@ -913,11 +2109,191 @@ VALUES(@barcode, @remoteProductId);";
             try
             {
                 EnsureNotDisposed();
+                if (_atomicTransaction != null &&
+                    (!batch.AuthoritativeFullRefresh ||
+                     !batch.ReuseValidatedAuthoritativeStagePage))
+                {
+                    throw new InvalidDataException(
+                        "Atomic catalog full refresh pages require validated authoritative stage reuse.");
+                }
                 return await _repository.ApplyWithinRunAsync(
                     this,
                     batch,
                     cancellationToken,
-                    commitFence).ConfigureAwait(false);
+                    commitFence,
+                    _atomicTransaction).ConfigureAwait(false);
+            }
+            catch
+            {
+                if (_atomicTransaction != null)
+                {
+                    AbortAtomicFullRefresh();
+                }
+                throw;
+            }
+            finally
+            {
+                _singleFlight.Release();
+            }
+        }
+
+        public async Task BeginAtomicFullRefreshAsync(
+            CancellationToken cancellationToken = default)
+        {
+            EnsureNotDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            await _singleFlight.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                EnsureNotDisposed();
+                if (_atomicTransaction != null)
+                {
+                    throw new InvalidOperationException(
+                        "An atomic catalog full refresh is already active.");
+                }
+
+                await CatalogMutationGate.Instance
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                _atomicMutationGateHeld = true;
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _atomicTransaction = Connection.BeginTransaction(deferred: false);
+                    BindTransaction(_atomicTransaction);
+                    _atomicRemotePriceApply = new RemotePriceApplyDiagnostics();
+                    _atomicRelinkStageCommandCount = 0;
+                    _atomicPageCount = 0;
+                }
+                catch
+                {
+                    ReleaseAtomicMutationGate();
+                    throw;
+                }
+            }
+            finally
+            {
+                _singleFlight.Release();
+            }
+        }
+
+        public Task<PosCatalogPullResponse> LoadFullStagePageAsync(
+            string generationId,
+            long pageNumber)
+        {
+            EnsureNotDisposed();
+            if (_atomicTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "An atomic full refresh transaction is required.");
+            }
+
+            return CatalogFullResponseStageRepository.LoadPageAsync(
+                Connection,
+                _atomicTransaction,
+                generationId,
+                pageNumber);
+        }
+
+        /// <summary>
+        /// Returns the transaction that owns the current authoritative live apply.
+        /// Callers use it only for work that must succeed before that apply can commit.
+        /// </summary>
+        internal SqliteTransaction RequireAtomicFullRefreshTransaction()
+        {
+            EnsureNotDisposed();
+            if (_atomicTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "An atomic full refresh transaction is required.");
+            }
+
+            return _atomicTransaction;
+        }
+
+        /// <summary>
+        /// Rolls back the in-flight authoritative apply and releases its mutation gate.
+        /// This is intentionally explicit so callers can safely persist a typed failure
+        /// after rejecting pre-commit evidence.
+        /// </summary>
+        public async Task AbortAtomicFullRefreshAsync()
+        {
+            EnsureNotDisposed();
+            await _singleFlight.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                AbortAtomicFullRefresh();
+            }
+            finally
+            {
+                _singleFlight.Release();
+            }
+        }
+
+        public Task CommitAtomicFullRefreshAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return CommitAtomicFullRefreshAsync(null, cancellationToken);
+        }
+
+        /// <summary>
+        /// Commits an authoritative live replacement only after its caller has
+        /// durably finalized the matching catalog state in this same transaction.
+        /// </summary>
+        public async Task CommitAtomicFullRefreshAsync(
+            Func<SqliteConnection, SqliteTransaction, Task> finalizeAsync,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureNotDisposed();
+            await _singleFlight.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                EnsureNotDisposed();
+                if (_atomicTransaction == null)
+                {
+                    throw new InvalidOperationException(
+                        "No atomic catalog full refresh is active.");
+                }
+
+                var committedTransactionCount = checked(
+                    Diagnostics.CommittedTransactionCount + 1L);
+                var relinkStageSqlCommandCount = checked(
+                    Diagnostics.RelinkStageSqlCommandCount + _atomicRelinkStageCommandCount);
+                var pagesApplied = checked(Diagnostics.PagesApplied + _atomicPageCount);
+                Diagnostics.RemotePriceApply.EnsureCanMerge(_atomicRemotePriceApply);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    if (finalizeAsync != null)
+                    {
+                        await finalizeAsync(Connection, _atomicTransaction)
+                            .ConfigureAwait(false);
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _atomicTransaction.Commit();
+                }
+                catch
+                {
+                    AbortAtomicFullRefresh();
+                    throw;
+                }
+
+                var committedTransaction = _atomicTransaction;
+                _atomicTransaction = null;
+                CompleteCommittedAtomicFullRefresh(
+                    committedTransaction,
+                    committedTransactionCount,
+                    relinkStageSqlCommandCount,
+                    pagesApplied);
+            }
+            catch
+            {
+                if (_atomicTransaction != null)
+                {
+                    AbortAtomicFullRefresh();
+                }
+                throw;
             }
             finally
             {
@@ -929,8 +2305,8 @@ VALUES(@barcode, @remoteProductId);";
         {
             ProductCommands.SetTransaction(transaction);
             ReferenceCommand.SetTransaction(transaction);
-            _clearPageProducts.Transaction = transaction;
             _stagePageProduct.Transaction = transaction;
+            _stagePageSetProduct.Transaction = transaction;
         }
 
         internal async Task<RemoteCatalogPageState> CreatePageStateAsync(
@@ -964,20 +2340,21 @@ SELECT id AS Id,
 FROM suppliers
 WHERE COALESCE(is_active, 1) = 1
 ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
-            Diagnostics.ReferenceMapRefreshQueryCount += 2;
-            Diagnostics.ScopeSqlQueryCount += 2;
-            Diagnostics.ContextSqlCommandCount += 2;
+            Diagnostics.ReferenceMapRefreshQueryCount = checked(
+                Diagnostics.ReferenceMapRefreshQueryCount + 2L);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 2L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 2L);
 
             return new RemoteCatalogPageState(
                 ToRemoteIdMap(categories),
                 ToRemoteIdMap(suppliers),
-                ProductRepository.CatalogProductBatchContext.FromReferences(
-                    categories.Select(row => new ProductRepository.ProductMetaReference
+                RemoteCatalogProductWriter.CatalogProductBatchContext.FromReferences(
+                    categories.Select(row => new ProductMetaReference
                     {
                         Id = row.Id,
                         Name = row.Name
                     }),
-                    suppliers.Select(row => new ProductRepository.ProductMetaReference
+                    suppliers.Select(row => new ProductMetaReference
                     {
                         Id = row.Id,
                         Name = row.Name
@@ -988,9 +2365,8 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
             RemoteCatalogBatch batch,
             SqliteTransaction transaction)
         {
-            await _clearPageProducts.ExecuteNonQueryAsync().ConfigureAwait(false);
-            Diagnostics.ContextSqlCommandCount += 1;
-
+            var identities = new List<RemoteCatalogProductIdentityRow>(checked(
+                (batch.Products?.Count ?? 0) + (batch.ProductTombstones?.Count ?? 0)));
             foreach (var product in batch.Products ?? Array.Empty<RemoteCatalogProductWrite>())
             {
                 if (product == null)
@@ -998,7 +2374,7 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
                     continue;
                 }
 
-                await StageIdentityAsync(product.Barcode, product.RemoteProductId).ConfigureAwait(false);
+                AddIdentity(identities, product.Barcode, product.RemoteProductId);
             }
 
             foreach (var tombstone in batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
@@ -1008,8 +2384,39 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
                     continue;
                 }
 
-                await StageIdentityAsync(string.Empty, tombstone.RemoteProductId).ConfigureAwait(false);
+                AddIdentity(identities, string.Empty, tombstone.RemoteProductId);
             }
+
+            var identityGroupCapacity =
+                ProductIdentityStageRowsPerChunk * ProductIdentityStageChunkCount;
+            var identityGroupCount = Math.Max(
+                1,
+                (identities.Count + identityGroupCapacity - 1) / identityGroupCapacity);
+            for (var group = 0; group < identityGroupCount; group += 1)
+            {
+                _stagePageProduct.Parameters["@clearExisting"].Value = group == 0 ? 1 : 0;
+                SetEmptyJsonChunks(_stagePageProduct, ProductIdentityStageChunkCount);
+                var groupOffset = group * identityGroupCapacity;
+                var groupRows = Math.Min(
+                    identityGroupCapacity,
+                    Math.Max(0, identities.Count - groupOffset));
+                var chunkCount =
+                    (groupRows + ProductIdentityStageRowsPerChunk - 1) /
+                    ProductIdentityStageRowsPerChunk;
+                for (var chunk = 0; chunk < chunkCount; chunk += 1)
+                {
+                    var offset = groupOffset + (chunk * ProductIdentityStageRowsPerChunk);
+                    var rowCount = Math.Min(
+                        ProductIdentityStageRowsPerChunk,
+                        identities.Count - offset);
+                    _stagePageProduct.Parameters[JsonChunkParameterName(chunk)].Value =
+                        BuildProductIdentityRowsJson(identities, offset, rowCount);
+                }
+                await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+                Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
+            }
+            Diagnostics.StagedProductIdentityCount = checked(
+                Diagnostics.StagedProductIdentityCount + identities.Count);
         }
 
         internal async Task<IReadOnlyList<RemoteCatalogProductIdentityRow>> LoadPageProductIdentitiesAsync(
@@ -1031,10 +2438,11 @@ JOIN temp_catalog_page_product_identities incoming
 WHERE COALESCE(p.is_active, 1) = 1
   AND TRIM(COALESCE(p.remote_product_id, '')) <> '';",
                 transaction: transaction).ConfigureAwait(false)).ToArray();
-            Diagnostics.ProductIdentityQueryCount += 1;
-            Diagnostics.ProductIdentityRowsLoaded += rows.Length;
-            Diagnostics.ScopeSqlQueryCount += 1;
-            Diagnostics.ContextSqlCommandCount += 1;
+            Diagnostics.ProductIdentityQueryCount = checked(Diagnostics.ProductIdentityQueryCount + 1L);
+            Diagnostics.ProductIdentityRowsLoaded = checked(
+                Diagnostics.ProductIdentityRowsLoaded + rows.Length);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 1L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
             return rows;
         }
 
@@ -1063,11 +2471,95 @@ JOIN temp_catalog_page_product_identities incoming
  AND incoming.remote_product_id = p.remote_product_id
 WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
                 transaction: transaction).ConfigureAwait(false)).ToArray();
-            Diagnostics.PendingStockQueryCount += 1;
-            Diagnostics.PendingStockRowsLoaded += rows.Length;
-            Diagnostics.ScopeSqlQueryCount += 1;
-            Diagnostics.ContextSqlCommandCount += 1;
+            Diagnostics.PendingStockQueryCount = checked(Diagnostics.PendingStockQueryCount + 1L);
+            Diagnostics.PendingStockRowsLoaded = checked(
+                Diagnostics.PendingStockRowsLoaded + rows.Length);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 1L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
             return rows;
+        }
+
+        internal async Task<IReadOnlyList<RemoteCatalogProtectedProductRow>> LoadPageProtectedProductsAsync(
+            SqliteTransaction transaction)
+        {
+            var rows = (await Connection.QueryAsync<RemoteCatalogProtectedProductRow>(@"
+SELECT DISTINCT
+       p.id AS ProductId,
+       COALESCE(p.remote_product_id, '') AS RemoteProductId,
+       p.barcode AS Barcode
+FROM article_mutation_outbox mutation
+JOIN products p ON p.id = mutation.local_product_id
+JOIN temp_catalog_page_product_identities incoming
+  ON (incoming.remote_product_id <> ''
+      AND p.remote_product_id = incoming.remote_product_id)
+  OR (incoming.barcode <> ''
+      AND p.barcode = incoming.barcode COLLATE NOCASE)
+WHERE mutation.state <> 'completed'
+ORDER BY p.id;",
+                transaction: transaction).ConfigureAwait(false)).ToArray();
+            Diagnostics.ProtectedProductQueryCount = checked(
+                Diagnostics.ProtectedProductQueryCount + 1L);
+            Diagnostics.ProtectedProductRowsLoaded = checked(
+                Diagnostics.ProtectedProductRowsLoaded + rows.Length);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 1L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
+            return rows;
+        }
+
+        internal async Task<bool> PageRequiresLegacyProductRebindAsync(
+            SqliteTransaction transaction)
+        {
+            var required = await Connection.ExecuteScalarAsync<long>(@"
+SELECT EXISTS (
+  SELECT 1
+  FROM temp_catalog_page_product_identities incoming
+  JOIN products existing_remote
+    ON incoming.remote_product_id <> ''
+   AND existing_remote.remote_product_id = incoming.remote_product_id
+   AND existing_remote.barcode <> incoming.barcode
+  WHERE incoming.barcode <> ''
+    AND NOT EXISTS (
+      SELECT 1
+      FROM products target
+      WHERE target.barcode = incoming.barcode
+    )
+);",
+                transaction: transaction).ConfigureAwait(false);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 1L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
+            return required != 0;
+        }
+
+        internal async Task StageCleanProductsAsync(
+            IReadOnlyList<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite> products)
+        {
+            var rows = products ??
+                Array.Empty<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite>();
+            var productGroupCapacity = ProductStageRowsPerChunk * ProductStageChunkCount;
+            var productGroupCount = Math.Max(
+                1,
+                (rows.Count + productGroupCapacity - 1) / productGroupCapacity);
+            for (var group = 0; group < productGroupCount; group += 1)
+            {
+                _stagePageSetProduct.Parameters["@clearExisting"].Value = group == 0 ? 1 : 0;
+                SetEmptyJsonChunks(_stagePageSetProduct, ProductStageChunkCount);
+                var groupOffset = group * productGroupCapacity;
+                var groupRows = Math.Min(
+                    productGroupCapacity,
+                    Math.Max(0, rows.Count - groupOffset));
+                var chunkCount =
+                    (groupRows + ProductStageRowsPerChunk - 1) /
+                    ProductStageRowsPerChunk;
+                for (var chunk = 0; chunk < chunkCount; chunk += 1)
+                {
+                    var offset = groupOffset + (chunk * ProductStageRowsPerChunk);
+                    var rowCount = Math.Min(ProductStageRowsPerChunk, rows.Count - offset);
+                    _stagePageSetProduct.Parameters[JsonChunkParameterName(chunk)].Value =
+                        BuildProductRowsJson(rows, offset, rowCount);
+                }
+                await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+                Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
+            }
         }
 
         internal void CommitPageState(RemoteCatalogPageState pageState)
@@ -1080,7 +2572,42 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
 
         internal void RecordPageApplied()
         {
-            Diagnostics.PagesApplied += 1;
+            Diagnostics.PagesApplied = checked(Diagnostics.PagesApplied + 1L);
+        }
+
+        internal void RecordRemotePriceApply(RemotePriceApplyDiagnostics pageDiagnostics)
+        {
+            Diagnostics.RemotePriceApply.MergeFrom(pageDiagnostics);
+        }
+
+        internal void RecordRelinkStageCommands(long commandCount)
+        {
+            Diagnostics.RelinkStageSqlCommandCount = checked(
+                Diagnostics.RelinkStageSqlCommandCount + commandCount);
+        }
+
+        internal void RecordCommittedTransaction()
+        {
+            Diagnostics.CommittedTransactionCount = checked(
+                Diagnostics.CommittedTransactionCount + 1L);
+        }
+
+        internal void RecordUncommittedAtomicPage(
+            int relinkStageCommandCount,
+            RemotePriceApplyDiagnostics remotePriceApply,
+            RemoteCatalogPageState pageState)
+        {
+            if (_atomicTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "Atomic catalog page diagnostics require an active transaction.");
+            }
+
+            _atomicRelinkStageCommandCount = checked(
+                _atomicRelinkStageCommandCount + relinkStageCommandCount);
+            _atomicRemotePriceApply.MergeFrom(remotePriceApply);
+            _atomicPageCount = checked(_atomicPageCount + 1L);
+            CommitPageState(pageState);
         }
 
         public void Dispose()
@@ -1091,16 +2618,85 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
             }
 
             _disposed = true;
+            AbortAtomicFullRefresh();
             BindTransaction(null);
+            _stagePageSetProduct.Dispose();
             _stagePageProduct.Dispose();
-            _clearPageProducts.Dispose();
             ReferenceCommand.Dispose();
             ProductCommands.Dispose();
             Connection.Dispose();
             _singleFlight.Dispose();
         }
 
-        private async Task StageIdentityAsync(string barcode, string remoteProductId)
+        private void AbortAtomicFullRefresh()
+        {
+            if (_atomicTransaction != null)
+            {
+                try { _atomicTransaction.Rollback(); } catch { }
+                BindTransaction(null);
+                _atomicTransaction.Dispose();
+                _atomicTransaction = null;
+            }
+
+            ResetAtomicDiagnostics();
+            ReleaseAtomicMutationGate();
+        }
+
+        private void ReleaseAtomicMutationGate()
+        {
+            if (!_atomicMutationGateHeld)
+            {
+                return;
+            }
+
+            _atomicMutationGateHeld = false;
+            CatalogMutationGate.Instance.Release();
+        }
+
+        private void ResetAtomicDiagnostics()
+        {
+            _atomicRemotePriceApply = new RemotePriceApplyDiagnostics();
+            _atomicRelinkStageCommandCount = 0;
+            _atomicPageCount = 0;
+        }
+
+        /// <summary>
+        /// A physical SQLite commit is authoritative. Cleanup and observability after
+        /// that point are best effort and must never cause the caller to receive a
+        /// failure for data that is already live.
+        /// </summary>
+        private void CompleteCommittedAtomicFullRefresh(
+            SqliteTransaction committedTransaction,
+            long committedTransactionCount,
+            long relinkStageSqlCommandCount,
+            long pagesApplied)
+        {
+            try
+            {
+                try { BindTransaction(null); } catch { }
+                try { committedTransaction?.Dispose(); } catch { }
+
+                // All checked sums were validated before the physical commit.
+                try
+                {
+                    Diagnostics.CommittedTransactionCount = committedTransactionCount;
+                    Diagnostics.RelinkStageSqlCommandCount = relinkStageSqlCommandCount;
+                    Diagnostics.PagesApplied = pagesApplied;
+                    Diagnostics.RemotePriceApply.MergeFrom(_atomicRemotePriceApply);
+                }
+                catch { }
+            }
+            finally
+            {
+                try { ResetAtomicDiagnostics(); } catch { }
+                try { ReleaseAtomicMutationGate(); } catch { }
+            }
+        }
+
+        private static void AddIdentity(
+            ICollection<RemoteCatalogProductIdentityRow> identities,
+            string barcode,
+            string remoteProductId)
         {
             var normalizedBarcode = (barcode ?? string.Empty).Trim();
             var normalizedRemoteProductId = (remoteProductId ?? string.Empty).Trim();
@@ -1109,11 +2705,236 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
                 return;
             }
 
-            _stagePageProduct.Parameters["@barcode"].Value = normalizedBarcode;
-            _stagePageProduct.Parameters["@remoteProductId"].Value = normalizedRemoteProductId;
-            await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-            Diagnostics.StagedProductIdentityCount += 1;
-            Diagnostics.ContextSqlCommandCount += 1;
+            identities.Add(new RemoteCatalogProductIdentityRow
+            {
+                Barcode = normalizedBarcode,
+                RemoteProductId = normalizedRemoteProductId
+            });
+        }
+
+        private static SqliteCommand CreateProductIdentityStageCommand(SqliteConnection connection)
+        {
+            var command = connection.CreateCommand();
+            var commandText = new StringBuilder(@"
+DELETE FROM temp_catalog_page_product_identities
+WHERE @clearExisting = 1;
+");
+            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
+            for (var chunk = 0; chunk < ProductIdentityStageChunkCount; chunk += 1)
+            {
+                commandText.Append(@"
+WITH staged AS (
+  SELECT
+    CAST(json_extract(value, '$[0]') AS TEXT) AS barcode,
+    CAST(json_extract(value, '$[1]') AS TEXT) AS remote_product_id
+  FROM json_each(");
+                commandText.Append(JsonChunkParameterName(chunk));
+                commandText.Append(@")
+)
+INSERT OR IGNORE INTO temp_catalog_page_product_identities(barcode, remote_product_id)
+SELECT barcode, remote_product_id
+FROM staged;
+");
+                command.Parameters.Add(
+                    JsonChunkParameterName(chunk),
+                    SqliteType.Text).Value = "[]";
+            }
+            command.CommandText = commandText.ToString();
+            command.Prepare();
+            return command;
+        }
+
+        private static SqliteCommand CreateProductStageCommand(SqliteConnection connection)
+        {
+            var command = connection.CreateCommand();
+            var commandText = new StringBuilder(@"
+DELETE FROM temp_catalog_page_products
+WHERE @clearExisting = 1;
+");
+            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
+            for (var chunk = 0; chunk < ProductStageChunkCount; chunk += 1)
+            {
+                commandText.Append(@"
+WITH staged AS (
+  SELECT
+    CAST(json_extract(value, '$[0]') AS INTEGER) AS ordinal,
+    CAST(json_extract(value, '$[1]') AS TEXT) AS barcode,
+    CAST(json_extract(value, '$[2]') AS TEXT) AS name,
+    CAST(json_extract(value, '$[3]') AS INTEGER) AS unit_price,
+    CAST(json_extract(value, '$[4]') AS TEXT) AS remote_product_id,
+    CAST(json_extract(value, '$[5]') AS TEXT) AS article_code,
+    CAST(json_extract(value, '$[6]') AS TEXT) AS second_name,
+    CAST(json_extract(value, '$[7]') AS INTEGER) AS purchase_price,
+    CAST(json_extract(value, '$[8]') AS INTEGER) AS supplier_id,
+    CAST(json_extract(value, '$[9]') AS TEXT) AS supplier_name,
+    CAST(json_extract(value, '$[10]') AS INTEGER) AS category_id,
+    CAST(json_extract(value, '$[11]') AS TEXT) AS category_name,
+    CAST(json_extract(value, '$[12]') AS INTEGER) AS stock_quantity,
+    CAST(json_extract(value, '$[13]') AS TEXT) AS remote_category_id,
+    CAST(json_extract(value, '$[14]') AS TEXT) AS remote_supplier_id,
+    CAST(json_extract(value, '$[15]') AS TEXT) AS remote_updated_at,
+    CAST(json_extract(value, '$[16]') AS INTEGER) AS apply_image_projection,
+    CAST(json_extract(value, '$[17]') AS TEXT) AS primary_image_version_id,
+    CAST(json_extract(value, '$[18]') AS TEXT) AS primary_image_updated_at
+  FROM json_each(");
+                commandText.Append(JsonChunkParameterName(chunk));
+                commandText.Append(@")
+)
+INSERT INTO temp_catalog_page_products(
+  ordinal,
+  barcode,
+  name,
+  unit_price,
+  remote_product_id,
+  article_code,
+  second_name,
+  purchase_price,
+  supplier_id,
+  supplier_name,
+  category_id,
+  category_name,
+  stock_quantity,
+  remote_category_id,
+  remote_supplier_id,
+  remote_updated_at,
+  apply_image_projection,
+  primary_image_version_id,
+  primary_image_updated_at)
+SELECT
+  ordinal,
+  barcode,
+  name,
+  unit_price,
+  remote_product_id,
+  article_code,
+  second_name,
+  purchase_price,
+  supplier_id,
+  supplier_name,
+  category_id,
+  category_name,
+  stock_quantity,
+  remote_category_id,
+  remote_supplier_id,
+  remote_updated_at,
+  apply_image_projection,
+  primary_image_version_id,
+  primary_image_updated_at
+FROM staged;
+");
+                command.Parameters.Add(
+                    JsonChunkParameterName(chunk),
+                    SqliteType.Text).Value = "[]";
+            }
+            command.CommandText = commandText.ToString();
+            command.Prepare();
+            return command;
+        }
+
+        private static string JsonChunkParameterName(int chunk)
+        {
+            return "@rowsJson" + chunk.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static void SetEmptyJsonChunks(SqliteCommand command, int chunkCount)
+        {
+            for (var chunk = 0; chunk < chunkCount; chunk += 1)
+            {
+                command.Parameters[JsonChunkParameterName(chunk)].Value = "[]";
+            }
+        }
+
+        private static string BuildProductIdentityRowsJson(
+            IReadOnlyList<RemoteCatalogProductIdentityRow> rows,
+            int offset,
+            int rowCount)
+        {
+            var json = new StringBuilder(Math.Max(256, rowCount * 64));
+            json.Append('[');
+            for (var index = 0; index < rowCount; index += 1)
+            {
+                if (index > 0) json.Append(',');
+                var row = rows[offset + index];
+                json.Append('[');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.Barcode);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteProductId);
+                json.Append(']');
+            }
+            json.Append(']');
+            return json.ToString();
+        }
+
+        private static string BuildProductRowsJson(
+            IReadOnlyList<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite> rows,
+            int offset,
+            int rowCount)
+        {
+            var json = new StringBuilder(Math.Max(512, rowCount * 256));
+            json.Append('[');
+            for (var index = 0; index < rowCount; index += 1)
+            {
+                if (index > 0) json.Append(',');
+                var row = rows[offset + index];
+                json.Append('[');
+                AppendJsonInteger(json, offset + index);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.Barcode);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.Name);
+                json.Append(',');
+                AppendJsonInteger(json, row.UnitPrice);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteProductId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.ArticleCode);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.SecondName);
+                json.Append(',');
+                AppendJsonInteger(json, row.PurchasePrice);
+                json.Append(',');
+                AppendJsonNullableInteger(json, row.SupplierId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.SupplierName);
+                json.Append(',');
+                AppendJsonNullableInteger(json, row.CategoryId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.CategoryName);
+                json.Append(',');
+                AppendJsonInteger(json, row.StockQuantity);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteCategoryId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteSupplierId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteUpdatedAt);
+                json.Append(',');
+                AppendJsonInteger(json, row.ApplyImageProjection ? 1 : 0);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.PrimaryImageVersionId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.PrimaryImageUpdatedAt);
+                json.Append(']');
+            }
+            json.Append(']');
+            return json.ToString();
+        }
+
+        private static void AppendJsonInteger(StringBuilder json, long value)
+        {
+            json.Append(value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static void AppendJsonNullableInteger(StringBuilder json, int? value)
+        {
+            if (value.HasValue)
+            {
+                AppendJsonInteger(json, value.Value);
+            }
+            else
+            {
+                json.Append("null");
+            }
         }
 
         private static Dictionary<string, int> ToRemoteIdMap(
@@ -1136,17 +2957,102 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
 
     public sealed class CatalogApplyRunDiagnostics
     {
+        public long CommittedTransactionCount { get; internal set; }
         public long ContextSqlCommandCount { get; internal set; }
-        public int LegacyScopeSqlQueryEstimate => PagesApplied * 6;
-        public int PagesApplied { get; internal set; }
-        public int PendingStockQueryCount { get; internal set; }
+        public long LegacyScopeSqlQueryEstimate => checked(PagesApplied * 6L);
+        public long PagesApplied { get; internal set; }
+        public long PendingStockQueryCount { get; internal set; }
         public long PendingStockRowsLoaded { get; internal set; }
-        public int PreparedCommandCount { get; internal set; }
-        public int ProductIdentityQueryCount { get; internal set; }
+        public long PreparedCommandCount { get; internal set; }
+        public long ProductIdentityQueryCount { get; internal set; }
         public long ProductIdentityRowsLoaded { get; internal set; }
-        public int ReferenceMapRefreshQueryCount { get; internal set; }
-        public int ScopeSqlQueryCount { get; internal set; }
+        public long ProtectedProductQueryCount { get; internal set; }
+        public long ProtectedProductRowsLoaded { get; internal set; }
+        public long ReferenceMapRefreshQueryCount { get; internal set; }
+        public long RelinkStageSqlCommandCount { get; internal set; }
+        public RemotePriceApplyDiagnostics RemotePriceApply { get; } =
+            new RemotePriceApplyDiagnostics();
+        public long ScopeSqlQueryCount { get; internal set; }
         public long StagedProductIdentityCount { get; internal set; }
+    }
+
+    public sealed class RemotePriceApplyDiagnostics
+    {
+        public long FallbackPageCount { get; internal set; }
+        public long PreparedCommandCount { get; internal set; }
+        public long SetBasedPageCount { get; internal set; }
+        public long SqlCommandCount { get; internal set; }
+        public long SqlStatementCount { get; internal set; }
+        public long StagedRowCount { get; internal set; }
+
+        internal void RecordFallbackPage()
+        {
+            FallbackPageCount = checked(FallbackPageCount + 1L);
+        }
+
+        internal void RecordPreparedCommand()
+        {
+            PreparedCommandCount = checked(PreparedCommandCount + 1L);
+        }
+
+        internal void RecordSetBasedPage(int stagedRows)
+        {
+            if (stagedRows < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(stagedRows));
+            }
+
+            SetBasedPageCount = checked(SetBasedPageCount + 1L);
+            StagedRowCount = checked(StagedRowCount + stagedRows);
+        }
+
+        internal void RecordSqlCommand(int statementCount)
+        {
+            if (statementCount < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(statementCount));
+            }
+
+            SqlCommandCount = checked(SqlCommandCount + 1L);
+            SqlStatementCount = checked(SqlStatementCount + statementCount);
+        }
+
+        internal void MergeFrom(RemotePriceApplyDiagnostics pageDiagnostics)
+        {
+            if (pageDiagnostics == null)
+            {
+                throw new ArgumentNullException(nameof(pageDiagnostics));
+            }
+
+            FallbackPageCount = checked(
+                FallbackPageCount + pageDiagnostics.FallbackPageCount);
+            PreparedCommandCount = checked(
+                PreparedCommandCount + pageDiagnostics.PreparedCommandCount);
+            SetBasedPageCount = checked(
+                SetBasedPageCount + pageDiagnostics.SetBasedPageCount);
+            SqlCommandCount = checked(SqlCommandCount + pageDiagnostics.SqlCommandCount);
+            SqlStatementCount = checked(
+                SqlStatementCount + pageDiagnostics.SqlStatementCount);
+            StagedRowCount = checked(StagedRowCount + pageDiagnostics.StagedRowCount);
+        }
+
+        internal void EnsureCanMerge(RemotePriceApplyDiagnostics pageDiagnostics)
+        {
+            if (pageDiagnostics == null)
+            {
+                throw new ArgumentNullException(nameof(pageDiagnostics));
+            }
+
+            checked
+            {
+                _ = FallbackPageCount + pageDiagnostics.FallbackPageCount;
+                _ = PreparedCommandCount + pageDiagnostics.PreparedCommandCount;
+                _ = SetBasedPageCount + pageDiagnostics.SetBasedPageCount;
+                _ = SqlCommandCount + pageDiagnostics.SqlCommandCount;
+                _ = SqlStatementCount + pageDiagnostics.SqlStatementCount;
+                _ = StagedRowCount + pageDiagnostics.StagedRowCount;
+            }
+        }
     }
 
     internal sealed class RemoteCatalogPageState
@@ -1154,7 +3060,7 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
         internal RemoteCatalogPageState(
             Dictionary<string, int> categoryIdsByRemoteId,
             Dictionary<string, int> supplierIdsByRemoteId,
-            ProductRepository.CatalogProductBatchContext productContext)
+            RemoteCatalogProductWriter.CatalogProductBatchContext productContext)
         {
             CategoryIdsByRemoteId = categoryIdsByRemoteId;
             SupplierIdsByRemoteId = supplierIdsByRemoteId;
@@ -1163,7 +3069,7 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
 
         internal Dictionary<string, int> CategoryIdsByRemoteId { get; }
         internal Dictionary<string, int> SupplierIdsByRemoteId { get; }
-        internal ProductRepository.CatalogProductBatchContext ProductContext { get; set; }
+        internal RemoteCatalogProductWriter.CatalogProductBatchContext ProductContext { get; set; }
 
         internal void RemoveTombstonedReferences(
             IEnumerable<string> categoryRemoteIds,
@@ -1204,9 +3110,32 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
         public string ShopId { get; set; } = string.Empty;
     }
 
+    public sealed class CatalogAuthoritativeStagePage
+    {
+        public string FullRunId { get; set; } = string.Empty;
+        public bool HasMore { get; set; }
+        public long PageNumber { get; set; }
+    }
+
+    public sealed class CatalogAuthoritativeStageEvidence
+    {
+        public CatalogAuthoritativeStageEvidence(
+            CatalogPaginationLaneCounts laneCounts,
+            string conflictCode)
+        {
+            LaneCounts = laneCounts ?? throw new ArgumentNullException(nameof(laneCounts));
+            ConflictCode = conflictCode ?? string.Empty;
+        }
+
+        public string ConflictCode { get; }
+        public CatalogPaginationLaneCounts LaneCounts { get; }
+    }
+
     public sealed class RemoteCatalogBatch
     {
         public bool AuthoritativeFullRefresh { get; set; }
+        public CatalogAuthoritativeStagePage AuthoritativeStagePage { get; set; }
+        public bool ReuseValidatedAuthoritativeStagePage { get; set; }
         public IReadOnlyList<RemoteCatalogCategoryWrite> Categories { get; set; } =
             Array.Empty<RemoteCatalogCategoryWrite>();
         public IReadOnlyList<RemoteCatalogCategoryTombstoneWrite> CategoryTombstones { get; set; } =
@@ -1239,15 +3168,20 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
 
     public sealed class RemoteCatalogProductWrite
     {
+        public bool ApplyImageProjection { get; set; }
         public string ArticleCode { get; set; } = string.Empty;
         public string Barcode { get; set; } = string.Empty;
         public int? CategoryId { get; set; }
         public string CategoryName { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string ImageWarningCode { get; set; } = string.Empty;
         public int PurchasePrice { get; set; }
+        public string PrimaryImageUpdatedAt { get; set; } = string.Empty;
+        public string PrimaryImageVersionId { get; set; } = string.Empty;
         public string RemoteCategoryId { get; set; } = string.Empty;
         public string RemoteProductId { get; set; } = string.Empty;
         public string RemoteSupplierId { get; set; } = string.Empty;
+        public string RemoteUpdatedAt { get; set; } = string.Empty;
         public string SecondName { get; set; } = string.Empty;
         public int StockQuantity { get; set; }
         public int? SupplierId { get; set; }
@@ -1274,6 +3208,13 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
         public string RemoteProductId { get; set; } = string.Empty;
     }
 
+    internal sealed class RemoteCatalogProtectedProductRow
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public long ProductId { get; set; }
+        public string RemoteProductId { get; set; } = string.Empty;
+    }
+
     public sealed class RemoteCatalogPriceWrite
     {
         public string EffectiveAt { get; set; } = string.Empty;
@@ -1288,6 +3229,7 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
     {
         public string RemoteDeletedAt { get; set; } = string.Empty;
         public string RemoteProductId { get; set; } = string.Empty;
+        public string RemoteUpdatedAt { get; set; } = string.Empty;
     }
 
     public sealed class RemoteCatalogCategoryTombstoneWrite
@@ -1306,25 +3248,27 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
 
     public sealed class RemoteCatalogBatchApplyResult
     {
-        public int CategoriesApplied { get; internal set; }
-        public int CategoriesSkipped { get; internal set; }
-        public int CategoryTombstonesApplied { get; internal set; }
-        public int PendingPricesApplied { get; internal set; }
-        public int PricesApplied { get; internal set; }
-        public int PricesQueued { get; internal set; }
-        public int PricesSkipped { get; internal set; }
-        public int ProductsApplied { get; internal set; }
-        public int ProductsSkipped { get; internal set; }
-        public int ProductTombstonesApplied { get; internal set; }
-        public int ProductReferencesRelinked { get; internal set; }
-        public int ProductIdentityConflicts { get; internal set; }
-        public int SuppliersApplied { get; internal set; }
-        public int SuppliersSkipped { get; internal set; }
-        public int SupplierTombstonesApplied { get; internal set; }
-        public int TombstonesApplied =>
-            ProductTombstonesApplied + CategoryTombstonesApplied + SupplierTombstonesApplied;
-        public int TombstonesSkipped { get; internal set; }
-        public int RowsSkipped =>
-            CategoriesSkipped + SuppliersSkipped + ProductsSkipped + PricesSkipped + TombstonesSkipped;
+        public long CategoriesApplied { get; internal set; }
+        public long CategoriesSkipped { get; internal set; }
+        public long CategoryTombstonesApplied { get; internal set; }
+        public long ImageWarnings { get; internal set; }
+        public long PendingPricesApplied { get; internal set; }
+        public long PricesApplied { get; internal set; }
+        public long PricesQueued { get; internal set; }
+        public long PricesSkipped { get; internal set; }
+        public long ProductsApplied { get; internal set; }
+        public long ProductsSkipped { get; internal set; }
+        public long ProductTombstonesApplied { get; internal set; }
+        public long ProductReferencesRelinked { get; internal set; }
+        public long ProductIdentityConflicts { get; internal set; }
+        public long SuppliersApplied { get; internal set; }
+        public long SuppliersSkipped { get; internal set; }
+        public long SupplierTombstonesApplied { get; internal set; }
+        public long TombstonesApplied => checked(
+            checked(ProductTombstonesApplied + CategoryTombstonesApplied) + SupplierTombstonesApplied);
+        public long TombstonesSkipped { get; internal set; }
+        public long RowsSkipped => checked(
+            checked(checked(CategoriesSkipped + SuppliersSkipped) + ProductsSkipped) +
+            checked(PricesSkipped + TombstonesSkipped));
     }
 }

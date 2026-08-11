@@ -14,6 +14,7 @@ using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
+using Win7POS.Core.Security;
 using Win7POS.Core.Util;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
@@ -21,6 +22,7 @@ using Win7POS.Data.Backup;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
 using Win7POS.Wpf.Printing;
@@ -95,6 +97,16 @@ namespace Win7POS.Wpf.Pos
         private readonly IReceiptPrinter _receiptPrinter = new WindowsSpoolerReceiptPrinter();
 
         private SaleCompleted _lastCompletedSale;
+        private PendingSaleAttempt _pendingSaleAttempt;
+
+        private void InvalidatePendingSaleAttemptIfCartChanged()
+        {
+            if (_pendingSaleAttempt != null &&
+                !_pendingSaleAttempt.MatchesCart(_session.Lines))
+            {
+                _pendingSaleAttempt = null;
+            }
+        }
 
         public PosWorkflowService()
         {
@@ -106,13 +118,13 @@ namespace Win7POS.Wpf.Pos
             _sales = new SaleRepository(_factory);
             _settings = new SettingsRepository(_factory);
             _dbMaintenance = new DbMaintenanceRepository(_factory);
-            _onlineBackup = new SqliteOnlineBackup(_factory);
+            _onlineBackup = new SqliteOnlineBackup(_factory, LogBackupRestoreDiagnostic);
             _catalogImportOutbox = new CatalogImportOutboxRepository(_factory);
             _suppliers = new SupplierRepository(_factory);
             _categories = new CategoryRepository(_factory);
             _heldCarts = new HeldCartRepository(_factory);
             _officialShopSnapshots = new ShopOfficialSnapshotRepository(_factory);
-            _session = new PosSession(new DataProductLookup(_products), new DataSalesStore(_sales));
+            _session = new PosSession(new DataProductLookup(_products));
         }
 
         public string DbPath => _options.DbPath;
@@ -324,14 +336,17 @@ namespace Win7POS.Wpf.Pos
             }).ConfigureAwait(false);
         }
 
-        public async Task<DbRestoreResult> RestoreDbAsync(string backupDbPath)
+        public async Task<DbRestoreResult> RestoreDbAsync(
+            string backupDbPath,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(backupDbPath))
                 throw new ArgumentException("backup path is empty");
             if (!File.Exists(backupDbPath))
                 throw new FileNotFoundException("Backup file not found.", backupDbPath);
 
-            await _gate.WaitAsync().ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             IDisposable authorizationMaintenanceLease = null;
             IDisposable catalogTransitionLease = null;
             var syncSupervisorStopAttempted = false;
@@ -341,9 +356,13 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 authorizationMaintenanceLease =
-                    PosOnlineSyncRevocationLatch.EnterAuthorizationMaintenance();
+                    await PosOnlineSyncRevocationLatch
+                        .EnterAuthorizationMaintenanceAsync()
+                        .ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 syncSupervisorStopAttempted = true;
                 await PosOnlineSyncSignalBus.StopAsync().ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 trustedDeviceStore = new PosTrustedDeviceStore();
                 if (trustedDeviceStore.TryRead(out var trustedSession))
                 {
@@ -352,7 +371,7 @@ namespace Win7POS.Wpf.Pos
                         out invalidatedGeneration);
                 }
                 catalogTransitionLease = await new CatalogShopTransitionBarrier(_factory)
-                    .EnterAsync()
+                    .EnterAsync(cancellationToken)
                     .ConfigureAwait(false);
                 var catalogState = new CatalogShopStateRepository(_factory);
                 var liveCatalogEpoch = await catalogState.LoadTransitionEpochAsync().ConfigureAwait(false);
@@ -374,89 +393,48 @@ namespace Win7POS.Wpf.Pos
                     throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"));
                 }
 
-                var restoredAt = DateTimeOffset.UtcNow;
+                if (await new ArticleMutationOutboxRepository(_factory)
+                    .CountUnresolvedAsync().ConfigureAwait(false) > 0)
+                {
+                    _logger.LogWarning(
+                        "POS DB restore blocked: unresolved article mutation outbox exists.");
+                    throw new InvalidOperationException(
+                        PosLocalization.T(
+                            "dbMaintenance.restoreBlockedUnresolvedArticleMutations"));
+                }
 
-                var tempRestorePath = Path.Combine(
-                    AppPaths.BackupsDirectory,
-                    "pos_restore_validate_" + Guid.NewGuid().ToString("N") + ".db");
+                if (await new ProductImageOperationOutboxRepository(_factory)
+                    .CountUnresolvedAsync().ConfigureAwait(false) > 0)
+                {
+                    _logger.LogWarning(
+                        "POS DB restore blocked: unresolved product image outbox exists.");
+                    throw new InvalidOperationException(
+                        PosLocalization.T(
+                            "dbMaintenance.restoreBlockedUnresolvedProductImages"));
+                }
+
+                var restoredAt = DateTimeOffset.UtcNow;
+                cancellationToken.ThrowIfCancellationRequested();
+                var preBackupPath = AllocateDbBackupPath("pos_pre_restore_");
+                var integrity = string.Empty;
+                var foreignKeys = string.Empty;
+                var integrityOk = false;
+                var postSwapCommitCompleted = false;
+                OperationCanceledException deferredCancellation = null;
                 try
                 {
-                    File.Copy(backupDbPath, tempRestorePath, true);
-                    var validateOptions = new PosDbOptions(tempRestorePath);
-                    DbInitializer.EnsureCreated(validateOptions);
-                    var validateFactory = new SqliteConnectionFactory(validateOptions);
-                    var validationMaintenance = new DbMaintenanceRepository(validateFactory);
-                    var candidateValidation = await validationMaintenance.ValidateAsync().ConfigureAwait(false);
-                    if (!candidateValidation.IsValid)
-                    {
-                        throw new InvalidOperationException(PosLocalization.F(
-                            "dbMaintenance.integrityCheckFailed",
-                            candidateValidation.IntegrityCheck + " / FK: " + candidateValidation.ForeignKeyCheck));
-                    }
-
-                    var restoreSafety = await new RestoreShopSafetyRepository(validateFactory)
-                        .ValidateCandidateAsync(currentShop.ShopId, currentShop.ShopCode)
-                        .ConfigureAwait(false);
-                    if (!restoreSafety.IsValid)
-                    {
-                        throw new InvalidOperationException(restoreSafety.Code);
-                    }
-
-                    SqliteConnectionFactory.ClearAllPools();
-
-                    var preBackupPath = string.Empty;
-                    var integrity = string.Empty;
-                    var foreignKeys = string.Empty;
-                    var integrityOk = false;
-                    await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
-                    {
-                        var livePreSwapSafety = await new RestoreShopSafetyRepository(_factory)
-                            .ValidateLivePreSwapAsync(
-                                currentShop.ShopId,
-                                currentShop.ShopCode,
-                                liveCatalogEpoch)
-                            .ConfigureAwait(false);
-                        if (!livePreSwapSafety.IsValid)
-                        {
-                            _logger.LogWarning(
-                                "POS DB restore blocked by fenced pre-swap validation: " +
-                                livePreSwapSafety.Code);
-                            if (string.Equals(
-                                livePreSwapSafety.Code,
-                                "restore_live_sales_outbox_unresolved",
-                                StringComparison.Ordinal))
-                            {
-                                throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"));
-                            }
-
-                            if (string.Equals(
-                                livePreSwapSafety.Code,
-                                "restore_live_catalog_outbox_unresolved",
-                                StringComparison.Ordinal))
-                            {
-                                throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"));
-                            }
-
-                            throw new InvalidOperationException(livePreSwapSafety.Code);
-                        }
-
-                        var fencedCandidateSafety = await new RestoreShopSafetyRepository(validateFactory)
-                            .ValidateCandidateAsync(currentShop.ShopId, currentShop.ShopCode)
-                            .ConfigureAwait(false);
-                        if (!fencedCandidateSafety.IsValid)
-                        {
-                            throw new InvalidOperationException(fencedCandidateSafety.Code);
-                        }
-
-                        preBackupPath = await CreateDbBackupNoLockAsync("pos_pre_restore_").ConfigureAwait(false);
-                        await new AtomicRestoreInstaller().InstallAsync(
-                            tempRestorePath,
-                            _options.DbPath,
+                    var coordinator = new SqliteRestoreCoordinator(
+                        _factory,
+                        _onlineBackup,
+                        LogBackupRestoreDiagnostic);
+                    var outcome = await coordinator.RestoreAsync(
+                            backupDbPath,
                             preBackupPath,
-                            async () =>
+                            currentShop.ShopId,
+                            currentShop.ShopCode,
+                            liveCatalogEpoch,
+                            async liveValidation =>
                             {
-                                DbInitializer.EnsureCreated(_options);
-                                var liveValidation = await _dbMaintenance.ValidateAsync().ConfigureAwait(false);
                                 integrity = liveValidation.IntegrityCheck;
                                 foreignKeys = liveValidation.ForeignKeyCheck;
                                 integrityOk = liveValidation.IsValid;
@@ -484,7 +462,7 @@ namespace Win7POS.Wpf.Pos
                                 await _settings.SetBoolAsync(KeyRestoreNeedsSyncReview, true).ConfigureAwait(false);
                                 await _settings.SetStringAsync(KeyRestoreLastCompletedAt, restoredAt.ToString("O", CultureInfo.InvariantCulture)).ConfigureAwait(false);
                                 await _settings.SetStringAsync(KeyRestoreLastPreBackupPath, preBackupPath).ConfigureAwait(false);
-                                await _settings.SetStringAsync(KeyRestoreLastSourcePath, backupDbPath).ConfigureAwait(false);
+                                await _settings.SetStringAsync(KeyRestoreLastSourcePath, Path.GetFileName(backupDbPath)).ConfigureAwait(false);
                                 await _settings.SetStringAsync(KeyRestoreLastIntegrityCheck, integrity).ConfigureAwait(false);
                                 var details = AuditDetails.Kv(
                                     ("backupFile", Path.GetFileName(backupDbPath)),
@@ -502,42 +480,59 @@ namespace Win7POS.Wpf.Pos
                                 // post-swap action. Every pre-restore synchronous
                                 // authorization cache is invalid from this point.
                                 PosOnlineSyncRevocationLatch
-                                    .InvalidateAuthorizationState();
-                            }).ConfigureAwait(false);
-                    }).ConfigureAwait(false);
+                                    .InvalidateAuthorizationStateWhileMaintenanceHeld();
+                                postSwapCommitCompleted = true;
+                            },
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    integrity = outcome.LiveValidation.IntegrityCheck;
+                    foreignKeys = outcome.LiveValidation.ForeignKeyCheck;
+                    integrityOk = outcome.LiveValidation.IsValid;
                     restoreInstalled = true;
-
-                    PosOnlineSyncRevocationLatch.Revoke(invalidatedGeneration);
-                    trustedDeviceStore.Clear();
-                    if (trustedDeviceStore.HasStoredState())
-                    {
-                        _logger.LogWarning(
-                            "POS DB restore left a stale trusted-session file; " +
-                            "the authorization epoch and inactive generation " +
-                            "tombstone keep it denied.");
-                    }
-
-                    _logger.LogWarning("POS DB restored; sync review required. backupFile=" + Path.GetFileName(backupDbPath) + " preBackupFile=" + Path.GetFileName(preBackupPath));
-                    return new DbRestoreResult
-                    {
-                        ForeignKeyCheck = foreignKeys,
-                        IntegrityCheck = integrity,
-                        IntegrityOk = integrityOk,
-                        PreRestoreBackupPath = preBackupPath,
-                        RestoredFromPath = backupDbPath,
-                        SyncReviewRequired = true
-                    };
                 }
-                finally
+                catch (OperationCanceledException cancellationException)
+                    when (postSwapCommitCompleted)
                 {
-                    try { File.Delete(tempRestorePath); } catch { }
-                    try { File.Delete(tempRestorePath + "-wal"); } catch { }
-                    try { File.Delete(tempRestorePath + "-shm"); } catch { }
+                    // Cancellation observed after the prepared marker is propagated
+                    // only after the atomic protocol has reached a valid terminal state.
+                    restoreInstalled = true;
+                    deferredCancellation = cancellationException;
                 }
+                catch (InvalidOperationException safetyException)
+                    when (IsRestoreSafetyCode(safetyException.Message))
+                {
+                    throw TranslateRestoreSafetyFailure(safetyException);
+                }
+
+                PosOnlineSyncRevocationLatch.RevokeWhileMaintenanceHeld(
+                    invalidatedGeneration);
+                trustedDeviceStore.Clear();
+                if (trustedDeviceStore.HasStoredState())
+                {
+                    _logger.LogWarning(
+                        "POS DB restore left a stale trusted-session file; " +
+                        "the authorization epoch and inactive generation " +
+                        "tombstone keep it denied.");
+                }
+
+                _logger.LogWarning("POS DB restored; sync review required. backupFile=" + Path.GetFileName(backupDbPath) + " preBackupFile=" + Path.GetFileName(preBackupPath));
+                if (deferredCancellation != null)
+                    throw deferredCancellation;
+                return new DbRestoreResult
+                {
+                    ForeignKeyCheck = foreignKeys,
+                    IntegrityCheck = integrity,
+                    IntegrityOk = integrityOk,
+                    PreRestoreBackupPath = preBackupPath,
+                    RestoredFromPath = backupDbPath,
+                    SyncReviewRequired = true
+                };
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "POS DB restore failed");
+                _logger.LogError(
+                    null,
+                    "POS DB restore failed result=" + GetBackupRestoreFailureCode(ex));
                 throw;
             }
             finally
@@ -826,27 +821,26 @@ namespace Win7POS.Wpf.Pos
             return sale.PaidCash > 0 ? "non_stampata_contanti" : "non_stampata_policy_carta";
         }
 
-        public async Task<string> BackupDbAsync()
+        public async Task<string> BackupDbAsync(
+            CancellationToken cancellationToken = default(CancellationToken))
         {
-            await _gate.WaitAsync().ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 DbInitializer.EnsureCreated(_options);
-                AppPaths.EnsureCreated();
+                cancellationToken.ThrowIfCancellationRequested();
+                var outputPath = AllocateDbBackupPath("pos_backup_");
 
-                var fileName = "pos_backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".db";
-                var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
-                var outputDir = Path.GetDirectoryName(outputPath);
-                if (!string.IsNullOrWhiteSpace(outputDir))
-                    Directory.CreateDirectory(outputDir);
-
-                await _onlineBackup.CreateVerifiedAsync(outputPath).ConfigureAwait(false);
+                await _onlineBackup.CreateVerifiedAsync(outputPath, cancellationToken).ConfigureAwait(false);
                 _logger.LogInfo("POS DB backup created: " + Path.GetFileName(outputPath));
                 return outputPath;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "POS DB backup failed");
+                _logger.LogError(
+                    null,
+                    "POS DB backup failed result=" + GetBackupRestoreFailureCode(ex));
                 throw;
             }
             finally
@@ -855,23 +849,85 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        private async Task<string> CreateDbBackupNoLockAsync(string prefix)
+        private string AllocateDbBackupPath(string prefix)
         {
             AppPaths.EnsureCreated();
 
             if (!File.Exists(_options.DbPath))
-                throw new FileNotFoundException("Current POS database not found; restore pre-backup was not created.", _options.DbPath);
+                throw new FileNotFoundException("Current POS database not found; backup path was not allocated.");
 
             var safePrefix = string.IsNullOrWhiteSpace(prefix) ? "pos_backup_" : prefix;
-            var fileName = safePrefix + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture) + ".db";
-            var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
-            var outputDir = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrWhiteSpace(outputDir))
-                Directory.CreateDirectory(outputDir);
+            Directory.CreateDirectory(AppPaths.BackupsDirectory);
+            for (var attempt = 0; attempt < 16; attempt++)
+            {
+                var fileName = safePrefix +
+                    DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture) +
+                    "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".db";
+                var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
+                if (!File.Exists(outputPath))
+                    return outputPath;
+            }
 
-            await _onlineBackup.CreateVerifiedAsync(outputPath).ConfigureAwait(false);
-            _logger.LogInfo("POS DB pre-restore backup created: " + Path.GetFileName(outputPath));
-            return outputPath;
+            throw new IOException("Unable to allocate a unique backup file name.");
+        }
+
+        private void LogBackupRestoreDiagnostic(BackupRestoreDiagnostic diagnostic)
+        {
+            if (diagnostic != null)
+                _logger.LogInfo(diagnostic.ToSafeLogLine());
+        }
+
+        private static string GetBackupRestoreFailureCode(Exception failure)
+        {
+            if (failure is OperationCanceledException)
+                return "cancelled";
+            if (failure is UnauthorizedAccessException)
+                return "access_denied";
+            if (failure is FileNotFoundException)
+                return "source_missing";
+            if (failure is InvalidDataException)
+                return "invalid_database";
+            if (failure is TimeoutException)
+                return "fence_timeout";
+            if (failure is IOException)
+                return "io_failure";
+            if (failure is InvalidOperationException)
+                return "safety_rejected";
+            return "unexpected_failure";
+        }
+
+        private static bool IsRestoreSafetyCode(string code)
+        {
+            return string.Equals(code, "restore_live_sales_outbox_unresolved", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_catalog_outbox_unresolved", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_article_outbox_unresolved", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_product_image_outbox_unresolved", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_shop_changed", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_catalog_shop_mismatch", StringComparison.Ordinal) ||
+                string.Equals(code, "restore_live_catalog_epoch_changed", StringComparison.Ordinal);
+        }
+
+        private static InvalidOperationException TranslateRestoreSafetyFailure(
+            InvalidOperationException failure)
+        {
+            var code = failure?.Message ?? string.Empty;
+            if (string.Equals(code, "restore_live_sales_outbox_unresolved", StringComparison.Ordinal))
+                return new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"), failure);
+            if (string.Equals(code, "restore_live_catalog_outbox_unresolved", StringComparison.Ordinal))
+                return new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"), failure);
+            if (string.Equals(code, "restore_live_article_outbox_unresolved", StringComparison.Ordinal))
+            {
+                return new InvalidOperationException(
+                    PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedArticleMutations"),
+                    failure);
+            }
+            if (string.Equals(code, "restore_live_product_image_outbox_unresolved", StringComparison.Ordinal))
+            {
+                return new InvalidOperationException(
+                    PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedProductImages"),
+                    failure);
+            }
+            return new InvalidOperationException(code, failure);
         }
 
         public async Task InitializeAsync()
@@ -907,6 +963,7 @@ namespace Win7POS.Wpf.Pos
                 var code = (barcode ?? string.Empty).Trim();
                 _logger.LogInfo("POS add barcode: " + code);
                 await _session.AddByBarcodeAsync(code).ConfigureAwait(false);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.itemAdded"));
             }
             catch (Exception ex)
@@ -927,6 +984,7 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogInfo("POS add manual price: " + unitPriceMinor);
                 await _session.AddManualPriceAsync(unitPriceMinor).ConfigureAwait(false);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.manualItemAdded"));
             }
             catch (Exception ex)
@@ -982,18 +1040,24 @@ namespace Win7POS.Wpf.Pos
                 if (purchasePriceMinor < 0) purchasePriceMinor = 0;
                 if (stockQty < 0) stockQty = 0;
 
-                await _products.UpsertAsync(new Product
-                {
-                    Barcode = code,
-                    Name = productName,
-                    UnitPrice = unitPriceMinor
-                }).ConfigureAwait(false);
-
-                await _products.UpsertMetaAsync(code, purchasePriceMinor, supplierId, supplierName ?? string.Empty, categoryId, categoryName ?? string.Empty, stockQty).ConfigureAwait(false);
-
-                await _products.InsertPriceHistoryAsync(code, "retail", unitPriceMinor, "MANUAL").ConfigureAwait(false);
-                if (purchasePriceMinor > 0)
-                    await _products.InsertPriceHistoryAsync(code, "purchase", purchasePriceMinor, "MANUAL").ConfigureAwait(false);
+                await _products.CreateLocalArticleAsync(
+                    new LocalArticleCreateRequest
+                    {
+                        Barcode = code,
+                        PrimaryName = productName,
+                        RetailPrice = unitPriceMinor,
+                        PurchasePrice = purchasePriceMinor,
+                        SupplierId = supplierId,
+                        SupplierName = supplierName ?? string.Empty,
+                        CategoryId = categoryId,
+                        CategoryName = categoryName ?? string.Empty,
+                        InitialStock = stockQty,
+                        OccurredAt = DateTimeOffset.UtcNow
+                    },
+                    ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+                PosOnlineSyncSignalBus.Signal(
+                    OnlineSyncLane.ArticleMutationOutbox,
+                    OnlineSyncLaneTrigger.LocalCommit);
             }
             finally
             {
@@ -1010,12 +1074,38 @@ namespace Win7POS.Wpf.Pos
             var product = await _products.GetByBarcodeAsync(code).ConfigureAwait(false);
             if (product == null) return await GetSnapshotAsync().ConfigureAwait(true);
 
-            await _products.UpdateAsync(product.Id, name ?? string.Empty, unitPriceMinor).ConfigureAwait(false);
+            var current = await _products.GetDetailsByIdAsync(product.Id)
+                .ConfigureAwait(false);
+            if (current == null)
+                return await GetSnapshotAsync().ConfigureAwait(true);
+            await _products.UpdateLocalArticleAsync(
+                new LocalArticleUpdateRequest
+                {
+                    ProductId = current.Id,
+                    Barcode = current.Barcode,
+                    PrimaryName = name ?? string.Empty,
+                    RetailPrice = unitPriceMinor,
+                    PurchasePrice = current.PurchasePrice,
+                    SupplierId = current.SupplierId,
+                    SupplierName = current.SupplierName,
+                    CategoryId = current.CategoryId,
+                    CategoryName = current.CategoryName,
+                    StockQuantity = current.StockQty,
+                    ItemNumber = current.ArticleCode,
+                    SecondaryName = current.Name2,
+                    StockReason = "count_correction",
+                    OccurredAt = DateTimeOffset.UtcNow
+                },
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+            PosOnlineSyncSignalBus.Signal(
+                OnlineSyncLane.ArticleMutationOutbox,
+                OnlineSyncLaneTrigger.LocalCommit);
 
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
                 _session.SetLineUnitPrice(code, unitPriceMinor);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.priceUpdated"));
             }
             finally
@@ -1043,11 +1133,13 @@ namespace Win7POS.Wpf.Pos
                 if (product == null)
                 {
                     _session.SetQuantity(code, 0);
+                    InvalidatePendingSaleAttemptIfCartChanged();
                     return await BuildSnapshotAsync(PosLocalization.T("pos.status.productRemovedFromCartMissing")).ConfigureAwait(false);
                 }
 
                 _session.SetLineUnitPrice(code, product.UnitPrice);
                 _session.SetLineName(code, product.Name ?? string.Empty);
+                InvalidatePendingSaleAttemptIfCartChanged();
 
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.catalogSynced")).ConfigureAwait(false);
             }
@@ -1067,45 +1159,20 @@ namespace Win7POS.Wpf.Pos
             return await _categories.ListAllAsync().ConfigureAwait(false);
         }
 
-        public async Task<PosPayResult> PayAsync()
-        {
-            await _gate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                _logger.LogInfo("POS pay start");
-                var completed = await _session.PayCashAsync().ConfigureAwait(false);
-                _lastCompletedSale = completed;
-                var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
-                var preview = BuildReceiptPreview(completed, true, shop);
-                var snapshot = await BuildSnapshotAsync(PosLocalization.T("pos.status.paymentCompleted"));
-                _logger.LogInfo("POS pay done: " + completed.Sale.Code);
-                return new PosPayResult
-                {
-                    SaleCode = completed.Sale.Code,
-                    ReceiptPreview = preview,
-                    Snapshot = snapshot
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "POS pay failed");
-                throw;
-            }
-            finally
-            {
-                _gate.Release();
-            }
-        }
-
         public async Task<PosSaleResult> CompleteSaleAsync(
             PosPaymentInfo payment,
+            OperatorSession operatorSession,
             string saleCode = null,
             long? createdAtMs = null,
-            int? operatorId = null,
             ReceiptShopInfo receiptShopSnapshot = null)
         {
             if (payment == null) throw new ArgumentNullException(nameof(payment));
+            if (operatorSession == null)
+                throw new ArgumentNullException(nameof(operatorSession));
 
+            string authorizationDeniedCode = null;
+            var authorizationDeniedOperatorAuthorityVersion =
+                long.MinValue;
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -1125,7 +1192,6 @@ namespace Win7POS.Wpf.Pos
                     PaidCash = payment.CashAmountMinor,
                     PaidCard = payment.CardAmountMinor,
                     Change = payment.GetChangeMinor(total),
-                    OperatorId = operatorId
                 };
 
                 var saleLines = _session.Lines.Select(x => new SaleLine
@@ -1141,7 +1207,76 @@ namespace Win7POS.Wpf.Pos
                 var shop = FreezeReceiptShopInfo(
                     receiptShopSnapshot ?? await GetShopInfoNoLockAsync().ConfigureAwait(false));
                 sale.ReceiptShopSnapshotJson = SerializeReceiptShopSnapshot(shop);
-                var saleId = await _sales.InsertSaleAsync(sale, saleLines).ConfigureAwait(false);
+                var authorizationUse = await operatorSession
+                    .BeginAuthorizationUseAsync(
+                        PermissionCodes.PosPay,
+                        PosLocalization.T("operations.pay"))
+                    .ConfigureAwait(false);
+                long saleId;
+                using (authorizationUse)
+                {
+                    PendingSaleAttempt saleAttempt = null;
+                    var createdSaleAttempt = false;
+                    try
+                    {
+                        var authorizationCommitGuard =
+                            authorizationUse.CommitGuard;
+                        authorizationCommitGuard.DemandStillValid();
+                        sale.OperatorId =
+                            authorizationCommitGuard.OperatorId;
+                        if (_pendingSaleAttempt != null)
+                        {
+                            if (!_pendingSaleAttempt.MatchesContent(
+                                    sale,
+                                    saleLines) ||
+                                !_pendingSaleAttempt.MatchesAuthority(
+                                    authorizationCommitGuard))
+                            {
+                                throw new InvalidOperationException(
+                                    "La vendita in sospeso non corrisponde al tentativo corrente; è richiesta la riconciliazione.");
+                            }
+                            saleAttempt = _pendingSaleAttempt;
+                            saleAttempt.ApplyIdentity(sale);
+                            shop = TryDeserializeReceiptShopSnapshot(
+                                sale.ReceiptShopSnapshotJson) ??
+                                throw new InvalidOperationException(
+                                    "Lo snapshot della vendita in sospeso non è valido.");
+                        }
+                        else
+                        {
+                            saleAttempt = new PendingSaleAttempt(
+                                sale,
+                                saleLines,
+                                authorizationCommitGuard);
+                            _pendingSaleAttempt = saleAttempt;
+                            createdSaleAttempt = true;
+                        }
+                        saleId = await _sales.InsertAuthorizedSaleAsync(
+                                sale,
+                                saleLines,
+                                authorizationCommitGuard)
+                            .ConfigureAwait(false);
+                        if (ReferenceEquals(
+                                _pendingSaleAttempt,
+                                saleAttempt))
+                        {
+                            _pendingSaleAttempt = null;
+                        }
+                    }
+                    catch (PosAuthorizationLeaseException)
+                    {
+                        if (createdSaleAttempt &&
+                            ReferenceEquals(
+                                _pendingSaleAttempt,
+                                saleAttempt))
+                        {
+                            _pendingSaleAttempt = null;
+                        }
+                        // The outer denial handler runs only after both the
+                        // authorization-use lease and workflow gate release.
+                        throw;
+                    }
+                }
                 sale.Id = saleId;
                 QueueSalesOutboxSyncNoThrow();
 
@@ -1163,6 +1298,16 @@ namespace Win7POS.Wpf.Pos
                     Snapshot = snapshot
                 };
             }
+            catch (PosAuthorizationLeaseException ex)
+            {
+                authorizationDeniedCode = ex.Code;
+                authorizationDeniedOperatorAuthorityVersion =
+                    ex.OperatorAuthorityVersion;
+                _logger.LogError(
+                    ex,
+                    "POS complete sale authorization denied");
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "POS complete sale failed");
@@ -1171,6 +1316,25 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 _gate.Release();
+                if (!string.IsNullOrWhiteSpace(
+                        authorizationDeniedCode))
+                {
+                    try
+                    {
+                        operatorSession.HandleAuthorizationUseDenied(
+                            authorizationDeniedCode,
+                            authorizationDeniedOperatorAuthorityVersion);
+                    }
+                    catch (Exception denialHandlingError)
+                    {
+                        // The original authorization denial remains the public
+                        // failure. Operator authority is cleared before session
+                        // notifications are raised.
+                        _logger.LogError(
+                            denialHandlingError,
+                            "POS authorization denial handling failed");
+                    }
+                }
             }
         }
 
@@ -1426,6 +1590,7 @@ namespace Win7POS.Wpf.Pos
                 var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
                 if (line == null) return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(line.Barcode, line.Quantity + 1);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityPlus", 1));
             }
             finally
@@ -1444,6 +1609,7 @@ namespace Win7POS.Wpf.Pos
                 var next = line.Quantity - 1;
                 if (next < 1) next = 1;
                 _session.SetQuantity(line.Barcode, next);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityMinus", 1));
             }
             finally
@@ -1463,6 +1629,7 @@ namespace Win7POS.Wpf.Pos
                 var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
                 if (line == null) return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(code, qty <= 0 ? 0 : qty);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
             }
             catch (Exception ex)
@@ -1492,6 +1659,7 @@ namespace Win7POS.Wpf.Pos
                 if (DiscountKeys.IsDiscount(line.Barcode ?? ""))
                     return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(line.Barcode ?? "", qty <= 0 ? 0 : qty);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
             }
             catch (Exception ex)
@@ -1511,6 +1679,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.RemoveLine(barcode);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.lineRemoved"));
             }
             finally
@@ -1525,6 +1694,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyCartDiscountPercent(percent);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.cartDiscountRemoved") : PosLocalization.T("pos.status.cartDiscountApplied"));
             }
             finally
@@ -1539,6 +1709,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountPercent(barcode, percent);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.discountRemoved") : PosLocalization.T("pos.status.discountUpdated"));
             }
             finally
@@ -1553,6 +1724,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountAmount(barcode, amountMinor);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.amountDiscountApplied"));
             }
             finally
@@ -1568,6 +1740,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountByFinalUnitPrice(barcode, finalUnitPriceMinor);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.discountUpdated"));
             }
             finally
@@ -1582,6 +1755,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ClearCartDiscount();
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartDiscountRemoved"));
             }
             finally
@@ -1970,6 +2144,7 @@ namespace Win7POS.Wpf.Pos
                 }
                 foreach (var b in toRemove)
                     _session.RemoveLine(b);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 var status = toRemove.Count > 0 ? "Prodotto rimosso dal carrello: non più presente nel database." : string.Empty;
                 return await BuildSnapshotAsync(status).ConfigureAwait(false);
             }
@@ -1985,6 +2160,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.Clear();
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartCleared"));
             }
             finally
@@ -2015,6 +2191,7 @@ namespace Win7POS.Wpf.Pos
 
                 await _heldCarts.CreateHoldAsync(holdId, createdAtMs, total, lines).ConfigureAwait(false);
                 _session.Clear();
+                InvalidatePendingSaleAttemptIfCartChanged();
 
                 return new SuspendCartResult { Success = true, HoldId = holdId, Message = PosLocalization.T("pos.status.cartSuspended") };
             }
@@ -2074,6 +2251,7 @@ namespace Win7POS.Wpf.Pos
                 }).ToList();
 
                 _session.ReplaceWithLines(restored);
+                _pendingSaleAttempt = null;
                 await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
 
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartRecovered"));
@@ -2113,7 +2291,9 @@ namespace Win7POS.Wpf.Pos
             };
 
             foreach (var item in demo)
-                await _products.UpsertAsync(item).ConfigureAwait(false);
+                await _products.UpsertAsync(
+                    item,
+                    ProductWriteOrigin.TestFixture).ConfigureAwait(false);
             _logger.LogInfo("POS demo seed inserted: " + demo.Length);
         }
 
@@ -2525,6 +2705,217 @@ namespace Win7POS.Wpf.Pos
             public ReceiptPrintOptions Options { get; set; }
             public PosPrintResult Result { get; set; }
         }
+
+        private sealed class PendingSaleAttempt
+        {
+            private readonly IReadOnlyList<PendingSaleLineIdentity> _lines;
+            private readonly long _paidCard;
+            private readonly long _paidCash;
+            private readonly long _change;
+            private readonly long _total;
+
+            public PendingSaleAttempt(
+                Sale sale,
+                IReadOnlyList<SaleLine> lines,
+                SaleAuthorizationCommitGuard authorizationCommitGuard)
+            {
+                if (sale == null)
+                    throw new ArgumentNullException(nameof(sale));
+                if (lines == null)
+                    throw new ArgumentNullException(nameof(lines));
+                if (authorizationCommitGuard == null)
+                {
+                    throw new ArgumentNullException(
+                        nameof(authorizationCommitGuard));
+                }
+                Code = sale.Code ?? string.Empty;
+                CreatedAt = sale.CreatedAt;
+                AuthorizationEpoch =
+                    authorizationCommitGuard.AuthorizationEpoch;
+                GenerationFingerprint =
+                    authorizationCommitGuard.GenerationFingerprint;
+                GenerationId =
+                    authorizationCommitGuard.GenerationId;
+                OperatorId =
+                    authorizationCommitGuard.OperatorId;
+                ShopCode = authorizationCommitGuard.ShopCode;
+                ShopDeviceId =
+                    authorizationCommitGuard.ShopDeviceId;
+                ShopId = authorizationCommitGuard.ShopId;
+                StaffCredentialVersion =
+                    authorizationCommitGuard.StaffCredentialVersion;
+                StaffId = authorizationCommitGuard.StaffId;
+                ReceiptShopSnapshotJson =
+                    sale.ReceiptShopSnapshotJson ?? string.Empty;
+                _total = sale.Total;
+                _paidCash = sale.PaidCash;
+                _paidCard = sale.PaidCard;
+                _change = sale.Change;
+                _lines = lines.Select(
+                        line => new PendingSaleLineIdentity(line))
+                    .ToList();
+            }
+
+            public string Code { get; }
+            public long CreatedAt { get; }
+            public long AuthorizationEpoch { get; }
+            public string GenerationFingerprint { get; }
+            public string GenerationId { get; }
+            public int OperatorId { get; }
+            public string ReceiptShopSnapshotJson { get; }
+            public string ShopCode { get; }
+            public string ShopDeviceId { get; }
+            public string ShopId { get; }
+            public int StaffCredentialVersion { get; }
+            public string StaffId { get; }
+
+            public void ApplyIdentity(Sale sale)
+            {
+                if (sale == null)
+                    throw new ArgumentNullException(nameof(sale));
+                sale.Code = Code;
+                sale.CreatedAt = CreatedAt;
+                sale.OperatorId = OperatorId;
+                sale.ReceiptShopSnapshotJson =
+                    ReceiptShopSnapshotJson;
+            }
+
+            public bool MatchesContent(
+                Sale sale,
+                IReadOnlyList<SaleLine> lines)
+            {
+                if (sale == null ||
+                    lines == null ||
+                    sale.Total != _total ||
+                    sale.PaidCash != _paidCash ||
+                    sale.PaidCard != _paidCard ||
+                    sale.Change != _change ||
+                    lines.Count != _lines.Count)
+                {
+                    return false;
+                }
+                for (var index = 0; index < lines.Count; index++)
+                {
+                    if (!_lines[index].Matches(lines[index]))
+                        return false;
+                }
+                return true;
+            }
+
+            public bool MatchesCart(IReadOnlyList<PosLine> lines)
+            {
+                if (lines == null || lines.Count != _lines.Count)
+                    return false;
+
+                for (var index = 0; index < lines.Count; index++)
+                {
+                    if (!_lines[index].Matches(lines[index]))
+                        return false;
+                }
+
+                return true;
+            }
+
+            public bool MatchesAuthority(
+                SaleAuthorizationCommitGuard authorizationCommitGuard)
+            {
+                return authorizationCommitGuard != null &&
+                    AuthorizationEpoch ==
+                        authorizationCommitGuard.AuthorizationEpoch &&
+                    OperatorId ==
+                        authorizationCommitGuard.OperatorId &&
+                    StaffCredentialVersion ==
+                        authorizationCommitGuard
+                            .StaffCredentialVersion &&
+                    string.Equals(
+                        GenerationFingerprint,
+                        authorizationCommitGuard
+                            .GenerationFingerprint,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        GenerationId,
+                        authorizationCommitGuard.GenerationId,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        ShopCode,
+                        authorizationCommitGuard.ShopCode,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        ShopDeviceId,
+                        authorizationCommitGuard.ShopDeviceId,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        ShopId,
+                        authorizationCommitGuard.ShopId,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        StaffId,
+                        authorizationCommitGuard.StaffId,
+                        StringComparison.Ordinal);
+            }
+        }
+
+        private sealed class PendingSaleLineIdentity
+        {
+            private readonly string _barcode;
+            private readonly long _lineTotal;
+            private readonly string _name;
+            private readonly long? _productId;
+            private readonly int _quantity;
+            private readonly long? _relatedOriginalLineId;
+            private readonly long _unitPrice;
+
+            public PendingSaleLineIdentity(SaleLine line)
+            {
+                if (line == null)
+                    throw new ArgumentNullException(nameof(line));
+                _productId = line.ProductId;
+                _barcode = line.Barcode ?? string.Empty;
+                _name = line.Name ?? string.Empty;
+                _quantity = line.Quantity;
+                _unitPrice = line.UnitPrice;
+                _lineTotal = line.LineTotal;
+                _relatedOriginalLineId =
+                    line.RelatedOriginalLineId;
+            }
+
+            public bool Matches(SaleLine line)
+            {
+                return line != null &&
+                    line.ProductId == _productId &&
+                    string.Equals(
+                        line.Barcode ?? string.Empty,
+                        _barcode,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        line.Name ?? string.Empty,
+                        _name,
+                        StringComparison.Ordinal) &&
+                    line.Quantity == _quantity &&
+                    line.UnitPrice == _unitPrice &&
+                    line.LineTotal == _lineTotal &&
+                    line.RelatedOriginalLineId ==
+                        _relatedOriginalLineId;
+            }
+
+            public bool Matches(PosLine line)
+            {
+                return line != null &&
+                    line.ProductId == _productId &&
+                    string.Equals(
+                        line.Barcode ?? string.Empty,
+                        _barcode,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        line.Name ?? string.Empty,
+                        _name,
+                        StringComparison.Ordinal) &&
+                    line.Quantity == _quantity &&
+                    line.UnitPrice == _unitPrice &&
+                    line.LineTotal == _lineTotal &&
+                    !_relatedOriginalLineId.HasValue;
+            }
+        }
     }
 
     public sealed class RefundPreviewModel
@@ -2558,13 +2949,6 @@ namespace Win7POS.Wpf.Pos
         public long Subtotal { get; set; }
         public long Total { get; set; }
         public string Status { get; set; } = string.Empty;
-    }
-
-    public sealed class PosPayResult
-    {
-        public string SaleCode { get; set; } = string.Empty;
-        public string ReceiptPreview { get; set; } = string.Empty;
-        public PosWorkflowSnapshot Snapshot { get; set; } = new PosWorkflowSnapshot();
     }
 
     public sealed class PosSaleResult

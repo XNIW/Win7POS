@@ -165,7 +165,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             try
             {
-                _snapshot = await new PosSyncStatusReader(_factory).ReadAsync().ConfigureAwait(true);
+                _snapshot = await new PosSyncStatusReader(_factory)
+                    .ReadAsync(markArticleCompletionsViewed: true)
+                    .ConfigureAwait(true);
                 RenderSnapshot(_snapshot);
             }
             catch (Exception)

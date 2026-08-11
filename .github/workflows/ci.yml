@@ -8,6 +8,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      authorization_lease_smoke_only:
+        description: Run only the WPF x86 authorization lease smoke path
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -44,17 +50,20 @@ jobs:
         run: dotnet restore Win7POS.slnx --locked-mode
 
       - name: Canonical required gates
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         shell: pwsh
         run: pwsh -NoProfile -File scripts/check-required-gates.ps1
 
       - name: Build solution (Release)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         run: dotnet build Win7POS.slnx -c Release --no-restore
 
       - name: Test Core/Data
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         run: dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore --logger "trx;LogFileName=Win7POS.Core.Tests.trx"
 
       - name: Upload test results
-        if: always()
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true) }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: Win7POS-Core-TestResults-${{ github.run_id }}
@@ -63,7 +72,30 @@ jobs:
           retention-days: 14
 
       - name: Selftest (fast)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build --no-restore -- --selftest --keepdb
 
       - name: Build WPF (Release x86)
         run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+
+      - name: Build WPF smoke harness (Release x86)
+        run: dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+
+      - name: WPF product-image profile and net48 serialization smoke (x86)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-product-image-profile-smoke.ps1 -Configuration Release -Platform x86
+
+      - name: WPF authorization lease runtime smoke (x86)
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-authorization-lease-smoke.ps1 -Configuration Release -Platform x86
+
+      - name: WPF bounded asynchronous logging smoke (100k x86)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-bounded-logging-smoke.ps1 -Configuration Release -Platform x86
+
+      - name: WPF product paging dispatcher smoke (100k)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-product-paging-dispatcher-smoke.ps1 -Configuration Release -Platform x86

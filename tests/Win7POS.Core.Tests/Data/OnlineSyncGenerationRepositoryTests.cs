@@ -186,6 +186,51 @@ WHERE singleton_id = 1;"));
     }
 
     [TestMethod]
+    public async Task AuthStop_ReleasesArticleClaimAndCompletesAttemptLedger()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory);
+        await new ProductRepository(db.Factory).CreateLocalArticleAsync(
+            new LocalArticleCreateRequest
+            {
+                Barcode = "GENERATION-ARTICLE-001",
+                PrimaryName = "Generation article",
+                RetailPrice = 100,
+                PurchasePrice = 50,
+                InitialStock = 1
+            },
+            ProductWriteOrigin.LocalUserSave);
+        var generation = Generation("generation-article-auth-stop");
+        var repository = new OnlineSyncGenerationRepository(db.Factory);
+        await repository.ActivateAndRecoverAsync(generation, 100);
+        var claim = await new ArticleMutationOutboxRepository(db.Factory)
+            .ClaimBatchAsync(generation.GenerationId);
+        Assert.AreEqual(1, claim.Requests.Count);
+
+        Assert.IsTrue(await repository.StopIfCurrentAsync(
+            generation,
+            "failed_auth",
+            101));
+
+        using var connection = db.Factory.Open();
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.RetryWait,
+            await connection.ExecuteScalarAsync<string>(
+                "SELECT state FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            "auth_denied",
+            await connection.ExecuteScalarAsync<string>(
+                "SELECT last_typed_code FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            1L,
+            await connection.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM article_mutation_attempts
+WHERE completed_at IS NOT NULL
+  AND outcome = 'auth_denied';"));
+    }
+
+    [TestMethod]
     public async Task MissingGeneration_CannotAttachUntilAuthenticatedActivationCreatesIt()
     {
         using var db = TestDb.Create();

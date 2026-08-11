@@ -67,6 +67,7 @@
         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
             <Border x:Name="CardStorno" Padding="14,10" Margin="0,0,10,0" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand"
                     Focusable="True" MouseLeftButtonDown="CardStorno_Click" KeyDown="CardStorno_KeyDown"
+                    AutomationProperties.AutomationId="Refund.FullVoid"
                     AutomationProperties.Name="{loc:Loc refund.fullVoid}">
                 <Border.Style>
                     <Style TargetType="Border">
@@ -91,6 +92,7 @@
             </Border>
             <Border x:Name="CardReso" Padding="14,10" Margin="0,0,0,0" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand"
                     Focusable="True" MouseLeftButtonDown="CardReso_Click" KeyDown="CardReso_KeyDown"
+                    AutomationProperties.AutomationId="Refund.PartialReturn"
                     AutomationProperties.Name="{loc:Loc refund.partialReturn}">
                 <Border.Style>
                     <Style TargetType="Border">
@@ -127,14 +129,18 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{loc:Loc refund.scanBarcode}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock x:Name="BarcodeScanLabel" Grid.Column="0" Text="{loc:Loc refund.scanBarcode}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                 <TextBox x:Name="BarcodeScanBox" Grid.Column="1"
                          Style="{StaticResource ModernTextBoxStyle}"
                          KeyDown="BarcodeScanBox_KeyDown"
-                         ToolTip="{loc:Loc refund.scanTooltip}"/>
+                         ToolTip="{loc:Loc refund.scanTooltip}"
+                         AutomationProperties.AutomationId="Refund.BarcodeScan"
+                         AutomationProperties.LabeledBy="{Binding ElementName=BarcodeScanLabel}"/>
             </Grid>
             <TextBlock Grid.Row="1" Text="{Binding ScanMessage, Mode=OneWay}" Foreground="#C62828" FontSize="11" Margin="0,0,0,4"
-                       Visibility="{Binding HasScanMessage, Converter={StaticResource BoolToVis}}"/>
+                       Visibility="{Binding HasScanMessage, Converter={StaticResource BoolToVis}}"
+                       AutomationProperties.AutomationId="Refund.ScanStatus"
+                       AutomationProperties.LiveSetting="Assertive"/>
             <DataGrid Grid.Row="2"
                       ItemsSource="{Binding Lines}"
                       AutoGenerateColumns="False"
@@ -145,7 +151,9 @@
                       GridLinesVisibility="Horizontal"
                       HorizontalGridLinesBrush="#EEE"
                       RowBackground="White"
-                      AlternatingRowBackground="#FAFAFA">
+                      AlternatingRowBackground="#FAFAFA"
+                      AutomationProperties.AutomationId="Refund.Lines"
+                      AutomationProperties.Name="{loc:Loc refund.operationType}">
                 <DataGrid.RowStyle>
                     <StaticResource ResourceKey="SelectableDataGridRowStyle"/>
                 </DataGrid.RowStyle>
@@ -176,54 +184,67 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc refund.selectedRefund}" Margin="0,0,6,0"/>
                 <TextBlock Grid.Column="1" Text="{Binding RefundTotalText}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                <TextBlock Grid.Column="2" Margin="16,0,6,0" VerticalAlignment="Center" Text="{loc:Loc refund.reason}"/>
-                <TextBox Grid.Column="3" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center" MinWidth="120"/>
+                <TextBlock x:Name="RefundReasonLabel" Grid.Column="2" Margin="16,0,6,0" VerticalAlignment="Center" Text="{loc:Loc refund.reason}"/>
+                <TextBox Grid.Column="3" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center" MinWidth="120"
+                         AutomationProperties.AutomationId="Refund.Reason"
+                         AutomationProperties.LabeledBy="{Binding ElementName=RefundReasonLabel}"/>
             </Grid>
         </Border>
 
         <!-- Rimborso per metodo + messaggio -->
         <WrapPanel Grid.Row="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,10">
-            <TextBlock Text="{loc:Loc common.cash}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBox x:Name="CashRefundBox" Width="90" Margin="0,0,12,0" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center"/>
-            <Button Command="{Binding AllCashCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0">
+            <TextBlock x:Name="CashRefundLabel" Text="{loc:Loc common.cash}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBox x:Name="CashRefundBox" Width="90" Margin="0,0,12,0" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center"
+                     AutomationProperties.AutomationId="Refund.CashAmount"
+                     AutomationProperties.LabeledBy="{Binding ElementName=CashRefundLabel}"/>
+            <Button Command="{Binding AllCashCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0"
+                    AutomationProperties.AutomationId="Refund.AllCash" AutomationProperties.Name="{loc:Loc refund.allCash}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconCashDrawer}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc refund.allCash}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <TextBlock Text="{loc:Loc common.card}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBox Width="90" Margin="0,0,12,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center"/>
-            <Button Command="{Binding AllCardCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0">
+            <TextBlock x:Name="CardRefundLabel" Text="{loc:Loc common.card}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBox Width="90" Margin="0,0,12,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center"
+                     AutomationProperties.AutomationId="Refund.CardAmount"
+                     AutomationProperties.LabeledBy="{Binding ElementName=CardRefundLabel}"/>
+            <Button Command="{Binding AllCardCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0"
+                    AutomationProperties.AutomationId="Refund.AllCard" AutomationProperties.Name="{loc:Loc refund.allCard}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconPay}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc refund.allCard}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button Command="{Binding SplitHalfCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0" ToolTip="{loc:Loc refund.splitTooltip}">
+            <Button Command="{Binding SplitHalfCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0" ToolTip="{loc:Loc refund.splitTooltip}"
+                    AutomationProperties.AutomationId="Refund.Split" AutomationProperties.Name="{loc:Loc refund.splitHalf}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc refund.splitHalf}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button Command="{Binding ZeroRefundCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0">
+            <Button Command="{Binding ZeroRefundCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0"
+                    AutomationProperties.AutomationId="Refund.Zero" AutomationProperties.Name="{loc:Loc refund.zero}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc refund.zero}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <TextBlock VerticalAlignment="Center" Foreground="#C62828" Text="{Binding MissingText}" FontWeight="SemiBold" Margin="0,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="280"/>
+            <TextBlock VerticalAlignment="Center" Foreground="#C62828" Text="{Binding MissingText}" FontWeight="SemiBold" Margin="0,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="280"
+                       AutomationProperties.AutomationId="Refund.PaymentStatus" AutomationProperties.LiveSetting="Polite"/>
         </WrapPanel>
             </Grid>
         </ScrollViewer>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <Button MinWidth="120" Margin="0,0,10,0" Click="OnConfirmClick" Style="{StaticResource DialogActionButtonStyle}"
-                    IsEnabled="{Binding IsValid}">
+                    IsEnabled="{Binding IsValid}"
+                    AutomationProperties.AutomationId="Refund.Confirm" AutomationProperties.Name="{loc:Loc common.confirm}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconRefund}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.confirm}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button MinWidth="120" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}">
+            <Button MinWidth="120" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}"
+                    AutomationProperties.AutomationId="Refund.Cancel" AutomationProperties.Name="{loc:Loc common.cancel}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>

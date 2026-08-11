@@ -41,7 +41,11 @@ function Sanitize-Report([string]$path) {
         $finding.Secret = "[redacted]"
         $finding.Match = "[redacted]"
     }
-    [System.IO.File]::WriteAllText($path, ($findings | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $sanitizedJson = ConvertTo-Json -InputObject @($findings) -Depth 10
+    [System.IO.File]::WriteAllText(
+        $path,
+        $sanitizedJson,
+        [Text.UTF8Encoding]::new($false))
     return $findings.Count
 }
 

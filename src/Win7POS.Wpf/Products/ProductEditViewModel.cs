@@ -1,14 +1,23 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Win32;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
+using Win7POS.Data.Online;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Products.Images;
+using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
@@ -25,16 +34,25 @@ namespace Win7POS.Wpf.Products
         private string _name2 = string.Empty;
         private string _categoryText = string.Empty;
         private string _supplierText = string.Empty;
+        private StockReasonOption _selectedStockReason;
         private CategoryListItem _selectedCategory;
         private SupplierListItem _selectedSupplier;
+        private readonly ProductDetailsRow _imageProduct;
+        private readonly ProductImageWorkflowService _imageWorkflow =
+            new ProductImageWorkflowService();
+        private bool _imageBusy;
+        private bool _hasLocalImagePreview;
+        private string _imageOperationStatus = string.Empty;
 
         public ProductEditMode Mode { get; }
         public long? ProductId { get; }
         public bool IsEditMode => Mode == ProductEditMode.Edit;
-        public bool IsBarcodeReadOnly => IsEditMode;
+        public bool IsBarcodeReadOnly => false;
 
         public ObservableCollection<CategoryListItem> Categories { get; } = new ObservableCollection<CategoryListItem>();
         public ObservableCollection<SupplierListItem> Suppliers { get; } = new ObservableCollection<SupplierListItem>();
+        public ObservableCollection<StockReasonOption> StockReasons { get; } =
+            new ObservableCollection<StockReasonOption>();
 
         public string Title => Mode == ProductEditMode.Edit
             ? PosLocalization.T("products.editTitle")
@@ -49,11 +67,51 @@ namespace Win7POS.Wpf.Products
 
         private readonly ProductsWorkflowService _service;
 
+        public bool ProductImagesPhaseAEnabled =>
+            ProductImageFeatureFlags.IsPhaseAEnabled;
+        public bool CanManageImages => ProductImagesPhaseAEnabled && IsEditMode;
+        public bool ImageBusy
+        {
+            get => _imageBusy;
+            private set
+            {
+                _imageBusy = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanUseImageCommands));
+            }
+        }
+        public bool CanUseImageCommands => CanManageImages && !ImageBusy;
+        public bool CanRemoveImage => CanUseImageCommands &&
+            PosProductImageContractV1.IsCanonicalUuid(_imageProduct?.PrimaryImageVersionId);
+        public string ImageChooseActionText =>
+            _hasLocalImagePreview ||
+            PosProductImageContractV1.IsCanonicalUuid(
+                _imageProduct?.PrimaryImageVersionId)
+                ? PosLocalization.T("productImage.replace")
+                : PosLocalization.T("productImage.choose");
+        public string ImageOperationStatus
+        {
+            get => _imageOperationStatus;
+            private set
+            {
+                _imageOperationStatus = value ?? string.Empty;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ShowsImageOperationStatus));
+            }
+        }
+        public bool ShowsImageOperationStatus =>
+            !string.IsNullOrWhiteSpace(ImageOperationStatus);
+
+        public ProductImageDisplayViewModel ImageDisplay { get; } =
+            new ProductImageDisplayViewModel();
+
         public ProductEditViewModel(ProductEditMode mode, ProductDetailsRow source, ProductsWorkflowService service)
         {
             Mode = mode;
             ProductId = source?.Id;
+            _imageProduct = source;
             _service = service ?? throw new ArgumentNullException(nameof(service));
+            PopulateStockReasons();
             if (source != null)
             {
                 _barcode = Mode == ProductEditMode.Duplicate ? string.Empty : (source?.Barcode ?? string.Empty);
@@ -66,9 +124,30 @@ namespace Win7POS.Wpf.Products
             }
             ConfirmCommand = new RelayCommand(_ => Confirm(), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
+            ChooseImageCommand = new RelayCommand(
+                _ => ChooseImage(),
+                _ => CanUseImageCommands);
+            RemoveImageCommand = new RelayCommand(
+                _ => RemoveImage(),
+                _ => CanRemoveImage);
+            RetryImageCommand = new RelayCommand(
+                _ => RetryImage(),
+                _ => CanUseImageCommands);
         }
 
-        private async void Confirm()
+        private void Confirm()
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.BeginInvoke(new Action(ConfirmOnDispatcher));
+                return;
+            }
+
+            ConfirmOnDispatcher();
+        }
+
+        private async void ConfirmOnDispatcher()
         {
             if (!IsValid) return;
             var finalName = string.IsNullOrWhiteSpace(ProductName)
@@ -82,10 +161,12 @@ namespace Win7POS.Wpf.Products
                 BuildCategorySelection(out var catId, out var catName);
                 BuildSupplierSelection(out var supId, out var supName);
 
-                if (Mode == ProductEditMode.New || Mode == ProductEditMode.Duplicate)
+                if (Mode == ProductEditMode.New)
                     await _service.CreateProductAsync(Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
+                else if (Mode == ProductEditMode.Duplicate)
+                    await _service.DuplicateProductAsync(ProductId.Value, Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
                 else
-                    await _service.UpdateProductFullAsync(ProductId.Value, Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
+                    await _service.UpdateProductFullAsync(ProductId.Value, Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2, SelectedStockReason?.Code ?? "count_correction");
                 RequestClose?.Invoke(true);
             }
             catch (Exception ex)
@@ -170,6 +251,16 @@ namespace Win7POS.Wpf.Products
         public string ArticleCode { get => _articleCode; set { _articleCode = value ?? string.Empty; OnPropertyChanged(); } }
         public string Name2 { get => _name2; set { _name2 = value ?? string.Empty; OnPropertyChanged(); } }
 
+        public StockReasonOption SelectedStockReason
+        {
+            get => _selectedStockReason;
+            set
+            {
+                _selectedStockReason = value;
+                OnPropertyChanged();
+            }
+        }
+
         public CategoryListItem SelectedCategory
         {
             get => _selectedCategory;
@@ -232,13 +323,188 @@ namespace Win7POS.Wpf.Products
         }
 
         public bool IsValid =>
-            (Mode == ProductEditMode.Edit || Barcode.Length > 0) &&
+            Barcode.Length > 0 &&
             UnitPriceMinor >= 0 &&
             SalesReceiptContentPolicy.IsValidBarcode(Barcode) &&
             SalesReceiptContentPolicy.IsValidProductName(ProductName);
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
+        public ICommand ChooseImageCommand { get; }
+        public ICommand RemoveImageCommand { get; }
+        public ICommand RetryImageCommand { get; }
+
+        public async Task InitializeImageAsync(CancellationToken cancellationToken)
+        {
+            if (!CanManageImages || _imageProduct == null)
+            {
+                ImageDisplay.SetNoImage();
+                return;
+            }
+            await _imageWorkflow.LoadEditorImageAsync(
+                _imageProduct,
+                ImageDisplay,
+                cancellationToken).ConfigureAwait(true);
+            var latest = await _imageWorkflow.GetLatestOperationAsync(_imageProduct.Id)
+                .ConfigureAwait(true);
+            if (latest != null && latest.State != ProductImageOperationStates.Completed)
+                ImageOperationStatus = StatusText(latest.State, latest.CompletionState);
+        }
+
+        private void ChooseImage()
+        {
+            _ = ChooseImageAsync();
+        }
+
+        private async Task ChooseImageAsync()
+        {
+            if (!CanUseImageCommands || _imageProduct == null) return;
+            var picker = new OpenFileDialog
+            {
+                CheckFileExists = true,
+                Multiselect = false,
+                Filter = PosLocalization.T("productImage.fileFilter"),
+                Title = PosLocalization.T("productImage.choose")
+            };
+            if (picker.ShowDialog(DialogOwnerHelper.GetSafeOwner()) != true) return;
+            ImageBusy = true;
+            ImageOperationStatus = PosLocalization.T("productImage.preprocessing");
+            try
+            {
+                var progress = new Progress<string>(code =>
+                    ImageOperationStatus = StatusText(code, null));
+                var result = await _imageWorkflow.ChooseOrReplaceAsync(
+                    _imageProduct,
+                    picker.FileName,
+                    progress,
+                    CancellationToken.None).ConfigureAwait(true);
+                var preview = await ProductImageWorkflowService.DecodeLocalPreviewAsync(
+                    result.PreviewBytes,
+                    CancellationToken.None).ConfigureAwait(true);
+                ImageDisplay.SetLoaded(preview);
+                _hasLocalImagePreview = true;
+                OnPropertyChanged(nameof(ImageChooseActionText));
+                ImageOperationStatus = StatusText(result.State, null);
+            }
+            catch (Exception error)
+            {
+                ImageOperationStatus = PosLocalization.T("productImage.corrupt");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("productImage.choose"),
+                    SafeImageError(error));
+            }
+            finally
+            {
+                ImageBusy = false;
+            }
+        }
+
+        private void RemoveImage()
+        {
+            _ = RemoveImageAsync();
+        }
+
+        private async Task RemoveImageAsync()
+        {
+            if (!CanRemoveImage || _imageProduct == null) return;
+            if (!ApplyConfirmDialog.ShowConfirm(
+                DialogOwnerHelper.GetSafeOwner(),
+                PosLocalization.T("productImage.remove"),
+                PosLocalization.T("productImage.removeConfirmation")))
+            {
+                return;
+            }
+            ImageBusy = true;
+            try
+            {
+                var result = await _imageWorkflow.RemoveAsync(
+                    _imageProduct,
+                    CancellationToken.None).ConfigureAwait(true);
+                // The current image remains visible until catalog confirms removal.
+                ImageOperationStatus = StatusText(result.State, null);
+            }
+            catch (Exception error)
+            {
+                ImageOperationStatus = PosLocalization.T("productImage.unavailable");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("productImage.remove"),
+                    SafeImageError(error));
+            }
+            finally
+            {
+                ImageBusy = false;
+            }
+        }
+
+        private void RetryImage()
+        {
+            _ = RetryImageAsync();
+        }
+
+        private async Task RetryImageAsync()
+        {
+            if (!CanUseImageCommands || _imageProduct == null) return;
+            ImageBusy = true;
+            ImageOperationStatus = PosLocalization.T("productImage.retrying");
+            try
+            {
+                var retried = await _imageWorkflow.RetryLatestBlockedAsync(
+                    _imageProduct,
+                    CancellationToken.None).ConfigureAwait(true);
+                ImageOperationStatus = retried
+                    ? PosLocalization.T("productImage.queued")
+                    : PosLocalization.T("productImage.unavailable");
+            }
+            catch (Exception error)
+            {
+                ImageOperationStatus = PosLocalization.T(
+                    "productImage.unavailable");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("productImage.retry"),
+                    SafeImageError(error));
+            }
+            finally
+            {
+                ImageBusy = false;
+            }
+        }
+
+        private static string StatusText(string state, string completionState)
+        {
+            switch ((state ?? string.Empty).Trim())
+            {
+                case "preprocessing": return PosLocalization.T("productImage.preprocessing");
+                case "staging": return PosLocalization.T("productImage.preprocessing");
+                case "pending_upload": return PosLocalization.T("productImage.uploading");
+                case "pending_finalize": return PosLocalization.T("productImage.finalizing");
+                case "retry_wait": return PosLocalization.T("productImage.retrying");
+                case "failed_blocked": return PosLocalization.T("productImage.conflict");
+                case "cleanup_pending": return PosLocalization.T("productImage.cleanupPending");
+                case "completed": return PosLocalization.T("productImage.completed");
+                case "waiting_dependency":
+                case "pending_intent":
+                case "pending_remove":
+                case "queued":
+                    return PosLocalization.T("productImage.queued");
+                default:
+                    return string.Equals(
+                        completionState,
+                        "operator_resolution_required",
+                        StringComparison.Ordinal)
+                        ? PosLocalization.T("productImage.conflict")
+                        : PosLocalization.T("productImage.queued");
+            }
+        }
+
+        private static string SafeImageError(Exception error)
+        {
+            if (error is InvalidDataException)
+                return PosLocalization.T("productImage.corrupt");
+            return PosLocalization.T("productImage.unavailable");
+        }
 
         public event Action<bool> RequestClose;
         public event PropertyChangedEventHandler PropertyChanged;
@@ -250,7 +516,12 @@ namespace Win7POS.Wpf.Products
             supplierName = NormalizeChoiceText(SupplierText);
             supplierId = null;
 
-            if (IsEmptyChoice(supplierName))
+            if ((SelectedSupplier != null &&
+                 SelectedSupplier.Id == 0 &&
+                 TextMatchesSelection(
+                     supplierName,
+                     SelectedSupplier.Name)) ||
+                IsEmptyChoice(supplierName))
             {
                 supplierName = string.Empty;
                 return;
@@ -270,7 +541,12 @@ namespace Win7POS.Wpf.Products
             categoryName = NormalizeChoiceText(CategoryText);
             categoryId = null;
 
-            if (IsEmptyChoice(categoryName))
+            if ((SelectedCategory != null &&
+                 SelectedCategory.Id == 0 &&
+                 TextMatchesSelection(
+                     categoryName,
+                     SelectedCategory.Name)) ||
+                IsEmptyChoice(categoryName))
             {
                 categoryName = string.Empty;
                 return;
@@ -297,6 +573,11 @@ namespace Win7POS.Wpf.Products
         {
             var normalized = NormalizeChoiceText(text);
             return normalized.Length == 0 ||
+                string.Equals(
+                    normalized,
+                    NormalizeChoiceText(
+                        PosLocalization.T("products.none")),
+                    StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(normalized, "(Nessuno)", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(normalized, "(Nessuna)", StringComparison.OrdinalIgnoreCase);
         }
@@ -306,6 +587,44 @@ namespace Win7POS.Wpf.Products
             var value = (text ?? string.Empty).Trim();
             if (value.Length == 0) return string.Empty;
             return string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        private void PopulateStockReasons()
+        {
+            StockReasons.Add(new StockReasonOption(
+                "count_correction",
+                PosLocalization.T("products.stockReason.countCorrection")));
+            StockReasons.Add(new StockReasonOption(
+                "damage",
+                PosLocalization.T("products.stockReason.damage")));
+            StockReasons.Add(new StockReasonOption(
+                "loss",
+                PosLocalization.T("products.stockReason.loss")));
+            StockReasons.Add(new StockReasonOption(
+                "found",
+                PosLocalization.T("products.stockReason.found")));
+            StockReasons.Add(new StockReasonOption(
+                "return_to_stock",
+                PosLocalization.T("products.stockReason.returnToStock")));
+            StockReasons.Add(new StockReasonOption(
+                "transfer",
+                PosLocalization.T("products.stockReason.transfer")));
+            StockReasons.Add(new StockReasonOption(
+                "other",
+                PosLocalization.T("products.stockReason.other")));
+            SelectedStockReason = StockReasons.First();
+        }
+
+        public sealed class StockReasonOption
+        {
+            public StockReasonOption(string code, string displayName)
+            {
+                Code = code ?? string.Empty;
+                DisplayName = displayName ?? string.Empty;
+            }
+
+            public string Code { get; }
+            public string DisplayName { get; }
         }
 
         private sealed class RelayCommand : ICommand

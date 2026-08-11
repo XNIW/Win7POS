@@ -13,7 +13,10 @@ function Pass([string]$message) {
 }
 
 function Read-Text([string]$relativePath) {
-    [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
+    # Static source-distance checks must not change with the checkout EOL policy.
+    ([System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))).Replace(
+        [string][char]13 + [char]10,
+        [string][char]10).Replace([string][char]13, [string][char]10)
 }
 
 function Require-File([string]$relativePath) {
@@ -34,6 +37,7 @@ $required = @(
     "src/Win7POS.Core/Online/StartOfDaySalesDrainPolicy.cs",
     "tests/Win7POS.Core.Tests/Online/StartOfDaySalesDrainPolicyTests.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml",
     "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
@@ -56,6 +60,7 @@ if ($fail) {
 }
 
 $main = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
 $drainPolicy = Read-Text "src/Win7POS.Core/Online/StartOfDaySalesDrainPolicy.cs"
 $drainTests = Read-Text "tests/Win7POS.Core.Tests/Online/StartOfDaySalesDrainPolicyTests.cs"
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml"
@@ -178,7 +183,8 @@ $authLatch = $stopAuthBody.IndexOf("PosOnlineSyncRevocationLatch.Revoke(generati
 $authStop = $stopAuthBody.IndexOf("StopIfCurrentAsync(", [System.StringComparison]::Ordinal)
 $authRecheck = $stopAuthBody.IndexOf("IsCurrentAndActiveAsync(generation)", [System.StringComparison]::Ordinal)
 $authClear = $stopAuthBody.IndexOf("_store.TryClear(generation.GenerationId)", [System.StringComparison]::Ordinal)
-if ($service -notmatch 'lanes\.Heartbeat\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.Sales\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.CatalogImport\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.CatalogDelta\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,500}Block\(result,\s*"auth_denied"' -or
+if ($service -notmatch 'if\s*\(lanes\.AuthenticationDenied\)[\s\S]{0,220}Block\(result,\s*"auth_denied"' -or
+    $supervisor -notmatch 'Heartbeat\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}Sales\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}CatalogImport\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}ArticleMutations\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}ProductImages\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}CatalogDelta\?\.AuthenticationDenied\s*==\s*true' -or
     $syncHost -notmatch "new\s+OnlineSyncSupervisor\([\s\S]{0,700}StopAuthenticationAsync" -or
     $authLatch -lt 0 -or $authStop -le $authLatch -or
     $authRecheck -le $authStop -or $authClear -le $authRecheck) {
@@ -187,9 +193,9 @@ if ($service -notmatch 'lanes\.Heartbeat\?\.AuthenticationDenied\s*==\s*true[\s\
     Pass "start-of-day blocks auth denial and globally revokes the generation"
 }
 
-$startOfDayAuthIndex = $service.IndexOf("if (lanes.Heartbeat?.AuthenticationDenied", [System.StringComparison]::Ordinal)
+$startOfDayAuthIndex = $service.IndexOf("if (lanes.AuthenticationDenied)", [System.StringComparison]::Ordinal)
 $catalogRequiredIndex = $service.IndexOf("var catalogRequired =", [System.StringComparison]::Ordinal)
-if ($service -notmatch "lanes\.Sales\?\.AuthenticationDenied\s*==\s*true" -or
+if ($supervisor -notmatch "Sales\?\.AuthenticationDenied\s*==\s*true" -or
     $startOfDayAuthIndex -lt 0 -or $catalogRequiredIndex -lt 0 -or
     $startOfDayAuthIndex -gt $catalogRequiredIndex) {
     Fail "start-of-day must stop the next lane directly from the typed sales auth result"
@@ -197,12 +203,18 @@ if ($service -notmatch "lanes\.Sales\?\.AuthenticationDenied\s*==\s*true" -or
     Pass "start-of-day uses typed sales auth-stop before the next lane"
 }
 
-if ($service -notmatch "lanes\.CatalogImport\?\.AuthenticationDenied\s*==\s*true" -or
+if ($supervisor -notmatch "CatalogImport\?\.AuthenticationDenied\s*==\s*true" -or
     $startOfDayAuthIndex -lt 0 -or $catalogRequiredIndex -lt 0 -or
     $startOfDayAuthIndex -gt $catalogRequiredIndex) {
     Fail "start-of-day must stop the next lane directly from the typed import auth result"
 } else {
     Pass "start-of-day uses typed import auth-stop before the next lane"
+}
+
+if ($service -notmatch "lanes\.ProductImages\?\.RequestCatalogNow\s*==\s*true") {
+    Fail "start-of-day must request catalog reconciliation after product image completion"
+} else {
+    Pass "start-of-day preserves product-image catalog reconciliation requests"
 }
 
 if ($syncHost -notmatch "decision\.ShouldSkipCatalogPull[\s\S]{0,500}TryConfirmCatalogUnchangedAsync\([\s\S]{0,500}clearStaleError:\s*true[\s\S]{0,400}generation:\s*context\.Generation" -or
@@ -272,8 +284,9 @@ if ($main -match "startOfDayResult\s*==\s*null\s*\|\|\s*startOfDayResult\.Should
     Pass "MainWindow always starts the scheduler after normal POS opening"
 }
 
-if ($main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,400}factory\s*==\s*null\s*\|\|\s*App\.IsSafeStart\s*\|\|\s*_recoveryMode" -or
-    $main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,700}host\.StartContinuous\(\)" -or
+if ($main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,300}_startupCoordinator\?\.StartAdaptive\(factory,\s*initialTrigger\)" -or
+    $startupCoordinator -notmatch "public\s+void\s+StartAdaptive\s*\([\s\S]{0,360}PosStartupCoordinatorPolicy\.CanStartBackground" -or
+    $startupCoordinator -notmatch "public\s+void\s+StartAdaptive\s*\([\s\S]{0,500}host\.StartContinuous\(\)" -or
     $syncHost -notmatch "StartContinuous\(\)[\s\S]{0,300}lock\s*\(_stateGate\)[\s\S]{0,260}_disposed\s*\|\|\s*_supervisor\s*==\s*null\s*\|\|\s*_continuousStarted[\s\S]{0,160}_continuousStarted\s*=\s*true[\s\S]{0,160}supervisor\.Start\(\)") {
     Fail "shared supervisor safe-start/recovery/single-flight guards missing"
 } else {

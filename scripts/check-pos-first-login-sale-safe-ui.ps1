@@ -33,6 +33,8 @@ function Index-OrFail([string]$text, [string]$needle, [string]$message) {
 $required = @(
     "src/Win7POS.Wpf/MainWindow.xaml",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
+    "src/Win7POS.Core/Online/PosStartupCoordinatorPolicy.cs",
     "src/Win7POS.Wpf/Pos/PosView.xaml.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml",
     "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs",
@@ -52,6 +54,8 @@ if ($fail) {
 
 $mainXaml = Read-Text "src/Win7POS.Wpf/MainWindow.xaml"
 $mainCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
+$startupCoordinatorPolicy = Read-Text "src/Win7POS.Core/Online/PosStartupCoordinatorPolicy.cs"
 $posView = Read-Text "src/Win7POS.Wpf/Pos/PosView.xaml.cs"
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"
 $dialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
@@ -72,16 +76,19 @@ if ($mainXaml -notmatch 'x:Name="PosTabHost"' -or $mainCode -notmatch "private\s
     Pass "POS view lazy host/creation guard present"
 }
 
-$saleSafeGateIndex = Index-OrFail $mainCode ".IsCatalogSaleSafeAsync(factory)" "sale-safe gate missing from MainWindow"
+$saleSafeGateIndex = Index-OrFail $startupCoordinator ".IsCatalogSaleSafeAsync(factory)" "sale-safe gate missing from startup coordinator"
 $ensurePosIndex = Index-OrFail $mainCode "EnsurePosViewCreated();" "POS lazy creation call missing"
 $accessDialogIndex = Index-OrFail $mainCode "POS access dialog opening" "unified POS access startup marker missing"
-if ($ensurePosIndex -lt $saleSafeGateIndex -or $accessDialogIndex -gt $saleSafeGateIndex) {
+$accessAcceptanceIndex = Index-OrFail $mainCode "AcceptAuthenticatedAccessAsync(login.AccessMode)" "startup coordinator access acceptance missing"
+if ($accessDialogIndex -gt $accessAcceptanceIndex -or $ensurePosIndex -lt $accessAcceptanceIndex -or
+    $startupCoordinator -notmatch 'AcceptAuthenticatedAccessAsync[\s\S]{0,700}IsCatalogSaleSafeAsync\(factory\)') {
     Fail "unified access must precede the sale-safe decision and PosView must follow it"
 } else {
     Pass "unified access precedes sale-safe decision; PosView creation follows it"
 }
 
-if ($mainCode -notmatch "PosShellStartupPolicy\.Determine" -or
+if ($startupCoordinator -notmatch "PosStartupCoordinatorPolicy\.DetermineShellMode" -or
+    $startupCoordinatorPolicy -notmatch "PosShellStartupPolicy\.Determine" -or
     $mainCode -notmatch "PosShellMode\.Recovery" -or
     $mainCode -notmatch "EnterRecoveryModeAsync" -or
     $mainCode -notmatch "if\s*\(shellMode\s*==\s*PosShellMode\.Pos\)[\s\S]{0,180}EnsurePosViewCreated") {
@@ -92,7 +99,7 @@ if ($mainCode -notmatch "PosShellStartupPolicy\.Determine" -or
 
 if ($mainCode -notmatch "RecoveryModeBanner\.Visibility\s*=\s*Visibility\.Visible" -or
     $mainCode -notmatch "OnVerifyRecoveryCatalogClick" -or
-    $mainCode -notmatch "CatalogRecoveryRepository") {
+    $startupCoordinator -notmatch "TryApproveLocalCatalogAsync[\s\S]{0,450}CatalogRecoveryRepository") {
     Fail "recovery banner or controlled catalog re-verification is missing"
 } else {
     Pass "recovery banner and controlled re-verification are present"
