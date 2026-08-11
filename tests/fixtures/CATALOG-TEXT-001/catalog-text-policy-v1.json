@@ -1,0 +1,417 @@
+{
+  "policyVersion": "catalog_text_policy_v1",
+  "lengthUnit": "utf16_code_units_after_nfc",
+  "limits": {
+    "productName": 240,
+    "secondProductName": 240,
+    "supplierName": 160,
+    "categoryName": 160,
+    "barcode": 96,
+    "itemNumber": 120
+  },
+  "displayCases": [
+    {
+      "id": "display_lf",
+      "input": "Tea\nHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Tea House",
+      "expectedChanges": ["line_break_to_space"]
+    },
+    {
+      "id": "display_cr",
+      "input": "Tea\rHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Tea House",
+      "expectedChanges": ["line_break_to_space"]
+    },
+    {
+      "id": "display_crlf",
+      "input": "Tea\r\nHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Tea House",
+      "expectedChanges": ["line_break_to_space"]
+    },
+    {
+      "id": "display_tab",
+      "input": "Tea\tHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Tea House",
+      "expectedChanges": ["tab_to_space"]
+    },
+    {
+      "id": "display_multiple_hidden_whitespace",
+      "input": "Tea\t\n\r\n  House",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Tea House",
+      "expectedChanges": ["line_break_to_space", "tab_to_space", "space_collapsed"]
+    },
+    {
+      "id": "display_nbsp",
+      "input": "Tea\u00a0House",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Tea House",
+      "expectedChanges": ["space_separator_to_space"]
+    },
+    {
+      "id": "display_ideographic_space",
+      "input": "茶\u3000叶",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "茶 叶",
+      "expectedChanges": ["space_separator_to_space"]
+    },
+    {
+      "id": "display_multiple_spaces",
+      "input": "Tea   House",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Tea House",
+      "expectedChanges": ["space_collapsed"]
+    },
+    {
+      "id": "display_trim",
+      "input": "  Tea House  ",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Tea House",
+      "expectedChanges": ["trimmed"]
+    },
+    {
+      "id": "display_chinese",
+      "input": "龙井茶",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "unchanged",
+      "expectedValue": "龙井茶",
+      "expectedChanges": []
+    },
+    {
+      "id": "display_italian_accents",
+      "input": "Caffè qualità",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "unchanged",
+      "expectedValue": "Caffè qualità",
+      "expectedChanges": []
+    },
+    {
+      "id": "display_spanish_accents",
+      "input": "Piñón ecológico",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "unchanged",
+      "expectedValue": "Piñón ecológico",
+      "expectedChanges": []
+    },
+    {
+      "id": "display_emoji",
+      "input": "Té ☕️",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "unchanged",
+      "expectedValue": "Té ☕️",
+      "expectedChanges": []
+    },
+    {
+      "id": "display_emoji_zwj",
+      "input": "Equipo 👩‍💻",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "unchanged",
+      "expectedValue": "Equipo 👩‍💻",
+      "expectedChanges": []
+    },
+    {
+      "id": "display_nfc",
+      "input": "Cafe\u0301",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "Café",
+      "expectedChanges": ["unicode_nfc"]
+    },
+    {
+      "id": "display_optional_empty",
+      "input": "\t \n",
+      "required": false,
+      "maxLength": 240,
+      "expectedStatus": "normalized",
+      "expectedValue": "",
+      "expectedChanges": ["line_break_to_space", "tab_to_space", "space_collapsed", "trimmed"]
+    },
+    {
+      "id": "display_required_empty",
+      "input": "\t \n",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "empty_required"
+    },
+    {
+      "id": "display_nul",
+      "input": "Tea\u0000House",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_control"
+    },
+    {
+      "id": "display_escape",
+      "input": "Tea\u001bHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_control"
+    },
+    {
+      "id": "display_c0_residual",
+      "input": "Tea\u000bHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_control"
+    },
+    {
+      "id": "display_c1",
+      "input": "Tea\u0085House",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_control"
+    },
+    {
+      "id": "display_line_separator",
+      "input": "Tea\u2028House",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_line_separator"
+    },
+    {
+      "id": "display_paragraph_separator",
+      "input": "Tea\u2029House",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_line_separator"
+    },
+    {
+      "id": "display_zero_width_space",
+      "input": "Tea\u200bHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_zero_width"
+    },
+    {
+      "id": "display_word_joiner",
+      "input": "Tea\u2060House",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_zero_width"
+    },
+    {
+      "id": "display_internal_bom",
+      "input": "Tea\ufeffHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_bom"
+    },
+    {
+      "id": "display_bidi_override",
+      "input": "Tea\u202eHouse",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_bidi"
+    },
+    {
+      "id": "display_bidi_isolate",
+      "input": "Tea\u2066House\u2069",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_bidi"
+    },
+    {
+      "id": "display_over_limit",
+      "inputGenerator": {
+        "kind": "repeat",
+        "value": "A",
+        "count": 241
+      },
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "too_long"
+    }
+  ],
+  "strictCases": [
+    {
+      "id": "strict_unchanged",
+      "input": "ABC-123",
+      "required": true,
+      "maxLength": 96,
+      "expectedStatus": "unchanged",
+      "expectedValue": "ABC-123"
+    },
+    {
+      "id": "strict_trim",
+      "input": "  ABC-123  ",
+      "required": true,
+      "maxLength": 96,
+      "expectedStatus": "normalized",
+      "expectedValue": "ABC-123",
+      "expectedChanges": ["trimmed"]
+    },
+    {
+      "id": "strict_barcode_lf",
+      "input": "1234\n5678",
+      "required": true,
+      "maxLength": 96,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_control"
+    },
+    {
+      "id": "strict_barcode_tab",
+      "input": "1234\t5678",
+      "required": true,
+      "maxLength": 96,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_control"
+    },
+    {
+      "id": "strict_item_cr",
+      "input": "ITEM\r001",
+      "required": false,
+      "maxLength": 120,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_control"
+    },
+    {
+      "id": "strict_id_control",
+      "input": "remote\u001fid",
+      "required": true,
+      "maxLength": 256,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_control"
+    },
+    {
+      "id": "strict_line_separator",
+      "input": "ITEM\u2028001",
+      "required": false,
+      "maxLength": 120,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_line_separator"
+    },
+    {
+      "id": "strict_zero_width_space",
+      "input": "ITEM\u200b001",
+      "required": false,
+      "maxLength": 120,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_zero_width"
+    },
+    {
+      "id": "strict_zero_width_joiner",
+      "input": "ITEM\u200d001",
+      "required": false,
+      "maxLength": 120,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_zero_width"
+    },
+    {
+      "id": "strict_bidi",
+      "input": "ITEM\u2066001\u2069",
+      "required": false,
+      "maxLength": 120,
+      "expectedStatus": "rejected",
+      "expectedReason": "prohibited_bidi"
+    },
+    {
+      "id": "strict_required_empty",
+      "input": "   ",
+      "required": true,
+      "maxLength": 96,
+      "expectedStatus": "rejected",
+      "expectedReason": "empty_required"
+    },
+    {
+      "id": "strict_over_limit",
+      "inputGenerator": {
+        "kind": "repeat",
+        "value": "9",
+        "count": 97
+      },
+      "required": true,
+      "maxLength": 96,
+      "expectedStatus": "rejected",
+      "expectedReason": "too_long"
+    }
+  ],
+  "encodingCases": [
+    {
+      "id": "display_unpaired_high_surrogate",
+      "class": "display",
+      "inputEncoding": "utf16_code_units",
+      "inputCodeUnitsHex": ["D800"],
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "invalid_utf16"
+    },
+    {
+      "id": "strict_unpaired_low_surrogate",
+      "class": "strict",
+      "inputEncoding": "utf16_code_units",
+      "inputCodeUnitsHex": ["DC00"],
+      "required": true,
+      "maxLength": 96,
+      "expectedStatus": "rejected",
+      "expectedReason": "invalid_utf16"
+    },
+    {
+      "id": "display_invalid_utf8",
+      "class": "display",
+      "inputEncoding": "utf8_bytes",
+      "inputBytesHex": "C328",
+      "required": true,
+      "maxLength": 240,
+      "expectedStatus": "rejected",
+      "expectedReason": "invalid_utf8"
+    }
+  ],
+  "collisionCases": [
+    {
+      "id": "strict_collision_after_trim",
+      "inputs": [" ITEM-001 ", "ITEM-001"],
+      "expectedStatus": "rejected",
+      "expectedReason": "identity_collision_after_trim"
+    }
+  ],
+  "invariants": {
+    "assertDisplayIdempotency": true,
+    "assertStrictIdempotency": true,
+    "normalizationForm": "NFC",
+    "forbidCompatibilityNormalization": true,
+    "preserveDisplayZWJ": true,
+    "rejectDisplayLineAndParagraphSeparators": true
+  }
+}

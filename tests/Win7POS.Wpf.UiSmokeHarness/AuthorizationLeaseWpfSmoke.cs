@@ -3072,6 +3072,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     DateTimeOffset.UtcNow),
                 "offline_attestation_required",
                 "process restart retained offline authorization");
+            Require(
+                StagingAcceptanceWpfHarness
+                    .TryLoadRestartedOnlineRecoverySession(
+                        store,
+                        out var acceptanceResumeSession,
+                        out var acceptanceOfflineAuthorityCleared) &&
+                acceptanceOfflineAuthorityCleared &&
+                string.Equals(
+                    acceptanceResumeSession.GenerationId,
+                    restartedSession.GenerationId,
+                    StringComparison.Ordinal),
+                "staging resume did not accept bounded online recovery");
+            Require(
+                StagingAcceptanceWpfHarness
+                    .ShouldAttemptOfflineOperatorLogin(
+                        resumeAfterRestart: false) &&
+                !StagingAcceptanceWpfHarness
+                    .ShouldAttemptOfflineOperatorLogin(
+                        resumeAfterRestart: true),
+                "staging resume attempted a process-scoped offline login");
 
             var guard = new PosOfflineAuthorizationLeaseGuard(
                 store,

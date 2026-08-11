@@ -1,8 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using Win7POS.Data.Backup;
+using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.Online
 {
@@ -13,58 +18,168 @@ namespace Win7POS.Data.Online
         private const string PhasePrepared = "prepared";
         private const string PhaseCommitted = "committed";
 
-        public Task InstallAsync(
+        private readonly Action<BackupRestoreDiagnostic> _diagnostics;
+        private readonly SqliteSourceInspection _inspection;
+        private readonly string _operationId;
+        private readonly BackupRestoreTestHooks _testHooks;
+
+        public AtomicRestoreInstaller()
+            : this(null, null, string.Empty, null)
+        {
+        }
+
+        internal AtomicRestoreInstaller(
+            Action<BackupRestoreDiagnostic> diagnostics,
+            BackupRestoreTestHooks testHooks,
+            string operationId,
+            SqliteSourceInspection inspection)
+        {
+            _diagnostics = diagnostics;
+            _testHooks = testHooks;
+            _operationId = string.IsNullOrWhiteSpace(operationId)
+                ? Guid.NewGuid().ToString("N").Substring(0, 12)
+                : operationId;
+            _inspection = inspection ?? new SqliteSourceInspection();
+        }
+
+        internal async Task InstallAsync(
             string validatedRestorePath,
             string liveDatabasePath,
-            string rollbackDatabasePath,
+            string verifiedPreRestoreBackupPath,
             Func<Task> postSwapValidationAndCommit)
         {
-            ValidateInstallArguments(
+            ValidateLegacyArguments(
                 validatedRestorePath,
                 liveDatabasePath,
-                rollbackDatabasePath,
+                verifiedPreRestoreBackupPath,
                 postSwapValidationAndCommit);
 
-            return SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() => InstallCoreAsync(
-                Path.GetFullPath(validatedRestorePath),
+            var fullLivePath = Path.GetFullPath(liveDatabasePath);
+            var candidatePath = AllocateLegacyCandidatePath(fullLivePath);
+            SealedRestoreCandidate candidate = null;
+            try
+            {
+                CopyDurable(Path.GetFullPath(validatedRestorePath), candidatePath);
+                var seal = new FileStream(
+                    candidatePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    4096,
+                    FileOptions.SequentialScan);
+                candidate = new SealedRestoreCandidate(
+                    candidatePath,
+                    seal,
+                    seal.Length,
+                    File.GetLastWriteTimeUtc(candidatePath));
+                await InstallAsync(
+                        candidate,
+                        fullLivePath,
+                        Path.GetFullPath(verifiedPreRestoreBackupPath),
+                        _ => postSwapValidationAndCommit(),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                candidate?.Dispose();
+            }
+        }
+
+        internal Task<DatabaseValidationResult> InstallAsync(
+            SealedRestoreCandidate candidate,
+            string liveDatabasePath,
+            string verifiedPreRestoreBackupPath,
+            Func<DatabaseValidationResult, Task> postSwapCommit,
+            CancellationToken cancellationToken)
+        {
+            ValidateInstallArguments(
+                candidate,
+                liveDatabasePath,
+                verifiedPreRestoreBackupPath,
+                postSwapCommit);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return InstallWithinMaintenanceAsync(
+                candidate,
                 Path.GetFullPath(liveDatabasePath),
-                postSwapValidationAndCommit));
+                Path.GetFullPath(verifiedPreRestoreBackupPath),
+                postSwapCommit,
+                cancellationToken);
+        }
+
+        private async Task<DatabaseValidationResult> InstallWithinMaintenanceAsync(
+            SealedRestoreCandidate candidate,
+            string liveDatabasePath,
+            string verifiedPreRestoreBackupPath,
+            Func<DatabaseValidationResult, Task> postSwapCommit,
+            CancellationToken cancellationToken)
+        {
+            DatabaseValidationResult result = null;
+            await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
+            {
+                result = await InstallCoreAsync(
+                        candidate,
+                        liveDatabasePath,
+                        verifiedPreRestoreBackupPath,
+                        postSwapCommit,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(false);
+            return result ?? throw new InvalidOperationException("Atomic restore did not produce validation evidence.");
         }
 
         public Task RecoverInterruptedInstallAsync(string liveDatabasePath)
         {
+            return RecoverInterruptedInstallAsync(liveDatabasePath, CancellationToken.None);
+        }
+
+        public Task RecoverInterruptedInstallAsync(
+            string liveDatabasePath,
+            CancellationToken cancellationToken)
+        {
             if (string.IsNullOrWhiteSpace(liveDatabasePath))
                 throw new ArgumentException("Live database path is required.", nameof(liveDatabasePath));
 
+            cancellationToken.ThrowIfCancellationRequested();
             var fullPath = Path.GetFullPath(liveDatabasePath);
-            return SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() =>
-                RecoverInterruptedInstallCoreAsync(fullPath));
+            return SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
+            {
+                _testHooks?.AtRestore(RestoreFailurePoint.StartupRecovery);
+                await RecoverInterruptedInstallCoreAsync(fullPath).ConfigureAwait(false);
+            }, cancellationToken);
         }
 
-        private static async Task InstallCoreAsync(
-            string validatedRestorePath,
+        private async Task<DatabaseValidationResult> InstallCoreAsync(
+            SealedRestoreCandidate candidate,
             string liveDatabasePath,
-            Func<Task> postSwapValidationAndCommit)
+            string verifiedPreRestoreBackupPath,
+            Func<DatabaseValidationResult, Task> postSwapCommit,
+            CancellationToken cancellationToken)
         {
             await RecoverInterruptedInstallCoreAsync(liveDatabasePath).ConfigureAwait(false);
-            if (File.Exists(GetMarkerPath(liveDatabasePath)))
+            if (File.Exists(GetMarkerPath(liveDatabasePath)) || GetMarkerTemporaryFiles(liveDatabasePath).Length > 0)
             {
                 throw new IOException(
-                    "A previous committed restore is valid but its deferred cleanup is still incomplete.");
+                    "A previous restore is valid but its durable cleanup is still incomplete.");
             }
             if (!File.Exists(liveDatabasePath))
-                throw new FileNotFoundException("Live database file was not found.", liveDatabasePath);
+                throw new FileNotFoundException("Live database file was not found.");
+            if (!File.Exists(verifiedPreRestoreBackupPath))
+                throw new FileNotFoundException("Verified pre-restore backup file was not found.");
 
+            cancellationToken.ThrowIfCancellationRequested();
             var liveDirectory = Path.GetDirectoryName(liveDatabasePath);
             if (string.IsNullOrWhiteSpace(liveDirectory))
                 throw new InvalidOperationException("Live database directory is invalid.");
 
             var token = Guid.NewGuid().ToString("N").Substring(0, 8);
-            var liveFileName = Path.GetFileName(liveDatabasePath);
-            var candidateFileName = liveFileName + ".restore-" + token + ".new";
-            var rollbackFileName = liveFileName + ".restore-" + token + ".old";
+            var rollbackFileName = "r-" + token + ".old";
+            var rollbackPath = Path.Combine(liveDirectory, rollbackFileName);
+            if (File.Exists(rollbackPath))
+                throw new IOException("Atomic rollback name collision.");
+            var candidateFileName = candidate.FileName;
             var candidatePath = Path.Combine(liveDirectory, candidateFileName);
-            var atomicRollbackPath = Path.Combine(liveDirectory, rollbackFileName);
             var markerPath = GetMarkerPath(liveDatabasePath);
             var marker = new RestoreMarker
             {
@@ -72,27 +187,128 @@ namespace Win7POS.Data.Online
                 Phase = PhasePrepared,
                 RollbackFileName = rollbackFileName
             };
-
+            var simulatedCrash = false;
+            var committed = false;
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                var preparedWatch = Stopwatch.StartNew();
                 WriteMarker(markerPath, marker);
-                CopyDurable(validatedRestorePath, candidatePath);
+                preparedWatch.Stop();
+                Report(
+                    "prepared_marker",
+                    Path.GetFileName(liveDatabasePath),
+                    preparedWatch.Elapsed.TotalMilliseconds,
+                    cancellationToken,
+                    "ok",
+                    string.Empty);
+                _testHooks?.AtRestore(RestoreFailurePoint.AfterPreparedBeforeSwap);
 
+                var replaceWatch = Stopwatch.StartNew();
+                candidatePath = candidate.ConsumeForAtomicReplace(liveDatabasePath);
                 SqliteConnectionFactory.ClearAllPools();
                 DeleteSqliteSidecars(liveDatabasePath);
-                File.Replace(candidatePath, liveDatabasePath, atomicRollbackPath);
+                File.Replace(candidatePath, liveDatabasePath, rollbackPath);
                 SqliteConnectionFactory.ClearAllPools();
+                replaceWatch.Stop();
+                Report(
+                    "replace",
+                    Path.GetFileName(liveDatabasePath),
+                    replaceWatch.Elapsed.TotalMilliseconds,
+                    cancellationToken,
+                    "ok",
+                    string.Empty);
+                _testHooks?.AtRestore(RestoreFailurePoint.ImmediatelyAfterReplace);
 
-                await postSwapValidationAndCommit().ConfigureAwait(false);
+                var migrationWatch = Stopwatch.StartNew();
+                DbInitializer.EnsureCreated(PosDbOptions.ForPath(liveDatabasePath));
+                migrationWatch.Stop();
+                _testHooks?.AtRestore(RestoreFailurePoint.DuringPostMigration);
+                Report(
+                    "post_swap_migration",
+                    Path.GetFileName(liveDatabasePath),
+                    migrationWatch.Elapsed.TotalMilliseconds,
+                    cancellationToken,
+                    "ok",
+                    string.Empty);
 
+                var validationWatch = Stopwatch.StartNew();
+                var liveValidation = await new DbMaintenanceRepository(
+                        new SqliteConnectionFactory(PosDbOptions.ForPath(liveDatabasePath)))
+                    .ValidateAsync(
+                        phase =>
+                        {
+                            if (phase == DatabaseValidationPhase.Integrity)
+                                _testHooks?.AtRestore(RestoreFailurePoint.DuringPostIntegrity);
+                            else
+                                _testHooks?.AtRestore(RestoreFailurePoint.DuringPostForeignKey);
+                        },
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                validationWatch.Stop();
+                if (!liveValidation.IsValid)
+                    throw new InvalidDataException("Post-swap database failed integrity or foreign-key validation.");
+                Report(
+                    "post_swap_integrity_fk",
+                    Path.GetFileName(liveDatabasePath),
+                    validationWatch.Elapsed.TotalMilliseconds,
+                    cancellationToken,
+                    "ok",
+                    string.Empty);
+
+                await postSwapCommit(liveValidation).ConfigureAwait(false);
+                _testHooks?.AtRestore(RestoreFailurePoint.BeforeCommitted);
                 marker.Phase = PhaseCommitted;
+                var committedWatch = Stopwatch.StartNew();
                 WriteMarker(markerPath, marker);
-                TryCleanupCommittedRestore(markerPath, candidatePath, atomicRollbackPath);
+                committed = true;
+                committedWatch.Stop();
+                Report(
+                    "committed_marker",
+                    Path.GetFileName(liveDatabasePath),
+                    committedWatch.Elapsed.TotalMilliseconds,
+                    cancellationToken,
+                    "ok",
+                    string.Empty);
+                _testHooks?.AtRestore(RestoreFailurePoint.AfterCommittedBeforeCleanup);
+
+                var cleanupWatch = Stopwatch.StartNew();
+                var cleanupComplete = TryCleanupCommittedRestore(
+                        markerPath,
+                        candidatePath,
+                        rollbackPath,
+                        injectFailure: true);
+                if (!cleanupComplete)
+                {
+                    cleanupComplete = TryCleanupCommittedRestore(
+                        markerPath,
+                        candidatePath,
+                        rollbackPath,
+                        injectFailure: false);
+                }
+                cleanupWatch.Stop();
+                Report(
+                    "committed_cleanup",
+                    Path.GetFileName(liveDatabasePath),
+                    cleanupWatch.Elapsed.TotalMilliseconds,
+                    cancellationToken,
+                    cleanupComplete ? "ok" : "cleanup_deferred",
+                    cleanupComplete ? string.Empty : "startup_retry");
+
+                if (cancellationToken.IsCancellationRequested)
+                    throw new OperationCanceledException(cancellationToken);
+                return liveValidation;
+            }
+            catch (RestoreCrashSimulationException)
+            {
+                simulatedCrash = true;
+                throw;
             }
             catch (Exception installException)
             {
                 try
                 {
+                    candidate.ReleaseSealForRecovery();
                     SqliteConnectionFactory.ClearAllPools();
                     await RecoverInterruptedInstallCoreAsync(liveDatabasePath).ConfigureAwait(false);
                 }
@@ -108,20 +324,43 @@ namespace Win7POS.Data.Online
             }
             finally
             {
-                TryDeleteSqliteFiles(candidatePath);
+                if (!simulatedCrash)
+                    TryDeleteSqliteFiles(candidatePath);
+                if (committed)
+                    SqliteConnectionFactory.ClearAllPools();
             }
         }
 
-        private static async Task RecoverInterruptedInstallCoreAsync(string liveDatabasePath)
+        private async Task RecoverInterruptedInstallCoreAsync(string liveDatabasePath)
         {
             var markerPath = GetMarkerPath(liveDatabasePath);
+            var markerTemporaries = GetMarkerTemporaryFiles(liveDatabasePath);
             if (!File.Exists(markerPath))
+            {
+                if (markerTemporaries.Length > 0)
+                {
+                    throw new InvalidDataException(
+                        "A truncated restore marker exists without an authoritative durable marker.");
+                }
                 return;
+            }
 
             var marker = ReadMarker(markerPath);
             var liveDirectory = Path.GetDirectoryName(liveDatabasePath);
             if (string.IsNullOrWhiteSpace(liveDirectory))
                 throw new InvalidOperationException("Live database directory is invalid.");
+
+            var liveFileName = Path.GetFileName(liveDatabasePath);
+            if (!IsManagedCandidateFileName(liveFileName, marker.CandidateFileName) ||
+                !IsManagedRollbackFileName(liveFileName, marker.RollbackFileName) ||
+                string.Equals(
+                    marker.CandidateFileName,
+                    marker.RollbackFileName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    "Restore marker references a file outside the managed restore namespace.");
+            }
 
             var candidatePath = ResolveMarkerFile(liveDirectory, marker.CandidateFileName);
             var rollbackPath = ResolveMarkerFile(liveDirectory, marker.RollbackFileName);
@@ -136,44 +375,63 @@ namespace Win7POS.Data.Online
                     if (!File.Exists(rollbackPath))
                     {
                         throw new InvalidDataException(
-                            "Committed restore marker exists but the live database is invalid and no rollback is available.");
+                            "Committed restore marker exists but live is invalid and no rollback is available.");
                     }
 
                     await RestoreRollbackAsync(rollbackPath, liveDatabasePath).ConfigureAwait(false);
+                    ReportRecovery(liveDatabasePath, "committed_corrupt_rollback", "recovered");
+                }
+                else
+                {
+                    ReportRecovery(liveDatabasePath, "committed_valid_cleanup", "recovered");
                 }
 
-                TryCleanupCommittedRestore(markerPath, candidatePath, rollbackPath);
+                DeleteMarkerTemporaries(markerTemporaries);
+                if (!TryCleanupCommittedRestore(
+                        markerPath,
+                        candidatePath,
+                        rollbackPath,
+                        injectFailure: false))
+                {
+                    return;
+                }
                 return;
             }
 
             if (!string.Equals(marker.Phase, PhasePrepared, StringComparison.Ordinal))
-                throw new InvalidDataException("Unsupported restore marker phase: " + marker.Phase);
+                throw new InvalidDataException("Unsupported restore marker phase.");
 
             if (File.Exists(rollbackPath))
             {
                 await RestoreRollbackAsync(rollbackPath, liveDatabasePath).ConfigureAwait(false);
+                ReportRecovery(liveDatabasePath, "prepared_rollback", "recovered");
             }
             else if (!File.Exists(liveDatabasePath))
             {
                 throw new InvalidDataException(
-                    "Prepared restore marker exists without either a live database or an atomic rollback file.");
+                    "Prepared restore marker has neither a live database nor an atomic rollback.");
             }
             else if (!await IsDatabaseValidAsync(liveDatabasePath).ConfigureAwait(false))
             {
                 throw new InvalidDataException(
-                    "Prepared restore marker exists without a rollback and the live database is invalid.");
+                    "Prepared restore marker has no rollback and the live database is invalid.");
+            }
+            else
+            {
+                ReportRecovery(liveDatabasePath, "prepared_before_swap_cleanup", "recovered");
             }
 
             DeleteIfPresent(candidatePath);
             DeleteSqliteSidecars(candidatePath);
             DeleteSqliteSidecars(rollbackPath);
+            DeleteMarkerTemporaries(markerTemporaries);
             DeleteIfPresent(markerPath);
         }
 
         private static async Task RestoreRollbackAsync(string rollbackPath, string liveDatabasePath)
         {
             if (!await IsDatabaseValidAsync(rollbackPath).ConfigureAwait(false))
-                throw new InvalidDataException("The atomic rollback database failed integrity or foreign-key validation.");
+                throw new InvalidDataException("Atomic rollback failed integrity or foreign-key validation.");
 
             SqliteConnectionFactory.ClearAllPools();
             DeleteSqliteSidecars(liveDatabasePath);
@@ -185,7 +443,8 @@ namespace Win7POS.Data.Online
             DeleteSqliteSidecars(liveDatabasePath);
 
             if (!await IsDatabaseValidAsync(liveDatabasePath).ConfigureAwait(false))
-                throw new InvalidDataException("The reinstated rollback database failed validation.");
+                throw new InvalidDataException("Reinstated rollback database failed validation.");
+            DeleteSqliteSidecars(liveDatabasePath);
         }
 
         private static async Task<bool> IsDatabaseValidAsync(string databasePath)
@@ -193,7 +452,7 @@ namespace Win7POS.Data.Online
             try
             {
                 var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(databasePath));
-                var validation = await new Repositories.DbMaintenanceRepository(factory)
+                var validation = await new DbMaintenanceRepository(factory)
                     .ValidateAsync()
                     .ConfigureAwait(false);
                 return validation.IsValid;
@@ -209,23 +468,42 @@ namespace Win7POS.Data.Online
         }
 
         private static void ValidateInstallArguments(
+            SealedRestoreCandidate candidate,
+            string liveDatabasePath,
+            string verifiedPreRestoreBackupPath,
+            Func<DatabaseValidationResult, Task> postSwapCommit)
+        {
+            if (candidate == null)
+                throw new ArgumentNullException(nameof(candidate));
+            if (string.IsNullOrWhiteSpace(liveDatabasePath))
+                throw new ArgumentException("Live database path is required.", nameof(liveDatabasePath));
+            if (string.IsNullOrWhiteSpace(verifiedPreRestoreBackupPath))
+                throw new ArgumentException("Verified pre-restore backup path is required.", nameof(verifiedPreRestoreBackupPath));
+            if (postSwapCommit == null)
+                throw new ArgumentNullException(nameof(postSwapCommit));
+            if (!File.Exists(verifiedPreRestoreBackupPath))
+                throw new FileNotFoundException("Verified pre-restore backup file was not found.");
+        }
+
+        private static void ValidateLegacyArguments(
             string validatedRestorePath,
             string liveDatabasePath,
-            string rollbackDatabasePath,
+            string verifiedPreRestoreBackupPath,
             Func<Task> postSwapValidationAndCommit)
         {
             if (string.IsNullOrWhiteSpace(validatedRestorePath))
                 throw new ArgumentException("Validated restore path is required.", nameof(validatedRestorePath));
-            if (string.IsNullOrWhiteSpace(liveDatabasePath))
-                throw new ArgumentException("Live database path is required.", nameof(liveDatabasePath));
-            if (string.IsNullOrWhiteSpace(rollbackDatabasePath))
-                throw new ArgumentException("Rollback database path is required.", nameof(rollbackDatabasePath));
+            if (!File.Exists(validatedRestorePath))
+                throw new FileNotFoundException("Validated restore file was not found.");
             if (postSwapValidationAndCommit == null)
                 throw new ArgumentNullException(nameof(postSwapValidationAndCommit));
-            if (!File.Exists(validatedRestorePath))
-                throw new FileNotFoundException("Validated restore file was not found.", validatedRestorePath);
-            if (!File.Exists(rollbackDatabasePath))
-                throw new FileNotFoundException("Rollback database file was not found.", rollbackDatabasePath);
+            if (string.IsNullOrWhiteSpace(liveDatabasePath) ||
+                string.IsNullOrWhiteSpace(verifiedPreRestoreBackupPath))
+            {
+                throw new ArgumentException("Live and verified backup paths are required.");
+            }
+            if (!File.Exists(verifiedPreRestoreBackupPath))
+                throw new FileNotFoundException("Verified pre-restore backup file was not found.");
         }
 
         private static string GetMarkerPath(string liveDatabasePath)
@@ -233,29 +511,115 @@ namespace Win7POS.Data.Online
             return liveDatabasePath + MarkerSuffix;
         }
 
+        private static string[] GetMarkerTemporaryFiles(string liveDatabasePath)
+        {
+            var directory = Path.GetDirectoryName(liveDatabasePath);
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                return Array.Empty<string>();
+            return Directory.GetFiles(
+                directory,
+                Path.GetFileName(GetMarkerPath(liveDatabasePath)) + ".tmp-*");
+        }
+
         private static string ResolveMarkerFile(string directory, string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName) ||
-                !string.Equals(fileName, Path.GetFileName(fileName), StringComparison.Ordinal))
+                Path.IsPathRooted(fileName) ||
+                !string.Equals(fileName, Path.GetFileName(fileName), StringComparison.Ordinal) ||
+                string.Equals(fileName, ".", StringComparison.Ordinal) ||
+                string.Equals(fileName, "..", StringComparison.Ordinal))
             {
                 throw new InvalidDataException("Restore marker contains an unsafe file name.");
             }
 
-            return Path.Combine(directory, fileName);
+            var path = Path.GetFullPath(Path.Combine(directory, fileName));
+            if (!string.Equals(
+                    Path.GetDirectoryName(path),
+                    Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("Restore marker resolves outside the live database directory.");
+            }
+            return path;
+        }
+
+        private static bool IsManagedCandidateFileName(string liveFileName, string fileName)
+        {
+            return IsShortManagedName(fileName, ".db") ||
+                IsLegacyManagedName(liveFileName, fileName, ".new");
+        }
+
+        private static bool IsManagedRollbackFileName(string liveFileName, string fileName)
+        {
+            return IsShortManagedName(fileName, ".old") ||
+                IsLegacyManagedName(liveFileName, fileName, ".old");
+        }
+
+        private static bool IsShortManagedName(string fileName, string suffix)
+        {
+            if (string.IsNullOrWhiteSpace(fileName) ||
+                !fileName.StartsWith("r-", StringComparison.Ordinal) ||
+                !fileName.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var tokenLength = fileName.Length - 2 - suffix.Length;
+            return tokenLength >= 8 && tokenLength <= 20 &&
+                IsLowerHex(fileName, 2, tokenLength);
+        }
+
+        private static bool IsLegacyManagedName(
+            string liveFileName,
+            string fileName,
+            string suffix)
+        {
+            var prefix = (liveFileName ?? string.Empty) + ".restore-";
+            if (string.IsNullOrWhiteSpace(fileName) ||
+                !fileName.StartsWith(prefix, StringComparison.Ordinal) ||
+                !fileName.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var tokenLength = fileName.Length - prefix.Length - suffix.Length;
+            return tokenLength == 8 && IsLowerHex(fileName, prefix.Length, tokenLength);
+        }
+
+        private static bool IsLowerHex(string value, int offset, int length)
+        {
+            for (var index = offset; index < offset + length; index++)
+            {
+                var character = value[index];
+                if (!((character >= '0' && character <= '9') ||
+                    (character >= 'a' && character <= 'f')))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private static RestoreMarker ReadMarker(string markerPath)
         {
+            var markerInfo = new FileInfo(markerPath);
+            if (markerInfo.Length <= 0 || markerInfo.Length > 4096)
+                throw new InvalidDataException("Restore marker is truncated or oversized.");
+
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var line in File.ReadAllLines(markerPath))
             {
                 var separator = line.IndexOf('=');
                 if (separator <= 0)
                     throw new InvalidDataException("Restore marker is malformed.");
-                values[line.Substring(0, separator)] = line.Substring(separator + 1);
+                var key = line.Substring(0, separator);
+                if (values.ContainsKey(key))
+                    throw new InvalidDataException("Restore marker contains a duplicate field.");
+                values[key] = line.Substring(separator + 1);
             }
 
-            if (!values.TryGetValue("version", out var version) ||
+            if (values.Count != 4 ||
+                !values.TryGetValue("version", out var version) ||
                 !string.Equals(version, MarkerVersion, StringComparison.Ordinal) ||
                 !values.TryGetValue("phase", out var phase) ||
                 !values.TryGetValue("candidate", out var candidate) ||
@@ -305,6 +669,47 @@ namespace Win7POS.Data.Online
             }
         }
 
+        private bool TryCleanupCommittedRestore(
+            string markerPath,
+            string candidatePath,
+            string rollbackPath,
+            bool injectFailure)
+        {
+            try
+            {
+                DeleteIfPresent(candidatePath);
+                DeleteSqliteSidecars(candidatePath);
+                if (injectFailure)
+                    _testHooks?.AtRestore(RestoreFailurePoint.PartialCleanupFailure);
+                DeleteIfPresent(rollbackPath);
+                DeleteSqliteSidecars(rollbackPath);
+                DeleteIfPresent(markerPath);
+                return true;
+            }
+            catch
+            {
+                // The committed marker intentionally remains whenever cleanup cannot
+                // finish. Startup recovery validates live before retrying this cleanup.
+                return false;
+            }
+        }
+
+        private static string AllocateLegacyCandidatePath(string liveDatabasePath)
+        {
+            var directory = Path.GetDirectoryName(liveDatabasePath);
+            if (string.IsNullOrWhiteSpace(directory))
+                throw new InvalidOperationException("Live database directory is invalid.");
+            for (var attempt = 0; attempt < 16; attempt++)
+            {
+                var path = Path.Combine(
+                    directory,
+                    "r-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".db");
+                if (!File.Exists(path))
+                    return path;
+            }
+            throw new IOException("Unable to allocate a legacy restore candidate.");
+        }
+
         private static void CopyDurable(string sourcePath, string destinationPath)
         {
             using (var source = new FileStream(
@@ -334,26 +739,6 @@ namespace Win7POS.Data.Online
             DeleteIfPresent(databasePath + "-shm");
         }
 
-        private static void TryCleanupCommittedRestore(
-            string markerPath,
-            string candidatePath,
-            string rollbackPath)
-        {
-            try
-            {
-                DeleteIfPresent(candidatePath);
-                DeleteSqliteSidecars(candidatePath);
-                DeleteIfPresent(rollbackPath);
-                DeleteSqliteSidecars(rollbackPath);
-                DeleteIfPresent(markerPath);
-            }
-            catch
-            {
-                // The committed marker intentionally remains whenever cleanup cannot finish.
-                // Startup recovery validates the live DB before retrying this idempotent cleanup.
-            }
-        }
-
         private static void TryDeleteSqliteFiles(string databasePath)
         {
             try
@@ -363,14 +748,64 @@ namespace Win7POS.Data.Online
             }
             catch
             {
-                // Best-effort cleanup must not change the outcome of a committed restore.
             }
+        }
+
+        private static void DeleteMarkerTemporaries(IEnumerable<string> paths)
+        {
+            foreach (var path in paths ?? Enumerable.Empty<string>())
+                DeleteIfPresent(path);
         }
 
         private static void DeleteIfPresent(string path)
         {
-            if (File.Exists(path))
+            if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
                 File.Delete(path);
+        }
+
+        private void Report(
+            string phase,
+            string fileName,
+            double elapsedMilliseconds,
+            CancellationToken cancellationToken,
+            string resultCode,
+            string recoveryAction)
+        {
+            try
+            {
+                _diagnostics?.Invoke(new BackupRestoreDiagnostic
+                {
+                    CancellationRequested = cancellationToken.IsCancellationRequested,
+                    DatabaseBytes = _inspection.DatabaseBytes,
+                    ElapsedMilliseconds = elapsedMilliseconds,
+                    FileName = fileName,
+                    Operation = "restore",
+                    OperationId = _operationId,
+                    Phase = phase,
+                    RecoveryAction = recoveryAction,
+                    ResultCode = resultCode,
+                    ShmBytes = _inspection.ShmBytes,
+                    ShmPresent = _inspection.ShmPresent,
+                    SourceKind = _inspection.Kind,
+                    WalBytes = _inspection.WalBytes,
+                    WalPresent = _inspection.WalPresent
+                });
+            }
+            catch
+            {
+                // Diagnostics are observational and cannot control recovery.
+            }
+        }
+
+        private void ReportRecovery(string liveDatabasePath, string action, string resultCode)
+        {
+            Report(
+                "startup_recovery",
+                Path.GetFileName(liveDatabasePath),
+                0,
+                CancellationToken.None,
+                resultCode,
+                action);
         }
 
         private sealed class RestoreMarker

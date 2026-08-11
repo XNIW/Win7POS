@@ -93,11 +93,11 @@ try {
     $uniquePackages = @($packages | Sort-Object -Unique)
     if ($licensePolicy.schemaVersion -ne 1 -or
         ($allowed -join "|") -ne ($expectedAllowed -join "|") -or
-        $packages.Count -ne 99 -or $uniquePackages.Count -ne 99 -or
+        $packages.Count -ne 51 -or $uniquePackages.Count -ne 51 -or
         @($packages | Where-Object { $_ -notmatch '^[^@]+@\d+\.\d+\.' }).Count -ne 0) {
-        Fail "License policy must contain 99 unique exact package/version mappings and only reviewed expressions"
+        Fail "License policy must contain 51 unique exact package/version mappings and only reviewed expressions"
     }
-    else { Pass "License policy contains 99 exact mappings with a closed reviewed allowlist" }
+    else { Pass "License policy contains 51 exact mappings with a closed reviewed allowlist" }
 }
 catch { Fail "License policy is invalid JSON" }
 
@@ -125,10 +125,14 @@ $releaseWorkflow = Read-RequiredText ".github\workflows\release-pack.yml"
 $protectedWorkflow = Read-RequiredText ".github\workflows\protected-release.yml"
 $runbook = Read-RequiredText "docs\RELEASE_SUPPLY_CHAIN.md"
 $nugetGate = Read-RequiredText "scripts\invoke-nuget-supply-chain-gates.ps1"
+$gitleaksScan = Read-RequiredText "scripts\invoke-gitleaks-scans.ps1"
 $signerScript = Read-RequiredText "scripts\win7pos\windows\invoke-protected-release-signing.ps1"
 $signingFixture = Read-RequiredText "scripts\win7pos\windows\test-release-signing-negative.ps1"
 
 Require-Pattern "NuGet audits ignore runner-global sources and use only the approved HTTPS feed" $nugetGate '(?s)\$NuGetAuditSource\s*=\s*"https://api\.nuget\.org/v3/index\.json".*Invoke-DotNetReport.*"--source",\s*\$NuGetAuditSource.*Invoke-DotNetReport.*"--source",\s*\$NuGetAuditSource'
+Require-Pattern "Zero-finding Gitleaks reports remain a non-empty JSON array" `
+    $gitleaksScan `
+    'ConvertTo-Json\s+-InputObject\s+@\(\$findings\)'
 
 foreach ($required in @(
         @{ Label = "Security workflow performs vulnerable/deprecated/license gates"; Pattern = 'invoke-nuget-supply-chain-gates\.ps1' },

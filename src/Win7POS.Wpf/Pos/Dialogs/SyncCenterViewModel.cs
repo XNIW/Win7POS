@@ -11,7 +11,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
     public sealed class SyncCenterViewModel : INotifyPropertyChanged
     {
         private PosSyncStatusSnapshot _snapshot;
+        private string _articleDrainText = string.Empty;
+        private string _articleQueueText = string.Empty;
+        private string _articleStatusText = string.Empty;
         private string _catalogCountsText = string.Empty;
+        private string _catalogDisplayWarningText = string.Empty;
         private string _catalogCursorText = string.Empty;
         private string _catalogFullRatioText = string.Empty;
         private string _catalogErrorText = string.Empty;
@@ -35,7 +39,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _salesLastAckText = string.Empty;
         private string _salesQueueText = string.Empty;
 
+        public string ArticleDrainText { get => _articleDrainText; private set => Set(ref _articleDrainText, value); }
+        public string ArticleQueueText { get => _articleQueueText; private set => Set(ref _articleQueueText, value); }
+        public string ArticleStatusText { get => _articleStatusText; private set => Set(ref _articleStatusText, value); }
         public string CatalogCountsText { get => _catalogCountsText; private set => Set(ref _catalogCountsText, value); }
+        public string CatalogDisplayWarningText { get => _catalogDisplayWarningText; private set => Set(ref _catalogDisplayWarningText, value); }
         public string CatalogCursorText { get => _catalogCursorText; private set => Set(ref _catalogCursorText, value); }
         public string CatalogFullRatioText { get => _catalogFullRatioText; private set => Set(ref _catalogFullRatioText, value); }
         public string CatalogErrorText { get => _catalogErrorText; private set => Set(ref _catalogErrorText, value); }
@@ -98,6 +106,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 PosLocalization.T("sync.center.revision." + status.CatalogRevisionMatchCode));
             CatalogVerificationText = status.CatalogCompletenessText;
             CatalogCountsText = status.CatalogCountsText;
+            CatalogDisplayWarningText = status.CatalogDisplayWarningText;
             CatalogRepairReasonText = status.CatalogRepairText + " | " +
                 Field("sync.center.fullReason", status.CatalogLastFullReasonCode);
             SalesQueueText = QueueText(
@@ -121,6 +130,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 "sync.center.drainState",
                 status.ImportRemainingDue,
                 status.ImportNextRetryText);
+            ArticleQueueText = QueueText(
+                status.ArticlePending,
+                status.ArticleRetry,
+                status.ArticleBlocked,
+                status.ArticleInProgress);
+            ArticleDrainText = PosLocalization.F(
+                "sync.center.drainState",
+                status.ArticleRemainingDue,
+                status.ArticleNextRetryText);
+            ArticleStatusText = status.ArticleStatusText;
             OnPropertyChanged(nameof(CatalogHasMore));
             OnPropertyChanged(nameof(Snapshot));
         }
@@ -143,6 +162,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             text.AppendLine("catalog.full_reason=" + SafeCode(_snapshot.CatalogLastFullReasonCode));
             text.AppendLine("catalog.full_ratio_percent=" + SafeCode(_snapshot.CatalogFullRatioPercent));
             text.AppendLine("catalog.error=" + SafeCode(_snapshot.CatalogErrorCode));
+            text.AppendLine("catalog.error_stage=" + SafeCode(_snapshot.CatalogErrorStage));
+            text.AppendLine("catalog.http_status=" + SafeCode(_snapshot.CatalogErrorHttpStatus));
+            text.AppendLine("catalog.error_at=" + SafeCode(_snapshot.CatalogErrorAtText));
+            text.AppendLine("catalog.support_id=" + SafeCode(_snapshot.CatalogErrorSupportId));
+            text.AppendLine("catalog.error_pages_processed=" + _snapshot.CatalogErrorPagesProcessed.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("catalog.error_rows_applied=" + _snapshot.CatalogErrorRowsApplied.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("catalog.error_retryable=" + _snapshot.CatalogErrorRetryable.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("catalog.observed_revision_fingerprint=" + SafeCode(_snapshot.CatalogObservedRevisionFingerprint));
             text.AppendLine("catalog.committed_revision_fingerprint=" + SafeCode(_snapshot.CatalogCommittedRevisionFingerprint));
             text.AppendLine("catalog.revision_status=" + SafeCode(_snapshot.CatalogRevisionMatchCode));
@@ -157,7 +183,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             text.AppendLine("imports.blocked=" + _snapshot.ImportBlocked.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("imports.in_progress=" + _snapshot.ImportInProgress.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("imports.remaining_due=" + _snapshot.ImportRemainingDue.ToString(CultureInfo.InvariantCulture));
-            text.Append("imports.next_retry_at=" + SafeCode(_snapshot.ImportNextRetryText));
+            text.AppendLine("imports.next_retry_at=" + SafeCode(_snapshot.ImportNextRetryText));
+            text.AppendLine("articles.pending=" + _snapshot.ArticlePending.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("articles.retry=" + _snapshot.ArticleRetry.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("articles.blocked=" + _snapshot.ArticleBlocked.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("articles.in_progress=" + _snapshot.ArticleInProgress.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("articles.remaining_due=" + _snapshot.ArticleRemainingDue.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("articles.affected=" + _snapshot.ArticleAffectedCount.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("articles.completed_since_view=" + _snapshot.ArticleCompletedSinceLastView.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("articles.last_code=" + SafeCode(_snapshot.ArticleLastTypedCode));
+            text.Append("articles.next_retry_at=" + SafeCode(_snapshot.ArticleNextRetryText));
             return text.ToString();
         }
 

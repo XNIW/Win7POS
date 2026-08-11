@@ -43,6 +43,7 @@ $appXaml = Read-Text "src/Win7POS.Wpf/App.xaml"
 $materialSymbols = Read-Text "src/Win7POS.Wpf/Icons/MaterialSymbols.xaml"
 $productsView = Read-Text "src/Win7POS.Wpf/Products/ProductsView.xaml"
 $productsViewModel = Read-Text "src/Win7POS.Wpf/Products/ProductsViewModel.cs"
+$productEdit = Read-Text "src/Win7POS.Wpf/Products/ProductEditDialog.xaml"
 $productsWorkflow = Read-Text "src/Win7POS.Wpf/Products/ProductsWorkflowService.cs"
 $productRepository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
 $productQueryRepository = Read-Text "src/Win7POS.Data/Repositories/ProductQueryRepository.cs"
@@ -51,6 +52,7 @@ $mainWindowCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $settingsHub = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
 $languageDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/LanguageSettingsDialog.xaml"
 $operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml"
+$onlineFirstLogin = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"
 $posView = Read-Text "src/Win7POS.Wpf/Pos/PosView.xaml"
 $paymentView = Read-Text "src/Win7POS.Wpf/Pos/PaymentView.xaml"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
@@ -66,8 +68,17 @@ $startOfDayDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDial
 $refundDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/RefundDialog.xaml"
 $refundDialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/RefundDialog.xaml.cs"
 $supplierImport = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml"
+$supplierImportCode = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml.cs"
 $supplierImportViewModel = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs"
+$supplierImportWorkflow = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs"
 $importView = Read-Text "src/Win7POS.Wpf/Import/ImportView.xaml"
+$importViewModel = Read-Text "src/Win7POS.Wpf/Import/ImportViewModel.cs"
+$importWorkflow = Read-Text "src/Win7POS.Wpf/Import/ImportWorkflowService.cs"
+$dbMaintenance = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml"
+$dbMaintenanceViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs"
+$customerDisplay = Read-Text "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayWindow.xaml"
+$monitorIdentify = Read-Text "src/Win7POS.Wpf/Pos/CustomerDisplay/MonitorIdentifyWindow.xaml"
+$uiSmokeHarness = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 
 Test-ContainsAll "MainWindow remains a maximize-only workstation shell" ($mainWindow + $mainWindowCode) @(
     'WindowState="Maximized"',
@@ -195,6 +206,12 @@ Test-ContainsAll "shared semantic design tokens" $modernStyles @(
     'x:Key="StatusWarningBrush"',
     'x:Key="StatusErrorBrush"',
     'x:Key="StatusInfoBrush"'
+)
+
+Test-ContainsAll "shared radius tokens use the WPF CornerRadius type" $modernStyles @(
+    '<CornerRadius x:Key="RadiusSmall">6</CornerRadius>',
+    '<CornerRadius x:Key="RadiusMedium">8</CornerRadius>',
+    '<CornerRadius x:Key="RadiusLarge">12</CornerRadius>'
 )
 
 Test-ContainsAll "modern app-wide ComboBox template" $modernStyles @(
@@ -348,8 +365,21 @@ Test-ContainsAll "Products searchable filters" $productsView @(
 Test-ContainsAll "Products catalog stats are surfaced in header" $productsView @(
     'CatalogStatsChips',
     'CatalogStatChipStyle',
-    'ResultSummary'
+    'ItemsSource="{Binding CatalogStatsChips}"'
 )
+
+$productsFilterSummaryCount = [regex]::Matches(
+    $productsView,
+    'Text="\{Binding FilterSummary\}"',
+    [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+).Count
+if ($productsView.IndexOf('Text="{Binding ResultSummary}"', [StringComparison]::Ordinal) -ge 0 -or
+    $productsFilterSummaryCount -ne 1) {
+    Fail "Products repeats result/filter summaries instead of showing one applied-filter chip and one paging status"
+}
+else {
+    Pass "Products avoids duplicate result and filter summaries"
+}
 
 Test-ContainsAll "Products catalog stats are queried globally" $productQueryRepository @(
     'ProductCatalogStats',
@@ -536,6 +566,130 @@ Test-ContainsAll "Supplier import status path uses localization keys" $supplierI
     'supplierExcelImport.markupApplied',
     'supplierExcelImport.filePickerTitle'
 )
+
+Test-ContainsAll "POS cart exposes an actionable empty state" ($posView + $posViewModel) @(
+    'IsCartEmpty',
+    'pos.cart.emptyTitle',
+    'pos.cart.emptyHelp',
+    'AutomationProperties.AutomationId="Pos.EmptyCartState"',
+    'AutomationProperties.AutomationId="Pos.BarcodeInput"'
+)
+
+Test-ContainsAll "Products exposes loading, empty, error and filter recovery states" ($productsView + $productsViewModel) @(
+    'EmptyStateTitle',
+    'EmptyStateHelp',
+    'products.emptyFiltered',
+    'products.emptyCatalog',
+    'Text="{Binding StatusMessage}"',
+    'AutomationProperties.LiveSetting="Polite"',
+    'AutomationProperties.AutomationId="Products.Grid"',
+    'SafeOperatorError'
+)
+
+Test-ContainsAll "Products communicates clipped catalog text and exposes the full value" $productsView @(
+    'x:Key="ProductTextCell"',
+    '<Setter Property="TextTrimming" Value="CharacterEllipsis"/>',
+    '<Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/>',
+    'Binding="{Binding Name2}" Width="1.2*" MinWidth="110" ElementStyle="{StaticResource ProductTextCell}"'
+)
+
+Test-ContainsAll "General catalog import localizes preview and safe failure states" ($importView + $importViewModel + $importWorkflow) @(
+    'AutoGenerateColumns="False"',
+    'VirtualizingPanel.VirtualizationMode="Recycling"',
+    'AutomationProperties.AutomationId="CatalogImport.Status"',
+    'import.analysisFailedFriendly',
+    'import.applyFailedFriendly',
+    'import.previewStale',
+    'import.summaryProducts'
+)
+
+if ($importViewModel.IndexOf('Summary = ex.ToString()', [StringComparison]::Ordinal) -ge 0 -or
+    $importWorkflow.IndexOf('Sync DB preview non aggiornato', [StringComparison]::Ordinal) -ge 0) {
+    Fail "General catalog import still exposes raw exception or stale-preview text"
+}
+else {
+    Pass "General catalog import keeps technical failures out of operator text"
+}
+
+Test-ContainsAll "Supplier import keeps four steps bounded, virtualized and keyboard recoverable" ($supplierImport + $supplierImportCode) @(
+    'supplierExcelImport.stepCurrent',
+    'VirtualizingPanel.VirtualizationMode" Value="Recycling"',
+    'AutomationProperties.AutomationId="SupplierImport.StepIndicator"',
+    'AutomationProperties.AutomationId="SupplierImport.BusyState"',
+    'AutomationProperties.AutomationId="SupplierImport.Status"',
+    'AutomationProperties.LiveSetting="Polite"',
+    'FocusCurrentStep',
+    'DispatcherPriority.Input'
+)
+
+if ($supplierImport.IndexOf('<ScrollViewer Grid.Row="2"', [StringComparison]::Ordinal) -ge 0 -or
+    $supplierImport.IndexOf('CanContentScroll="False"', [StringComparison]::Ordinal) -ge 0) {
+    Fail "Supplier import wraps large grids in a non-virtualizing outer scroll surface"
+}
+else {
+    Pass "Supplier import large grids retain bounded recycling virtualization"
+}
+
+Test-ContainsAll "Supplier import translates row issues and separates diagnostics from operator errors" ($supplierImportViewModel + $supplierImportWorkflow) @(
+    'SupplierImportIssueDisplayRow',
+    'supplierExcelImport.issueGeneric',
+    'SupplierExcelImportWorkflowException',
+    'OperatorMessage',
+    'Status = ex.OperatorMessage'
+)
+
+Test-ContainsAll "Database maintenance explains idle, busy and failed states" ($dbMaintenance + $dbMaintenanceViewModel) @(
+    'dbMaintenance.noResultsYet',
+    'dbMaintenance.operationInProgress',
+    'dbMaintenance.operationFailedFriendly',
+    'AutomationProperties.AutomationId="DbMaintenance.Output"',
+    'AutomationProperties.AutomationId="DbMaintenance.BusyState"',
+    'AppendFailure',
+    '_logger.LogError'
+)
+
+Test-ContainsAll "Primary login, operator switch and payment CTAs expose automation contracts" ($onlineFirstLogin + $operatorSwitch + $paymentView) @(
+    'AutomationProperties.AutomationId="PosAccess.ShopCode"',
+    'AutomationProperties.AutomationId="PosAccess.Credential"',
+    'AutomationProperties.AutomationId="PosAccess.NetworkStatus"',
+    'AutomationProperties.AutomationId="PosAccess.SignIn"',
+    'AutomationProperties.AutomationId="OperatorSwitch.StaffCode"',
+    'AutomationProperties.AutomationId="OperatorSwitch.Confirm"',
+    'AutomationProperties.AutomationId="Payment.CashAmount"',
+    'AutomationProperties.AutomationId="Payment.CardAmount"',
+    'AutomationProperties.AutomationId="Payment.Confirm"',
+    'AutomationProperties.HelpText="{Binding RestoOrMissingDisplay}"'
+)
+
+Test-ContainsAll "Refund and product editor primary workflows expose automation contracts" ($refundDialog + $productEdit) @(
+    'AutomationProperties.AutomationId="Refund.BarcodeScan"',
+    'AutomationProperties.AutomationId="Refund.Lines"',
+    'AutomationProperties.AutomationId="Refund.CashAmount"',
+    'AutomationProperties.AutomationId="Refund.Confirm"',
+    'AutomationProperties.AutomationId="ProductEditor.Barcode"',
+    'AutomationProperties.AutomationId="ProductEditor.Name"',
+    'AutomationProperties.AutomationId="ProductEditor.SalePrice"',
+    'AutomationProperties.AutomationId="ProductEditor.Save"'
+)
+
+Test-ContainsAll "Customer display window titles are localized" ($customerDisplay + $monitorIdentify) @(
+    'Title="{loc:Loc customerDisplay.settings.title}"',
+    'Title="{loc:Loc customerDisplay.settings.identify}"'
+)
+
+Test-ContainsAll "Settings audit reuses the active QA database when evidence is stored separately" $uiSmokeHarness @(
+    'public async Task<string> CaptureSettingsAuditAsync(string outputDirectory)',
+    'var options = PosDbOptions.Default();',
+    'if (!File.Exists(options.DbPath))',
+    'DbInitializer.EnsureCreated(options);'
+)
+
+if ($uiSmokeHarness.IndexOf('File.Exists(Path.Combine(outputDirectory, "pos.db"))', [StringComparison]::Ordinal) -ge 0) {
+    Fail "Settings audit still treats the evidence output directory as the active QA data directory"
+}
+else {
+    Pass "Settings audit does not reseed solely because evidence uses a separate output directory"
+}
 
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red

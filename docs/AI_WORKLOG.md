@@ -4,6 +4,22 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-07-30 – Article sync final acceptance e closeout
+
+- Validato Win7POS dall'exact main post-PR68 senza modificare il checkout
+  primario dirty.
+- Integrate PR #69 (namespace isolato post-PR68) e PR #70 (report Gitleaks
+  zero-findings non vuoto), entrambe con CI, CodeQL e supply-chain PASS.
+- Acceptance staging finale PASS: login/trust/restart, catalogo autorevole da
+  676 pagine, matrice article mutation completa, conflitto risolto, zero echo,
+  outbox zero, vendite e hardware zero.
+- Core/Data 746/746; WPF/harness net48/x86 0 warning/error; dialog 34/34;
+  required gates 45/45; soluzione 0 warning/error; Gitleaks 0.
+- Manifest cleanup consolidato a sette gruppi validato SELECT-only e non
+  eseguito; handoff cross-repo `READY_FOR_MAC_FINAL_CLEANUP`.
+- Chiusura: `DONE`, `USER_CONFIRMED_CLOSURE`, P0/P1/P2/P3=0/0/0/0;
+  Windows 7 fisico resta `EXTERNAL_PENDING`.
+
 ## 2026-03-17 – Pulizia doc repo
 - Spostati report storici in `docs/reports/` (DIALOG_REVERT_REPORT, ANALISI_MIGLIORAMENTI, CANDIDATI_PULIZIA).
 - Archiviato piano eseguito in `docs/plans/_archive/dialog-positioning-standardization-plan.md`.
@@ -975,3 +991,150 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   source-provenance/recovery reconciliation manifest and verified backup for the
   eight remote-only Supabase staging migrations. No token, credential or
   production data was recorded.
+
+## 2026-07-25 - TASK-139 final review closeout (DONE)
+
+- Repository: `XNIW/Win7POS`, branch `main`.
+- SHA codice verificata:
+  `1b947f3776e8af71450418cfae66e407da92682b`; coincideva con `main`,
+  `origin/main` e GitHub `main` al preflight ed è antenata del successivo
+  commit documentale.
+- Final review approvata esplicitamente dall'utente: stato TASK-139 `DONE`,
+  P0/P1/P2 aperti `0/0/0`.
+- Workflow esistenti riusati sull'esatta SHA:
+  - CI `30179709588`: `SUCCESS`, inclusi required gates `44/44`, Release
+    build, Core/Data, CLI selftest, WPF `net48/x86`, UI harness, authorization
+    lease runtime, logging `100k` e paging `100k`;
+  - targeted authorization smoke `30179377746`: `SUCCESS`, inclusi dynamic
+    admission, restart, clock/capacity, `hardwareEffects=0` e assenza di
+    sale/outbox non autorizzate;
+  - Security Supply Chain `30179709582`: `SUCCESS`;
+  - Release Pack `30179709584`: `SUCCESS`;
+  - candidate CI `30179448464`: `SUCCESS`.
+- Candidate/worktree TASK-139 revisionati: le lane consegnate sono antenate di
+  `main`; l'esperimento locale `33c8e268` di catalog remote-failure è fuori
+  dallo scope finale accettato offline-authorization lease/bridge, è stato
+  superseduto e non è stato integrato. Nessuna modifica utile accettata resta
+  fuori `main`.
+- Windows 7 fisico, signing, staging autenticato, printer/scanner/camera e
+  periferiche restano evidence esterna opzionale/non bloccante.
+- Nessun nuovo scan Codex Security, rerun manuale CodeQL/Supply Chain, full
+  suite, deploy o mutazione production è stato avviato nel closeout.
+- Report: `docs/reports/2026-07-25_TASK-139_FINAL_REVIEW_CLOSEOUT.md`.
+
+## 2026-07-26 - Runtime observability catalog failure (in delivery)
+
+- Implementata diagnostica strutturata e sanitizzata per login/catalog pull,
+  con stato fail-closed, correlation ID bounded e pannello tecnico WPF copiabile.
+- Verifica locale completata: focused 16/16, Core/Data 642/642, gate 44/44,
+  WPF e UiSmokeHarness `net48/x86` senza warning/errori; smoke loopback HTTP
+  500/db_failure a 1024x768 PASS senza credenziali, staging o backend.
+- Feature commit: `1c64baac673afbcfa4be21ffbd14df03742ce3c2`; PR #42 aperta verso
+  `main`. Report: `docs/reports/2026-07-26_WIN7POS_RUNTIME_OBSERVABILITY.md`.
+  CI e merge saranno verificati sulla testa finale della PR.
+
+## 2026-07-27 - ASUS catalog_product_row_invalid offline automation (in delivery)
+
+- Evidence congelata in `C:\Dev\_codex-evidence\win7pos-catalog-row-invalid-20260727`:
+  due pagine full-response persistite, entrambe senza lane prodotti. La failure
+  `catalog_product_row_invalid` avviene prima dello staging della risposta
+  successiva; il payload/riga non e quindi ricostruibile offline. Ownership
+  resta `UNKNOWN`, senza ipotesi di bug client o server non dimostrata.
+- Aggiunti analyzer CLI offline/redatto, diagnostica bounded pre-stage per le
+  prossime failure, soppressione retry deterministic per revision e mapper
+  catalogo condiviso fra pull production/analyzer. Il POS rimane fail-closed.
+- La patch dialog ASUS usa `SizeToContent=WidthAndHeight` e `MinHeight=650`
+  (invece di 720): UiSmokeHarness loopback passa a 1024x768 con errore chiuso/
+  aperto, footer raggiungibile e artefatti EN/ES/IT/ZH; nessuna chiamata staging.
+- Aggiunto vault QA DPAPI CurrentUser con ACL current-user/SYSTEM, self-test
+  sintetico, harness staging test-only e report/screenshot redatti. Il profilo
+  reale non e stato creato o letto e l'acceptance staging non e stata eseguita.
+
+## 2026-07-27 - ASUS catalog product server ownership confirmed
+
+- Un singolo login manuale sulla build diagnostica ha identificato la prima
+  riga non conforme: pagina 3, lane products, riga 56,
+  `invalid_product_name_text`. Il nome ha lunghezza 38 (limite 512); la causa e
+  quindi un carattere di controllo o Unicode malformato nel payload staging.
+- DTO deserializzato, mapping non eseguito e pagina non staged: ownership
+  server/data-contract confermata. Il POS resta fail-closed e non normalizza,
+  salta o inventa il prodotto.
+- Creato l'handoff redatto
+  `docs/HANDOFFS/2026-07-27_WIN7POS_CATALOG_PRODUCT_ROW_INVALID.md` e il prompt
+  Mac esterno nell'evidence root. Gate statici `44/44` e build WPF `net48/x86`
+  PASS; test `net10.0` demandati alla CI per SDK 10 non installato localmente.
+
+## 2026-07-27 - WIN7POS-CATALOG-TOLERANCE-001 (REVIEW)
+
+- Creato worktree isolato `codex/asus-catalog-warning-tolerance-20260727` da
+  `e1dcbe7`; il precedente worktree interrotto era pulito e la sua patch binaria
+  esportata era vuota.
+- Aggiunta recovery Core su copia del payload per soli display text catalogo,
+  con warning aggregati redatti e mapper/staging che consumano esclusivamente il
+  valore recuperato. Barcode, ID, item number, prezzi, manifest e exactness non
+  sono normalizzati permissivamente.
+- Vendorizzato byte per byte il fixture comune Admin/Android/iOS (Git blob
+  `63e527a`, SHA-256 `1cec15e9…36ae9a6`) e aggiunto il fixture consumer
+  Win7POS.
+- PR #45 e' stata unita normalmente a `de29501` dopo CI, CodeQL e supply-chain
+  verdi; la review indipendente finale ha P0/P1/P2/P3 aperti = 0. Build del
+  main pulito e smoke warning sintetico passano. Acceptance reale resta
+  in `REVIEW`: profilo DPAPI inizializzato e una sola acceptance staging eseguita,
+  ma bootstrap `failure` prima del catalog pull. Il controllo redatto conferma
+  che i valori profilo non sono nel log; non e' stato eseguito un secondo run.
+
+## 2026-07-28 - POS article mutation sync v1 (in delivery)
+
+- Congelati byte per byte i tre fixture Admin
+  `pos-article-mutation-v1`/first-login e implementati contratto Core,
+  canonical JSON/hash, limiti 25/256 KiB, validazione ACK/replay e base revision
+  UTC a sei frazioni.
+- Aggiunta la migration SQLite additiva
+  `0010-article-mutation-outbox` con outbox/attempt ledger, dipendenze create
+  pre-ACK, shadow remoto, stock manuale, atomicita' Save/outbox, recovery e
+  restore/shop guard.
+- Integrati tutti i Save manuali WPF con origine esplicita, lane supervisor
+  background/fair, auth stop, pull protection/no-echo, Sync Center e toast
+  conflitto EN/ES/IT/ZH. Supplier import e stock sales restano isolati.
+- Acceptance locale corrente: Core/Data `726/726`, required gates `44/44`,
+  dialog standard PASS, WPF/UiSmokeHarness/solution Release net48/x86 senza
+  warning/errori, loopback completo e UI 1024x768 PASS, drain autorevole
+  676 pagine/19.763 prodotti/41.228 prezzi `Verified`, supplier XLSX e DPAPI
+  self-test PASS, Gitleaks working tree e storia completa senza finding.
+- Preparato l'harness di staging esatto-main con profilo DPAPI
+  `asus-staging`, data dir isolata
+  `C:\POSData\Win7POSArticleMutationAcceptance`, run ID `ASUSART_*`, scenario
+  mutazioni/replay/mismatch/conflitto completo, fail-fast senza retry cieco,
+  evidenze redatte, cleanup manifest e prompt Mac generato. Nessuna chiamata
+  staging e nessuna azione hardware sono state ancora eseguite in questa fase.
+
+## 2026-08-09 - Physical Win7/hardware acceptance and final release
+
+- Protetta integralmente la modifica locale preesistente nel checkout primario:
+  file SHA-256 `82869ACF...987B6`, patch esterna SHA-256
+  `47172902...38280`; nessun reset/checkout/stash/apply sul primario.
+- Baseline `origin/main=26e1fd1`; worktree/branch dedicati creati. PR #88
+  Storefront v1 è rimasta separata e non è stata integrata.
+- Build-host acceptance: SDK 10.0.301, restore locked, required gates `47/47`,
+  dialog `34/34`, solution e WPF net48/x86 senza warning/errori, CLI/backup/
+  restore e smoke WPF sintetici PASS. La run UI canonica conserva 47 screenshot.
+- Corretto il percorso evidence UI (`6709096`) e un N+1 catalogo dimostrato:
+  ~19,763 righe da mediana 19.656 s a 2.067 s (-89,5%), con 123 command di
+  contesto e 140/378 command/statement remote-price deterministici.
+- Il focused security diff scan locale, sigillato senza attribuire successo al
+  launcher MCP rifiutato, ha prodotto un finding P3/low sul lookup transitive e
+  due difetti di correttezza. Tutti sono stati corretti in `b6a92b0` con test e
+  gate; Gitleaks worktree 0 finding.
+- L'host WDAC ha bloccato i nuovi assembly MSTest e l'EXE benchmark con
+  `0x800711C7`; la policy non è stata disabilitata o aggirata. Build e gate
+  locali passano; test/performance esatto-head devono essere certificati dalla
+  CI pulita.
+- Creato RC pulito `1.0.0-dev.b6a92b0d8f6d`, installer SHA-256
+  `FC51AFE79ECE5045361D18BC8FD6D09099ABADE735EAA634BB7127B57A06A758`,
+  `NotSigned`. Nessun certificato code-signing reale disponibile.
+- Nessun dispositivo Win7 fisico, scanner, Xprinter, drawer, customer display,
+  account/shop QA autenticato o production endpoint era disponibile. Nessun
+  impulso drawer e nessuna mutazione staging/production. Backlog esterno
+  invariato: 10/25 PASS storici, 15 open/partial, 0 nuove chiusure.
+- Classificazione: `BLOCKED_EXTERNAL`. Report:
+  `docs/QA/WIN7POS_PHYSICAL_WIN7_HARDWARE_ACCEPTANCE_2026-08-09.md`.

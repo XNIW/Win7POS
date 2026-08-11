@@ -18,13 +18,17 @@ dated reports under `docs/reports/`.
 | ASUS-W7POS-009 | Done | Support POS Admin staff role mapping | `9bf33c9` | `pos_admin`, `staff_admin`, and `shop_owner_staff` map to local admin; manager remains manager; Core tests pass. |
 | ASUS-W7POS-010 | Done | E2E review of POS Admin staff role | Validated at `9bf33c9` and revalidated in ASUS-W7POS-011 | Redacted POS Admin staff online/offline smoke pass; admin areas open; switch negative case not run because the smoke data dir had only one local POS Admin operator. |
 | ASUS-W7POS-011 | Done | Final review and closeout | This final closeout commit | Tasks 001-010 closed, final report created, gates/release drop/smoke/log scan complete, logging redaction bug fixed. |
-| ASUS-W7POS-012 | Pending external runtime | Shop-scoped sync, offline authorization lease, reversal line binding/economics and 30-test runtime matrix | `dc162aeff484b576ef21565338cf3d5d492285d4` | `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; item-only proportional reversal economics, immutable-history fail-closed and Mac static/build/test gates pass; runtime remains `EXTERNAL_TEST_PENDING_CODEX_ASUS`. |
+| ASUS-W7POS-012 | Done | Shop-scoped sync, offline authorization lease, reversal line binding/economics and runtime matrix | `1b947f3776e8af71450418cfae66e407da92682b` | `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; software/runtime harness chiusi dalla final integration TASK-139 e dai workflow esatti; test su Windows 7/periferiche restano evidence esterna opzionale e non bloccante. |
+| ASUS-W7POS-013 | Done | Non-blocking catalog display-text recovery, authoritative exactness and final article-sync acceptance | Final software main `2eeb58b`; closeout docs PR | `docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`; final staging PASS, `USER_CONFIRMED_CLOSURE`, P0/P1/P2/P3=0/0/0/0, cleanup `READY_FOR_MAC_FINAL_CLEANUP`. |
+| ASUS-W7POS-014 | Closed historical | Catalog SQLite batch apply and controlled performance evidence | `bb4178b` | `docs/reports/2026-07-14_ASUS-W7POS-014_CATALOG_BATCH_PERFORMANCE.md`; staging portion historically `BLOCKED_EXTERNAL`. |
+| ASUS-W7POS-015 | Execution | Trusted POS product image Phase B and staging acceptance | Branch `codex/asus-product-image-phase-b-final-20260731` | `docs/plans/ASUS-W7POS-015_PRODUCT_IMAGE_PHASE_B.md`; coordinated with Admin `TASK-150`; physical Windows 7 `NOT_RUN`. |
 
 ## External Hardware Pending
 
 - Windows 7 SP1 physical machine smoke.
 - Real Xprinter/spooler test.
 - Real barcode scanner test.
-- Shop-scoped sync 30-test runtime/staging matrix from ASUS-W7POS-012.
+- Windows 7 SP1 physical article-sync smoke remains `EXTERNAL_PENDING`.
 
-These items require hardware and are not software blockers for the Asus closeout.
+These items require external environments or hardware and are not software
+blockers for the Asus/TASK-139 closeout.

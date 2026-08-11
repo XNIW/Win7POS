@@ -46,6 +46,7 @@ public sealed class RemoteCatalogProductWriterTests
             null,
             "  Remote   Category  ",
             12,
+            ProductWriteOrigin.RemoteCatalogApply,
             " " + remoteProductId + " ");
 
         await direct.UpsertProductAndMetaInTransactionAsync(
@@ -69,6 +70,7 @@ public sealed class RemoteCatalogProductWriterTests
             null,
             "  Remote   Category  ",
             18,
+            ProductWriteOrigin.RemoteCatalogApply,
             remoteProductId);
 
         var directSnapshot = await LoadSnapshotAsync(directDb.Factory, remoteProductId);
@@ -153,6 +155,7 @@ public sealed class RemoteCatalogProductWriterTests
             null,
             string.Empty,
             0,
+            ProductWriteOrigin.RemoteCatalogApply,
             "remote-e4-reserved-facade"));
 
         Assert.AreEqual(0L, await CountRowsAsync(directDb.Factory, "SELECT COUNT(1) FROM products;"));
@@ -190,14 +193,20 @@ public sealed class RemoteCatalogProductWriterTests
             null,
             string.Empty,
             0,
+            ProductWriteOrigin.RemoteCatalogApply,
             remoteProductId);
 
         Assert.IsTrue(await direct.ApplyRemoteProductTombstoneAsync(
             " " + remoteProductId + " ", remoteDeletedAt));
         Assert.IsTrue(await facade.ApplyRemoteProductTombstoneAsync(
-            " " + remoteProductId + " ", remoteDeletedAt));
+            " " + remoteProductId + " ",
+            remoteDeletedAt,
+            ProductWriteOrigin.RemoteCatalogApply));
         Assert.IsFalse(await direct.ApplyRemoteProductTombstoneAsync(remoteProductId, remoteDeletedAt));
-        Assert.IsFalse(await facade.ApplyRemoteProductTombstoneAsync(remoteProductId, remoteDeletedAt));
+        Assert.IsFalse(await facade.ApplyRemoteProductTombstoneAsync(
+            remoteProductId,
+            remoteDeletedAt,
+            ProductWriteOrigin.RemoteCatalogApply));
 
         var directSnapshot = await LoadSnapshotAsync(directDb.Factory, remoteProductId);
         var facadeSnapshot = await LoadSnapshotAsync(facadeDb.Factory, remoteProductId);
@@ -208,6 +217,73 @@ public sealed class RemoteCatalogProductWriterTests
             "SELECT COUNT(1) FROM product_meta WHERE barcode = 'E4-TOMBSTONE';"));
         Assert.AreEqual(1L, await CountRowsAsync(facadeDb.Factory,
             "SELECT COUNT(1) FROM product_meta WHERE barcode = 'E4-TOMBSTONE';"));
+    }
+
+    [TestMethod]
+    public async Task RemoteCatalogProductWriter_TombstoneCompletesAlreadyInactiveCanonicalShadow()
+    {
+        using var db = TestDb.Create();
+        const string remoteProductId = "remote-e4-inactive-tombstone";
+        const string remoteDeletedAt = "2026-07-29T16:50:24.000000Z";
+        const string initialRevision = "2026-07-29T16:50:23.123456Z";
+        const string authoritativeRevision = "2026-07-29T16:50:24.123456Z";
+        using var connection = db.Factory.Open();
+        await RemoteCatalogProductWriter.UpsertProductAndMetaInTransactionCoreAsync(
+            connection,
+            null,
+            NewProduct("E4-INACTIVE-TOMBSTONE", "Locally inactive product", 100),
+            string.Empty,
+            string.Empty,
+            0,
+            null,
+            string.Empty,
+            null,
+            string.Empty,
+            0,
+            remoteProductId,
+            remoteUpdatedAt: initialRevision);
+
+        await connection.ExecuteAsync(@"
+UPDATE products
+SET is_active = 0
+WHERE remote_product_id = @remoteProductId;",
+            new { remoteProductId });
+
+        Assert.IsTrue(
+            await RemoteCatalogProductWriter
+                .ApplyRemoteProductTombstoneInTransactionAsync(
+                    connection,
+                    null,
+                    remoteProductId,
+                    remoteDeletedAt,
+                    authoritativeRevision));
+        Assert.IsFalse(
+            await RemoteCatalogProductWriter
+                .ApplyRemoteProductTombstoneInTransactionAsync(
+                    connection,
+                    null,
+                    remoteProductId,
+                    remoteDeletedAt,
+                    authoritativeRevision));
+        Assert.AreEqual(1L, await ScalarAsync(connection, @"
+SELECT COUNT(1)
+FROM products product
+JOIN article_product_remote_shadow shadow
+  ON shadow.remote_product_id = product.remote_product_id
+ AND shadow.local_product_id = product.id
+WHERE product.remote_product_id = @remoteProductId
+  AND product.is_active = 0
+  AND product.remote_deleted_at = @remoteDeletedAt
+  AND product.remote_base_revision = @authoritativeRevision
+  AND shadow.is_active = 0
+  AND shadow.authoritative_revision = @authoritativeRevision;",
+            null,
+            new
+            {
+                remoteProductId,
+                remoteDeletedAt,
+                authoritativeRevision
+            }));
     }
 
     [TestMethod]
@@ -311,9 +387,13 @@ WHERE p.remote_product_id = @remoteProductId;", new { remoteProductId });
     private static async Task<long> ScalarAsync(
         SqliteConnection conn,
         string sql,
-        SqliteTransaction? tx = null)
+        SqliteTransaction? tx = null,
+        object? parameters = null)
     {
-        var value = await conn.ExecuteScalarAsync(sql, transaction: tx);
+        var value = await conn.ExecuteScalarAsync(
+            sql,
+            parameters,
+            transaction: tx);
         return Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
 

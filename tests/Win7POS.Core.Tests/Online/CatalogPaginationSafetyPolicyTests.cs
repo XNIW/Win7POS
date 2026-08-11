@@ -119,19 +119,7 @@ public sealed class CatalogPaginationSafetyPolicyTests
             fullSnapshotExpected: true,
             receivedBeforePage: EmptyCounts(),
             cumulativeEvidence: firstEvidence);
-        var activeOnlyBudget = Budget(Limit, 0).PageBudget;
-        var expandedBudget = CatalogPaginationSafetyPolicy
-            .ExpandFullPageBudgetForTombstoneContinuation(
-                activeOnlyBudget,
-                hardCeilingPages: 512,
-                fullSnapshot: true,
-                hasMore: true,
-                cumulativeEvidence: firstEvidence,
-                summary: firstPage.CatalogSummary);
-
         Assert.IsTrue(firstDecision.Allowed);
-        Assert.AreEqual(1, activeOnlyBudget);
-        Assert.AreEqual(512, expandedBudget);
 
         var terminalPage = Full(0, 0, false, summaryProducts: Limit);
         terminalPage.Catalog.Tombstones.Products = new[]
@@ -317,56 +305,11 @@ public sealed class CatalogPaginationSafetyPolicyTests
             tracker.ConflictCode);
     }
 
-    [TestMethod]
-    public void BudgetUsesMaximumIndependentLaneAndSupportsOneHundredThousandRows()
-    {
-        foreach (var item in new[]
-        {
-            (Count: 0L, Pages: 1),
-            (Count: 1L, Pages: 1),
-            (Count: 999L, Pages: 1),
-            (Count: 1000L, Pages: 1),
-            (Count: 1001L, Pages: 2),
-            (Count: 19763L, Pages: 20),
-            (Count: 100000L, Pages: 100)
-        })
-        {
-            var decision = Budget(item.Count, 0);
-            Assert.IsTrue(decision.Allowed);
-            Assert.AreEqual(item.Pages, decision.PageBudget, item.Count.ToString());
-        }
-
-        Assert.AreEqual(100, Budget(100000, 100000).PageBudget);
-        Assert.AreEqual(100, Budget(100000, 1).PageBudget);
-    }
-
-    [TestMethod]
-    public void BudgetFallsBackForLegacyAndRejectsAboveHardCeiling()
-    {
-        var legacy = CatalogPaginationSafetyPolicy.CalculatePageBudget(null, Limit, 120, 512);
-        Assert.IsTrue(legacy.Allowed);
-        Assert.IsFalse(legacy.Authoritative);
-        Assert.AreEqual(120, legacy.PageBudget);
-
-        var exceeded = Budget(513000, 0);
-        Assert.IsFalse(exceeded.Allowed);
-        Assert.AreEqual(CatalogPaginationSafetyPolicy.PageBudgetExceededCode, exceeded.Code);
-    }
-
     private static void AssertAmbiguous(PosCatalogPullResponse response)
     {
         var decision = Evaluate(response);
         Assert.IsFalse(decision.Allowed);
         Assert.AreEqual(CatalogPaginationSafetyPolicy.AmbiguousEndCode, decision.Code);
-    }
-
-    private static CatalogPageBudgetDecision Budget(long products, long prices)
-    {
-        return CatalogPaginationSafetyPolicy.CalculatePageBudget(
-            Summary(products, prices),
-            Limit,
-            legacyFallbackPages: 120,
-            hardCeilingPages: 512);
     }
 
     private static CatalogPaginationSafetyDecision Evaluate(PosCatalogPullResponse response)

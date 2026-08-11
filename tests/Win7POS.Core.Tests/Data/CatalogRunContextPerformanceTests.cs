@@ -53,7 +53,9 @@ public sealed class CatalogRunContextPerformanceTests
         Assert.AreEqual(2, run.Diagnostics.ReferenceMapRefreshQueryCount);
         Assert.AreEqual(3, run.Diagnostics.ProductIdentityQueryCount);
         Assert.AreEqual(3, run.Diagnostics.PendingStockQueryCount);
-        Assert.AreEqual(11, run.Diagnostics.ScopeSqlQueryCount);
+        Assert.AreEqual(3L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+        Assert.AreEqual(14, run.Diagnostics.ScopeSqlQueryCount);
         Assert.AreEqual(18, run.Diagnostics.LegacyScopeSqlQueryEstimate);
         Assert.AreEqual(1L, run.Diagnostics.ProductIdentityRowsLoaded);
         Assert.AreEqual(3L, run.Diagnostics.StagedProductIdentityCount);
@@ -106,6 +108,64 @@ WHERE c.remote_category_id = 'category-run'
 
         Assert.AreEqual(1000, result.ProductsApplied);
         Assert.AreEqual(1L, run.Diagnostics.RelinkStageSqlCommandCount);
+        Assert.AreEqual(1L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+    }
+
+    [TestMethod]
+    public async Task LegacyRebindPageDoesNotRepeatProtectedProductLookup()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-run",
+                    Name = "Run Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-run",
+                    Name = "Run Supplier"
+                }
+            },
+            Products = new[] { Product("product-legacy-1", "LEGACY-OLD", 1) }
+        });
+
+        using var run = repository.CreateRunContext();
+        var result = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Products = new[]
+            {
+                Product("product-legacy-1", "LEGACY-NEW", 2),
+                Product("product-legacy-2", "LEGACY-002", 2),
+                Product("product-legacy-3", "LEGACY-003", 2)
+            }
+        });
+
+        Assert.AreEqual(3, result.ProductsApplied);
+        Assert.AreEqual(1L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+    }
+
+    [TestMethod]
+    public void SqliteNoCaseBarcodeKeyFoldsAsciiOnly()
+    {
+        Assert.AreEqual(
+            "abc-123",
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("ABC-123"));
+        Assert.AreEqual(
+            "already-lower",
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("already-lower"));
+        Assert.AreNotEqual(
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("Ä"),
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("ä"));
     }
 
     [TestMethod]
@@ -136,7 +196,7 @@ WHERE c.remote_category_id = 'category-run'
         Assert.AreEqual(2, run.Diagnostics.PagesApplied);
         Assert.AreEqual(2L, run.Diagnostics.CommittedTransactionCount);
         Assert.AreEqual(14L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
-        Assert.AreEqual(18L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(20L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
         Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
         Assert.AreEqual(2L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
         Assert.AreEqual(2L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);
@@ -201,7 +261,7 @@ END;");
         Assert.AreEqual(1, run.Diagnostics.PagesApplied);
         Assert.AreEqual(1L, run.Diagnostics.CommittedTransactionCount);
         Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
-        Assert.AreEqual(9L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(10L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
         Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
         Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
         Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);
@@ -218,7 +278,7 @@ END;");
 
         Assert.AreEqual(1, run.Diagnostics.PagesApplied);
         Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
-        Assert.AreEqual(9L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(10L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
         Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
         Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
         Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);

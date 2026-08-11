@@ -12,6 +12,144 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class RemoteCatalogBatchRepositoryTests
 {
     [TestMethod]
+    public async Task ProductImageProjection_ReplacesRemovesAndNeverEchoes()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var product = Product(
+            "20000000-0000-4000-8000-000000000201",
+            "IMG-CATALOG-201",
+            2);
+        product.ApplyImageProjection = true;
+        product.PrimaryImageVersionId = "40000000-0000-4000-8000-000000000201";
+        product.PrimaryImageUpdatedAt = "2026-07-31T10:00:00.000000Z";
+
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { product } });
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { product } });
+        product.PrimaryImageVersionId = "40000000-0000-4000-8000-000000000202";
+        product.PrimaryImageUpdatedAt = "2026-07-31T10:01:00.000000Z";
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { product } });
+
+        using (var verify = db.Factory.Open())
+        {
+            Assert.AreEqual(
+                "40000000-0000-4000-8000-000000000202|2026-07-31T10:01:00.000000Z",
+                await verify.ExecuteScalarAsync<string>(@"
+SELECT COALESCE(primary_image_version_id, '') || '|' ||
+       COALESCE(primary_image_updated_at, '')
+FROM products
+WHERE barcode = 'IMG-CATALOG-201';"));
+            Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM product_image_operation_outbox;"));
+        }
+
+        product.PrimaryImageVersionId = string.Empty;
+        product.PrimaryImageUpdatedAt = "2026-07-31T10:02:00.000000Z";
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { product } });
+
+        using var removed = db.Factory.Open();
+        Assert.AreEqual(
+            "|2026-07-31T10:02:00.000000Z",
+            await removed.ExecuteScalarAsync<string>(@"
+SELECT COALESCE(primary_image_version_id, '') || '|' ||
+       COALESCE(primary_image_updated_at, '')
+FROM products
+WHERE barcode = 'IMG-CATALOG-201';"));
+        Assert.AreEqual(0L, await removed.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM product_image_operation_outbox;"));
+    }
+
+    [TestMethod]
+    public async Task InvalidOptionalImageMetadataWarnsButProductRemainsSaleSafe()
+    {
+        using var db = TestDb.Create();
+        var transport = new PosCatalogPullResponse
+        {
+            Catalog = new PosCatalogPayload
+            {
+                Products = new[]
+                {
+                    new PosCatalogProductResponse
+                    {
+                        Barcode = "IMG-WARN-202",
+                        ProductId = "20000000-0000-4000-8000-000000000202",
+                        ProductName = "Sale-safe product",
+                        RetailPrice = 100,
+                        StockQuantity = 3,
+                        PrimaryImageVersionId = "not-a-uuid",
+                        PrimaryImageUpdatedAt = "2026-07-31T10:00:00.000000Z"
+                    }
+                }
+            }
+        };
+        var batch = RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
+            transport,
+            false,
+            null);
+
+        var applied = await new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(batch);
+
+        Assert.AreEqual(1L, applied.ProductsApplied);
+        Assert.AreEqual(1L, applied.ImageWarnings);
+        Assert.AreEqual(0L, applied.ProductsSkipped);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            "Sale-safe product|100|3||",
+            await verify.ExecuteScalarAsync<string>(@"
+SELECT p.name || '|' || p.unitPrice || '|' || m.stock_qty || '|' ||
+       COALESCE(p.primary_image_version_id, '') || '|' ||
+       COALESCE(p.primary_image_updated_at, '')
+FROM products p
+JOIN product_meta m ON m.barcode = p.barcode
+WHERE p.barcode = 'IMG-WARN-202';"));
+    }
+
+    [TestMethod]
+    public async Task OmittedImageFieldsWarnAndPreserveLastKnownGoodProjection()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var seeded = Product(
+            "20000000-0000-4000-8000-000000000203",
+            "IMG-MISSING-203",
+            2);
+        seeded.ApplyImageProjection = true;
+        seeded.PrimaryImageVersionId = "40000000-0000-4000-8000-000000000203";
+        seeded.PrimaryImageUpdatedAt = "2026-07-31T10:00:00.000000Z";
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { seeded } });
+
+        var transport = new PosCatalogPullResponse
+        {
+            Catalog = new PosCatalogPayload
+            {
+                Products = new[]
+                {
+                    new PosCatalogProductResponse
+                    {
+                        Barcode = "IMG-MISSING-203",
+                        ProductId = "20000000-0000-4000-8000-000000000203",
+                        ProductName = "Updated without image fields",
+                        RetailPrice = 110,
+                        StockQuantity = 4
+                    }
+                }
+            }
+        };
+        var batch = RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(transport, false, null);
+
+        var applied = await repository.ApplyAsync(batch);
+
+        Assert.AreEqual(1L, applied.ImageWarnings);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            "Updated without image fields|40000000-0000-4000-8000-000000000203|2026-07-31T10:00:00.000000Z",
+            await verify.ExecuteScalarAsync<string>(@"
+SELECT name || '|' || primary_image_version_id || '|' || primary_image_updated_at
+FROM products
+WHERE barcode = 'IMG-MISSING-203';"));
+    }
+
+    [TestMethod]
     public async Task ApplyAsync_ReusesValidatedAuthoritativeStageWithoutRewritingIt()
     {
         using var db = TestDb.Create();
@@ -130,6 +268,64 @@ WHERE remote_product_id = 'product-must-not-apply';"));
     }
 
     [TestMethod]
+    public async Task AtomicFullRefresh_FinalizationFailureRollsBackLivePages()
+    {
+        using var db = TestDb.Create();
+        var stage = await CreateAuthoritativeStageAsync(db, "finalization-rollback");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var batch = new RemoteCatalogBatch
+        {
+            AuthoritativeFullRefresh = true,
+            AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+            {
+                FullRunId = stage.FullRunId,
+                HasMore = false,
+                PageNumber = 1
+            },
+            Products = new[] { Product("product-finalization", "FINALIZE-001", 5) }
+        };
+        await repository.StageAuthoritativePageAsync(
+            batch,
+            CancellationToken.None,
+            stage.Fence);
+
+        var generation = new OnlineSyncGeneration(
+            stage.Fence.GenerationId,
+            stage.Fence.PosSessionId,
+            stage.Fence.ShopDeviceId,
+            stage.ShopId,
+            stage.ShopCode);
+        var state = new CatalogShopStateRepository(db.Factory);
+        await state.RequestFullRepairAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Fence.ExpectedEpoch,
+            generation);
+        var repairedBinding = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            generation);
+        stage.Fence.ExpectedEpoch = repairedBinding.Epoch;
+        stage.Fence.ExpectedPreviousCursor = repairedBinding.Cursor;
+        stage.Fence.ExpectedPreviousMode = repairedBinding.Mode;
+
+        batch.ReuseValidatedAuthoritativeStagePage = true;
+        using var run = repository.CreateRunContext();
+        await run.BeginAtomicFullRefreshAsync();
+        await run.ApplyAsync(batch, CancellationToken.None, stage.Fence);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            run.CommitAtomicFullRefreshAsync(
+                (connection, transaction) => Task.FromException(
+                    new InvalidOperationException("finalization_failure"))));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id = 'product-finalization';"));
+    }
+
+    [TestMethod]
     public async Task AtomicFullRefreshFailureRollsBackEveryAppliedPage()
     {
         using var db = TestDb.Create();
@@ -160,10 +356,12 @@ WHERE remote_product_id = 'product-must-not-apply';"));
                 Products = new[] { Product("product-atomic-invalid", "DISC:ATOMIC", 1) }
             }
         };
-        await repository.StageAuthoritativePagesAtomicallyAsync(
-            pages.Length,
-            (pageNumber, _) => Task.FromResult(pages[pageNumber - 1]),
-            commitFence: stage.Fence);
+        foreach (var page in pages)
+        {
+            await repository.StageAuthoritativePageAsync(
+                page,
+                commitFence: stage.Fence);
+        }
 
         var generation = new OnlineSyncGeneration(
             stage.Fence.GenerationId,
@@ -207,41 +405,120 @@ WHERE remote_product_id IN ('product-atomic-good', 'product-atomic-invalid');"))
     }
 
     [TestMethod]
-    public async Task AtomicAuthoritativeStageFailureRollsBackEveryPage()
+    public async Task AuthoritativeStagePageFailure_PreservesPriorScratchAndLiveCatalog()
     {
         using var db = TestDb.Create();
         var stage = await CreateAuthoritativeStageAsync(db, "stage-atomic-rollback");
         var repository = new RemoteCatalogBatchRepository(db.Factory);
 
+        await repository.StageAuthoritativePageAsync(
+            new RemoteCatalogBatch
+            {
+                AuthoritativeFullRefresh = true,
+                AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                {
+                    FullRunId = stage.FullRunId,
+                    HasMore = true,
+                    PageNumber = 1
+                },
+                Products = new[]
+                {
+                    Product("product-stage-good", "STAGE-GOOD", 1)
+                }
+            },
+            commitFence: stage.Fence);
+
         await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => repository.StageAuthoritativePagesAtomicallyAsync(
-                2,
-                (pageNumber, _) => Task.FromResult(new RemoteCatalogBatch
+            () => repository.StageAuthoritativePageAsync(
+                new RemoteCatalogBatch
                 {
                     AuthoritativeFullRefresh = true,
                     AuthoritativeStagePage = new CatalogAuthoritativeStagePage
                     {
                         FullRunId = stage.FullRunId,
-                        HasMore = pageNumber == 1,
-                        PageNumber = pageNumber == 1 ? 1 : 99
+                        HasMore = false,
+                        PageNumber = 0
                     },
                     Products = new[]
                     {
-                        Product(
-                            "product-stage-atomic-" + pageNumber,
-                            "STAGE-ATOMIC-" + pageNumber,
-                            1)
+                        Product("product-stage-invalid", "STAGE-INVALID", 1)
                     }
-                }),
+                },
                 commitFence: stage.Fence));
 
         using var verify = db.Factory.Open();
-        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+        Assert.IsTrue(await verify.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
 FROM catalog_authoritative_id_stage staged
 JOIN catalog_authoritative_stage_scope scope USING(scope_id)
 WHERE scope.full_run_id = @fullRunId;",
+            new { fullRunId = stage.FullRunId }) > 0L);
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id IN ('product-stage-good', 'product-stage-invalid');"));
+    }
+
+    [TestMethod]
+    public async Task TerminalScratchPage_IsReadBeforeShortWriterStage_WithoutDatabaseLocked()
+    {
+        using var db = TestDb.Create();
+        var stage = await CreateAuthoritativeStageAsync(db, "scratch-lock-regression");
+        var scratch = new CatalogFullResponseStageRepository(db.Factory);
+        var generation = Guid.NewGuid().ToString("N");
+        var budget = new CatalogFullResponseStageResourceBudget(
+            4L * 1024L * 1024L * 1024L,
+            CatalogFullResponseStageRepository.MinimumFreeDiskReserveBytes,
+            1024L * 1024L * 1024L);
+        await scratch.BeginAsync(generation);
+        var firstResponse = TransportPage("cursor-lock-1", true, "lock-product-1");
+        var terminalResponse = TransportPage("cursor-lock-2", false, "lock-product-2");
+        var bytes = await scratch.AppendAsync(
+            generation,
+            1,
+            CatalogShopStateRepository.FingerprintValue(firstResponse.SyncCursor),
+            firstResponse,
+            0,
+            budget);
+        await scratch.AppendAsync(
+            generation,
+            2,
+            CatalogShopStateRepository.FingerprintValue(terminalResponse.SyncCursor),
+            terminalResponse,
+            bytes,
+            budget);
+
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        CatalogAuthoritativeStageEvidence? finalEvidence = null;
+        for (var pageNumber = 1L; pageNumber <= 2L; pageNumber++)
+        {
+            var response = await scratch.LoadPageAsync(generation, pageNumber);
+            finalEvidence = await repository.StageAuthoritativePageAsync(
+                RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
+                    response,
+                    true,
+                    new CatalogAuthoritativeStagePage
+                    {
+                        FullRunId = stage.FullRunId,
+                        HasMore = response.HasMore,
+                        PageNumber = pageNumber
+                    }),
+                commitFence: stage.Fence,
+                loadCumulativeEvidence: pageNumber == 2L);
+        }
+
+        Assert.IsNotNull(finalEvidence);
+        Assert.AreEqual(2L, finalEvidence.LaneCounts.Products);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(2L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage staged
+JOIN catalog_authoritative_stage_scope scope USING(scope_id)
+WHERE scope.full_run_id = @fullRunId
+  AND staged.entity_kind = 'page';",
             new { fullRunId = stage.FullRunId }));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM products;"));
     }
 
     [TestMethod]
@@ -1088,6 +1365,52 @@ WHERE remote_product_id = 'product-identity-b';"));
             StockQuantity = stockQuantity,
             SupplierName = "Supplier 1",
             UnitPrice = 100
+        };
+    }
+
+    private static PosCatalogPullResponse TransportPage(
+        string cursor,
+        bool hasMore,
+        string productId)
+    {
+        return new PosCatalogPullResponse
+        {
+            Catalog = new PosCatalogPayload
+            {
+                Categories = Array.Empty<PosCatalogCategoryResponse>(),
+                Prices = Array.Empty<PosCatalogPriceResponse>(),
+                Products = new[]
+                {
+                    new PosCatalogProductResponse
+                    {
+                        Barcode = productId,
+                        ProductId = productId,
+                        ProductName = productId,
+                        RetailPrice = 100,
+                        StockQuantity = 1
+                    }
+                },
+                Suppliers = Array.Empty<PosCatalogSupplierResponse>(),
+                Tombstones = new PosCatalogTombstonesResponse
+                {
+                    Categories = Array.Empty<PosCatalogCategoryTombstoneResponse>(),
+                    Products = Array.Empty<PosCatalogProductTombstoneResponse>(),
+                    Suppliers = Array.Empty<PosCatalogSupplierTombstoneResponse>()
+                }
+            },
+            CatalogSummary = new PosCatalogSummaryResponse
+            {
+                ActiveProducts = 2,
+                Categories = 0,
+                Prices = 0,
+                Products = 2,
+                Suppliers = 0
+            },
+            CatalogVersion = "lock-regression-v1",
+            HasMore = hasMore,
+            Ok = true,
+            SyncCursor = cursor,
+            SyncMode = "full_refresh"
         };
     }
 

@@ -4,6 +4,7 @@ using System.Windows;
 using Win7POS.Wpf.Chrome;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Threading;
 using Win7POS.Core.Models;
 using Win7POS.Wpf.Infrastructure;
 
@@ -12,6 +13,8 @@ namespace Win7POS.Wpf.Products
     public partial class ProductEditDialog : DialogShellWindow
     {
         private bool _priceBoxAutoSelected;
+        private readonly CancellationTokenSource _imageLifetime =
+            new CancellationTokenSource();
 
         public ProductEditViewModel ViewModel => (ProductEditViewModel)DataContext;
 
@@ -64,6 +67,15 @@ namespace Win7POS.Wpf.Products
         {
             base.OnContentRendered(e);
             FocusPriceBox();
+            _ = ViewModel.InitializeImageAsync(_imageLifetime.Token);
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            _imageLifetime.Cancel();
+            _imageLifetime.Dispose();
+            ViewModel.RequestClose -= OnRequestClose;
+            base.OnClosed(e);
         }
 
         private void PriceBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)

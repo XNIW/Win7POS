@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
+        xmlns:images="clr-namespace:Win7POS.Wpf.Products.Images"
         Title="{Binding DialogTitle}"
         ShowHeader="False"
         DialogCornerRadius="16"
@@ -33,6 +34,8 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150"/>
@@ -40,27 +43,33 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Barcode -->
-                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc products.barcode}"/>
+                    <TextBlock x:Name="ProductBarcodeLabel" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc products.barcode}"/>
                     <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
                              Text="{Binding Barcode, UpdateSourceTrigger=PropertyChanged}"
                              MaxLength="256"
                              Style="{StaticResource ModernTextBoxStyle}"
-                             IsReadOnly="{Binding IsBarcodeReadOnly}"/>
+                             IsReadOnly="{Binding IsBarcodeReadOnly}"
+                             AutomationProperties.AutomationId="ProductEditor.Barcode"
+                             AutomationProperties.LabeledBy="{Binding ElementName=ProductBarcodeLabel}"/>
 
                     <!-- Nome -->
-                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.name}"/>
+                    <TextBlock x:Name="ProductNameLabel" Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.name}"/>
                     <TextBox Grid.Row="1" Grid.Column="1" Margin="8,10,0,0"
                              Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"
                              MaxLength="512"
-                             Style="{StaticResource ModernTextBoxStyle}"/>
+                             Style="{StaticResource ModernTextBoxStyle}"
+                             AutomationProperties.AutomationId="ProductEditor.Name"
+                             AutomationProperties.LabeledBy="{Binding ElementName=ProductNameLabel}"/>
 
                     <!-- Prezzo vendita -->
-                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.salePriceClp}"/>
+                    <TextBlock x:Name="ProductSalePriceLabel" Grid.Row="2" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.salePriceClp}"/>
                     <TextBox x:Name="PriceBox" Grid.Row="2" Grid.Column="1" Margin="8,10,0,0"
                              Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource ModernTextBoxStyle}"
                              KeyDown="PriceBox_KeyDown"
-                             GotKeyboardFocus="PriceBox_GotKeyboardFocus"/>
+                             GotKeyboardFocus="PriceBox_GotKeyboardFocus"
+                             AutomationProperties.AutomationId="ProductEditor.SalePrice"
+                             AutomationProperties.LabeledBy="{Binding ElementName=ProductSalePriceLabel}"/>
 
                     <!-- Prezzo acquisto -->
                     <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.purchasePrice}"/>
@@ -101,30 +110,96 @@
                              IsEnabled="True"
                              Style="{StaticResource ModernTextBoxStyle}"/>
 
+                    <!-- Motivo correzione stock (solo modifica) -->
+                    <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,10,0,0"
+                               VerticalAlignment="Center"
+                               Text="{loc:Loc products.stockReason}"
+                               Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}"/>
+                    <ComboBox Grid.Row="7" Grid.Column="1" Margin="8,10,0,0" MinHeight="34"
+                              ItemsSource="{Binding StockReasons}"
+                              DisplayMemberPath="DisplayName"
+                              SelectedItem="{Binding SelectedStockReason}"
+                              Style="{StaticResource ModernComboBoxStyle}"
+                              Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}"/>
+
                     <!-- Cod. articolo -->
-                    <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.articleCode}"/>
-                    <TextBox Grid.Row="7" Grid.Column="1" Margin="8,10,0,0"
+                    <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.articleCode}"/>
+                    <TextBox Grid.Row="8" Grid.Column="1" Margin="8,10,0,0"
                              Text="{Binding ArticleCode, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
 
                     <!-- Secondo nome -->
-                    <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.secondName}"/>
-                    <TextBox Grid.Row="8" Grid.Column="1" Margin="8,10,0,0"
+                    <TextBlock Grid.Row="9" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.secondName}"/>
+                    <TextBox Grid.Row="9" Grid.Column="1" Margin="8,10,0,0"
                              Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
+
+                    <!-- Product image operations remain independent from field Save. -->
+                    <TextBlock Grid.Row="10" Grid.Column="0" Margin="0,10,0,0"
+                               VerticalAlignment="Center"
+                               Text="{loc:Loc productImage.preview}"
+                               Visibility="{Binding ProductImagesPhaseAEnabled, Converter={StaticResource BoolToVis}}"/>
+                    <Grid Grid.Row="10" Grid.Column="1"
+                          Margin="8,10,0,0"
+                          Visibility="{Binding CanManageImages, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <images:ProductImagePresenter Width="160"
+                                                      Height="160"
+                                                      HorizontalAlignment="Left"
+                                                      DataContext="{Binding ImageDisplay}"/>
+                        <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                            <Button MinWidth="126" MinHeight="34" Margin="0,0,0,8"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding ChooseImageCommand}"
+                                    IsEnabled="{Binding CanUseImageCommands}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    AutomationProperties.Name="{Binding ImageChooseActionText}">
+                                <TextBlock Text="{Binding ImageChooseActionText}"/>
+                            </Button>
+                            <Button MinWidth="126" MinHeight="34" Margin="0,0,0,8"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding RemoveImageCommand}"
+                                    IsEnabled="{Binding CanRemoveImage}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    AutomationProperties.Name="{loc:Loc productImage.remove}">
+                                <TextBlock Text="{loc:Loc productImage.remove}"/>
+                            </Button>
+                            <Button MinWidth="126" MinHeight="34"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding RetryImageCommand}"
+                                    IsEnabled="{Binding CanUseImageCommands}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    AutomationProperties.Name="{loc:Loc productImage.retry}">
+                                <TextBlock Text="{loc:Loc productImage.retry}"/>
+                            </Button>
+                            <ProgressBar Height="4" Margin="0,10,0,6"
+                                         IsIndeterminate="True"
+                                         Visibility="{Binding ImageBusy, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="{Binding ImageOperationStatus}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Visibility="{Binding ShowsImageOperationStatus, Converter={StaticResource BoolToVis}}"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </ScrollViewer>
         </Border>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <Button MinWidth="100" Margin="0,0,10,0" IsCancel="True"
-                    Style="{StaticResource DialogCancelButtonStyle}" Command="{Binding CancelCommand}">
+                    Style="{StaticResource DialogCancelButtonStyle}" Command="{Binding CancelCommand}"
+                    AutomationProperties.AutomationId="ProductEditor.Cancel" AutomationProperties.Name="{loc:Loc common.cancel}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
             <Button MinWidth="100" IsDefault="True"
-                    Style="{StaticResource DialogActionButtonStyle}" Command="{Binding ConfirmCommand}">
+                    Style="{StaticResource DialogActionButtonStyle}" Command="{Binding ConfirmCommand}"
+                    AutomationProperties.AutomationId="ProductEditor.Save" AutomationProperties.Name="{loc:Loc common.save}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.save}" Margin="8,0,0,0"/>

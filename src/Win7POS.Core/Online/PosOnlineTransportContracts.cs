@@ -13,7 +13,14 @@ namespace Win7POS.Core.Online
             bool denied,
             string clientRequestId,
             string serverRequestId,
-            string cfRay)
+            string cfRay,
+            int? httpStatus,
+            long elapsedMilliseconds,
+            string responseContentType,
+            long? responseLength,
+            bool requestReachedServer,
+            bool retryable,
+            string exceptionType)
         {
             Success = success;
             Value = value;
@@ -23,22 +30,46 @@ namespace Win7POS.Core.Online
             ClientRequestId = clientRequestId;
             ServerRequestId = serverRequestId;
             CfRay = cfRay;
+            HttpStatus = httpStatus;
+            ElapsedMilliseconds = Math.Max(0L, elapsedMilliseconds);
+            ResponseContentType = responseContentType;
+            ResponseLength = responseLength.HasValue && responseLength.Value >= 0
+                ? responseLength
+                : null;
+            RequestReachedServer = requestReachedServer;
+            Retryable = retryable && !denied;
+            ExceptionType = NormalizeExceptionType(exceptionType);
         }
 
         public string CfRay { get; }
         public string ClientRequestId { get; }
         public bool Denied { get; }
+        public long ElapsedMilliseconds { get; }
+        public int? HttpStatus { get; }
         public string Code { get; }
         public string Message { get; }
         public string ServerRequestId { get; }
         public bool Success { get; }
         public T Value { get; }
+        public string ResponseContentType { get; }
+        public long? ResponseLength { get; }
+        /// <summary>
+        /// True only after this client received an HTTP response. It does not imply
+        /// that the application endpoint accepted the request.
+        /// </summary>
+        public bool RequestReachedServer { get; }
+        public bool Retryable { get; }
+        public string ExceptionType { get; }
 
         public static PosOnlineResult<T> Ok(
             T value,
             string clientRequestId = null,
             string serverRequestId = null,
-            string cfRay = null)
+            string cfRay = null,
+            int? httpStatus = null,
+            long elapsedMilliseconds = 0,
+            string responseContentType = null,
+            long? responseLength = null)
         {
             return new PosOnlineResult<T>(
                 true,
@@ -48,7 +79,14 @@ namespace Win7POS.Core.Online
                 false,
                 clientRequestId,
                 serverRequestId,
-                cfRay);
+                cfRay,
+                httpStatus,
+                elapsedMilliseconds,
+                responseContentType,
+                responseLength,
+                true,
+                false,
+                null);
         }
 
         public static PosOnlineResult<T> Failure(
@@ -57,7 +95,14 @@ namespace Win7POS.Core.Online
             bool denied,
             string clientRequestId = null,
             string serverRequestId = null,
-            string cfRay = null)
+            string cfRay = null,
+            int? httpStatus = null,
+            long elapsedMilliseconds = 0,
+            string responseContentType = null,
+            long? responseLength = null,
+            bool requestReachedServer = false,
+            bool retryable = false,
+            string exceptionType = null)
         {
             return new PosOnlineResult<T>(
                 false,
@@ -67,7 +112,39 @@ namespace Win7POS.Core.Online
                 denied,
                 clientRequestId,
                 serverRequestId,
-                cfRay);
+                cfRay,
+                httpStatus,
+                elapsedMilliseconds,
+                responseContentType,
+                responseLength,
+                requestReachedServer,
+                retryable,
+                exceptionType);
+        }
+
+        private static string NormalizeExceptionType(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var source = value.Trim();
+            var builder = new System.Text.StringBuilder(Math.Min(source.Length, 120));
+            foreach (var character in source)
+            {
+                if (builder.Length >= 120)
+                {
+                    break;
+                }
+
+                if (char.IsLetterOrDigit(character) || character == '.' || character == '_')
+                {
+                    builder.Append(character);
+                }
+            }
+
+            return builder.ToString();
         }
     }
 
@@ -763,6 +840,8 @@ namespace Win7POS.Core.Online
     [DataContract]
     public sealed class PosCatalogProductResponse
     {
+        private string _primaryImageUpdatedAt;
+        private string _primaryImageVersionId;
         [DataMember(Name = "barcode")]
         public string Barcode { get; set; }
 
@@ -777,6 +856,34 @@ namespace Win7POS.Core.Online
 
         [DataMember(Name = "productName")]
         public string ProductName { get; set; }
+
+        [DataMember(Name = "primaryImageUpdatedAt")]
+        public string PrimaryImageUpdatedAt
+        {
+            get { return _primaryImageUpdatedAt; }
+            set
+            {
+                _primaryImageUpdatedAt = value;
+                PrimaryImageUpdatedAtPresent = true;
+            }
+        }
+
+        [DataMember(Name = "primaryImageVersionId")]
+        public string PrimaryImageVersionId
+        {
+            get { return _primaryImageVersionId; }
+            set
+            {
+                _primaryImageVersionId = value;
+                PrimaryImageVersionIdPresent = true;
+            }
+        }
+
+        [IgnoreDataMember]
+        public bool PrimaryImageUpdatedAtPresent { get; private set; }
+
+        [IgnoreDataMember]
+        public bool PrimaryImageVersionIdPresent { get; private set; }
 
         [DataMember(Name = "purchasePrice")]
         public double? PurchasePrice { get; set; }

@@ -186,6 +186,7 @@ foreach ($group in @($policy.licenseGroups)) {
         throw "License group is not approved or lacks evidence: '$expression'."
     }
     foreach ($package in @($group.packages)) {
+        if ([string]$package -match '[*?\[\]]') { throw "Wildcard license mapping is forbidden: '$package'." }
         if ([string]$package -cnotmatch '^.+@[^@]+$') { throw "Invalid exact license mapping: '$package'." }
         $key = ([string]$package).ToLowerInvariant()
         if ($mapped.ContainsKey($key)) { throw "Duplicate license mapping: '$package'." }

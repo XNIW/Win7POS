@@ -34,6 +34,7 @@ namespace Win7POS.Data.Repositories
 
         private sealed class RemotePriceHistoryRow
         {
+            public string ArticleMutationId { get; set; } = string.Empty;
             public string Barcode { get; set; } = string.Empty;
             public string EffectiveAt { get; set; } = string.Empty;
             public int Price { get; set; }
@@ -217,10 +218,15 @@ SELECT CASE WHEN
             history.remote_price_id IS NOT NULL
             AND (
                  ownership.remote_price_id IS NULL
-                 OR history.type <> staged.type
+                 OR UPPER(history.type) <> staged.type
                  OR history.new_price <> staged.price
-                 OR history.timestamp <> staged.effective_at
-                 OR COALESCE(history.source, '') <> staged.source
+                 OR (
+                      history.article_mutation_id IS NULL
+                      AND (
+                        history.timestamp <> staged.effective_at
+                        OR COALESCE(history.source, '') <> staged.source
+                      )
+                 )
             )
           )
        OR EXISTS (
@@ -249,8 +255,48 @@ THEN 0 ELSE 1 END;",
                 return null;
             }
 
-            RecordSqlCommand(diagnostics, statementCount: 2);
+            RecordSqlCommand(diagnostics, statementCount: 3);
             await conn.ExecuteAsync(@"
+WITH canonical_stage AS (
+  SELECT staged.*
+  FROM temp_catalog_page_remote_prices staged
+  JOIN (
+    SELECT remote_price_id, MIN(ordinal) AS ordinal
+    FROM temp_catalog_page_remote_prices
+    GROUP BY remote_price_id
+  ) first_row
+    ON first_row.remote_price_id = staged.remote_price_id
+   AND first_row.ordinal = staged.ordinal
+)
+UPDATE product_price_history
+SET timestamp = (
+      SELECT staged.effective_at
+      FROM canonical_stage staged
+      WHERE staged.remote_price_id =
+        product_price_history.remote_price_id
+    ),
+    type = (
+      SELECT staged.type
+      FROM canonical_stage staged
+      WHERE staged.remote_price_id =
+        product_price_history.remote_price_id
+    ),
+    source = (
+      SELECT staged.source
+      FROM canonical_stage staged
+      WHERE staged.remote_price_id =
+        product_price_history.remote_price_id
+    )
+WHERE article_mutation_id IS NOT NULL
+  AND EXISTS (
+    SELECT 1
+    FROM canonical_stage staged
+    WHERE staged.remote_price_id =
+        product_price_history.remote_price_id
+      AND staged.price = product_price_history.new_price
+      AND staged.type = UPPER(product_price_history.type)
+  );
+
 WITH canonical_stage AS (
   SELECT staged.*
   FROM temp_catalog_page_remote_prices staged
@@ -761,6 +807,43 @@ FROM staged;
 
             if (existingHistory != null)
             {
+                if (!string.IsNullOrWhiteSpace(
+                        existingHistory.ArticleMutationId) &&
+                    string.Equals(
+                        existingHistory.Type,
+                        type,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    existingHistory.Price == price)
+                {
+                    RecordSqlCommand(diagnostics);
+                    var reconciled = await conn.ExecuteAsync(@"
+UPDATE product_price_history
+SET timestamp = @effectiveAt,
+    type = @type,
+    source = @source
+WHERE remote_price_id = @remotePriceId
+  AND article_mutation_id = @articleMutationId;",
+                        new
+                        {
+                            remotePriceId,
+                            articleMutationId =
+                                existingHistory.ArticleMutationId,
+                            effectiveAt,
+                            type,
+                            source
+                        },
+                        tx).ConfigureAwait(false);
+                    if (reconciled != 1)
+                    {
+                        return new RemotePriceIdEvidence
+                        {
+                            State = RemotePriceIdEvidenceState.Collision
+                        };
+                    }
+                    existingHistory.EffectiveAt = effectiveAt;
+                    existingHistory.Type = type;
+                    existingHistory.Source = source;
+                }
                 var historyMatches = RemotePriceHistoryMatches(
                     existingHistory,
                     type,
@@ -844,6 +927,7 @@ FROM staged;
             RecordSqlCommand(diagnostics);
             return conn.QuerySingleOrDefaultAsync<RemotePriceHistoryRow>(@"
 SELECT
+  article_mutation_id AS ArticleMutationId,
   barcode AS Barcode,
   timestamp AS EffectiveAt,
   type AS Type,
@@ -1372,10 +1456,10 @@ WHERE remote_price_id = @remotePriceId
                         normalizedEffectiveAt,
                         normalizedSource,
                         (row.RemoteProductId ?? string.Empty).Trim(),
-                        diagnostics)
-                        .ConfigureAwait(false);
+                        diagnostics).ConfigureAwait(false);
 
-                    if (normalizedRemotePriceId.Length > 0 && insertedRows == 0)
+                    if (normalizedRemotePriceId.Length > 0 &&
+                        insertedRows == 0)
                     {
                         var evidence = await EvaluateRemotePriceIdEvidenceAsync(
                             conn,

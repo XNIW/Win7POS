@@ -128,7 +128,10 @@ SELECT
   m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
   m.category_id AS CategoryId,
-  COALESCE(m.category_name, '') AS CategoryName
+  COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode";
 
@@ -263,9 +266,7 @@ FROM (
 
             var totalCount = await conn.ExecuteScalarAsync<int>(@"
 SELECT COUNT(1)
-FROM products p
-LEFT JOIN product_meta m ON m.barcode = p.barcode
-" + where, parameters, tx).ConfigureAwait(false);
+" + BuildProductPageCountFromClause(filter) + "\n" + where, parameters, tx).ConfigureAwait(false);
 
             var rankExpression = q.Length == 0
                 ? string.Empty
@@ -289,7 +290,10 @@ SELECT
   m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
   m.category_id AS CategoryId,
-  COALESCE(m.category_name, '') AS CategoryName
+  COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 " + where + keyset + "\n" + ordering + "\nLIMIT @limit" + offset;
@@ -340,6 +344,16 @@ AND (
 )";
         }
 
+        internal static string BuildProductPageCountFromClause(ProductPageFilter filter)
+        {
+            if (filter == null) throw new ArgumentNullException(nameof(filter));
+            if (!filter.CategoryId.HasValue && !filter.SupplierId.HasValue)
+                return "FROM products p";
+
+            return @"FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode";
+        }
+
         private static string BuildProductPageOrdering(
             ProductPageQueryKind kind,
             string rankExpression)
@@ -370,7 +384,10 @@ SELECT
   m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
   m.category_id AS CategoryId,
-  COALESCE(m.category_name, '') AS CategoryName
+  COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.id = @productId
@@ -396,7 +413,10 @@ SELECT
   m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
   m.category_id AS CategoryId,
-  COALESCE(m.category_name, '') AS CategoryName
+  COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.barcode = @barcode
@@ -426,10 +446,14 @@ ORDER BY timestamp DESC, id DESC";
             const string sql = @"
 SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPrice,
   COALESCE(p.is_active, 1) AS IsActive,
+  CASE WHEN m.barcode IS NULL THEN 0 ELSE 1 END AS HasMeta,
   COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
   m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,
-  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName
+  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE COALESCE(p.is_active, 1) = 1
@@ -462,10 +486,14 @@ ORDER BY p.barcode ASC";
                 var rows = await conn.QueryAsync<ProductDetailsRow>(@"
 SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPrice,
   COALESCE(p.is_active, 1) AS IsActive,
+  CASE WHEN m.barcode IS NULL THEN 0 ELSE 1 END AS HasMeta,
   COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
   m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,
-  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName
+  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.barcode IN @barcodes

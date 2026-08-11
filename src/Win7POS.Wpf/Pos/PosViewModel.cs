@@ -43,6 +43,7 @@ namespace Win7POS.Wpf.Pos
         private string _statusMessage = string.Empty;
         private string _statusToastMessage = string.Empty;
         private bool _isStatusToastVisible;
+        private bool _isStatusToastDetailsVisible;
         private PosNoticeSeverity _statusToastSeverity = PosNoticeSeverity.Info;
         private readonly DispatcherTimer _statusToastTimer;
         private readonly EventHandler _statusToastTickHandler;
@@ -65,6 +66,7 @@ namespace Win7POS.Wpf.Pos
         public ObservableCollection<PosCartLineRow> CartItems { get; } = new ObservableCollection<PosCartLineRow>();
         public ObservableCollection<RecentSaleRow> RecentSales { get; } = new ObservableCollection<RecentSaleRow>();
         public event Action FocusBarcodeRequested;
+        public event Action StatusToastDetailsRequested;
         public event Action<CustomerDisplaySnapshot> CustomerDisplaySnapshotChanged;
         public CustomerDisplaySnapshot CurrentCustomerDisplaySnapshot { get; private set; } =
             CustomerDisplayProjection.Empty(DateTimeOffset.UtcNow);
@@ -114,6 +116,8 @@ namespace Win7POS.Wpf.Pos
 
         public int ItemsCount => CartItems.Sum(x => x.Quantity);
 
+        public bool IsCartEmpty => CartItems.Count == 0;
+
         public string TotalDisplay => MoneyClp.Format(Total);
 
         /// <summary>Importo totale sconti (Subtotal - Total).</summary>
@@ -151,6 +155,12 @@ namespace Win7POS.Wpf.Pos
         {
             get => _isStatusToastVisible;
             private set { _isStatusToastVisible = value; OnPropertyChanged(); }
+        }
+
+        public bool IsStatusToastDetailsVisible
+        {
+            get => _isStatusToastDetailsVisible;
+            private set { _isStatusToastDetailsVisible = value; OnPropertyChanged(); }
         }
 
         public PosNoticeSeverity StatusToastSeverity
@@ -287,6 +297,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand RecoverCartCommand { get; }
         public ICommand OpenUserManagementCommand { get; }
         public ICommand DismissStatusToastCommand { get; }
+        public ICommand StatusToastDetailsCommand { get; }
 
         /// <summary>Crea un ViewModel per la schermata Chiusura cassa (pagina integrata).</summary>
         public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => new Dialogs.DailyReportViewModel(_service, _overrideAuthService);
@@ -304,10 +315,12 @@ namespace Win7POS.Wpf.Pos
             _statusToastTickHandler = (_, __) =>
             {
                 _statusToastTimer.Stop();
+                IsStatusToastDetailsVisible = false;
                 IsStatusToastVisible = false;
             };
             _statusToastTimer.Tick += _statusToastTickHandler;
             DismissStatusToastCommand = new RelayCommand(_ => DismissStatusToast());
+            StatusToastDetailsCommand = new RelayCommand(_ => ShowStatusToastDetails());
 
             AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy, _logger);
             PayCommand = new AsyncRelayCommand(PayAsync, _ => !IsBusy, _logger);
@@ -2041,7 +2054,8 @@ namespace Win7POS.Wpf.Pos
         public void SetStatus(
             string message,
             PosNoticeSeverity severity,
-            bool suppressToast = false)
+            bool suppressToast = false,
+            bool showDetails = false)
         {
             _statusMessage = message ?? string.Empty;
             OnPropertyChanged(nameof(StatusMessage));
@@ -2050,12 +2064,14 @@ namespace Win7POS.Wpf.Pos
             {
                 _statusToastTimer.Stop();
                 StatusToastMessage = string.Empty;
+                IsStatusToastDetailsVisible = false;
                 IsStatusToastVisible = false;
                 return;
             }
 
             StatusToastSeverity = severity;
             StatusToastMessage = _statusMessage;
+            IsStatusToastDetailsVisible = showDetails;
             IsStatusToastVisible = true;
 
             _statusToastTimer.Stop();
@@ -2070,8 +2086,18 @@ namespace Win7POS.Wpf.Pos
         private void DismissStatusToast()
         {
             _statusToastTimer.Stop();
+            IsStatusToastDetailsVisible = false;
             IsStatusToastVisible = false;
             RequestFocusBarcode();
+        }
+
+        private void ShowStatusToastDetails()
+        {
+            if (!IsStatusToastDetailsVisible) return;
+            _statusToastTimer.Stop();
+            IsStatusToastDetailsVisible = false;
+            IsStatusToastVisible = false;
+            StatusToastDetailsRequested?.Invoke();
         }
 
         private static Brush NoticeBrush(
@@ -2128,6 +2154,7 @@ namespace Win7POS.Wpf.Pos
             if (!string.IsNullOrWhiteSpace(snapshot.Status))
                 SetStatus(snapshot.Status, PosNoticeSeverity.Info, suppressToast: true);
             OnPropertyChanged(nameof(ItemsCount));
+            OnPropertyChanged(nameof(IsCartEmpty));
 
             PosCartLineRow selected = null;
             if (!string.IsNullOrWhiteSpace(preferBarcode))

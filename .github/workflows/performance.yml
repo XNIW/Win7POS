@@ -16,7 +16,7 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
@@ -28,7 +28,7 @@ jobs:
         run: pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $env:WIN7POS_EXACT_SHA -Ref $env:GITHUB_REF -GitHubEnvironmentFile $env:GITHUB_ENV
 
       - name: Setup deterministic .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
 
@@ -154,13 +154,13 @@ jobs:
           $relinkStageCommandCounts = @($measuredLines | ForEach-Object {
             [long]([regex]::Match($_, "relink_stage_sql_commands=([0-9]+)").Groups[1].Value)
           } | Select-Object -Unique)
-          if ($statementCounts.Count -ne 1 -or $statementCounts[0] -ne 358) {
+          if ($statementCounts.Count -ne 1 -or $statementCounts[0] -ne 378) {
             throw "net48/x86 set-based statement count invalid: values=$($statementCounts -join ','). Evidence: $evidencePath"
           }
           if ($commandCounts.Count -ne 1 -or $commandCounts[0] -ne 140) {
             throw "net48/x86 SQL command count is not deterministic: values=$($commandCounts -join ','). Evidence: $evidencePath"
           }
-          if ($contextCommandCounts.Count -ne 1 -or $contextCommandCounts[0] -ne 103) {
+          if ($contextCommandCounts.Count -ne 1 -or $contextCommandCounts[0] -ne 123) {
             throw "net48/x86 bounded context command count invalid: values=$($contextCommandCounts -join ','). Evidence: $evidencePath"
           }
           if ($relinkStageCommandCounts.Count -ne 1 -or $relinkStageCommandCounts[0] -ne 20) {
@@ -261,9 +261,9 @@ jobs:
               $x86Text -notmatch "apply_transactions=1") {
             throw "100,000-row net48 full refresh did not retain one preflight and one apply transaction. Evidence: $net48Evidence"
           }
-          if ($x86Text -notmatch "context_sql_commands=503" -or
-              $x86Text -notmatch "remote_price_apply_sql_commands=700" -or
-              $x86Text -notmatch "remote_price_apply_sql_statements=1800") {
+          if ($x86Text -notmatch "context_sql_commands=603(?:\s|$)" -or
+              $x86Text -notmatch "remote_price_apply_sql_commands=700(?:\s|$)" -or
+              $x86Text -notmatch "remote_price_apply_sql_statements=1900(?:\s|$)") {
             throw "100,000-row net48 bounded SQL command evidence is invalid. Evidence: $net48Evidence"
           }
           $gen2Collections = [long]([regex]::Match($x86Text, "gc2=([0-9]+)").Groups[1].Value)

@@ -7,6 +7,7 @@ using Win7POS.Data;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Products.Images;
 
 namespace Win7POS.Wpf.Pos.Online
 {
@@ -57,6 +58,7 @@ namespace Win7POS.Wpf.Pos.Online
         private readonly SemaphoreSlim _transitionGate = new SemaphoreSlim(1, 1);
         private readonly SqliteConnectionFactory _factory;
         private readonly FileLogger _logger;
+        private readonly ProductImageSyncService _productImageSyncService;
         private readonly PosTrustedDeviceStore _store;
         private OnlineSyncSupervisor _supervisor;
         private OnlineSyncGeneration _generation;
@@ -80,6 +82,7 @@ namespace Win7POS.Wpf.Pos.Online
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _productImageSyncService = new ProductImageSyncService(_factory);
         }
 
         public OnlineSyncGeneration CurrentGeneration
@@ -248,6 +251,11 @@ namespace Win7POS.Wpf.Pos.Online
                     }
                     await persistAuthenticatedLocalStateAsync(nextGeneration)
                         .ConfigureAwait(false);
+                    await ProductImageRuntime.ReconcileTrustedIdentityAsync(
+                            nextGeneration.StaffId,
+                            nextGeneration.ShopId,
+                            forcePurge: true)
+                        .ConfigureAwait(false);
                     // The protected trust file is the final local commit marker.
                     // A crash before this write leaves DB/file generations
                     // mismatched and therefore fails closed on restart.
@@ -255,6 +263,14 @@ namespace Win7POS.Wpf.Pos.Online
                         response,
                         generationId,
                         authoritativeReceiptClock);
+                    // Reassert the identity after the trust-file commit so a
+                    // read response that raced the transition cannot restore
+                    // the predecessor cache binding between purge and commit.
+                    await ProductImageRuntime.ReconcileTrustedIdentityAsync(
+                            nextGeneration.StaffId,
+                            nextGeneration.ShopId,
+                            forcePurge: true)
+                        .ConfigureAwait(false);
                 }
                 finally
                 {
@@ -827,6 +843,12 @@ namespace Win7POS.Wpf.Pos.Online
                     return RunCatalogImportAsync(context, cancellationToken);
                 case OnlineSyncLane.CatalogDelta:
                     return RunCatalogAsync(context, trigger, cancellationToken);
+                case OnlineSyncLane.ArticleMutationOutbox:
+                    return RunArticleMutationsAsync(context, cancellationToken);
+                case OnlineSyncLane.ProductImageOutbox:
+                    return RunProductImagesAsync(context, cancellationToken);
+                case OnlineSyncLane.CustomerOrders:
+                    return RunCustomerOrdersAsync(context, cancellationToken);
                 default:
                     return Task.FromResult(new OnlineSyncLaneOutcome(
                         false,
@@ -1040,11 +1062,31 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (!PosAdminWebOptions.TryLoad(out var options, out _))
                 return new OnlineSyncLaneOutcome(false, "admin_web_config_missing");
-            var result = await new PosSalesSyncService(_factory)
+            var result = await new PosSalesSyncService(
+                    _factory,
+                    new SaleRepository(_factory),
+                    _store,
+                    new FileLogger("PosSalesSyncService"))
                 .TrySyncPendingAsync(
                     options,
                     context.Generation,
                     context,
+                    cancellationToken).ConfigureAwait(false);
+            return FromOutbox(result, requestCatalogNow: false);
+        }
+
+        private async Task<OnlineSyncLaneOutcome> RunCustomerOrdersAsync(
+            OnlineSyncLaneExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            if (!PosAdminWebOptions.TryLoad(out var options, out _))
+                return new OnlineSyncLaneOutcome(false, "admin_web_config_missing");
+            var result = await new PosCustomerOrderSyncService(_factory)
+                .SyncPendingAsync(
+                    options,
+                    context,
+                    typeof(PosOnlineSyncSupervisorHost)
+                        .Assembly.GetName().Version?.ToString(),
                     cancellationToken).ConfigureAwait(false);
             return FromOutbox(result, requestCatalogNow: false);
         }
@@ -1070,6 +1112,86 @@ namespace Win7POS.Wpf.Pos.Online
                     context,
                     cancellationToken).ConfigureAwait(false);
             return FromOutbox(result, requestCatalogNow: result.Acked > 0);
+        }
+
+        private async Task<OnlineSyncLaneOutcome> RunArticleMutationsAsync(
+            OnlineSyncLaneExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            if (!PosAdminWebOptions.TryLoad(out var options, out _))
+                return new OnlineSyncLaneOutcome(false, "admin_web_config_missing");
+            if (!_store.TryReadGeneration(
+                context.Generation,
+                out var trustedSession,
+                out _))
+            {
+                return new OnlineSyncLaneOutcome(
+                    false,
+                    "trusted_generation_changed");
+            }
+
+            var result = await new ArticleMutationSyncService(_factory)
+                .SyncPendingAsync(
+                    options,
+                    trustedSession,
+                    context,
+                    typeof(PosOnlineSyncSupervisorHost)
+                        .Assembly.GetName().Version?.ToString(),
+                    cancellationToken).ConfigureAwait(false);
+            if (result.AuthenticationDenied)
+                return OnlineSyncLaneOutcome.AuthDenied(result.DiagnosticCode);
+            var blockedOnly = result.Blocked > 0 &&
+                result.RemainingDue == 0 &&
+                !result.NextRetryAt.HasValue &&
+                !result.HasImmediateMore;
+            return new OnlineSyncLaneOutcome(
+                result.FailureKind == SyncFailureKind.None,
+                result.DiagnosticCode,
+                offline: result.FailureKind == SyncFailureKind.Network ||
+                    result.FailureKind == SyncFailureKind.Timeout,
+                hasImmediateMore: result.HasImmediateMore,
+                nextRetryAt: result.NextRetryAt,
+                requestCatalogNow: result.RequestCatalogNow,
+                terminal: blockedOnly);
+        }
+
+        private async Task<OnlineSyncLaneOutcome> RunProductImagesAsync(
+            OnlineSyncLaneExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            if (!PosAdminWebOptions.TryLoad(out var options, out _))
+                return new OnlineSyncLaneOutcome(false, "admin_web_config_missing");
+            Uri storageOrigin;
+            string storageCode;
+            if (!PosProductImageStorageOrigin.TryLoad(out storageOrigin, out storageCode))
+                return new OnlineSyncLaneOutcome(false, storageCode, terminal: true);
+            if (!_store.TryReadGeneration(
+                context.Generation,
+                out var trustedSession,
+                out _))
+            {
+                return new OnlineSyncLaneOutcome(
+                    false,
+                    "trusted_generation_changed");
+            }
+            var result = await _productImageSyncService.SyncNextAsync(
+                    options,
+                    storageOrigin,
+                    trustedSession,
+                    context,
+                    typeof(PosOnlineSyncSupervisorHost)
+                        .Assembly.GetName().Version?.ToString(),
+                    cancellationToken).ConfigureAwait(false);
+            if (result.AuthenticationDenied)
+                return OnlineSyncLaneOutcome.AuthDenied(result.Code);
+            return new OnlineSyncLaneOutcome(
+                result.Success,
+                result.Code,
+                offline: result.Offline,
+                hasImmediateMore: result.HasImmediateMore,
+                nextRetryAt: result.NextRetryAt,
+                requestCatalogNow: result.RequestCatalogNow,
+                terminal: result.Terminal);
         }
 
         private async Task<OnlineSyncLaneOutcome> RunCatalogAsync(
@@ -1111,7 +1233,10 @@ namespace Win7POS.Wpf.Pos.Online
             if (forceFullRepair) Interlocked.Increment(ref _fullCatalogRuns);
             try
             {
-                var outcome = await new PosCatalogPullService(_factory)
+                var outcome = await new PosCatalogPullService(
+                        _factory,
+                        _store,
+                        new FileLogger("PosCatalogPullService"))
                     .TryPullCatalogForSupervisorAsync(
                         options,
                         trustedSession,
@@ -1121,19 +1246,22 @@ namespace Win7POS.Wpf.Pos.Online
                         bootstrapRun: forceFullRepair,
                         cancellationToken).ConfigureAwait(false);
                 return outcome.AuthDenied
-                    ? OnlineSyncLaneOutcome.AuthDenied(outcome.StatusCode)
+                    ? OnlineSyncLaneOutcome.AuthDenied(outcome.StatusCode, outcome.Diagnostic)
                     : new OnlineSyncLaneOutcome(
                         outcome.Completed || outcome.HasMore,
                         outcome.StatusCode,
                         offline: IsOffline(outcome.StatusCode),
                         catalogHasMore: outcome.HasMore,
-                        terminal: string.Equals(
-                            outcome.StatusCode,
-                            CatalogPaginationSafetyPolicy.AmbiguousEndCode,
-                            StringComparison.OrdinalIgnoreCase),
+                        terminal: CatalogRetryPolicy.IsDeterministicRevisionFailure(
+                                      outcome.StatusCode) ||
+                                  string.Equals(
+                                      outcome.StatusCode,
+                                      CatalogPaginationSafetyPolicy.AmbiguousEndCode,
+                                      StringComparison.OrdinalIgnoreCase),
                         catalogPagesProcessed: outcome.PagesProcessed,
                         catalogRowsApplied: SumCatalogRows(outcome),
-                        catalogSaleSafe: outcome.CatalogSaleSafe);
+                        catalogSaleSafe: outcome.CatalogSaleSafe,
+                        catalogDiagnostic: outcome.Diagnostic);
             }
             finally
             {
@@ -1361,14 +1489,14 @@ namespace Win7POS.Wpf.Pos.Online
             return Math.Min(normalizedFirst.Value, normalizedSecond.Value);
         }
 
-        private static int SumCatalogRows(PosCatalogPullOutcome outcome)
+        private static long SumCatalogRows(PosCatalogPullOutcome outcome)
         {
             if (outcome == null) return 0;
-            var rows = (long)outcome.ProductsApplied +
+            return checked(
+                outcome.ProductsApplied +
                 outcome.PricesApplied +
                 outcome.PricesQueued +
-                outcome.PendingPricesApplied;
-            return rows >= int.MaxValue ? int.MaxValue : (int)rows;
+                outcome.PendingPricesApplied);
         }
 
         private OnlineSyncSupervisor CreateSupervisor(

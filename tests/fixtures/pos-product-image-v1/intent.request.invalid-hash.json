@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "pos-product-image-v1",
+  "operation": "intent",
+  "operationId": "task149-fixture-intent-invalid-001",
+  "idempotencyKey": "task149-idem-intent-invalid-001",
+  "payloadHash": "sha256:not-a-valid-digest",
+  "appVersion": "win7pos-phase-b-fixture",
+  "shopId": "10000000-0000-4000-8000-000000000149",
+  "shopDeviceId": "50000000-0000-4000-8000-000000000149",
+  "staffId": "60000000-0000-4000-8000-000000000149",
+  "staffCredentialVersion": 7,
+  "posSessionId": "70000000-0000-4000-8000-000000000149",
+  "deviceToken": "fixture-device-token-not-a-secret",
+  "sessionToken": "fixture-session-token-not-a-secret",
+  "productId": "20000000-0000-4000-8000-000000000149",
+  "expectedCurrentVersionId": "30000000-0000-4000-8000-000000000149",
+  "main": {
+    "bytes": 700000,
+    "height": 1200,
+    "mimeType": "image/jpeg",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "width": 1600
+  },
+  "thumb": {
+    "bytes": 80000,
+    "height": 288,
+    "mimeType": "image/jpeg",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "width": 384
+  }
+}

@@ -40,6 +40,7 @@ namespace Win7POS.Wpf
         private bool _authorizationLeaseBlockHandled;
         private PosStartupCoordinator _startupCoordinator;
         private bool? _lastNetworkOnline;
+        private long _lastArticleBlockedCount = -1;
         private DateTimeOffset _lastForegroundSyncTrigger = DateTimeOffset.MinValue;
         private bool _operatorLoginReached;
         private bool _recoveryTabClampActive;
@@ -1161,7 +1162,9 @@ namespace Win7POS.Wpf
                         status.CatalogBootstrapText + "\n" +
                         status.CatalogReadinessText + "\n" +
                         status.CatalogVersionText + "\n" +
+                        status.CatalogDisplayWarningText + "\n" +
                         status.PendingSalesText + "\n" +
+                        status.ArticleStatusText + "\n" +
                         status.PolicyText + "\n" +
                         status.SalesAttentionText + "\n" +
                         status.RestoreReviewText + "\n" +
@@ -1174,6 +1177,9 @@ namespace Win7POS.Wpf
                     SyncStatusPill.Background = StatusBrush(status.ConnectivityState, status.RequiresAttention);
                 }
 
+                await ShowCatalogDisplayWarningOnceAsync(factory, status).ConfigureAwait(true);
+                ShowArticleConflictWarningOnce(status);
+
                 await RefreshShellTitleAsync(factory).ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -1184,6 +1190,56 @@ namespace Win7POS.Wpf
                     SyncStatusText.Text = PosLocalization.Current.Text("shell.syncUnavailable");
                 }
             }
+        }
+
+        private void ShowArticleConflictWarningOnce(PosSyncStatusSnapshot status)
+        {
+            if (status == null)
+                return;
+            var blocked = status.ArticleBlocked;
+            if (blocked <= 0 || blocked == _lastArticleBlockedCount)
+            {
+                _lastArticleBlockedCount = blocked;
+                return;
+            }
+            _lastArticleBlockedCount = blocked;
+            GetPosViewModel()?.SetStatus(
+                PosLocalization.Current.Text("sync.articleConflictNotice"),
+                PosNoticeSeverity.Warning,
+                showDetails: false);
+        }
+
+        private async Task ShowCatalogDisplayWarningOnceAsync(
+            SqliteConnectionFactory factory,
+            PosSyncStatusSnapshot status)
+        {
+            if (status == null ||
+                !status.CatalogSaleSafe ||
+                status.CatalogDisplayWarningCount <= 0 ||
+                string.IsNullOrWhiteSpace(status.CatalogDisplayWarningRevision))
+            {
+                return;
+            }
+
+            var pos = GetPosViewModel();
+            if (pos == null)
+            {
+                return;
+            }
+
+            var warnings = new CatalogDisplayWarningRepository(factory);
+            if (!await warnings.TryMarkDisplayedAsync(status.CatalogDisplayWarningRevision)
+                    .ConfigureAwait(true))
+            {
+                return;
+            }
+
+            pos.SetStatus(
+                PosLocalization.Current.Format(
+                    "pos.status.catalogWarningsAvailable",
+                    status.CatalogDisplayWarningCount),
+                PosNoticeSeverity.Warning,
+                showDetails: true);
         }
 
         private static Brush StatusBrush(string connectivityState, bool requiresAttention)
@@ -2017,9 +2073,15 @@ namespace Win7POS.Wpf
             }
 
             PosViewControl = new PosView();
+            PosViewControl.CatalogWarningDetailsRequested += ShowCatalogWarningDetails;
             PosTabHost.Children.Insert(0, PosViewControl);
             _customerDisplayManager?.Attach(GetPosViewModel());
             return PosViewControl;
+        }
+
+        private void ShowCatalogWarningDetails()
+        {
+            ShowSyncCenterDialog();
         }
 
         private void SuspendPosViewForRecovery()

@@ -138,6 +138,91 @@ namespace Win7POS.Data.Online
             }
         }
 
+        /// <summary>
+        /// Reconciles a staged authoritative snapshot inside the caller's uncommitted
+        /// live apply. The caller owns commit or rollback: this method never commits.
+        /// </summary>
+        public async Task<CatalogExactnessResult> ReconcileAndVerifyWithinAtomicApplyAsync(
+            RemoteCatalogApplyRunContext applyRun,
+            string fullRunId,
+            string generatedAt,
+            PosCatalogSummaryResponse summary,
+            CatalogExactnessRunContext context,
+            RemoteCatalogCommitFence commitFence,
+            CancellationToken cancellationToken = default)
+        {
+            if (applyRun == null)
+                throw new ArgumentNullException(nameof(applyRun));
+            if (commitFence == null)
+                throw new ArgumentNullException(nameof(commitFence));
+
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                generatedAt,
+                "catalog.generated_at");
+            var normalizedRunId = (fullRunId ?? string.Empty).Trim();
+            if (normalizedRunId.Length == 0 ||
+                normalizedRunId.Length > 64 ||
+                !string.Equals(normalizedRunId, fullRunId, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    "Authoritative catalog full run identity is invalid.",
+                    nameof(fullRunId));
+            }
+
+            var runContext = context ?? new CatalogExactnessRunContext();
+            var transaction = applyRun.RequireAtomicFullRefreshTransaction();
+            var connection = applyRun.Connection;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!CatalogPaginationSafetyPolicy.HasCompleteValidSummary(summary))
+            {
+                var currentAudit = await LoadAuditAsync(connection, transaction)
+                    .ConfigureAwait(false);
+                return CatalogExactnessVerifier.Evaluate(summary, currentAudit, runContext);
+            }
+
+            await RemoteCatalogBatchRepository.RequireCommitFenceAsync(
+                connection,
+                transaction,
+                commitFence).ConfigureAwait(false);
+            await PrepareStagedAuthoritativeTablesAsync(
+                connection,
+                transaction,
+                normalizedRunId,
+                commitFence).ConfigureAwait(false);
+            var evidence = await LoadStagedEvidenceAsync(
+                connection,
+                transaction,
+                normalizedRunId,
+                commitFence).ConfigureAwait(false);
+            var rejectionCode = FindStagedPreflightError(
+                evidence,
+                summary,
+                runContext);
+            if (rejectionCode.Length > 0)
+            {
+                var currentAudit = await LoadAuditAsync(connection, transaction)
+                    .ConfigureAwait(false);
+                ApplyStageEvidence(currentAudit, evidence);
+                return CreateStageRejection(
+                    rejectionCode,
+                    summary,
+                    currentAudit,
+                    runContext);
+            }
+
+            runContext.DuplicatePriceRows = evidence.DuplicatePrices;
+            var removedAt = string.IsNullOrWhiteSpace(generatedAt)
+                ? DateTimeOffset.UtcNow.ToString("O")
+                : generatedAt.Trim();
+            var audit = await ReconcilePreparedAsync(
+                connection,
+                transaction,
+                removedAt,
+                evidence.ToAuthoritativeCounts()).ConfigureAwait(false);
+            return CatalogExactnessVerifier.Evaluate(summary, audit, runContext);
+        }
+
         public async Task<string> ValidateStagedPreflightAsync(
             string fullRunId,
             PosCatalogSummaryResponse summary,
@@ -795,6 +880,12 @@ SET is_active = 0,
 WHERE TRIM(COALESCE(remote_product_id, '')) <> ''
   AND COALESCE(is_active, 1) = 1
   AND NOT EXISTS (
+    SELECT 1
+    FROM article_mutation_outbox mutation
+    WHERE mutation.local_product_id = products.id
+      AND mutation.state <> 'completed'
+  )
+  AND NOT EXISTS (
     SELECT 1 FROM temp_full_product_ids incoming
     WHERE incoming.id = TRIM(products.remote_product_id)
   );",
@@ -1282,7 +1373,7 @@ SELECT
         public string CatalogVersion { get; set; } = string.Empty;
         public long DurationMilliseconds { get; set; }
         public bool HasMore { get; set; }
-        public int Pages { get; set; }
+        public long Pages { get; set; }
         public long DuplicatePriceRows { get; set; }
         public long InvalidPriceRows { get; set; }
         public long? PriceRowsAccepted { get; set; }

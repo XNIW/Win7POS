@@ -652,6 +652,443 @@ ON catalog_authoritative_id_stage(scope_id, stage_id);
             conn.Execute(CatalogAuthoritativeIdStageSchemaSql, transaction: tx);
         }
 
+        internal static SchemaColumnDefinition[] ArticleMutationColumns { get; } =
+            new[]
+            {
+                Column(
+                    "products",
+                    "client_product_id",
+                    "TEXT",
+                    false,
+                    "",
+                    "TEXT NULL"),
+                Column(
+                    "products",
+                    "remote_base_revision",
+                    "TEXT",
+                    false,
+                    "",
+                    "TEXT NULL"),
+                Column(
+                    "product_price_history",
+                    "article_mutation_id",
+                    "TEXT",
+                    false,
+                    "",
+                    "TEXT NULL")
+            };
+
+        internal static string ArticleMutationColumnMaterial => string.Join(
+            "\n",
+            ArticleMutationColumns.Select(item => item.ToCanonicalMaterial()));
+
+        internal static string ArticleMutationAlterSql => string.Join(
+            "\n",
+            ArticleMutationColumns.Select(item =>
+                "ALTER TABLE " + item.TableName + " ADD COLUMN " +
+                item.ColumnName + " " + item.AlterDefinition + ";"));
+
+        internal static string ArticleMutationTableSql => @"
+CREATE TABLE IF NOT EXISTS article_mutation_outbox (
+  id                         INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  local_product_id           INTEGER NOT NULL,
+  mutation_id                TEXT NOT NULL UNIQUE,
+  idempotency_key            TEXT NOT NULL UNIQUE,
+  client_product_id          TEXT NOT NULL,
+  remote_product_id          TEXT NULL,
+  mutation_kind              TEXT NOT NULL,
+  local_sequence             INTEGER NOT NULL,
+  base_revision              TEXT NULL,
+  field_mask_json            TEXT NOT NULL,
+  intent_json                TEXT NOT NULL,
+  intent_hash                TEXT NOT NULL,
+  canonical_payload_json     TEXT NULL,
+  payload_hash               TEXT NULL,
+  created_at                 TEXT NOT NULL,
+  occurred_at                TEXT NOT NULL,
+  state                      TEXT NOT NULL,
+  attempt_count              INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at            INTEGER NOT NULL DEFAULT 0,
+  last_typed_code            TEXT NULL,
+  authoritative_revision     TEXT NULL,
+  catalog_revision           TEXT NULL,
+  remote_price_history_id    TEXT NULL,
+  remote_stock_movement_id   TEXT NULL,
+  remote_assigned_product_id TEXT NULL,
+  local_price_history_id     INTEGER NULL,
+  local_stock_adjustment_id  INTEGER NULL,
+  ack_status                 TEXT NULL,
+  ack_code                   TEXT NULL,
+  ack_attempt_token          TEXT NULL,
+  ack_server_timestamp       TEXT NULL,
+  ack_terminal               INTEGER NULL,
+  ack_retryable              INTEGER NULL,
+  claim_generation_id        TEXT NULL,
+  claim_token                TEXT NULL,
+  completed_at               TEXT NULL,
+  resolution_code            TEXT NULL,
+  resolved_at                TEXT NULL,
+  superseded_by_mutation_id  TEXT NULL,
+  updated_at                 TEXT NOT NULL,
+  FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  FOREIGN KEY(superseded_by_mutation_id)
+    REFERENCES article_mutation_outbox(mutation_id) ON DELETE RESTRICT,
+  CHECK(local_sequence >= 1),
+  CHECK(state IN (
+    'waiting_dependency',
+    'pending',
+    'in_progress',
+    'retry_wait',
+    'failed_blocked',
+    'completed')),
+  CHECK(
+    (canonical_payload_json IS NULL AND payload_hash IS NULL)
+    OR
+    (canonical_payload_json IS NOT NULL AND payload_hash IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS article_mutation_attempts (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  mutation_id   TEXT NOT NULL,
+  attempt_token TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  started_at    TEXT NULL,
+  completed_at  TEXT NULL,
+  outcome       TEXT NULL,
+  FOREIGN KEY(mutation_id)
+    REFERENCES article_mutation_outbox(mutation_id) ON DELETE RESTRICT,
+  UNIQUE(mutation_id, attempt_token),
+  UNIQUE(attempt_token)
+);
+
+CREATE TABLE IF NOT EXISTS article_manual_stock_adjustments (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  local_product_id INTEGER NOT NULL,
+  mutation_id      TEXT NOT NULL UNIQUE,
+  barcode          TEXT NOT NULL,
+  quantity_delta   INTEGER NOT NULL,
+  reason           TEXT NOT NULL,
+  occurred_at      TEXT NOT NULL,
+  created_at       TEXT NOT NULL,
+  FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  FOREIGN KEY(mutation_id)
+    REFERENCES article_mutation_outbox(mutation_id) ON DELETE RESTRICT,
+  CHECK(quantity_delta <> 0),
+  CHECK(reason IN (
+    'count_correction',
+    'damage',
+    'found',
+    'loss',
+    'other',
+    'return_to_stock',
+    'transfer'))
+);
+
+CREATE TABLE IF NOT EXISTS article_product_remote_shadow (
+  remote_product_id     TEXT PRIMARY KEY NOT NULL,
+  local_product_id      INTEGER NULL,
+  barcode               TEXT NOT NULL,
+  item_number           TEXT NULL,
+  primary_name          TEXT NOT NULL,
+  secondary_name        TEXT NULL,
+  category_remote_id    TEXT NULL,
+  supplier_remote_id    TEXT NULL,
+  retail_price          INTEGER NOT NULL,
+  purchase_price        INTEGER NOT NULL,
+  stock_quantity        INTEGER NOT NULL,
+  is_active             INTEGER NOT NULL,
+  authoritative_revision TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE SET NULL
+);
+";
+
+        internal static string ArticleMutationOwnedIndexSql => @"
+CREATE INDEX IF NOT EXISTS idx_article_mutation_state_next
+ON article_mutation_outbox(state, next_attempt_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_article_mutation_client_sequence
+ON article_mutation_outbox(client_product_id, local_sequence);
+CREATE INDEX IF NOT EXISTS idx_article_mutation_remote_product
+ON article_mutation_outbox(remote_product_id)
+WHERE remote_product_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_article_mutation_local_product
+ON article_mutation_outbox(local_product_id, local_sequence);
+CREATE INDEX IF NOT EXISTS idx_article_mutation_superseded_by
+ON article_mutation_outbox(superseded_by_mutation_id)
+WHERE superseded_by_mutation_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_article_mutation_attempt_mutation
+ON article_mutation_attempts(mutation_id, id);
+CREATE INDEX IF NOT EXISTS idx_article_remote_shadow_local
+ON article_product_remote_shadow(local_product_id);
+";
+
+        internal static string ArticleMutationExternalIndexSql => @"
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_client_product_id
+ON products(client_product_id)
+WHERE client_product_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_article_mutation
+ON product_price_history(article_mutation_id)
+WHERE article_mutation_id IS NOT NULL;
+";
+
+        internal static string ArticleMutationIndexSql =>
+            ArticleMutationOwnedIndexSql + "\n" +
+            ArticleMutationExternalIndexSql;
+
+        internal static string ArticleMutationSchemaSql =>
+            ArticleMutationTableSql + "\n" + ArticleMutationIndexSql;
+
+        internal static void EnsureArticleMutationSchema(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            foreach (var column in ArticleMutationColumns)
+            {
+                EnsureColumn(
+                    conn,
+                    tx,
+                    column.TableName,
+                    column.ColumnName,
+                    column.AlterDefinition);
+            }
+            conn.Execute(ArticleMutationSchemaSql, transaction: tx);
+        }
+
+        internal static SchemaColumnDefinition[] ProductImageColumns { get; } =
+            new[]
+            {
+                Column(
+                    "products",
+                    "primary_image_version_id",
+                    "TEXT",
+                    false,
+                    "",
+                    "TEXT NULL"),
+                Column(
+                    "products",
+                    "primary_image_updated_at",
+                    "TEXT",
+                    false,
+                    "",
+                    "TEXT NULL")
+            };
+
+        internal static string ProductImageColumnMaterial => string.Join(
+            "\n",
+            ProductImageColumns.Select(item => item.ToCanonicalMaterial()));
+
+        internal static string ProductImageAlterSql => string.Join(
+            "\n",
+            ProductImageColumns.Select(item =>
+                "ALTER TABLE " + item.TableName + " ADD COLUMN " +
+                item.ColumnName + " " + item.AlterDefinition + ";"));
+
+        internal static string ProductImageTableSql => @"
+CREATE TABLE IF NOT EXISTS product_image_operation_outbox (
+  id                              INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  operation_id                    TEXT NOT NULL UNIQUE,
+  idempotency_key                 TEXT NOT NULL UNIQUE,
+  payload_hash                    TEXT NOT NULL,
+  operation_kind                  TEXT NOT NULL,
+  local_product_id                INTEGER NULL,
+  remote_product_id               TEXT NULL,
+  expected_current_version_id     TEXT NULL,
+  intended_local_version_identity TEXT NULL,
+  main_bytes                      INTEGER NULL,
+  main_width                      INTEGER NULL,
+  main_height                     INTEGER NULL,
+  main_sha256                     TEXT NULL,
+  thumb_bytes                     INTEGER NULL,
+  thumb_width                     INTEGER NULL,
+  thumb_height                    INTEGER NULL,
+  thumb_sha256                    TEXT NULL,
+  staged_main_identity            TEXT NULL,
+  staged_thumb_identity           TEXT NULL,
+  created_at                      TEXT NOT NULL,
+  updated_at                      TEXT NOT NULL,
+  state                           TEXT NOT NULL,
+  attempt_count                   INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at                 INTEGER NOT NULL DEFAULT 0,
+  last_typed_failure_code         TEXT NULL,
+  server_version_id               TEXT NULL,
+  server_revision                 TEXT NULL,
+  completion_state                TEXT NULL,
+  resume_state                    TEXT NULL,
+  claim_generation_id             TEXT NULL,
+  claim_fence                     TEXT NULL,
+  completed_at                    TEXT NULL,
+  FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE SET NULL,
+  CHECK(operation_kind IN ('replace', 'remove')),
+  CHECK(state IN (
+    'waiting_dependency',
+    'pending_intent',
+    'pending_upload',
+    'pending_finalize',
+    'pending_remove',
+    'in_progress',
+    'retry_wait',
+    'failed_blocked',
+    'completed',
+    'cleanup_pending')),
+  CHECK(attempt_count >= 0),
+  CHECK(
+    length(payload_hash) = 71 AND
+    substr(payload_hash, 1, 7) = 'sha256:' AND
+    substr(payload_hash, 8) NOT GLOB '*[^0-9a-f]*'),
+  CHECK(
+    (operation_kind = 'remove' AND
+      intended_local_version_identity IS NULL AND
+      main_bytes IS NULL AND main_width IS NULL AND main_height IS NULL AND main_sha256 IS NULL AND
+      thumb_bytes IS NULL AND thumb_width IS NULL AND thumb_height IS NULL AND thumb_sha256 IS NULL AND
+      staged_main_identity IS NULL AND staged_thumb_identity IS NULL)
+    OR
+    (operation_kind = 'replace' AND
+      intended_local_version_identity IS NOT NULL AND
+      main_bytes BETWEEN 1 AND 1048576 AND main_width BETWEEN 1 AND 1600 AND main_height BETWEEN 1 AND 1600 AND length(main_sha256) = 64 AND main_sha256 NOT GLOB '*[^0-9a-f]*' AND
+      thumb_bytes BETWEEN 1 AND 92160 AND thumb_width BETWEEN 1 AND 384 AND thumb_height BETWEEN 1 AND 384 AND length(thumb_sha256) = 64 AND thumb_sha256 NOT GLOB '*[^0-9a-f]*' AND
+      ((state = 'completed' AND staged_main_identity IS NULL AND staged_thumb_identity IS NULL)
+       OR
+       (staged_main_identity IS NOT NULL AND length(staged_main_identity) BETWEEN 1 AND 120 AND instr(staged_main_identity, '/') = 0 AND instr(staged_main_identity, '\') = 0 AND
+        staged_thumb_identity IS NOT NULL AND length(staged_thumb_identity) BETWEEN 1 AND 120 AND instr(staged_thumb_identity, '/') = 0 AND instr(staged_thumb_identity, '\') = 0))))
+);
+
+CREATE TABLE IF NOT EXISTS product_image_remote_shadow (
+  remote_product_id           TEXT PRIMARY KEY NOT NULL,
+  local_product_id            INTEGER NULL,
+  primary_image_version_id    TEXT NULL,
+  primary_image_updated_at    TEXT NULL,
+  catalog_revision            TEXT NULL,
+  updated_at                  TEXT NOT NULL,
+  FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE SET NULL
+);
+";
+
+        internal static string ProductImageIndexSql => @"
+CREATE INDEX IF NOT EXISTS idx_product_image_operation_state_next
+ON product_image_operation_outbox(state, next_attempt_at, id);
+CREATE INDEX IF NOT EXISTS idx_product_image_operation_product_order
+ON product_image_operation_outbox(local_product_id, id);
+CREATE INDEX IF NOT EXISTS idx_product_image_operation_remote_product
+ON product_image_operation_outbox(remote_product_id, id)
+WHERE remote_product_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_image_operation_active_product
+ON product_image_operation_outbox(local_product_id)
+WHERE local_product_id IS NOT NULL AND state = 'in_progress';
+CREATE INDEX IF NOT EXISTS idx_product_image_shadow_local
+ON product_image_remote_shadow(local_product_id);
+";
+
+        internal static string ProductImageSchemaSql =>
+            ProductImageTableSql + "\n" + ProductImageIndexSql;
+
+        internal static void EnsureProductImageSchema(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            foreach (var column in ProductImageColumns)
+            {
+                EnsureColumn(
+                    conn,
+                    tx,
+                    column.TableName,
+                    column.ColumnName,
+                    column.AlterDefinition);
+            }
+            conn.Execute(ProductImageSchemaSql, transaction: tx);
+        }
+
+        internal static string CustomerOrderInboxTableSql => @"
+CREATE TABLE IF NOT EXISTS customer_order_inbox (
+  id                              INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  handoff_id                      TEXT NOT NULL UNIQUE,
+  event_idempotency_key           TEXT NOT NULL UNIQUE,
+  order_id                        TEXT NOT NULL,
+  shop_id                         TEXT NOT NULL,
+  order_code                      TEXT NOT NULL,
+  event_type                      TEXT NOT NULL,
+  correlation_id                  TEXT NOT NULL,
+  status_version                  INTEGER NOT NULL,
+  current_status_version          INTEGER NOT NULL,
+  order_status                    TEXT NOT NULL,
+  fulfillment_mode                TEXT NOT NULL,
+  currency_code                   TEXT NOT NULL,
+  total_clp                       INTEGER NOT NULL,
+  payload_json                    TEXT NOT NULL,
+  payload_hash                    TEXT NOT NULL,
+  lease_token                     TEXT NOT NULL,
+  lease_expires_at                INTEGER NOT NULL,
+  remote_attempt_count            INTEGER NOT NULL,
+  state                           TEXT NOT NULL,
+  accepted_acked_at               INTEGER NULL,
+  ack_outcome                     TEXT NULL,
+  ack_idempotency_key             TEXT NULL,
+  ack_pos_sale_id                 TEXT NULL,
+  ack_expected_status_version     INTEGER NULL,
+  ack_attempt_count               INTEGER NOT NULL DEFAULT 0,
+  ack_next_retry_at               INTEGER NOT NULL DEFAULT 0,
+  ack_last_attempt_at             INTEGER NULL,
+  ack_last_error_code             TEXT NULL,
+  ack_server_status               TEXT NULL,
+  ack_server_status_version       INTEGER NULL,
+  ack_claim_generation_id         TEXT NULL,
+  ack_claim_generation_fingerprint TEXT NULL,
+  ack_claim_token                 TEXT NULL,
+  received_at                     INTEGER NOT NULL,
+  updated_at                      INTEGER NOT NULL,
+  acked_at                        INTEGER NULL,
+  CHECK(status_version >= 1),
+  CHECK(current_status_version >= status_version),
+  CHECK(total_clp >= 0),
+  CHECK(remote_attempt_count >= 1),
+  CHECK(ack_attempt_count >= 0),
+  CHECK(state IN (
+    'received',
+    'ack_pending',
+    'ack_in_progress',
+    'retry_wait',
+    'acked',
+    'failed_blocked')),
+  CHECK(ack_outcome IS NULL OR ack_outcome IN (
+    'accepted', 'rejected', 'prepared', 'completed')),
+  CHECK(
+    length(payload_hash) = 71 AND
+    substr(payload_hash, 1, 7) = 'sha256:' AND
+    substr(payload_hash, 8) NOT GLOB '*[^0-9a-f]*'),
+  CHECK(
+    (ack_outcome IS NULL AND ack_idempotency_key IS NULL AND
+      ack_expected_status_version IS NULL)
+    OR
+    (ack_outcome IS NOT NULL AND ack_idempotency_key IS NOT NULL AND
+      ack_expected_status_version >= 1)),
+  CHECK(ack_pos_sale_id IS NULL OR ack_outcome = 'completed')
+);
+";
+
+        internal static string CustomerOrderInboxIndexSql => @"
+CREATE INDEX IF NOT EXISTS idx_customer_order_inbox_state_next
+ON customer_order_inbox(state, ack_next_retry_at, id);
+CREATE INDEX IF NOT EXISTS idx_customer_order_inbox_order
+ON customer_order_inbox(shop_id, order_id, status_version, id);
+CREATE INDEX IF NOT EXISTS idx_customer_order_inbox_received
+ON customer_order_inbox(received_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_order_inbox_ack_idempotency
+ON customer_order_inbox(ack_idempotency_key)
+WHERE ack_idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_order_inbox_fiscal_sale
+ON customer_order_inbox(ack_pos_sale_id)
+WHERE ack_pos_sale_id IS NOT NULL;
+";
+
+        internal static string CustomerOrderInboxSchemaSql =>
+            CustomerOrderInboxTableSql + "\n" + CustomerOrderInboxIndexSql;
+
+        internal static void EnsureCustomerOrderInboxSchema(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            conn.Execute(CustomerOrderInboxSchemaSql, transaction: tx);
+        }
+
         internal static string DependentSchemaSql => @"
 CREATE TABLE IF NOT EXISTS local_stock_movements (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -1150,6 +1587,28 @@ ALTER TABLE sales ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending';
         internal static string PostPerf2ALedgerlessKnownSchemaSql =>
             PostSync2LedgerlessKnownSchemaSql + "\n" +
             CatalogAuthoritativeIdStageSchemaSql;
+
+        // Frozen whitelist for the article-mutation durable outbox delivery.
+        // Older whitelists remain immutable because migration 0010 owns these
+        // columns and tables.
+        internal static string PostArticleMutationLedgerlessKnownSchemaSql =>
+            PostPerf2ALedgerlessKnownSchemaSql + "\n" +
+            ArticleMutationAlterSql + "\n" +
+            ArticleMutationSchemaSql;
+
+        // Frozen whitelist for the product-image projection and durable image
+        // operation lane. Older whitelists remain immutable because migration
+        // 0011 exclusively owns these columns and tables.
+        internal static string PostProductImageLedgerlessKnownSchemaSql =>
+            PostArticleMutationLedgerlessKnownSchemaSql + "\n" +
+            ProductImageAlterSql + "\n" +
+            ProductImageSchemaSql;
+
+        // Frozen whitelist for the privacy-bounded customer-order inbox. Older
+        // whitelists remain immutable because migration 0012 owns this table.
+        internal static string PostCustomerOrderInboxLedgerlessKnownSchemaSql =>
+            PostProductImageLedgerlessKnownSchemaSql + "\n" +
+            CustomerOrderInboxSchemaSql;
 
         internal static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
         {

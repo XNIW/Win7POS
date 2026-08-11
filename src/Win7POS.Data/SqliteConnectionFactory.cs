@@ -88,17 +88,42 @@ namespace Win7POS.Data
 
         public static Task RunExclusiveMaintenanceAsync(Func<Task> maintenanceAction)
         {
-            return RunExclusiveMaintenanceAsync(maintenanceAction, DefaultMaintenanceDrainTimeout);
+            return RunExclusiveMaintenanceAsync(
+                maintenanceAction,
+                DefaultMaintenanceDrainTimeout,
+                CancellationToken.None);
+        }
+
+        public static Task RunExclusiveMaintenanceAsync(
+            Func<Task> maintenanceAction,
+            CancellationToken cancellationToken)
+        {
+            return RunExclusiveMaintenanceAsync(
+                maintenanceAction,
+                DefaultMaintenanceDrainTimeout,
+                cancellationToken);
+        }
+
+        public static Task RunExclusiveMaintenanceAsync(
+            Func<Task> maintenanceAction,
+            TimeSpan drainTimeout)
+        {
+            return RunExclusiveMaintenanceAsync(
+                maintenanceAction,
+                drainTimeout,
+                CancellationToken.None);
         }
 
         public static async Task RunExclusiveMaintenanceAsync(
             Func<Task> maintenanceAction,
-            TimeSpan drainTimeout)
+            TimeSpan drainTimeout,
+            CancellationToken cancellationToken)
         {
             if (maintenanceAction == null)
                 throw new ArgumentNullException(nameof(maintenanceAction));
             if (drainTimeout <= TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(drainTimeout));
+            cancellationToken.ThrowIfCancellationRequested();
 
             var current = CurrentMaintenance.Value;
             var isReentrant = false;
@@ -117,6 +142,7 @@ namespace Win7POS.Data
             {
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     await maintenanceAction().ConfigureAwait(false);
                 }
                 finally
@@ -126,7 +152,7 @@ namespace Win7POS.Data
                 return;
             }
 
-            await MaintenanceGate.WaitAsync().ConfigureAwait(false);
+            await MaintenanceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             var context = new MaintenanceContext
             {
                 Previous = CurrentMaintenance.Value,
@@ -149,14 +175,18 @@ namespace Win7POS.Data
 
             try
             {
-                var drainCompleted = await Task.WhenAny(drained, Task.Delay(drainTimeout)).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                var timeout = Task.Delay(drainTimeout, cancellationToken);
+                var drainCompleted = await Task.WhenAny(drained, timeout).ConfigureAwait(false);
                 if (!ReferenceEquals(drainCompleted, drained) && !drained.IsCompleted)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     throw new TimeoutException(
                         "Timed out waiting for active SQLite connections to drain before exclusive maintenance.");
                 }
 
                 await drained.ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 lock (MaintenanceSync)
                 {
                     context.Entered = true;

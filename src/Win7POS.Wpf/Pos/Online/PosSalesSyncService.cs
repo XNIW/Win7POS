@@ -941,8 +941,8 @@ namespace Win7POS.Wpf.Pos.Online
 
         private static string SafeId(string value)
         {
-            var normalized = TrimOrNull(value, 80);
-            return string.IsNullOrWhiteSpace(normalized) ? "none" : normalized;
+            var redacted = PosTechnicalIdentifier.Redact(value);
+            return string.IsNullOrWhiteSpace(redacted) ? "none" : redacted;
         }
 
         private static string TrimOrNull(string value, int maxLength)

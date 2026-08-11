@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "pos-product-image-v1",
+  "operation": "finalize",
+  "operationId": "task149-fixture-finalize-001",
+  "idempotencyKey": "task149-idem-finalize-001",
+  "payloadHash": "sha256:6f8e0a53c39da443b1a36c86720ea86142ed038181b681c21dd3d95efcafa1d2",
+  "appVersion": "win7pos-phase-b-fixture",
+  "shopId": "10000000-0000-4000-8000-000000000149",
+  "shopDeviceId": "50000000-0000-4000-8000-000000000149",
+  "staffId": "60000000-0000-4000-8000-000000000149",
+  "staffCredentialVersion": 7,
+  "posSessionId": "70000000-0000-4000-8000-000000000149",
+  "deviceToken": "fixture-device-token-not-a-secret",
+  "sessionToken": "fixture-session-token-not-a-secret",
+  "productId": "20000000-0000-4000-8000-000000000149",
+  "expectedCurrentVersionId": "30000000-0000-4000-8000-000000000149",
+  "versionId": "40000000-0000-4000-8000-000000000149"
+}

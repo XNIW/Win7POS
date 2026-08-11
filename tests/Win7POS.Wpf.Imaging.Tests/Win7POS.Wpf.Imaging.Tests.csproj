@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Platforms>x86</Platforms>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x86</Platform>
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>true</Prefer32Bit>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'AnyCPU'">win-x86</RuntimeIdentifier>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <LangVersion>8.0</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" PrivateAssets="all" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.3.3" PrivateAssets="all" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.3.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Win7POS.Core\Win7POS.Core.csproj" />
+    <ProjectReference Include="..\..\src\Win7POS.Data\Win7POS.Data.csproj" />
+    <ProjectReference Include="..\..\src\Win7POS.Wpf\Win7POS.Wpf.csproj" />
+  </ItemGroup>
+</Project>

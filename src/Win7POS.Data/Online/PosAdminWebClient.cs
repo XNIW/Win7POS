@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -17,6 +18,8 @@ namespace Win7POS.Data.Online
         private const string HeartbeatPath = "/api/pos/session/heartbeat";
         private const string CatalogPullPath = "/api/pos/catalog/pull";
         private const string CatalogImportSyncPath = "/api/pos/catalog/import-sync";
+        private const string CustomerOrderAckPath = "/api/pos/orders/ack";
+        private const string CustomerOrderClaimPath = "/api/pos/orders/claim";
         private const string SalesSyncPath = "/api/pos/sales/sync";
         private const int MaxResponseBodyBytes = 8 * 1024 * 1024;
         private const int MaxErrorResponseBodyBytes = 64 * 1024;
@@ -98,6 +101,50 @@ namespace Win7POS.Data.Online
                 CatalogImportSyncPath,
                 request,
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<PosOnlineResult<PosCustomerOrderClaimResponse>>
+            CustomerOrderClaimAsync(
+                PosCustomerOrderClaimRequest request,
+                CancellationToken cancellationToken)
+        {
+            return await PostJsonAsync<
+                PosCustomerOrderClaimRequest,
+                PosCustomerOrderClaimResponse>(
+                    CustomerOrderClaimPath,
+                    request,
+                    cancellationToken,
+                    noStore: true).ConfigureAwait(false);
+        }
+
+        public async Task<PosOnlineResult<PosCustomerOrderAckResponse>>
+            CustomerOrderAckAsync(
+                PosCustomerOrderAckRequest request,
+                CancellationToken cancellationToken)
+        {
+            return await PostJsonAsync<
+                PosCustomerOrderAckRequest,
+                PosCustomerOrderAckResponse>(
+                    CustomerOrderAckPath,
+                    request,
+                    cancellationToken,
+                    noStore: true).ConfigureAwait(false);
+        }
+
+        public async Task<PosOnlineResult<PosArticleMutationResponse>>
+            ArticleMutationsAsync(
+                PosArticleMutationEnvelope envelope,
+                CancellationToken cancellationToken)
+        {
+            var encodedBody = PosArticleMutationRequestWriter.WriteUtf8(envelope);
+            return await PostJsonAsync<
+                PosArticleMutationEnvelope,
+                PosArticleMutationResponse>(
+                    PosArticleMutationContract.EndpointPath,
+                    envelope,
+                    cancellationToken,
+                    encodedBody,
+                    noStore: true).ConfigureAwait(false);
         }
 
         public void Dispose()
@@ -211,19 +258,24 @@ namespace Win7POS.Data.Online
         private async Task<PosOnlineResult<TResponse>> PostJsonAsync<TRequest, TResponse>(
             string relativePath,
             TRequest request,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            byte[] encodedBody = null,
+            bool noStore = false)
             where TResponse : class
         {
             if (_disposed) throw new ObjectDisposedException(nameof(PosAdminWebClient));
 
             var clientRequestId = CreateClientRequestId(relativePath);
+            var requestStopwatch = Stopwatch.StartNew();
             using (var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
             try
             {
                 requestTimeout.CancelAfter(RequestTimeout);
                 var requestToken = requestTimeout.Token;
-                using (var content = new JsonDataContractContent<TRequest>(request))
+                using (var content = encodedBody == null
+                    ? (HttpContent)new JsonDataContractContent<TRequest>(request)
+                    : new EncodedJsonContent(encodedBody))
                 using (var requestMessage = new HttpRequestMessage(
                     HttpMethod.Post,
                     relativePath.TrimStart('/')))
@@ -231,6 +283,15 @@ namespace Win7POS.Data.Online
                     requestMessage.Content = content;
                     requestMessage.Headers.TryAddWithoutValidation("X-Client-Request-Id", clientRequestId);
                     requestMessage.Headers.TryAddWithoutValidation("User-Agent", "Win7POS/online-client");
+                    if (noStore)
+                    {
+                        requestMessage.Headers.TryAddWithoutValidation(
+                            "Cache-Control",
+                            "no-store");
+                        requestMessage.Headers.TryAddWithoutValidation(
+                            "Pragma",
+                            "no-cache");
+                    }
 
                     using (var response = await _httpClient
                         .SendAsync(
@@ -241,6 +302,11 @@ namespace Win7POS.Data.Online
                     {
                         var serverRequestId = FirstHeaderValue(response, "X-Request-Id");
                         var cfRay = FirstHeaderValue(response, "CF-Ray");
+                        var httpStatus = (int)response.StatusCode;
+                        var responseContentType = TrimTechnicalId(
+                            response.Content?.Headers?.ContentType?.MediaType,
+                            80);
+                        var responseLength = response.Content?.Headers?.ContentLength;
                         var authenticationDenied =
                             response.StatusCode == HttpStatusCode.Unauthorized ||
                             response.StatusCode == HttpStatusCode.Forbidden;
@@ -259,34 +325,80 @@ namespace Win7POS.Data.Online
                                     authenticationDenied,
                                     clientRequestId,
                                     serverRequestId,
-                                    cfRay);
+                                    cfRay,
+                                    httpStatus,
+                                    requestStopwatch.ElapsedMilliseconds,
+                                    responseContentType,
+                                    responseLength,
+                                    requestReachedServer: true,
+                                    retryable: PosBootstrapDiagnosticsPolicy.IsRetryable(
+                                        "response_too_large",
+                                        httpStatus,
+                                        authenticationDenied));
                             }
 
                             var error = errorRead.Value;
+                            var normalizedErrorCode = NormalizeErrorCode(error?.Code);
                             return PosOnlineResult<TResponse>.Failure(
-                                NormalizeErrorCode(error?.Code),
+                                string.IsNullOrWhiteSpace(normalizedErrorCode)
+                                    ? GetHttpFailureCode(httpStatus)
+                                    : normalizedErrorCode,
                                 string.IsNullOrWhiteSpace(error?.Message)
                                     ? "Autorizzazione POS online non riuscita."
                                     : NormalizeErrorMessage(error.Message),
                                 authenticationDenied,
                                 clientRequestId,
                                 FirstNonEmpty(serverRequestId, error?.RequestId),
-                                cfRay);
+                                cfRay,
+                                httpStatus,
+                                requestStopwatch.ElapsedMilliseconds,
+                                responseContentType,
+                                responseLength,
+                                requestReachedServer: true,
+                                retryable: PosBootstrapDiagnosticsPolicy.IsRetryable(
+                                    normalizedErrorCode,
+                                    httpStatus,
+                                    authenticationDenied));
                         }
 
                         var responseRead = await ReadJsonAsync<TResponse>(
                             response.Content,
                             MaxResponseBodyBytes,
                             requestToken).ConfigureAwait(false);
+                        if (responseRead.Truncated)
+                        {
+                            return PosOnlineResult<TResponse>.Failure(
+                                "io_error",
+                                "Risposta Admin Web POS interrotta durante la lettura.",
+                                false,
+                                clientRequestId,
+                                serverRequestId,
+                                cfRay,
+                                httpStatus,
+                                requestStopwatch.ElapsedMilliseconds,
+                                responseContentType,
+                                responseLength,
+                                requestReachedServer: true,
+                                retryable: true);
+                        }
                         if (responseRead.TooLarge)
                         {
                             return PosOnlineResult<TResponse>.Failure(
                                 "response_too_large",
                                 "Risposta Admin Web POS troppo grande.",
-                                false,
-                                clientRequestId,
-                                serverRequestId,
-                                cfRay);
+                                    false,
+                                    clientRequestId,
+                                    serverRequestId,
+                                    cfRay,
+                                    httpStatus,
+                                    requestStopwatch.ElapsedMilliseconds,
+                                    responseContentType,
+                                    responseLength,
+                                    requestReachedServer: true,
+                                    retryable: PosBootstrapDiagnosticsPolicy.IsRetryable(
+                                        "response_too_large",
+                                        httpStatus,
+                                        false));
                         }
 
                         if (responseRead.Value == null)
@@ -297,14 +409,24 @@ namespace Win7POS.Data.Online
                                 false,
                                 clientRequestId,
                                 serverRequestId,
-                                cfRay);
+                                cfRay,
+                                    httpStatus,
+                                    requestStopwatch.ElapsedMilliseconds,
+                                    responseContentType,
+                                    responseLength,
+                                    requestReachedServer: true,
+                                    retryable: false);
                         }
 
                         return PosOnlineResult<TResponse>.Ok(
                             responseRead.Value,
                             clientRequestId,
                             serverRequestId,
-                            cfRay);
+                            cfRay,
+                            httpStatus,
+                            requestStopwatch.ElapsedMilliseconds,
+                            responseContentType,
+                            responseLength);
                     }
                 }
             }
@@ -318,31 +440,48 @@ namespace Win7POS.Data.Online
                     "timeout",
                     "Admin Web POS non ha risposto entro il timeout.",
                     false,
-                    clientRequestId);
+                    clientRequestId,
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds,
+                    requestReachedServer: false,
+                    retryable: true,
+                    exceptionType: "OperationCanceledException");
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException ex)
             {
+                var rootCode = ClassifyHttpRequestFailure(ex);
                 return PosOnlineResult<TResponse>.Failure(
-                    "network_error",
+                    rootCode,
                     "Admin Web POS non e raggiungibile.",
                     false,
-                    clientRequestId);
+                    clientRequestId,
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds,
+                    requestReachedServer: false,
+                    retryable: PosBootstrapDiagnosticsPolicy.IsRetryable(rootCode, null, false),
+                    exceptionType: SafeExceptionType(ex));
             }
-            catch (IOException)
+            catch (IOException ex)
             {
                 return PosOnlineResult<TResponse>.Failure(
                     "io_error",
                     "Errore locale durante la richiesta POS online.",
                     false,
-                    clientRequestId);
+                    clientRequestId,
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds,
+                    requestReachedServer: false,
+                    retryable: true,
+                    exceptionType: SafeExceptionType(ex));
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException ex)
             {
                 return PosOnlineResult<TResponse>.Failure(
                     "invalid_operation",
                     "Configurazione Admin Web POS non valida.",
                     false,
-                    clientRequestId);
+                    clientRequestId,
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds,
+                    requestReachedServer: false,
+                    retryable: false,
+                    exceptionType: SafeExceptionType(ex));
             }
             }
         }
@@ -438,6 +577,65 @@ namespace Win7POS.Data.Online
             return builder.ToString();
         }
 
+        private static string GetHttpFailureCode(int httpStatus)
+        {
+            switch (httpStatus)
+            {
+                case 401:
+                    return "http_401";
+                case 403:
+                    return "http_403";
+                case 409:
+                    return "http_409";
+                default:
+                    return httpStatus >= 500 && httpStatus <= 599
+                        ? "http_5xx"
+                        : "http_" + httpStatus.ToString();
+            }
+        }
+
+        private static string ClassifyHttpRequestFailure(HttpRequestException exception)
+        {
+            var webException = exception?.InnerException as WebException;
+            if (webException != null)
+            {
+                switch (webException.Status)
+                {
+                    case WebExceptionStatus.NameResolutionFailure:
+                        return "dns";
+                    case WebExceptionStatus.TrustFailure:
+                    case WebExceptionStatus.SecureChannelFailure:
+                        return "tls";
+                }
+            }
+
+            return exception?.InnerException is System.Security.Authentication.AuthenticationException
+                ? "tls"
+                : "network_error";
+        }
+
+        private static string SafeExceptionType(Exception exception)
+        {
+            if (exception is HttpRequestException)
+            {
+                return "HttpRequestException";
+            }
+            if (exception is IOException)
+            {
+                return "IOException";
+            }
+            if (exception is InvalidOperationException)
+            {
+                return "InvalidOperationException";
+            }
+            if (exception is OperationCanceledException)
+            {
+                return "OperationCanceledException";
+            }
+
+            return string.Empty;
+        }
+
         private static string NormalizeErrorMessage(string value)
         {
             var source = (value ?? string.Empty).Trim();
@@ -491,7 +689,11 @@ namespace Win7POS.Data.Online
             }
 
             using (var stream = await content.ReadAsStreamAsync().ConfigureAwait(false))
-            using (var bounded = new BoundedCountingReadStream(stream, maxBytes, cancellationToken))
+            using (var bounded = new BoundedCountingReadStream(
+                stream,
+                maxBytes,
+                contentLength,
+                cancellationToken))
             using (var cancellationRegistration = cancellationToken.Register(
                 state => ((Stream)state).Dispose(),
                 stream))
@@ -504,9 +706,14 @@ namespace Win7POS.Data.Online
                         var serializer = new DataContractJsonSerializer(typeof(T));
                         var value = serializer.ReadObject(bounded) as T;
                         bounded.DrainToEnd();
-                        return value == null
-                            ? BoundedJsonReadResult<T>.Invalid()
-                            : BoundedJsonReadResult<T>.Success(value);
+                        if (bounded.LooksLikeTruncatedJsonResponse)
+                        {
+                            return BoundedJsonReadResult<T>.TruncatedBody();
+                        }
+                        return value == null ||
+                            !bounded.HasCompleteJsonObject
+                                ? BoundedJsonReadResult<T>.Invalid()
+                                : BoundedJsonReadResult<T>.Success(value);
                     }).ConfigureAwait(false);
                 }
                 catch (Exception) when (cancellationToken.IsCancellationRequested)
@@ -520,34 +727,46 @@ namespace Win7POS.Data.Online
                 }
                 catch (SerializationException)
                 {
-                    return BoundedJsonReadResult<T>.Invalid();
+                    return bounded.LooksLikeTruncatedJsonResponse
+                        ? BoundedJsonReadResult<T>.TruncatedBody()
+                        : BoundedJsonReadResult<T>.Invalid();
                 }
                 catch (System.Xml.XmlException)
                 {
-                    return BoundedJsonReadResult<T>.Invalid();
+                    return bounded.LooksLikeTruncatedJsonResponse
+                        ? BoundedJsonReadResult<T>.TruncatedBody()
+                        : BoundedJsonReadResult<T>.Invalid();
                 }
             }
         }
 
         private sealed class BoundedJsonReadResult<T> where T : class
         {
-            private BoundedJsonReadResult(T value, bool tooLarge)
+            private BoundedJsonReadResult(
+                T value,
+                bool tooLarge,
+                bool truncated)
             {
                 Value = value;
                 TooLarge = tooLarge;
+                Truncated = truncated;
             }
 
             internal T Value { get; }
             internal bool TooLarge { get; }
+            internal bool Truncated { get; }
 
             internal static BoundedJsonReadResult<T> Invalid() =>
-                new BoundedJsonReadResult<T>(null, false);
+                new BoundedJsonReadResult<T>(null, false, false);
 
             internal static BoundedJsonReadResult<T> Oversized() =>
-                new BoundedJsonReadResult<T>(null, true);
+                new BoundedJsonReadResult<T>(null, true, false);
+
+            internal static BoundedJsonReadResult<T> TruncatedBody() =>
+                new BoundedJsonReadResult<T>(null, false, true);
 
             internal static BoundedJsonReadResult<T> Success(T value) =>
-                new BoundedJsonReadResult<T>(value, false);
+                new BoundedJsonReadResult<T>(value, false, false);
         }
 
         private sealed class ResponseBodyTooLargeException : IOException
@@ -599,20 +818,62 @@ namespace Win7POS.Data.Online
             }
         }
 
+        private sealed class EncodedJsonContent : HttpContent
+        {
+            private readonly byte[] _value;
+
+            internal EncodedJsonContent(byte[] value)
+            {
+                _value = value ?? throw new ArgumentNullException(nameof(value));
+                Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    "application/json")
+                {
+                    CharSet = "utf-8"
+                };
+                Headers.ContentLength = _value.LongLength;
+            }
+
+            protected override Task SerializeToStreamAsync(
+                Stream stream,
+                TransportContext context)
+            {
+                return stream.WriteAsync(_value, 0, _value.Length);
+            }
+
+            protected override bool TryComputeLength(out long length)
+            {
+                length = _value.LongLength;
+                return true;
+            }
+        }
+
         private sealed class BoundedCountingReadStream : Stream
         {
             private readonly Stream _inner;
             private readonly long _maxBytes;
+            private readonly long? _expectedBytes;
             private readonly CancellationToken _cancellationToken;
             private long _bytesRead;
+            private bool _reachedEnd;
+            private bool _jsonEscape;
+            private bool _jsonInString;
+            private bool _jsonObjectCompleted;
+            private bool _jsonObjectStarted;
+            private bool _jsonTrailingContent;
+            private int _jsonDepth;
 
             internal BoundedCountingReadStream(
                 Stream inner,
                 long maxBytes,
+                long? expectedBytes,
                 CancellationToken cancellationToken)
             {
                 _inner = inner ?? throw new ArgumentNullException(nameof(inner));
                 _maxBytes = maxBytes;
+                _expectedBytes = expectedBytes.HasValue &&
+                    expectedBytes.Value >= 0
+                        ? expectedBytes
+                        : null;
                 _cancellationToken = cancellationToken;
             }
 
@@ -626,6 +887,19 @@ namespace Win7POS.Data.Online
                 set => throw new NotSupportedException();
             }
 
+            internal bool HasCompleteJsonObject =>
+                _reachedEnd &&
+                _jsonObjectStarted &&
+                _jsonObjectCompleted &&
+                !_jsonTrailingContent;
+
+            internal bool LooksLikeTruncatedJsonResponse =>
+                _reachedEnd &&
+                ((_expectedBytes.HasValue &&
+                  _bytesRead < _expectedBytes.Value) ||
+                 (_jsonObjectStarted &&
+                  !_jsonObjectCompleted));
+
             public override void Flush()
             {
             }
@@ -637,6 +911,10 @@ namespace Win7POS.Data.Online
                 {
                     var extra = _inner.Read(buffer, offset, Math.Min(count, 1));
                     if (extra > 0) throw new ResponseBodyTooLargeException();
+                    if (count > 0)
+                    {
+                        _reachedEnd = true;
+                    }
                     return 0;
                 }
 
@@ -644,6 +922,11 @@ namespace Win7POS.Data.Online
                 var read = _inner.Read(buffer, offset, allowed);
                 _bytesRead += read;
                 if (_bytesRead > _maxBytes) throw new ResponseBodyTooLargeException();
+                if (read == 0 && allowed > 0)
+                {
+                    _reachedEnd = true;
+                }
+                ObserveRead(buffer, offset, read);
                 return read;
             }
 
@@ -661,8 +944,12 @@ namespace Win7POS.Data.Online
                         buffer,
                         offset,
                         Math.Min(count, 1),
-                        cancellationToken).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                     if (extra > 0) throw new ResponseBodyTooLargeException();
+                    if (count > 0)
+                    {
+                        _reachedEnd = true;
+                    }
                     return 0;
                 }
 
@@ -674,6 +961,11 @@ namespace Win7POS.Data.Online
                     cancellationToken).ConfigureAwait(false);
                 _bytesRead += read;
                 if (_bytesRead > _maxBytes) throw new ResponseBodyTooLargeException();
+                if (read == 0 && allowed > 0)
+                {
+                    _reachedEnd = true;
+                }
+                ObserveRead(buffer, offset, read);
                 return read;
             }
 
@@ -683,6 +975,89 @@ namespace Win7POS.Data.Online
                 while (Read(buffer, 0, buffer.Length) > 0)
                 {
                 }
+            }
+
+            private void ObserveRead(byte[] buffer, int offset, int count)
+            {
+                if (count == 0)
+                {
+                    return;
+                }
+
+                for (var index = offset; index < offset + count; index += 1)
+                {
+                    var value = buffer[index];
+                    if (!_jsonObjectStarted)
+                    {
+                        if (IsJsonWhitespace(value))
+                        {
+                            continue;
+                        }
+                        if (value == (byte)'{')
+                        {
+                            _jsonObjectStarted = true;
+                            _jsonDepth = 1;
+                        }
+                        continue;
+                    }
+
+                    if (_jsonObjectCompleted)
+                    {
+                        if (!IsJsonWhitespace(value))
+                        {
+                            _jsonTrailingContent = true;
+                        }
+                        continue;
+                    }
+
+                    if (_jsonInString)
+                    {
+                        if (_jsonEscape)
+                        {
+                            _jsonEscape = false;
+                        }
+                        else if (value == (byte)'\\')
+                        {
+                            _jsonEscape = true;
+                        }
+                        else if (value == (byte)'"')
+                        {
+                            _jsonInString = false;
+                        }
+                        continue;
+                    }
+
+                    if (value == (byte)'"')
+                    {
+                        _jsonInString = true;
+                        continue;
+                    }
+                    if (value == (byte)'{' || value == (byte)'[')
+                    {
+                        _jsonDepth += 1;
+                        continue;
+                    }
+                    if (value == (byte)'}' || value == (byte)']')
+                    {
+                        _jsonDepth -= 1;
+                        if (_jsonDepth == 0)
+                        {
+                            _jsonObjectCompleted = true;
+                        }
+                        else if (_jsonDepth < 0)
+                        {
+                            _jsonTrailingContent = true;
+                        }
+                    }
+                }
+            }
+
+            private static bool IsJsonWhitespace(byte value)
+            {
+                return value == (byte)' ' ||
+                    value == (byte)'\t' ||
+                    value == (byte)'\r' ||
+                    value == (byte)'\n';
             }
 
             public override long Seek(long offset, SeekOrigin origin) =>

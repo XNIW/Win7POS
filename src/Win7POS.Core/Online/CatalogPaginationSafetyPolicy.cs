@@ -50,9 +50,9 @@ namespace Win7POS.Core.Online
         public bool HasSaturatedLane(int requestLimit)
         {
             if (requestLimit <= 0) throw new ArgumentOutOfRangeException(nameof(requestLimit));
-            return Products + ProductTombstones >= requestLimit ||
-                Categories + CategoryTombstones >= requestLimit ||
-                Suppliers + SupplierTombstones >= requestLimit ||
+            return CheckedAdd(Products, ProductTombstones) >= requestLimit ||
+                CheckedAdd(Categories, CategoryTombstones) >= requestLimit ||
+                CheckedAdd(Suppliers, SupplierTombstones) >= requestLimit ||
                 Prices >= requestLimit;
         }
 
@@ -107,30 +107,9 @@ namespace Win7POS.Core.Online
         public string Code { get; }
     }
 
-    public sealed class CatalogPageBudgetDecision
-    {
-        internal CatalogPageBudgetDecision(
-            bool allowed,
-            int pageBudget,
-            bool authoritative,
-            string code)
-        {
-            Allowed = allowed;
-            PageBudget = pageBudget;
-            Authoritative = authoritative;
-            Code = code ?? string.Empty;
-        }
-
-        public bool Allowed { get; }
-        public bool Authoritative { get; }
-        public string Code { get; }
-        public int PageBudget { get; }
-    }
-
     public static class CatalogPaginationSafetyPolicy
     {
         public const string AmbiguousEndCode = "server_catalog_pagination_ambiguous";
-        public const string PageBudgetExceededCode = "server_catalog_page_budget_exceeded";
 
         public static CatalogPaginationSafetyDecision EvaluateTerminalPage(
             PosCatalogPullResponse response,
@@ -212,81 +191,6 @@ namespace Win7POS.Core.Online
             return new CatalogPaginationSafetyDecision(false, AmbiguousEndCode);
         }
 
-        public static CatalogPageBudgetDecision CalculatePageBudget(
-            PosCatalogSummaryResponse summary,
-            int requestLimit,
-            int legacyFallbackPages,
-            int hardCeilingPages)
-        {
-            if (requestLimit <= 0) throw new ArgumentOutOfRangeException(nameof(requestLimit));
-            if (legacyFallbackPages <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(legacyFallbackPages));
-            }
-            if (hardCeilingPages < legacyFallbackPages)
-            {
-                throw new ArgumentOutOfRangeException(nameof(hardCeilingPages));
-            }
-
-            if (!HasCompleteValidSummary(summary))
-            {
-                return new CatalogPageBudgetDecision(
-                    true,
-                    legacyFallbackPages,
-                    false,
-                    string.Empty);
-            }
-
-            var required = Math.Max(
-                Math.Max(Pages(summary.Products.Value, requestLimit), Pages(summary.Categories.Value, requestLimit)),
-                Math.Max(Pages(summary.Suppliers.Value, requestLimit), Pages(summary.Prices.Value, requestLimit)));
-            required = Math.Max(1L, required);
-            if (required > hardCeilingPages || required > int.MaxValue)
-            {
-                return new CatalogPageBudgetDecision(
-                    false,
-                    0,
-                    true,
-                    PageBudgetExceededCode);
-            }
-
-            return new CatalogPageBudgetDecision(
-                true,
-                (int)required,
-                true,
-                string.Empty);
-        }
-
-        public static int ExpandFullPageBudgetForTombstoneContinuation(
-            int currentPageBudget,
-            int hardCeilingPages,
-            bool fullSnapshot,
-            bool hasMore,
-            CatalogPaginationLaneCounts cumulativeEvidence,
-            PosCatalogSummaryResponse summary)
-        {
-            if (currentPageBudget <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(currentPageBudget));
-            }
-            if (hardCeilingPages < currentPageBudget)
-            {
-                throw new ArgumentOutOfRangeException(nameof(hardCeilingPages));
-            }
-
-            // The protocol summary covers active rows only. Once a full chain exposes
-            // tombstones, or reports more pages after all active totals are satisfied, its
-            // terminal page cannot be derived from that summary. Keep draining within the
-            // independent hard ceiling and validate the terminal page.
-            return fullSnapshot &&
-                   hasMore &&
-                   cumulativeEvidence != null &&
-                   (cumulativeEvidence.HasAnyTombstones ||
-                    ActiveSummarySatisfied(summary, cumulativeEvidence))
-                ? hardCeilingPages
-                : currentPageBudget;
-        }
-
         public static bool HasCompleteValidSummary(PosCatalogSummaryResponse summary)
         {
             return summary != null &&
@@ -298,13 +202,7 @@ namespace Win7POS.Core.Online
                 summary.Prices.HasValue && summary.Prices.Value >= 0;
         }
 
-        private static long Pages(long count, int requestLimit)
-        {
-            if (count <= 0) return 0;
-            return 1L + ((count - 1L) / requestLimit);
-        }
-
-        private static bool ActiveSummarySatisfied(
+        internal static bool ActiveSummarySatisfied(
             PosCatalogSummaryResponse summary,
             CatalogPaginationLaneCounts counts)
         {

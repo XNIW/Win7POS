@@ -8,6 +8,17 @@ namespace Win7POS.Core.Tests.Online;
 public sealed class OnlineSyncSupervisorTests
 {
     [TestMethod]
+    public void StartOfDayTreatsProductImageAuthenticationDenialAsGlobalAuthStop()
+    {
+        var result = new OnlineSyncStartOfDayResult
+        {
+            ProductImages = OnlineSyncLaneOutcome.AuthDenied("auth_denied")
+        };
+
+        Assert.IsTrue(result.AuthenticationDenied);
+    }
+
+    [TestMethod]
     public async Task TwentySameLaneTriggers_CoalesceToOneRunAndOneRerun()
     {
         var firstStarted = NewSignal();
@@ -162,7 +173,8 @@ public sealed class OnlineSyncSupervisorTests
                         return OnlineSyncLaneOutcome.AuthDenied(code);
                     }
 
-                    if (Interlocked.Increment(ref companionCount) == 3)
+                    if (Interlocked.Increment(ref companionCount) ==
+                        Enum.GetValues<OnlineSyncLane>().Length - 1)
                         companionLanesStarted.TrySetResult(true);
                     return await context.ExecuteRequestAsync(async requestCancellationToken =>
                     {
@@ -178,7 +190,7 @@ public sealed class OnlineSyncSupervisorTests
                     Interlocked.Increment(ref stops);
                     return Task.CompletedTask;
                 },
-                networkConcurrency: 4,
+                networkConcurrency: Enum.GetValues<OnlineSyncLane>().Length,
                 credentialProvider: currentGeneration => Task.FromResult(
                     new OnlineSyncRequestCredentials(
                         currentGeneration,
@@ -202,7 +214,11 @@ public sealed class OnlineSyncSupervisorTests
             Assert.AreEqual(1, stops, deniedLane.ToString());
             Assert.AreEqual(1, networkCalls, deniedLane.ToString());
             Assert.IsTrue(supervisor.GetSnapshot().AuthenticationStopped);
-            CollectionAssert.AreEqual(new[] { 1, 1, 1, 1 }, runsByLane);
+            CollectionAssert.AreEqual(
+                Enumerable.Repeat(
+                    1,
+                    Enum.GetValues<OnlineSyncLane>().Length).ToArray(),
+                runsByLane);
             Assert.IsTrue(outcomes.All(outcome => !outcome.Success));
 
             var future = await supervisor.TriggerAsync(
@@ -211,7 +227,9 @@ public sealed class OnlineSyncSupervisorTests
                     : OnlineSyncLane.Heartbeat,
                 OnlineSyncLaneTrigger.LocalCommit);
             Assert.IsTrue(future.AuthenticationDenied);
-            Assert.AreEqual(4, runsByLane.Sum());
+            Assert.AreEqual(
+                Enum.GetValues<OnlineSyncLane>().Length,
+                runsByLane.Sum());
             Assert.AreEqual(1, networkCalls);
         }
     }
@@ -325,8 +343,207 @@ public sealed class OnlineSyncSupervisorTests
         releaseRequests.TrySetResult(true);
         var outcomes = await Task.WhenAll(laneRuns).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.IsTrue(outcomes.All(outcome => outcome.Success));
-        Assert.AreEqual(4, requests);
+        Assert.AreEqual(Enum.GetValues<OnlineSyncLane>().Length, requests);
         Assert.AreEqual(2, maximumActive);
+    }
+
+    [TestMethod]
+    public async Task SustainedProductImages_CannotStarveSalesCatalogOrArticleLanes()
+    {
+        var imageFirstStarted = NewSignal();
+        var releaseImageFirst = NewSignal();
+        var catalogBlockerStarted = NewSignal();
+        var releaseCatalogBlocker = NewSignal();
+        var salesQueued = NewSignal();
+        var salesStarted = NewSignal();
+        var releaseSales = NewSignal();
+        var catalogQueued = NewSignal();
+        var catalogStarted = NewSignal();
+        var articleQueued = NewSignal();
+        var articleStarted = NewSignal();
+        var imageSecondQueued = NewSignal();
+        var imageSecondCompleted = NewSignal();
+        var imageThirdStarted = NewSignal();
+        var imageThirdCancelled = NewSignal();
+        var requestTurns = 0;
+        var imageRuns = 0;
+        var imageSecondTurn = 0;
+        var activeImageRequests = 0;
+        var maximumActiveImageRequests = 0;
+        var firstTurnByLane = new int[Enum.GetValues<OnlineSyncLane>().Length];
+        using var clock = new ManualOnlineSyncClock(
+            DateTimeOffset.Parse("2026-08-02T12:00:00Z"));
+        using var supervisor = new OnlineSyncSupervisor(
+            Generation("generation-product-image-fairness"),
+            async (context, _, cancellationToken) =>
+            {
+                if (context.Lane == OnlineSyncLane.ProductImageOutbox)
+                {
+                    var run = Interlocked.Increment(ref imageRuns);
+                    var request = context.ExecuteRequestAsync(async requestCancellationToken =>
+                    {
+                        var turn = RecordRequestTurn(
+                            context.Lane,
+                            ref requestTurns,
+                            firstTurnByLane);
+                        if (run == 2)
+                            Interlocked.Exchange(ref imageSecondTurn, turn);
+                        var active = Interlocked.Increment(ref activeImageRequests);
+                        UpdateMaximum(ref maximumActiveImageRequests, active);
+                        try
+                        {
+                            if (run == 1)
+                            {
+                                imageFirstStarted.TrySetResult(true);
+                                await releaseImageFirst.Task;
+                            }
+                            else if (run == 2)
+                            {
+                                imageSecondCompleted.TrySetResult(true);
+                            }
+                            else
+                            {
+                                imageThirdStarted.TrySetResult(true);
+                                try
+                                {
+                                    await WaitForCancellationAsync(
+                                        requestCancellationToken);
+                                }
+                                finally
+                                {
+                                    imageThirdCancelled.TrySetResult(true);
+                                }
+                            }
+
+                            return new OnlineSyncLaneOutcome(
+                                success: true,
+                                hasImmediateMore: true);
+                        }
+                        finally
+                        {
+                            Interlocked.Decrement(ref activeImageRequests);
+                        }
+                    }, cancellationToken);
+                    if (run == 2)
+                        imageSecondQueued.TrySetResult(true);
+                    return await request;
+                }
+
+                if (context.Lane == OnlineSyncLane.CatalogImportOutbox)
+                {
+                    return await context.ExecuteRequestAsync(async _ =>
+                    {
+                        RecordRequestTurn(
+                            context.Lane,
+                            ref requestTurns,
+                            firstTurnByLane);
+                        catalogBlockerStarted.TrySetResult(true);
+                        await releaseCatalogBlocker.Task;
+                        return TerminalSuccess();
+                    }, cancellationToken);
+                }
+
+                if (context.Lane == OnlineSyncLane.SalesOutbox ||
+                    context.Lane == OnlineSyncLane.CatalogDelta ||
+                    context.Lane == OnlineSyncLane.ArticleMutationOutbox)
+                {
+                    var request = context.ExecuteRequestAsync(async _ =>
+                    {
+                        RecordRequestTurn(
+                            context.Lane,
+                            ref requestTurns,
+                            firstTurnByLane);
+                        if (context.Lane == OnlineSyncLane.SalesOutbox)
+                        {
+                            salesStarted.TrySetResult(true);
+                            await releaseSales.Task;
+                        }
+                        else if (context.Lane == OnlineSyncLane.CatalogDelta)
+                        {
+                            catalogStarted.TrySetResult(true);
+                        }
+                        else
+                        {
+                            articleStarted.TrySetResult(true);
+                        }
+                        return TerminalSuccess();
+                    }, cancellationToken);
+                    if (context.Lane == OnlineSyncLane.SalesOutbox)
+                        salesQueued.TrySetResult(true);
+                    else if (context.Lane == OnlineSyncLane.CatalogDelta)
+                        catalogQueued.TrySetResult(true);
+                    else
+                        articleQueued.TrySetResult(true);
+                    return await request;
+                }
+
+                return TerminalSuccess();
+            },
+            _ => Task.FromResult(true),
+            (_, _) => Task.CompletedTask,
+            networkConcurrency: 2,
+            clock: clock,
+            jitter: () => 0.5);
+
+        var firstImage = supervisor.TriggerAsync(
+            OnlineSyncLane.ProductImageOutbox,
+            OnlineSyncLaneTrigger.LocalCommit);
+        await imageFirstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var catalogBlocker = supervisor.TriggerAsync(
+            OnlineSyncLane.CatalogImportOutbox,
+            OnlineSyncLaneTrigger.Manual);
+        await catalogBlockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var sales = supervisor.TriggerAsync(
+            OnlineSyncLane.SalesOutbox,
+            OnlineSyncLaneTrigger.LocalCommit);
+        await salesQueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var catalog = supervisor.TriggerAsync(
+            OnlineSyncLane.CatalogDelta,
+            OnlineSyncLaneTrigger.Periodic);
+        await catalogQueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var article = supervisor.TriggerAsync(
+            OnlineSyncLane.ArticleMutationOutbox,
+            OnlineSyncLaneTrigger.LocalCommit);
+        await articleQueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        releaseImageFirst.TrySetResult(true);
+        Assert.IsTrue((await firstImage.WaitAsync(TimeSpan.FromSeconds(5))).Success);
+        await salesStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await clock.AdvanceNextAsync();
+        await imageSecondQueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        releaseCatalogBlocker.TrySetResult(true);
+        await catalogStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await articleStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await imageSecondCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual(3, firstTurnByLane[(int)OnlineSyncLane.SalesOutbox]);
+        Assert.AreEqual(4, firstTurnByLane[(int)OnlineSyncLane.CatalogDelta]);
+        Assert.AreEqual(5, firstTurnByLane[(int)OnlineSyncLane.ArticleMutationOutbox]);
+        Assert.AreEqual(6, imageSecondTurn);
+        Assert.AreEqual(1, maximumActiveImageRequests);
+
+        releaseSales.TrySetResult(true);
+        var nonImageOutcomes = await Task.WhenAll(
+                catalogBlocker,
+                sales,
+                catalog,
+                article)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsTrue(nonImageOutcomes.All(outcome => outcome.Success));
+        await clock.AdvanceNextAsync();
+        await imageThirdStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var stop = supervisor.StopAsync();
+        await imageThirdCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await stop.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual(3, imageRuns);
+        Assert.AreEqual(7, requestTurns);
+        Assert.AreEqual(1, maximumActiveImageRequests);
+        Assert.IsTrue(supervisor.GetSnapshot().Lanes.All(
+            lane => !lane.InFlight && !lane.Pending));
     }
 
     [TestMethod]
@@ -334,13 +551,14 @@ public sealed class OnlineSyncSupervisorTests
     {
         var allRunnersEntered = NewSignal();
         var twoRequestsStarted = NewSignal();
+        var laneCount = Enum.GetValues<OnlineSyncLane>().Length;
         var runners = 0;
         var requests = 0;
         using var supervisor = new OnlineSyncSupervisor(
             Generation("generation-stop"),
             async (context, _, cancellationToken) =>
             {
-                if (Interlocked.Increment(ref runners) == 4)
+                if (Interlocked.Increment(ref runners) == laneCount)
                     allRunnersEntered.TrySetResult(true);
                 return await context.ExecuteRequestAsync(async requestCancellationToken =>
                 {
@@ -580,6 +798,21 @@ public sealed class OnlineSyncSupervisorTests
     }
 
     [TestMethod]
+    public void SchedulePolicy_CustomerOrdersKeepsPollingAfterSuccessfulEmptyClaim()
+    {
+        var decision = OnlineSyncLaneSchedulePolicy.Evaluate(
+            OnlineSyncLane.CustomerOrders,
+            new OnlineSyncLaneOutcome(success: true),
+            3,
+            DateTimeOffset.Parse("2026-08-11T12:00:00Z"),
+            0.5);
+
+        Assert.IsTrue(decision.ShouldSchedule);
+        Assert.AreEqual(TimeSpan.FromSeconds(30), decision.Delay);
+        Assert.AreEqual(0, decision.FailureCount);
+    }
+
+    [TestMethod]
     public async Task AwaitedCatalogHint_IsOrchestratedByCaller_WhileBackgroundHintFansOut()
     {
         var catalogRan = NewSignal();
@@ -666,6 +899,31 @@ public sealed class OnlineSyncSupervisorTests
             TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
+    private static int RecordRequestTurn(
+        OnlineSyncLane lane,
+        ref int requestTurns,
+        int[] firstTurnByLane)
+    {
+        var turn = Interlocked.Increment(ref requestTurns);
+        Interlocked.CompareExchange(
+            ref firstTurnByLane[(int)lane],
+            turn,
+            0);
+        return turn;
+    }
+
+    private static async Task WaitForCancellationAsync(
+        CancellationToken cancellationToken)
+    {
+        var cancelled = NewSignal();
+        using (cancellationToken.Register(
+                   () => cancelled.TrySetResult(true)))
+        {
+            await cancelled.Task;
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
     private static void UpdateMaximum(ref int target, int candidate)
     {
         var observed = Volatile.Read(ref target);
@@ -675,6 +933,89 @@ public sealed class OnlineSyncSupervisorTests
             if (previous == observed)
                 return;
             observed = previous;
+        }
+    }
+
+    private sealed class ManualOnlineSyncClock : IOnlineSyncClock, IDisposable
+    {
+        private readonly object _gate = new object();
+        private readonly Queue<PendingDelay> _pending = new Queue<PendingDelay>();
+        private readonly SemaphoreSlim _queued = new SemaphoreSlim(0);
+        private DateTimeOffset _utcNow;
+
+        internal ManualOnlineSyncClock(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public DateTimeOffset UtcNow
+        {
+            get
+            {
+                lock (_gate) return _utcNow;
+            }
+        }
+
+        public Task DelayAsync(
+            TimeSpan delay,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var pending = new PendingDelay(delay);
+            pending.Cancellation = cancellationToken.Register(
+                () => pending.Completion.TrySetCanceled(cancellationToken));
+            lock (_gate) _pending.Enqueue(pending);
+            _queued.Release();
+            return AwaitDelayAsync(pending);
+        }
+
+        internal async Task AdvanceNextAsync()
+        {
+            while (true)
+            {
+                Assert.IsTrue(
+                    await _queued.WaitAsync(TimeSpan.FromSeconds(5)),
+                    "No scheduled supervisor delay was queued.");
+                PendingDelay pending;
+                lock (_gate)
+                {
+                    pending = _pending.Dequeue();
+                    if (!pending.Completion.Task.IsCompleted)
+                        _utcNow = _utcNow.Add(pending.Delay);
+                }
+                if (pending.Completion.TrySetResult(true)) return;
+            }
+        }
+
+        public void Dispose()
+        {
+            _queued.Dispose();
+        }
+
+        private static async Task AwaitDelayAsync(PendingDelay pending)
+        {
+            try
+            {
+                await pending.Completion.Task;
+            }
+            finally
+            {
+                pending.Cancellation.Dispose();
+            }
+        }
+
+        private sealed class PendingDelay
+        {
+            internal PendingDelay(TimeSpan delay)
+            {
+                Delay = delay;
+                Completion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            internal CancellationTokenRegistration Cancellation { get; set; }
+            internal TaskCompletionSource<bool> Completion { get; }
+            internal TimeSpan Delay { get; }
         }
     }
 }

@@ -24,11 +24,11 @@ public sealed class SupplierImportDataTests
     {
         using var db = TestDb.Create();
         var products = new ProductRepository(db.Factory);
-        var id = await products.UpsertAsync(new Product { Barcode = "SOFT-001", Name = "Old", UnitPrice = 100 });
-        Assert.IsTrue(await products.DeleteByBarcodeAsync("SOFT-001"));
+        var id = await products.UpsertAsync(new Product { Barcode = "SOFT-001", Name = "Old", UnitPrice = 100 }, ProductWriteOrigin.SupplierImportApply);
+        Assert.IsTrue(await products.DeleteByBarcodeAsync("SOFT-001", ProductWriteOrigin.SupplierImportApply));
         Assert.IsNull(await products.GetByBarcodeAsync("SOFT-001"));
 
-        var updatedId = await products.UpsertAsync(new Product { Barcode = "SOFT-001", Name = "New", UnitPrice = 200 });
+        var updatedId = await products.UpsertAsync(new Product { Barcode = "SOFT-001", Name = "New", UnitPrice = 200 }, ProductWriteOrigin.SupplierImportApply);
 
         Assert.AreEqual(id, updatedId);
         Assert.AreEqual(1, await ScalarLongAsync(db.Factory, "SELECT COUNT(1) FROM products WHERE barcode = 'SOFT-001'"));
@@ -53,8 +53,11 @@ public sealed class SupplierImportDataTests
             "Old supplier",
             null,
             "Old category",
-            1);
-        Assert.IsTrue(await products.DeleteByBarcodeAsync("SOFT-APPLY"));
+            1,
+            ProductWriteOrigin.SupplierImportApply);
+        Assert.IsTrue(await products.DeleteByBarcodeAsync(
+            "SOFT-APPLY",
+            ProductWriteOrigin.SupplierImportApply));
 
         var existing = await products.ListDetailsByBarcodesAsync(new[] { "SOFT-APPLY" });
         Assert.AreEqual(1, existing.Count);
@@ -71,7 +74,8 @@ public sealed class SupplierImportDataTests
             RetailPrice = "180",
             Quantity = "3"
         };
-        var preview = SupplierImportAnalyzer.BuildSyncPreview(new[] { row }, existing);
+        var preview = await new SupplierExcelImportApplier(db.Factory)
+            .BuildPreviewAsync(new[] { row });
         Assert.AreEqual(1, preview.UpdatedProducts.Count);
         Assert.AreEqual(0, preview.NewProducts.Count);
 
@@ -233,8 +237,8 @@ WHERE id = @id;",
         var products = new ProductRepository(db.Factory);
         var nowMs = 1767225600000L;
         var id = await repository.EnqueueAsync(BuildCatalogEntry("remote-ids", 5));
-        await products.UpsertAsync(new Product { Barcode = "CAT-5", Name = "Catalog Remote", UnitPrice = 180 });
-        await products.InsertPriceHistoryAsync("CAT-5", "retail", 180, "IMPORT");
+        await products.UpsertAsync(new Product { Barcode = "CAT-5", Name = "Catalog Remote", UnitPrice = 180 }, ProductWriteOrigin.SupplierImportApply);
+        await products.InsertPriceHistoryAsync("CAT-5", "retail", 180, "IMPORT", ProductWriteOrigin.SupplierImportApply);
 
         Assert.IsTrue(await repository.PrepareAttemptAsync(id, nowMs));
         var ack = new CatalogImportAckResult
@@ -286,7 +290,8 @@ WHERE remote_price_id = 'remote-price-5';");
             "retail",
             180,
             effectiveAt,
-            "IMPORT");
+            "IMPORT",
+            ProductWriteOrigin.RemoteCatalogApply);
         Assert.IsTrue(replay.Applied);
         Assert.IsFalse(replay.Queued);
         Assert.AreEqual(1, await ScalarLongAsync(db.Factory, @"
@@ -308,7 +313,7 @@ WHERE remote_price_id = 'remote-price-5';"));
             Barcode = "CAT-6",
             Name = "Late ACK product",
             UnitPrice = 180
-        });
+        }, ProductWriteOrigin.SupplierImportApply);
         using (var conn = db.Factory.Open())
         {
             await conn.ExecuteAsync(@"
@@ -606,8 +611,8 @@ WHERE remote_price_id = 'remote-price-conflicting'
             Barcode = "CAT-10",
             Name = "Explicit price precedence",
             UnitPrice = 580
-        });
-        await products.InsertPriceHistoryAsync("CAT-10", "retail", 580, "IMPORT");
+        }, ProductWriteOrigin.SupplierImportApply);
+        await products.InsertPriceHistoryAsync("CAT-10", "retail", 580, "IMPORT", ProductWriteOrigin.SupplierImportApply);
         Assert.IsTrue(await repository.PrepareAttemptAsync(outboxId, nowMs));
 
         const string clientItemId = "test-import-explicit-price-precedence-item";

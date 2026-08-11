@@ -8,14 +8,18 @@ using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.ImportDb;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Products;
 using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.ImportDb;
+using Win7POS.Data.Images;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using System.Linq;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.Products
 {
@@ -176,10 +180,28 @@ namespace Win7POS.Wpf.Products
             if (priceMinor < 0) throw new ArgumentException(PosLocalization.T("products.priceInvalid"));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(null, name);
 
-            var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
-            var ok = await _products.UpdateAsync(productId, name.Trim(), priceMinor).ConfigureAwait(false);
-            if (!ok) throw new InvalidOperationException(PosLocalization.T("products.notFound"));
+            var before = await _products.GetDetailsByIdAsync(productId)
+                .ConfigureAwait(false);
+            if (before == null)
+                throw new InvalidOperationException(PosLocalization.T("products.notFound"));
+            await _products.UpdateLocalArticleAsync(
+                BuildLocalUpdateRequest(
+                    before,
+                    before.Barcode,
+                    name,
+                    priceMinor,
+                    before.PurchasePrice,
+                    before.SupplierId,
+                    before.SupplierName,
+                    before.CategoryId,
+                    before.CategoryName,
+                    before.StockQty,
+                    before.ArticleCode,
+                    before.Name2,
+                    "count_correction"),
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
             CatalogEvents.RaiseCatalogChanged(before?.Barcode);
+            SignalArticleMutationSync();
 
             var details = AuditDetails.Kv(
                 ("productId", productId.ToString()),
@@ -340,14 +362,30 @@ namespace Win7POS.Wpf.Products
         /// <summary>Aggiorna prezzi e scrive storico (stessa transazione). source es. MANUAL_EDIT, IMPORT.</summary>
         public async Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source)
         {
-            await _products.UpdateProductPricesAsync(
-                productId,
-                newPurchasePrice,
-                newRetailPrice,
-                source ?? "MANUAL_EDIT").ConfigureAwait(false);
+            var current = await _products.GetDetailsByIdAsync(productId)
+                .ConfigureAwait(false);
+            if (current == null)
+                throw new InvalidOperationException(PosLocalization.T("products.notFound"));
+            await _products.UpdateLocalArticleAsync(
+                BuildLocalUpdateRequest(
+                    current,
+                    current.Barcode,
+                    current.Name,
+                    newRetailPrice,
+                    newPurchasePrice,
+                    current.SupplierId,
+                    current.SupplierName,
+                    current.CategoryId,
+                    current.CategoryName,
+                    current.StockQty,
+                    current.ArticleCode,
+                    current.Name2,
+                    "count_correction"),
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
             // Invalidate product-page cursors without refreshing live cart prices;
             // sale-line price ownership remains immutable once added to the cart.
             CatalogEvents.AdvanceRevision();
+            SignalArticleMutationSync();
         }
 
         private static string Escape(string s)
@@ -386,42 +424,194 @@ namespace Win7POS.Wpf.Products
         {
             if (string.IsNullOrWhiteSpace(barcode)) throw new ArgumentException(PosLocalization.T("products.barcodeRequired"));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
-            var p = new Product { Barcode = barcode.Trim(), Name = name?.Trim() ?? string.Empty, UnitPrice = unitPriceMinor };
-            await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
-            CatalogEvents.RaiseCatalogChanged(p.Barcode);
-            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", p.Barcode), ("name", p.Name))).ConfigureAwait(false);
+            var normalizedBarcode = barcode.Trim();
+            await _products.CreateLocalArticleAsync(
+                new LocalArticleCreateRequest
+                {
+                    Barcode = normalizedBarcode,
+                    PrimaryName = name?.Trim() ?? string.Empty,
+                    RetailPrice = unitPriceMinor,
+                    PurchasePrice = purchasePriceMinor,
+                    SupplierId = supplierId,
+                    SupplierName = supplierName ?? string.Empty,
+                    CategoryId = categoryId,
+                    CategoryName = categoryName ?? string.Empty,
+                    InitialStock = stockQty,
+                    ItemNumber = articleCode,
+                    SecondaryName = name2,
+                    OccurredAt = DateTimeOffset.UtcNow
+                },
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+            CatalogEvents.RaiseCatalogChanged(normalizedBarcode);
+            SignalArticleMutationSync();
+            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", normalizedBarcode), ("name", name?.Trim() ?? string.Empty))).ConfigureAwait(false);
+        }
+
+        public async Task DuplicateProductAsync(long sourceProductId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+        {
+            if (sourceProductId <= 0)
+                throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
+            if (string.IsNullOrWhiteSpace(barcode))
+                throw new ArgumentException(PosLocalization.T("products.barcodeRequired"));
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
+            var normalizedBarcode = barcode.Trim();
+            await _products.CreateLocalArticleAsync(
+                new LocalArticleCreateRequest
+                {
+                    Barcode = normalizedBarcode,
+                    PrimaryName = name?.Trim() ?? string.Empty,
+                    RetailPrice = unitPriceMinor,
+                    PurchasePrice = purchasePriceMinor,
+                    SupplierId = supplierId,
+                    SupplierName = supplierName ?? string.Empty,
+                    CategoryId = categoryId,
+                    CategoryName = categoryName ?? string.Empty,
+                    InitialStock = stockQty,
+                    ItemNumber = articleCode,
+                    SecondaryName = name2,
+                    DuplicateSourceProductId = sourceProductId,
+                    OccurredAt = DateTimeOffset.UtcNow
+                },
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+            CatalogEvents.RaiseCatalogChanged(normalizedBarcode);
+            SignalArticleMutationSync();
+            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", normalizedBarcode), ("name", name?.Trim() ?? string.Empty), ("duplicateSourceProductId", sourceProductId.ToString()))).ConfigureAwait(false);
         }
 
         /// <summary>Alias per creazione prodotto con tutti i dettagli (barcode, nome, prezzi, fornitore, categoria, stock).</summary>
         public Task CreateAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
             => CreateProductAsync(barcode, name, unitPriceMinor, purchasePriceMinor, supplierId, supplierName, categoryId, categoryName, stockQty, articleCode, name2);
 
-        /// <summary>Alias per aggiornamento completo (nome, prezzi, fornitore, categoria, stock). Barcode non modificabile.</summary>
+        /// <summary>Alias per aggiornamento completo (barcode, nomi, prezzi, riferimenti e stock).</summary>
         public Task UpdateDetailsAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
             => UpdateProductFullAsync(productId, barcode, name, unitPriceMinor, purchasePriceMinor, supplierId, supplierName, categoryId, categoryName, stockQty, articleCode, name2);
 
-        public async Task UpdateProductFullAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+        public async Task UpdateProductFullAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null, string stockReason = "count_correction")
         {
             if (productId <= 0) throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
-            var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
+            var before = await _products.GetDetailsByIdAsync(productId).ConfigureAwait(false);
             if (before == null) throw new InvalidOperationException(PosLocalization.T("products.notFound"));
-            var b = before.Barcode ?? barcode ?? "";
-            await _products.UpdateProductAndMetaWithPriceHistoryAsync(productId, name?.Trim() ?? string.Empty, unitPriceMinor, b, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty, "MANUAL_EDIT").ConfigureAwait(false);
+            var b = (barcode ?? before.Barcode ?? string.Empty).Trim();
+            await _products.UpdateLocalArticleAsync(
+                BuildLocalUpdateRequest(
+                    before,
+                    b,
+                    name,
+                    unitPriceMinor,
+                    purchasePriceMinor,
+                    supplierId,
+                    supplierName,
+                    categoryId,
+                    categoryName,
+                    stockQty,
+                    articleCode,
+                    name2,
+                    stockReason),
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
             CatalogEvents.RaiseCatalogChanged(b);
+            if (!string.Equals(before.Barcode, b, StringComparison.Ordinal))
+                CatalogEvents.RaiseCatalogChanged(before.Barcode);
+            SignalArticleMutationSync();
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductUpdate, AuditDetails.Kv(("productId", productId.ToString()), ("barcode", b))).ConfigureAwait(false);
         }
 
         public async Task<bool> DeleteProductAsync(string barcode)
         {
             if (string.IsNullOrWhiteSpace(barcode)) return false;
-            var ok = await _products.DeleteByBarcodeAsync(barcode.Trim()).ConfigureAwait(false);
-            if (ok)
+            var current = await _products.GetDetailsByBarcodeAsync(barcode.Trim())
+                .ConfigureAwait(false);
+            if (current == null) return false;
+            var write = await _products.SetLocalArticleActiveAsync(
+                current.Id,
+                false,
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+            var staging = new ProductImageStagingStore();
+            foreach (var pair in write.CancelledProductImages)
             {
-                CatalogEvents.RaiseCatalogChanged(barcode.Trim());
-                await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductDelete, AuditDetails.Kv(("barcode", barcode))).ConfigureAwait(false);
+                try
+                {
+                    await staging.DeletePairAsync(
+                        pair.MainIdentity,
+                        pair.ThumbIdentity,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (
+                    exception is IOException ||
+                    exception is UnauthorizedAccessException)
+                {
+                    // DB state is already atomic and authoritative. The image
+                    // lane's orphan sweep retries this filesystem cleanup.
+                }
             }
-            return ok;
+            CatalogEvents.RaiseCatalogChanged(barcode.Trim());
+            SignalArticleMutationSync();
+            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductDelete, AuditDetails.Kv(("barcode", barcode))).ConfigureAwait(false);
+            return true;
+        }
+
+        public async Task SetProductActiveAsync(long productId, bool active)
+        {
+            if (productId <= 0)
+                throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
+            var current = await _products.GetDetailsByIdAsync(productId)
+                .ConfigureAwait(false);
+            if (current == null && !active)
+                throw new InvalidOperationException(PosLocalization.T("products.notFound"));
+            await _products.SetLocalArticleActiveAsync(
+                productId,
+                active,
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+            if (current == null)
+            {
+                current = await _products.GetDetailsByIdAsync(productId)
+                    .ConfigureAwait(false);
+            }
+            if (current == null)
+                throw new InvalidOperationException(PosLocalization.T("products.notFound"));
+            CatalogEvents.RaiseCatalogChanged(current.Barcode);
+            SignalArticleMutationSync();
+        }
+
+        private static void SignalArticleMutationSync()
+        {
+            PosOnlineSyncSignalBus.Signal(
+                OnlineSyncLane.ArticleMutationOutbox,
+                OnlineSyncLaneTrigger.LocalCommit);
+        }
+
+        private static LocalArticleUpdateRequest BuildLocalUpdateRequest(
+            ProductDetailsRow current,
+            string barcode,
+            string name,
+            long retailPrice,
+            int purchasePrice,
+            int? supplierId,
+            string supplierName,
+            int? categoryId,
+            string categoryName,
+            int stockQty,
+            string articleCode,
+            string name2,
+            string stockReason)
+        {
+            return new LocalArticleUpdateRequest
+            {
+                ProductId = current.Id,
+                Barcode = barcode,
+                PrimaryName = name?.Trim() ?? string.Empty,
+                RetailPrice = retailPrice,
+                PurchasePrice = purchasePrice,
+                SupplierId = supplierId,
+                SupplierName = supplierName ?? string.Empty,
+                CategoryId = categoryId,
+                CategoryName = categoryName ?? string.Empty,
+                StockQuantity = stockQty,
+                ItemNumber = articleCode,
+                SecondaryName = name2,
+                StockReason = stockReason,
+                OccurredAt = DateTimeOffset.UtcNow
+            };
         }
     }
 }

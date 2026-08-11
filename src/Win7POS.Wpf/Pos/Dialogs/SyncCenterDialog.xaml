@@ -89,6 +89,13 @@
                         </UniformGrid>
                         <TextBlock x:Name="CatalogVerificationText" Text="{Binding CatalogVerificationText}" Style="{StaticResource TypeBodyStyle}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/>
                         <TextBlock x:Name="CatalogCountsText" Text="{Binding CatalogCountsText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                        <Border Background="#EAF3FF" BorderBrush="#9EC5F8" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,8,0,0">
+                            <TextBlock x:Name="CatalogDisplayWarningText"
+                                       Text="{Binding CatalogDisplayWarningText}"
+                                       Foreground="{StaticResource StatusInfoBrush}"
+                                       TextWrapping="Wrap"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                        </Border>
                         <Border Background="#FFF4D6" BorderBrush="#D6A93D" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,12,0,0">
                             <TextBlock x:Name="CatalogRepairReasonText" Text="{Binding CatalogRepairReasonText}" Foreground="{StaticResource StatusWarningBrush}" TextWrapping="Wrap"/>
                         </Border>
@@ -125,6 +132,18 @@
                         </StackPanel>
                     </Border>
                 </Grid>
+
+                <Border Style="{StaticResource DialogPanelStyle}" Margin="0,0,0,12" Padding="16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconProducts}" Fill="{StaticResource PrimaryBrush}" Width="19" Height="19" Stretch="Uniform" Margin="0,0,8,0"/>
+                            <TextBlock Text="{loc:Loc sync.center.articleChanges}" Style="{StaticResource TypeSubtitleStyle}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="ArticleQueueText" Text="{Binding ArticleQueueText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                        <TextBlock x:Name="ArticleDrainText" Text="{Binding ArticleDrainText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        <TextBlock x:Name="ArticleStatusText" Text="{Binding ArticleStatusText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
 
                 <TextBlock x:Name="OperationStatusText"
                            Style="{StaticResource TypeBodyStyle}"
