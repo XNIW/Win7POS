@@ -60,8 +60,39 @@ namespace Win7POS.Core.Import
         public bool HasHeader { get; set; }
         public int DataRowIndex { get; set; }
         public int DroppedSummaryRows { get; set; }
+        public SupplierImportDetectionTrace DetectionTrace { get; set; } = new SupplierImportDetectionTrace();
         public List<SupplierExcelColumn> Columns { get; } = new List<SupplierExcelColumn>();
         public List<SupplierExcelRow> Rows { get; } = new List<SupplierExcelRow>();
+    }
+
+    public sealed class SupplierImportColumnCandidateTrace
+    {
+        public int ColumnIndex { get; set; }
+        public double Score { get; set; }
+        public IReadOnlyList<string> Reasons { get; set; } = Array.Empty<string>();
+    }
+
+    public sealed class SupplierImportFieldDecisionTrace
+    {
+        public string Field { get; set; } = string.Empty;
+        public int? SelectedColumnIndex { get; set; }
+        public string Confidence { get; set; } = "low";
+        public string Reason { get; set; } = "not-evaluated";
+        public List<SupplierImportColumnCandidateTrace> Candidates { get; } = new List<SupplierImportColumnCandidateTrace>();
+    }
+
+    /// <summary>
+    /// Bounded structural diagnostics for supplier-column detection. Candidate
+    /// traces contain scores and reason codes only; worksheet values are never retained here.
+    /// </summary>
+    public sealed class SupplierImportDetectionTrace
+    {
+        public bool HasHeader { get; set; }
+        public int DataRowIndex { get; set; } = -1;
+        public string HeaderMode { get; set; } = "generated-no-data";
+        public int SampleSize { get; set; }
+        public List<int> HeaderRows { get; } = new List<int>();
+        public List<SupplierImportFieldDecisionTrace> FieldDecisions { get; } = new List<SupplierImportFieldDecisionTrace>();
     }
 
     public sealed class SupplierExcelColumn : INotifyPropertyChanged
@@ -108,8 +139,21 @@ namespace Win7POS.Core.Import
 
     public sealed class SupplierExcelRow
     {
+        private readonly List<string> _values;
+
+        public SupplierExcelRow()
+            : this(0, new List<string>())
+        {
+        }
+
+        internal SupplierExcelRow(int rowNumber, List<string> values)
+        {
+            RowNumber = rowNumber;
+            _values = values ?? new List<string>();
+        }
+
         public int RowNumber { get; set; }
-        public List<string> Values { get; } = new List<string>();
+        public List<string> Values { get { return _values; } }
     }
 
     public sealed class SupplierImportAnalysis
@@ -127,6 +171,7 @@ namespace Win7POS.Core.Import
         public int DataRowIndex { get; set; }
         public int HeaderRowNumber { get; set; }
         public int SkippedMetadataRows { get; set; }
+        public SupplierImportDetectionTrace DetectionTrace { get; set; } = new SupplierImportDetectionTrace();
         public bool CanApply { get { return Errors.Count == 0; } }
     }
 
@@ -181,11 +226,53 @@ namespace Win7POS.Core.Import
         public List<SupplierImportError> Errors { get; } = new List<SupplierImportError>();
         public List<SupplierImportEditableRow> FinalRows { get; } = new List<SupplierImportEditableRow>();
         public List<SupplierImportEditableRow> ValidatedRows { get; } = new List<SupplierImportEditableRow>();
+        public List<SupplierImportApplyExpectation> ApplyExpectations { get; } = new List<SupplierImportApplyExpectation>();
+        public SupplierImportApplyContextExpectation ApplyContext { get; set; } =
+            new SupplierImportApplyContextExpectation();
         public string Fingerprint { get; set; } = string.Empty;
         public bool CanApply
         {
             get { return Errors.Count == 0 && Summary.NonSkippedRows > 0; }
         }
+    }
+
+    /// <summary>
+    /// Step 4 shop/account baseline used only for apply-time transactional
+    /// revalidation. Like the per-product expectations, it is deliberately
+    /// excluded from the Android-parity preview fingerprint.
+    /// </summary>
+    public sealed class SupplierImportApplyContextExpectation
+    {
+        public bool IsCaptured { get; set; }
+        public string ShopId { get; set; } = string.Empty;
+        public string ShopCode { get; set; } = string.Empty;
+        public long TransitionEpoch { get; set; }
+    }
+
+    /// <summary>
+    /// Target-scoped Step 4 database baseline used only for apply-time
+    /// transactional revalidation. It is intentionally separate from the
+    /// Android-parity preview fingerprint so the established fingerprint
+    /// contract remains byte-for-byte stable.
+    /// </summary>
+    public sealed class SupplierImportApplyExpectation
+    {
+        public int RowNumber { get; set; }
+        public string Barcode { get; set; } = string.Empty;
+        public bool Exists { get; set; }
+        public long ProductId { get; set; }
+        public bool IsActive { get; set; }
+        public bool HasMeta { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public long RetailPrice { get; set; }
+        public string ItemNumber { get; set; } = string.Empty;
+        public string SecondProductName { get; set; } = string.Empty;
+        public int PurchasePrice { get; set; }
+        public int Quantity { get; set; }
+        public int? SupplierId { get; set; }
+        public string Supplier { get; set; } = string.Empty;
+        public int? CategoryId { get; set; }
+        public string Category { get; set; } = string.Empty;
     }
 
     public sealed class SupplierImportSyncSummary

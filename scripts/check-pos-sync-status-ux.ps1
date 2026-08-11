@@ -16,12 +16,44 @@ function Read-Text([string]$relativePath) {
     [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
 }
 
+. (Join-Path $PSScriptRoot "sales-sync-outbox-gate-helpers.ps1")
+
+function Test-SalesOutboxFacadeDelegation(
+    [string]$text,
+    [string]$methodName,
+    [string]$writerName,
+    [string[]]$forwarding) {
+    $slices = @(Get-CSharpMethodSlices $text "public" $methodName)
+    if ($slices.Count -eq 0 -or $slices.Count -ne $forwarding.Count) {
+        return $false
+    }
+
+    for ($index = 0; $index -lt $slices.Count; $index++) {
+        $slice = $slices[$index].Text
+        $delegation = "_salesSyncOutbox\s*\.\s*" +
+            [regex]::Escape($writerName) + "\s*\("
+        $exactForwarding = "(?s)_salesSyncOutbox\s*\.\s*" +
+            [regex]::Escape($writerName) + "\s*\(\s*" +
+            $forwarding[$index] + "\s*\)"
+        if ([regex]::Matches($slice, $delegation).Count -ne 1 -or
+            [regex]::Matches($slice, $exactForwarding).Count -ne 1 -or
+            $slice -match "\bsales_sync_outbox\b|\b(?:conn|_factory)\s*\.\s*(?:Execute(?:Scalar)?|Query(?:Single(?:OrDefault)?)?)Async\b|\b(?:Open|BeginTransaction|Commit|Rollback)\s*\(") {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 $required = @(
     "src/Win7POS.Wpf/MainWindow.xaml",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
+    "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
     "src/Win7POS.Wpf/Pos/PosViewModel.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml",
@@ -43,9 +75,12 @@ if ($fail) { exit 1 }
 
 $mainXaml = Read-Text "src/Win7POS.Wpf/MainWindow.xaml"
 $mainCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
 $reader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $catalogState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
+$catalogSaleSafetyPolicy = Read-Text "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs"
 $sales = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$salesOutbox = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $catalogOutbox = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $shopDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml"
@@ -60,6 +95,8 @@ $workflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $localization = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
 $secondaryLocalization = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs"
 $uxCopy = $reader + $mainXaml + $shopDialog + $localization + $secondaryLocalization
+$summaryFacadeDelegates = Test-SalesOutboxFacadeDelegation $sales "GetSalesSyncOutboxSummaryAsync" "GetSummaryAsync" @("\s*")
+$unresolvedFacadeDelegates = Test-SalesOutboxFacadeDelegation $sales "HasUnresolvedSalesSyncOutboxAsync" "HasUnresolvedAsync" @("\s*")
 
 foreach ($label in @("Online", "Offline", "Non collegato", "Sessione da ricollegare", "Ultimo catalogo", "Ultima vendita inviata", "Vendite in coda", "Da ritentare", "Bloccate", "Ultimo errore", "Negozio", "Dispositivo", "Staff online", "Sessione verificata")) {
     if ($uxCopy -notmatch [regex]::Escape($label)) {
@@ -72,7 +109,9 @@ if ($mainCode -notmatch "DispatcherTimer" -or $mainCode -notmatch "TimeSpan\.Fro
 if ($mainCode -notmatch "PosSyncStatusReader") { Fail "main shell does not use sync status reader" } else { Pass "main shell uses sync status reader" }
 if ($reader -match "DeviceToken|SessionToken|ProtectedDeviceSecret|ProtectedSessionSecret") { Fail "sync status reader must not expose POS secrets" } else { Pass "sync status reader avoids POS secrets" }
 if ($reader -notmatch "pos\.catalog\.last_sync_at" -or $reader -notmatch "pos\.sales_sync\.last_success_at") { Fail "sync status reader must show catalog and sales sync timestamps" } else { Pass "sync timestamps present" }
-if ($uxCopy -notmatch "Bloccate" -or $sales -notmatch "failed_blocked" -or $sales -notmatch "GetSalesSyncOutboxSummaryAsync") { Fail "outbox summary must expose pending/retry/blocked" } else { Pass "outbox summary exposes pending/retry/blocked" }
+if ($uxCopy -notmatch "Bloccate" -or
+    -not $summaryFacadeDelegates -or
+    $salesOutbox -notmatch 'CountFor\("failed_blocked"\)') { Fail "outbox summary must expose pending/retry/blocked" } else { Pass "outbox summary exposes pending/retry/blocked through F4" }
 if ($reader -notmatch "CatalogImportOutboxRepository" -or $reader -notmatch "GetSummaryAsync" -or $reader -notmatch "pendingCatalogImports" -or $reader -notmatch "catalogOutbox\.Blocked") { Fail "sync status must surface catalog import outbox pending/retry/blocked" } else { Pass "sync status surfaces catalog import outbox" }
 if ($reader -notmatch "DetailedPendingOutboxText" -or $reader -notmatch "salesOutbox\.Blocked" -or $reader -notmatch "catalogOutbox\.Blocked") { Fail "sync status must separate sales and catalog import retry/blocked counts" } else { Pass "sync status separates sales/catalog import retry and blocked counts" }
 if ($reader -notmatch "BlockedOutboxText" -or $reader -notmatch "RetryOutboxText" -or $reader -notmatch "salesOutbox\.Retry" -or $reader -notmatch "catalogOutbox\.Retry") { Fail "sync status headline must separate sales and catalog retry/blocked counts" } else { Pass "sync status headline separates sales/catalog retry and blocked counts" }
@@ -80,10 +119,12 @@ if ($catalogOutbox -notmatch "InProgress" -or $catalogOutbox -notmatch "PendingO
 if ($uxCopy -notmatch "Sync in corso" -or $reader -notmatch "IsSyncing" -or $salesSync -notmatch "pos\.sales_sync\.in_progress") { Fail "syncing status must be visible while background sync runs" } else { Pass "syncing status visible" }
 if ($salesSync -notmatch "Interlocked\.CompareExchange" -or $salesSync -notmatch "Sales sync skipped: already running") { Fail "sales sync service must guard concurrent runs" } else { Pass "sales sync concurrency guard present" }
 if ($salesSync -notmatch "pos\.sales_sync\.last_success_at" -or $salesSync -notmatch "pos\.sales_sync\.last_error") { Fail "sales sync diagnostics settings missing" } else { Pass "sales sync diagnostics settings present" }
-if ($workflow -notmatch 'InsertSaleAsync\([\s\S]{0,220}QueueSalesOutboxSyncNoThrow\(\)' -or
+if ($workflow -notmatch 'InsertAuthorizedSaleAsync\([\s\S]{0,2500}QueueSalesOutboxSyncNoThrow\(\)' -or
     $workflow -notmatch 'QueueSalesOutboxSyncNoThrow[\s\S]{0,260}PosOnlineSyncSignalBus\.Signal\([\s\S]{0,120}OnlineSyncLane\.SalesOutbox,[\s\S]{0,100}OnlineSyncLaneTrigger\.LocalCommit' -or
     $posViewModel -match "await _service\.TrySyncPendingSalesAsync\(\)\.ConfigureAwait\(true\)") { Fail "payment path must signal sales sync without awaiting remote sync" } else { Pass "payment path signals sales sync without awaiting remote sync" }
-if ($sales -notmatch "HasUnresolvedSalesSyncOutboxAsync" -or $workflow -notmatch "HasUnresolvedSalesSyncOutboxAsync" -or $workflow -notmatch "restore blocked") { Fail "restore must block when unresolved outbox rows exist" } else { Pass "restore blocks unresolved outbox rows" }
+if (-not $unresolvedFacadeDelegates -or
+    $salesOutbox -notmatch "WHERE status IN \('pending', 'retry', 'in_progress', 'failed_blocked'\)" -or
+    $workflow -notmatch "HasUnresolvedSalesSyncOutboxAsync" -or $workflow -notmatch "restore blocked") { Fail "restore must block when unresolved outbox rows exist" } else { Pass "restore blocks unresolved outbox rows through F4" }
 if ($shopDialog -notmatch "SyncStatusText" -or $shopDialog -notmatch "PendingSalesText") { Fail "shop dialog must surface sync status details" } else { Pass "shop dialog sync details present" }
 if ($reader -notmatch "LoadExactnessAsync" -or $reader -notmatch "CatalogCompletenessText" -or $reader -notmatch "CatalogCountsText" -or $reader -notmatch "CatalogSyncModeText") { Fail "sync status must expose catalog exactness, local counts and sync mode" } else { Pass "catalog exactness diagnostics exposed" }
 if ($reader -notmatch "CatalogCompletenessStatus\.Verified" -or $reader -notmatch "catalogExactness\.RepairRequired" -or $reader -notmatch "RequiresAttention") { Fail "catalog mismatch/unverified state must require operator attention" } else { Pass "catalog exactness contributes to attention state" }
@@ -94,8 +135,8 @@ if ($reader -notmatch "EvaluateSaleSafetyForOfficialShopAsync" -or
     $catalogState -notmatch "EvaluateSaleSafetyAsync" -or
     $catalogState -notmatch "allowLegacyUnbound:\s*false" -or
     $catalogState -notmatch "allowLegacyUnbound:\s*true" -or
-    $catalogState -notmatch "TryParseOptionalBinaryFlag" -or
-    $catalogState -notmatch "catalog_sale_blocked_repair_state_invalid" -or
+    $catalogSaleSafetyPolicy -notmatch "TryParseOptionalBinaryFlag" -or
+    $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_repair_state_invalid" -or
     $catalogState -notmatch "throw new InvalidOperationException\(evaluation\.ReasonCode\)") {
     Fail "sync readiness and ordinary-sale persistence must share one shop-bound sale-safety evaluation with a redacted reason code"
 } else {
@@ -110,12 +151,12 @@ if ($syncCenter -notmatch 'x:Class="Win7POS\.Wpf\.Pos\.Dialogs\.SyncCenterDialog
 if ($syncCenterCode -notmatch "ApplyConfirmDialog\.ShowConfirm" -or
     $mainCode -notmatch "AuthorizeFullCatalogRepairAsync" -or
     $mainCode -notmatch "PermissionCodes\.DbMaintenance" -or
-    $mainCode -notmatch "requestedTrigger\s*==\s*CatalogSyncTrigger\.AdministratorRepair" -or
+    $startupCoordinator -notmatch "requestedTrigger\s*==\s*CatalogSyncTrigger\.AdministratorRepair" -or
     $mainCode -notmatch '"CatalogFullRepair"') { Fail "Full Repair must be owner-safe, confirmed and protected by database maintenance permission" } else { Pass "Full Repair is confirmed and permission protected" }
 if ($syncCenter -notmatch "DialogCancelButtonStyle" -or $syncCenter -notmatch "DialogActionButtonStyle" -or $syncCenter -notmatch "AutomationProperties\.Name") { Fail "Sync Center actions must use shared dialog resources and automation names" } else { Pass "Sync Center actions use shared resources and automation names" }
 if ($mainCode -notmatch "allowFullDecision:\s*administratorRepairAuthorized" -or
-    $mainCode -notmatch "!allowFullDecision\s*&&\s*previewDecision\.Mode\s*==\s*CatalogSyncMode\.Full" -or
-    $mainCode -notmatch "catalog_sync_full_repair_required") { Fail "Sync Now must not be able to start a Full run" } else { Pass "Sync Now is constrained to incremental/resume" }
+    $startupCoordinator -notmatch "!allowFullDecision\s*&&\s*previewDecision\.Mode\s*==\s*CatalogSyncMode\.Full" -or
+    $startupCoordinator -notmatch "catalog_sync_full_repair_required") { Fail "Sync Now must not be able to start a Full run" } else { Pass "Sync Now is constrained to incremental/resume" }
 if ($syncCenterCode -notmatch "_fullRepairRunning" -or
     $syncCenterCode -notmatch "OnClosing\(CancelEventArgs e\)" -or
     $syncCenterCode -notmatch "e\.Cancel\s*=\s*true" -or

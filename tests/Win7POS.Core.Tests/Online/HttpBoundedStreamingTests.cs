@@ -52,6 +52,22 @@ public sealed class HttpBoundedStreamingTests
     }
 
     [TestMethod]
+    public async Task FirstLoginSuccessWithoutAnApplicationCode_RemainsAValidTransportSuccess()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes("{\"ok\":true}")));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.FirstLoginAsync(new PosFirstLoginRequest(), CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(result.Value);
+        Assert.IsTrue(result.Value.Ok);
+        Assert.IsTrue(result.RequestReachedServer);
+        Assert.AreEqual(200, result.HttpStatus.GetValueOrDefault());
+    }
+
+    [TestMethod]
     public async Task ExcessiveDeclaredContentLengthIsRejectedBeforeBodyRead()
     {
         var content = new StreamingOnlyContent(() => new MemoryStream(Array.Empty<byte>()));
@@ -115,6 +131,271 @@ public sealed class HttpBoundedStreamingTests
         Assert.AreEqual("device_revoked", result.Code);
         Assert.AreEqual("Access denied", result.Message);
         Assert.AreEqual("server-123", result.ServerRequestId);
+    }
+
+    [TestMethod]
+    public async Task HttpFailure_PropagatesStatusAndCorrelationHeadersWithoutBodyLogging()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(
+                "{\"ok\":false,\"code\":\"db_failure\",\"message\":\"server unavailable\"}")));
+        var handler = new StubHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = content
+            };
+            response.Headers.TryAddWithoutValidation("X-Request-Id", "server-500");
+            response.Headers.TryAddWithoutValidation("CF-Ray", "ray-500");
+            return response;
+        });
+        using var client = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            handler);
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("db_failure", result.Code);
+        Assert.AreEqual(500, result.HttpStatus);
+        Assert.AreEqual("server-500", result.ServerRequestId);
+        Assert.AreEqual("ray-500", result.CfRay);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.ClientRequestId));
+        Assert.IsTrue(result.ElapsedMilliseconds >= 0);
+        Assert.IsTrue(result.RequestReachedServer);
+        Assert.IsTrue(result.Retryable);
+    }
+
+    [TestMethod]
+    public async Task UnauthorizedResponse_IsMarkedDeniedAndIsNotRetryableByTheCaller()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(
+                "{\"ok\":false,\"code\":\"denied\",\"message\":\"not authorized\"}")));
+        using var client = CreateClient(HttpStatusCode.Unauthorized, content);
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.IsTrue(result.Denied);
+        Assert.AreEqual(401, result.HttpStatus.GetValueOrDefault());
+        Assert.AreEqual("denied", result.Code);
+    }
+
+    [TestMethod]
+    public async Task EmptyErrorCode_IsClassifiedFromTheHttpStatus()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes("{\"ok\":false}")));
+        using var client = CreateClient(HttpStatusCode.Forbidden, content);
+
+        var result = await client.FirstLoginAsync(new PosFirstLoginRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.IsTrue(result.Denied);
+        Assert.AreEqual("http_403", result.Code);
+        Assert.AreEqual(403, result.HttpStatus.GetValueOrDefault());
+        Assert.IsTrue(result.RequestReachedServer);
+        Assert.IsFalse(result.Retryable);
+        Assert.AreEqual(string.Empty, result.ExceptionType);
+    }
+
+    [TestMethod]
+    public async Task NetworkFailure_IsClassifiedWithoutAnHttpResponse()
+    {
+        using var client = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new HttpRequestException("synthetic network failure")));
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.IsFalse(result.Denied);
+        Assert.AreEqual("network_error", result.Code);
+        Assert.IsNull(result.HttpStatus);
+        Assert.IsFalse(result.RequestReachedServer);
+        Assert.IsTrue(result.Retryable);
+        Assert.AreEqual("HttpRequestException", result.ExceptionType);
+    }
+
+    [TestMethod]
+    public async Task TransportFailure_DistinguishesDnsAndTlsWithoutReadingABody()
+    {
+        using var dnsClient = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new HttpRequestException(
+                "synthetic",
+                new WebException("synthetic", WebExceptionStatus.NameResolutionFailure))));
+        using var tlsClient = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new HttpRequestException(
+                "synthetic",
+                new WebException("synthetic", WebExceptionStatus.TrustFailure))));
+        using var secureChannelClient = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new HttpRequestException(
+                "synthetic",
+                new WebException("synthetic", WebExceptionStatus.SecureChannelFailure))));
+
+        var dns = await dnsClient.FirstLoginAsync(new PosFirstLoginRequest(), CancellationToken.None);
+        var tls = await tlsClient.FirstLoginAsync(new PosFirstLoginRequest(), CancellationToken.None);
+        var secureChannel = await secureChannelClient.FirstLoginAsync(
+            new PosFirstLoginRequest(),
+            CancellationToken.None);
+
+        Assert.AreEqual("dns", dns.Code);
+        Assert.IsFalse(dns.RequestReachedServer);
+        Assert.IsTrue(dns.Retryable);
+        Assert.AreEqual("tls", tls.Code);
+        Assert.IsFalse(tls.RequestReachedServer);
+        Assert.IsTrue(tls.Retryable);
+        Assert.AreEqual("tls", secureChannel.Code);
+        Assert.IsFalse(secureChannel.RequestReachedServer);
+    }
+
+    [TestMethod]
+    public async Task TransportTimeout_IsNotReportedAsAnApplicationFailure()
+    {
+        using var client = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new TaskCanceledException("synthetic transport timeout")));
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.IsFalse(result.Denied);
+        Assert.AreEqual("timeout", result.Code);
+        Assert.IsNull(result.HttpStatus);
+        Assert.IsFalse(result.RequestReachedServer);
+        Assert.IsTrue(result.Retryable);
+        Assert.AreEqual("OperationCanceledException", result.ExceptionType);
+    }
+
+    [TestMethod]
+    public async Task InvalidJson_IsClassifiedAsInvalidResponseWithoutRetainingTheBody()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes("not-json-response")));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("invalid_response", result.Code);
+        Assert.AreEqual(200, result.HttpStatus.GetValueOrDefault());
+        Assert.IsFalse(result.Message.Contains("not-json-response", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task TruncatedJsonObject_IsClassifiedAsRetryableIoFailure()
+    {
+        const string truncated =
+            "{\"ok\":true,\"catalog\":{\"prices\":[{\"priceId\":\"unterminated";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(truncated)));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(
+            new PosCatalogPullRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("io_error", result.Code);
+        Assert.AreEqual(200, result.HttpStatus.GetValueOrDefault());
+        Assert.IsTrue(result.RequestReachedServer);
+        Assert.IsTrue(result.Retryable);
+        Assert.IsFalse(result.Message.Contains(truncated, StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task CompleteJsonWithContractTypeMismatch_RemainsInvalidResponse()
+    {
+        const string typeMismatch = "{\"ok\":true,\"catalog\":5}";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(typeMismatch)));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(
+            new PosCatalogPullRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("invalid_response", result.Code);
+        Assert.AreEqual(200, result.HttpStatus.GetValueOrDefault());
+        Assert.IsFalse(result.Retryable);
+        Assert.IsFalse(result.Message.Contains(typeMismatch, StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task TruncationAfterNestedObjectClose_IsClassifiedAsRetryableIoFailure()
+    {
+        const string missingOuterClose = "{\"ok\":true,\"catalog\":{\"prices\":[]}";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(missingOuterClose)));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(
+            new PosCatalogPullRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("io_error", result.Code);
+        Assert.IsTrue(result.Retryable);
+    }
+
+    [TestMethod]
+    public async Task TrailingContentAfterCompleteJson_RemainsInvalidResponse()
+    {
+        const string trailingContent = "{\"ok\":true}x";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(trailingContent)));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(
+            new PosCatalogPullRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("invalid_response", result.Code);
+        Assert.IsFalse(result.Retryable);
+    }
+
+    [TestMethod]
+    public async Task CompleteJsonShorterThanDeclaredLength_IsRetryableIoFailure()
+    {
+        const string completeJson = "{\"ok\":true}";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(completeJson)));
+        content.Headers.ContentLength =
+            Encoding.UTF8.GetByteCount(completeJson) + 8;
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.HeartbeatAsync(
+            new PosHeartbeatRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("io_error", result.Code);
+        Assert.IsTrue(result.Retryable);
+        Assert.IsTrue(result.RequestReachedServer);
+    }
+
+    [TestMethod]
+    public async Task EmptyBodyShorterThanDeclaredLength_IsRetryableIoFailure()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Array.Empty<byte>()));
+        content.Headers.ContentLength = 32;
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.HeartbeatAsync(
+            new PosHeartbeatRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("io_error", result.Code);
+        Assert.IsTrue(result.Retryable);
+        Assert.IsTrue(result.RequestReachedServer);
     }
 
     [TestMethod]

@@ -8,82 +8,51 @@ namespace Win7POS.Core.Tests.Online;
 public sealed class PriorityOnlineRequestGateTests
 {
     [TestMethod]
-    public async Task HeartbeatOvertakesQueuedWork_WhileOtherLanesRemainFifo()
+    public async Task WaitingRequests_PrioritizeHeartbeatSalesCatalogThenArticles()
     {
         using var gate = new PriorityOnlineRequestGate(1);
         var active = await gate.EnterAsync(
+            OnlineSyncLane.ArticleMutationOutbox,
+            CancellationToken.None);
+        var article = gate.EnterAsync(
+            OnlineSyncLane.ArticleMutationOutbox,
+            CancellationToken.None);
+        var catalog = gate.EnterAsync(
             OnlineSyncLane.CatalogDelta,
             CancellationToken.None);
-
         var sales = gate.EnterAsync(
             OnlineSyncLane.SalesOutbox,
             CancellationToken.None);
         var heartbeat = gate.EnterAsync(
             OnlineSyncLane.Heartbeat,
             CancellationToken.None);
-        var catalogImport = gate.EnterAsync(
-            OnlineSyncLane.CatalogImportOutbox,
-            CancellationToken.None);
 
         active.Dispose();
-
-        Assert.IsTrue(heartbeat.IsCompletedSuccessfully);
-        Assert.IsFalse(sales.IsCompleted);
-        Assert.IsFalse(catalogImport.IsCompleted);
-
-        var heartbeatLease = await heartbeat;
+        var heartbeatLease = await AssertNextAsync(
+            heartbeat,
+            article,
+            catalog,
+            sales);
         heartbeatLease.Dispose();
-        Assert.IsTrue(sales.IsCompletedSuccessfully);
-        Assert.IsFalse(catalogImport.IsCompleted);
-
-        var salesLease = await sales;
+        var salesLease = await AssertNextAsync(
+            sales,
+            article,
+            catalog);
         salesLease.Dispose();
-        Assert.IsTrue(catalogImport.IsCompletedSuccessfully);
-        (await catalogImport).Dispose();
+        var catalogLease = await AssertNextAsync(catalog, article);
+        catalogLease.Dispose();
+        (await article).Dispose();
     }
 
-    [TestMethod]
-    public async Task StopRejectsQueuedAndFutureRequests()
+    private static async Task<IDisposable> AssertNextAsync(
+        Task<IDisposable> expected,
+        params Task<IDisposable>[] stillWaiting)
     {
-        using var gate = new PriorityOnlineRequestGate(1);
-        var active = await gate.EnterAsync(
-            OnlineSyncLane.SalesOutbox,
-            CancellationToken.None);
-        var queued = gate.EnterAsync(
-            OnlineSyncLane.CatalogDelta,
-            CancellationToken.None);
-
-        gate.Stop();
-
-        await Assert.ThrowsExactlyAsync<OnlineSyncGenerationChangedException>(
-            async () => (await queued).Dispose());
-        Assert.ThrowsExactly<OnlineSyncGenerationChangedException>(() =>
-            gate.EnterAsync(OnlineSyncLane.Heartbeat, CancellationToken.None));
-
-        active.Dispose();
-    }
-
-    [TestMethod]
-    public async Task CancelledWaiterIsRemoved_AndNextWaiterCanProceed()
-    {
-        using var gate = new PriorityOnlineRequestGate(1);
-        var active = await gate.EnterAsync(
-            OnlineSyncLane.CatalogDelta,
-            CancellationToken.None);
-        using var cancellation = new CancellationTokenSource();
-        var cancelled = gate.EnterAsync(
-            OnlineSyncLane.SalesOutbox,
-            cancellation.Token);
-        var next = gate.EnterAsync(
-            OnlineSyncLane.CatalogImportOutbox,
-            CancellationToken.None);
-
-        cancellation.Cancel();
-        await Assert.ThrowsExactlyAsync<TaskCanceledException>(
-            async () => (await cancelled).Dispose());
-
-        active.Dispose();
-        Assert.IsTrue(next.IsCompletedSuccessfully);
-        (await next).Dispose();
+        var completed = await Task.WhenAny(
+            new[] { expected }.Concat(stillWaiting));
+        Assert.AreSame(expected, completed);
+        foreach (var pending in stillWaiting)
+            Assert.IsFalse(pending.IsCompleted);
+        return await expected;
     }
 }

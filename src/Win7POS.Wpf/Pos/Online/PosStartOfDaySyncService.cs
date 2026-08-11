@@ -86,17 +86,16 @@ namespace Win7POS.Wpf.Pos.Online
             if (lanes == null)
                 return Block(result, "sync_supervisor_inactive", T("startOfDay.blockAuthDenied"), "session", progress);
 
-            if (lanes.Heartbeat?.AuthenticationDenied == true ||
-                lanes.Sales?.AuthenticationDenied == true ||
-                lanes.CatalogImport?.AuthenticationDenied == true ||
-                lanes.CatalogDelta?.AuthenticationDenied == true)
+            if (lanes.AuthenticationDenied)
             {
                 return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "session", progress);
             }
 
             var catalogRequired = result.RestoreNeedsReview ||
                 lanes.Heartbeat?.RequestCatalogNow == true ||
-                lanes.CatalogImport?.RequestCatalogNow == true;
+                lanes.CatalogImport?.RequestCatalogNow == true ||
+                lanes.ArticleMutations?.RequestCatalogNow == true ||
+                lanes.ProductImages?.RequestCatalogNow == true;
             var catalogLane = lanes.CatalogDelta;
             if (catalogRequired && catalogLane == null)
             {
@@ -121,6 +120,9 @@ namespace Win7POS.Wpf.Pos.Online
                 result.BlockedSales) == StartOfDaySalesDrainDecision.Complete;
             var importComplete = result.PendingCatalogImports == 0 &&
                 result.RetryCatalogImports == 0;
+            var articleComplete = result.PendingArticleMutations == 0 &&
+                result.RetryArticleMutations == 0 &&
+                result.InProgressArticleMutations == 0;
             var catalogComplete = !catalogRequired ||
                 (catalogLane?.Success == true && catalogLane.CatalogHasMore == false);
 
@@ -143,6 +145,7 @@ namespace Win7POS.Wpf.Pos.Online
             result.ShouldContinueInBackground = !heartbeatHealthy ||
                 !salesComplete ||
                 !importComplete ||
+                !articleComplete ||
                 !catalogComplete;
             result.BlockingReason = string.Empty;
             result.CatalogStatus = !catalogRequired
@@ -170,6 +173,9 @@ namespace Win7POS.Wpf.Pos.Online
             var catalogOutbox = await new CatalogImportOutboxRepository(factory)
                 .GetSummaryAsync()
                 .ConfigureAwait(false);
+            var articleOutbox = await new ArticleMutationOutboxRepository(factory)
+                .GetSummaryAsync()
+                .ConfigureAwait(false);
             result.PendingSales = ToSafeInt(outbox.Pending);
             result.RetrySales = ToSafeInt(outbox.Retry);
             result.InProgressSales = ToSafeInt(outbox.InProgress);
@@ -177,6 +183,13 @@ namespace Win7POS.Wpf.Pos.Online
             result.PendingCatalogImports = ToSafeInt(catalogOutbox.Pending + catalogOutbox.InProgress);
             result.RetryCatalogImports = ToSafeInt(catalogOutbox.Retry);
             result.BlockedCatalogImports = ToSafeInt(catalogOutbox.Blocked);
+            result.PendingArticleMutations = ToSafeInt(
+                articleOutbox.WaitingDependency + articleOutbox.Pending);
+            result.RetryArticleMutations = ToSafeInt(articleOutbox.RetryWait);
+            result.InProgressArticleMutations = ToSafeInt(
+                articleOutbox.InProgress);
+            result.BlockedArticleMutations = ToSafeInt(
+                articleOutbox.FailedBlocked);
         }
 
         private static bool HasAnyUnresolvedOutbox(StartOfDaySyncResult result)
@@ -187,7 +200,11 @@ namespace Win7POS.Wpf.Pos.Online
                 result.BlockedSales > 0 ||
                 result.PendingCatalogImports > 0 ||
                 result.RetryCatalogImports > 0 ||
-                result.BlockedCatalogImports > 0;
+                result.BlockedCatalogImports > 0 ||
+                result.PendingArticleMutations > 0 ||
+                result.RetryArticleMutations > 0 ||
+                result.InProgressArticleMutations > 0 ||
+                result.BlockedArticleMutations > 0;
         }
 
 
@@ -294,6 +311,10 @@ namespace Win7POS.Wpf.Pos.Online
         public int PendingCatalogImports { get; set; }
         public int RetryCatalogImports { get; set; }
         public int BlockedCatalogImports { get; set; }
+        public int PendingArticleMutations { get; set; }
+        public int RetryArticleMutations { get; set; }
+        public int InProgressArticleMutations { get; set; }
+        public int BlockedArticleMutations { get; set; }
         public string CatalogStatus { get; set; } = string.Empty;
         public bool CatalogSaleSafe { get; set; }
         internal bool CatalogImportAckedThisRun { get; set; }

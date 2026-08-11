@@ -4,6 +4,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $xamlPath = Join-Path $repoRoot "src/Win7POS.Wpf/Products/ProductEditDialog.xaml"
 $viewModelPath = Join-Path $repoRoot "src/Win7POS.Wpf/Products/ProductEditViewModel.cs"
 $repositoryPath = Join-Path $repoRoot "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$localProductWriterPath = Join-Path $repoRoot "src/Win7POS.Data/Repositories/LocalProductWriter.cs"
+$productMetaResolverPath = Join-Path $repoRoot "src/Win7POS.Data/Repositories/ProductMetaResolver.cs"
 $contentPolicyPath = Join-Path $repoRoot "src/Win7POS.Core/Receipt/ReceiptContentPolicy.cs"
 
 $fail = $false
@@ -29,6 +31,8 @@ function Read-Text([string]$path) {
 $xaml = Read-Text $xamlPath
 $viewModel = Read-Text $viewModelPath
 $repository = Read-Text $repositoryPath
+$localProductWriter = Read-Text $localProductWriterPath
+$productMetaResolver = Read-Text $productMetaResolverPath
 $contentPolicy = Read-Text $contentPolicyPath
 
 Write-Host "Checking ProductEdit free-text supplier/category support..."
@@ -61,12 +65,15 @@ if ($viewModel -match 'SalesReceiptContentPolicy\.IsValidBarcode\(Barcode\)' -an
     Fail "ViewModel must reject unsafe barcode/name values without truncation"
 }
 
-if ($repository -match 'UpsertAsync[\s\S]{0,350}EnsureValidProductIdentity' -and
-    $repository -match 'UpsertProductAndMetaInTransactionAsync[\s\S]{0,500}EnsureValidProductIdentity' -and
-    $repository -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]{0,500}EnsureValidProductIdentity') {
-    Pass "Product repository enforces receipt-safe identity at write sinks"
+if ($repository -match '_localProductWriter\.UpsertAsync' -and
+    $repository -match '_localProductWriter\.UpsertProductAndMetaInTransactionAsync' -and
+    $repository -match '_localProductWriter\.UpdateProductAndMetaWithPriceHistoryAsync' -and
+    $localProductWriter -match 'UpsertAsync[\s\S]{0,350}EnsureValidProductIdentity' -and
+    $localProductWriter -match 'UpsertProductAndMetaInTransactionAsync[\s\S]{0,1200}EnsureValidProductIdentity' -and
+    $localProductWriter -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]{0,1200}EnsureValidProductIdentity') {
+    Pass "Product facade and local writer enforce receipt-safe identity at write sinks"
 } else {
-    Fail "Product repository write sinks must enforce receipt-safe identity"
+    Fail "Product facade/local writer write sinks must enforce receipt-safe identity"
 }
 
 foreach ($snippet in @(
@@ -88,32 +95,34 @@ foreach ($snippet in @(
     "FindSupplierByNormalizedNameAsync",
     "FindCategoryByNormalizedNameAsync"
 )) {
-    if ($repository.Contains($snippet)) {
-        Pass "ProductRepository contains $snippet"
+    if ($productMetaResolver.Contains($snippet)) {
+        Pass "ProductMetaResolver contains $snippet"
     } else {
-        Fail "ProductRepository must contain $snippet"
+        Fail "ProductMetaResolver must contain $snippet"
     }
 }
 
-if ($repository -match 'BeginTransaction\(\)[\s\S]*ResolveSupplierReferenceAsync[\s\S]*ResolveCategoryReferenceAsync[\s\S]*INSERT OR REPLACE INTO product_meta[\s\S]*tx\.Commit\(\)') {
+if ($localProductWriter -match 'UpsertProductAndMetaInTransactionAsync[\s\S]{0,800}BeginTransaction\(\)' -and
+    $localProductWriter -match 'UpsertProductAndMetaInTransactionCoreAsync[\s\S]{0,5000}ProductMetaResolver\.ResolveSupplierReferenceAsync[\s\S]{0,1000}ProductMetaResolver\.ResolveCategoryReferenceAsync[\s\S]{0,2000}INSERT OR REPLACE INTO product_meta' -and
+    $localProductWriter -match 'tx\.Commit\(\)') {
     Pass "Create path resolves supplier/category inside product transaction"
 } else {
     Fail "Create path must resolve supplier/category inside the product transaction"
 }
 
-if ($repository -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]*BeginTransaction\(\)[\s\S]*ResolveSupplierReferenceAsync[\s\S]*ResolveCategoryReferenceAsync[\s\S]*INSERT OR REPLACE INTO product_meta[\s\S]*tx\.Commit\(\)') {
+if ($localProductWriter -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]*BeginTransaction\(\)[\s\S]*ProductMetaResolver\.ResolveSupplierReferenceAsync[\s\S]*ProductMetaResolver\.ResolveCategoryReferenceAsync[\s\S]*INSERT OR REPLACE INTO product_meta[\s\S]*tx\.Commit\(\)') {
     Pass "Edit path resolves supplier/category inside product transaction"
 } else {
     Fail "Edit path must resolve supplier/category inside the product transaction"
 }
 
-if ($repository -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]*BeginTransaction\(\)[\s\S]*INSERT INTO product_price_history[\s\S]*tx\.Commit\(\)') {
+if ($localProductWriter -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]*BeginTransaction\(\)[\s\S]*INSERT INTO product_price_history[\s\S]*tx\.Commit\(\)') {
     Pass "Edit path writes price history inside product transaction"
 } else {
     Fail "Edit path must write price history inside the product transaction"
 }
 
-if ($repository -match 'StringComparer\.OrdinalIgnoreCase|LOWER\(') {
+if ($productMetaResolver -match 'StringComparer\.OrdinalIgnoreCase|LOWER\(') {
     Pass "Case-insensitive duplicate guard is present"
 } else {
     Fail "Case-insensitive duplicate guard is required"

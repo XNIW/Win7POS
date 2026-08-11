@@ -1,0 +1,122 @@
+{
+  "fixtureVersion": "win7pos_catalog_consumer_tolerance_v1",
+  "sourcePolicySha256": "1cec15e9c623fb78ce7cfc27225e135fe5afea78be3b9ff1653369a0366ae9a6",
+  "displayCases": [
+    {
+      "id": "product_name_lf",
+      "field": "ProductName",
+      "sourceCanonical": "Tea House",
+      "raw": "Tea\nHouse",
+      "recovered": "Tea House",
+      "warning": "catalog_display_text_normalized",
+      "blocking": false
+    },
+    {
+      "id": "second_name_tab",
+      "field": "SecondProductName",
+      "sourceCanonical": "Tea House",
+      "raw": "Tea\tHouse",
+      "recovered": "Tea House",
+      "warning": "catalog_display_text_normalized",
+      "blocking": false
+    },
+    {
+      "id": "product_name_format_control",
+      "field": "ProductName",
+      "sourceCanonical": "TeaHouse",
+      "raw": "Tea\u200bHouse",
+      "recovered": "TeaHouse",
+      "warning": "catalog_display_text_control_removed",
+      "blocking": false
+    },
+    {
+      "id": "product_name_unpaired_surrogate",
+      "field": "ProductName",
+      "sourceCanonical": "�",
+      "rawUtf16CodeUnits": ["D800"],
+      "recovered": "�",
+      "warning": "catalog_display_text_replacement_used",
+      "blocking": false
+    },
+    {
+      "id": "product_name_crlf",
+      "field": "ProductName",
+      "sourceCanonical": "Tea House",
+      "raw": "Tea\r\nHouse",
+      "recovered": "Tea House",
+      "warning": "catalog_display_text_normalized",
+      "blocking": false
+    },
+    {
+      "id": "product_name_nbsp_repeated",
+      "field": "ProductName",
+      "sourceCanonical": "Tea House",
+      "raw": "  Tea\u00a0  House  ",
+      "recovered": "Tea House",
+      "warning": "catalog_display_text_normalized",
+      "blocking": false
+    },
+    {
+      "id": "product_name_bom_bidi_and_c1",
+      "field": "ProductName",
+      "sourceCanonical": "TeaHouse",
+      "raw": "Tea\ufeff\u202e\u0085House",
+      "recovered": "TeaHouse",
+      "warning": "catalog_display_text_control_removed",
+      "blocking": false
+    },
+    {
+      "id": "product_name_over_limit_uses_second_name",
+      "field": "ProductName",
+      "sourceCanonical": "Second tea name",
+      "rawLength": 513,
+      "recovered": "",
+      "fallback": "SecondProductName",
+      "warning": "catalog_display_text_over_limit_fallback",
+      "blocking": false
+    },
+    {
+      "id": "category_name_empty_after_recovery",
+      "field": "CategoryName",
+      "sourceCanonical": "category-1",
+      "raw": "\u202e",
+      "recovered": "category-1",
+      "fallback": "CategoryId",
+      "warning": "catalog_display_text_fallback_used",
+      "blocking": false
+    },
+    {
+      "id": "supplier_name_empty_after_recovery",
+      "field": "SupplierName",
+      "sourceCanonical": "supplier-1",
+      "raw": "\u200b",
+      "recovered": "supplier-1",
+      "fallback": "SupplierId",
+      "warning": "catalog_display_text_fallback_used",
+      "blocking": false
+    }
+  ],
+  "identityCases": [
+    {
+      "id": "barcode_lf",
+      "field": "Barcode",
+      "sourceCanonical": "12345678",
+      "raw": "1234\n5678",
+      "blocking": true
+    },
+    {
+      "id": "remote_id_control",
+      "field": "ProductId",
+      "sourceCanonical": "productid",
+      "raw": "product\u001fid",
+      "blocking": true
+    },
+    {
+      "id": "retail_price_nonfinite",
+      "field": "RetailPrice",
+      "sourceCanonical": "100",
+      "raw": "NaN",
+      "blocking": true
+    }
+  ]
+}

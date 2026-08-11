@@ -15,6 +15,7 @@ using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Products.Images;
 
 namespace Win7POS.Wpf.Products
 {
@@ -52,6 +53,9 @@ namespace Win7POS.Wpf.Products
         public ObservableCollection<SupplierListItem> FilteredSuppliers { get; } = new ObservableCollection<SupplierListItem>();
         public ObservableCollection<ProductCatalogStatChip> CatalogStatsChips { get; } = new ObservableCollection<ProductCatalogStatChip>();
 
+        public bool ProductImagesPhaseAEnabled =>
+            ProductImageFeatureFlags.IsPhaseAEnabled;
+
         public int PageSizeValue => PageSize;
         public int PageIndex { get => _pageIndex; set { var v = value < 1 ? 1 : value; if (_pageIndex == v) return; _pageIndex = v; OnPropertyChanged(); RaiseCanExecuteChanged(); } }
         public int TotalCount { get => _totalCount; private set { _totalCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalPages)); OnPropertyChanged(nameof(PagingStatus)); OnPropertyChanged(nameof(ResultSummary)); RaiseCanExecuteChanged(); } }
@@ -64,6 +68,14 @@ namespace Win7POS.Wpf.Products
             TotalPages);
         public string ResultSummary => PagingStatus;
         public bool IsEmpty => !IsBusy && Items.Count == 0;
+        private bool HasAppliedFilters =>
+            !string.IsNullOrWhiteSpace(_appliedSearchText) ||
+            _appliedCategoryId.HasValue ||
+            _appliedSupplierId.HasValue;
+        public string EmptyStateTitle => PosLocalization.T(
+            HasAppliedFilters ? "products.emptyFiltered" : "products.emptyCatalog");
+        public string EmptyStateHelp => PosLocalization.T(
+            HasAppliedFilters ? "products.emptyFilteredHelp" : "products.emptyCatalogHelp");
 
         private string _goPageText = "";
         public string GoPageText { get => _goPageText; set { _goPageText = value ?? ""; OnPropertyChanged(); } }
@@ -292,13 +304,7 @@ namespace Win7POS.Wpf.Products
 
         private bool HasPermission(string permissionCode)
         {
-            if (_permissionService != null)
-                return _permissionService.Has(permissionCode);
-
-            var user = OperatorSessionHolder.Current?.CurrentUser;
-            if (user == null) return false;
-            if (user.IsAdmin) return true;
-            return user.PermissionCodes?.Contains(permissionCode) == true;
+            return _permissionService?.Has(permissionCode) == true;
         }
 
         private bool CanEditCatalog => !IsBusy && HasPermission(PermissionCodes.CatalogEdit);
@@ -358,10 +364,20 @@ namespace Win7POS.Wpf.Products
 
         private async Task RefreshAsync()
         {
-            await LoadCategoriesAsync().ConfigureAwait(true);
-            await LoadSuppliersAsync().ConfigureAwait(true);
-            await RefreshCatalogStatsAsync().ConfigureAwait(true);
-            await LoadPageAsync().ConfigureAwait(true);
+            if (IsBusy) return;
+            IsBusy = true;
+            try
+            {
+                await LoadCategoriesAsync().ConfigureAwait(true);
+                await LoadSuppliersAsync().ConfigureAwait(true);
+                await RefreshCatalogStatsAsync().ConfigureAwait(true);
+                _service.ResetProductPaging();
+                await LoadPageAsync(1).ConfigureAwait(true);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
         }
 
         private async Task RefreshCatalogStatsAsync()
@@ -448,7 +464,6 @@ namespace Win7POS.Wpf.Products
                 _appliedSearchText = string.Empty;
                 _appliedCategoryId = null;
                 _appliedSupplierId = null;
-                PageIndex = 1;
                 AreFiltersDirty = false;
             }
             finally
@@ -458,8 +473,11 @@ namespace Win7POS.Wpf.Products
 
             OnPropertyChanged(nameof(HasActiveFilters));
             OnPropertyChanged(nameof(FilterSummary));
+            OnPropertyChanged(nameof(EmptyStateTitle));
+            OnPropertyChanged(nameof(EmptyStateHelp));
             RaiseCanExecuteChanged();
-            await LoadPageAsync().ConfigureAwait(true);
+            _service.ResetProductPaging();
+            await LoadPageAsync(1).ConfigureAwait(true);
         }
 
         private int? GetPendingCategoryId()
@@ -479,26 +497,45 @@ namespace Win7POS.Wpf.Products
             if (_suppressFilterDirty)
                 return;
 
-            AreFiltersDirty = true;
+            var pendingSupplierId = GetPendingSupplierId();
+            var pendingCategoryId = GetPendingCategoryId();
+            var unresolvedSupplierText = !pendingSupplierId.HasValue &&
+                !string.IsNullOrWhiteSpace(SupplierFilterText) &&
+                FindExactSupplier(SupplierFilterText) == null;
+            var unresolvedCategoryText = !pendingCategoryId.HasValue &&
+                !string.IsNullOrWhiteSpace(CategoryFilterText) &&
+                FindExactCategory(CategoryFilterText) == null;
+            AreFiltersDirty = !string.Equals(
+                                  (SearchText ?? string.Empty).Trim(),
+                                  (_appliedSearchText ?? string.Empty).Trim(),
+                                  StringComparison.OrdinalIgnoreCase) ||
+                              pendingSupplierId != _appliedSupplierId ||
+                              pendingCategoryId != _appliedCategoryId ||
+                              unresolvedSupplierText ||
+                              unresolvedCategoryText;
             OnPropertyChanged(nameof(HasActiveFilters));
             OnPropertyChanged(nameof(FilterSummary));
+            OnPropertyChanged(nameof(EmptyStateTitle));
+            OnPropertyChanged(nameof(EmptyStateHelp));
             RaiseCanExecuteChanged();
         }
 
         private async Task ApplyFiltersAsync()
         {
             ResolveTypedFilterSelections();
-            _appliedSearchText = SearchText ?? string.Empty;
+            _appliedSearchText = (SearchText ?? string.Empty).Trim();
             _appliedCategoryId = GetPendingCategoryId();
             _appliedSupplierId = GetPendingSupplierId();
             AreFiltersDirty = false;
             IsSupplierDropdownOpen = false;
             IsCategoryDropdownOpen = false;
-            PageIndex = 1;
             SelectedProduct = null;
-            await LoadPageAsync().ConfigureAwait(true);
+            _service.ResetProductPaging();
+            await LoadPageAsync(1).ConfigureAwait(true);
             OnPropertyChanged(nameof(HasActiveFilters));
             OnPropertyChanged(nameof(FilterSummary));
+            OnPropertyChanged(nameof(EmptyStateTitle));
+            OnPropertyChanged(nameof(EmptyStateHelp));
         }
 
         private void SetSupplierFilterTextFromSelection(SupplierListItem value)
@@ -630,18 +667,23 @@ namespace Win7POS.Wpf.Products
             return (name ?? string.Empty).IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private async Task LoadPageAsync()
+        private async Task LoadPageAsync(int targetPage)
         {
             IsBusy = true;
             try
             {
                 var categoryId = _appliedCategoryId;
                 var supplierId = _appliedSupplierId;
-                TotalCount = await _service.CountDetailsAsync(_appliedSearchText, categoryId, supplierId).ConfigureAwait(true);
-                var offset = (PageIndex - 1) * PageSize;
-                var rows = await _service.SearchDetailsPageAsync(_appliedSearchText, PageSize, offset, categoryId, supplierId).ConfigureAwait(true);
+                var selectedId = SelectedProduct?.Id;
+                var page = await _service.LoadDetailsPageAsync(
+                    _appliedSearchText,
+                    targetPage,
+                    PageSize,
+                    categoryId,
+                    supplierId).ConfigureAwait(true);
+
                 Items.Clear();
-                foreach (var p in rows)
+                foreach (var p in page.Items)
                 {
                     Items.Add(new ProductDetailsRow
                     {
@@ -656,10 +698,18 @@ namespace Win7POS.Wpf.Products
                         SupplierId = p.SupplierId,
                         SupplierName = p.SupplierName ?? string.Empty,
                         CategoryId = p.CategoryId,
-                        CategoryName = p.CategoryName ?? string.Empty
+                        CategoryName = p.CategoryName ?? string.Empty,
+                        RemoteProductId = p.RemoteProductId,
+                        PrimaryImageVersionId = p.PrimaryImageVersionId,
+                        PrimaryImageUpdatedAt = p.PrimaryImageUpdatedAt
                     });
                 }
-                StatusMessage = PagingStatus;
+                TotalCount = page.TotalCount;
+                PageIndex = page.PageIndex;
+                SelectedProduct = selectedId.HasValue
+                    ? Items.FirstOrDefault(item => item.Id == selectedId.Value)
+                    : null;
+                StatusMessage = PosLocalization.T("products.ready");
                 OnPropertyChanged(nameof(PagingStatus));
                 OnPropertyChanged(nameof(ResultSummary));
                 OnPropertyChanged(nameof(IsEmpty));
@@ -667,7 +717,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.F("products.searchError", ex.Message);
+                StatusMessage = PosLocalization.F("products.searchError", SafeOperatorError());
                 _logger.LogError(ex, "Products search failed");
             }
             finally
@@ -679,22 +729,26 @@ namespace Win7POS.Wpf.Products
         private async Task PrevPageAsync()
         {
             if (PageIndex <= 1) return;
-            PageIndex--;
-            await LoadPageAsync().ConfigureAwait(false);
+            await LoadPageAsync(PageIndex - 1).ConfigureAwait(false);
         }
 
         private async Task NextPageAsync()
         {
             if (PageIndex >= TotalPages) return;
-            PageIndex++;
-            await LoadPageAsync().ConfigureAwait(false);
+            await LoadPageAsync(PageIndex + 1).ConfigureAwait(false);
         }
 
         private async Task GoToPageAsync()
         {
-            if (!string.IsNullOrWhiteSpace(GoPageText) && int.TryParse(GoPageText.Trim(), out var p) && p >= 1 && p <= TotalPages)
-                PageIndex = p;
-            await LoadPageAsync().ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(GoPageText) ||
+                !int.TryParse(GoPageText.Trim(), out var page) ||
+                page < 1 ||
+                page > TotalPages)
+            {
+                return;
+            }
+
+            await LoadPageAsync(page).ConfigureAwait(false);
         }
 
         private async Task NewProductAsync()
@@ -708,7 +762,7 @@ namespace Win7POS.Wpf.Products
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Products NewProduct dialog");
-                StatusMessage = PosLocalization.F("products.dialogOpenError", ex.GetType().Name);
+                StatusMessage = PosLocalization.F("products.dialogOpenError", SafeOperatorError());
             }
         }
 
@@ -730,7 +784,7 @@ namespace Win7POS.Wpf.Products
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Products EditProduct dialog");
-                StatusMessage = PosLocalization.F("products.dialogOpenError", ex.GetType().Name);
+                StatusMessage = PosLocalization.F("products.dialogOpenError", SafeOperatorError());
             }
         }
 
@@ -751,7 +805,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
+                StatusMessage = SafeOperatorError();
                 _logger.LogError(ex, "Products Duplicate failed");
             }
         }
@@ -781,7 +835,7 @@ namespace Win7POS.Wpf.Products
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Products Delete failed");
-                StatusMessage = PosLocalization.F("products.deleteError", ex.Message);
+                StatusMessage = PosLocalization.F("products.deleteError", SafeOperatorError());
             }
         }
 
@@ -796,7 +850,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
+                StatusMessage = SafeOperatorError();
                 _logger.LogError(ex, "Products Import failed");
             }
         }
@@ -824,7 +878,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
+                StatusMessage = SafeOperatorError();
                 _logger.LogError(ex, "Products Supplier Excel import failed");
             }
         }
@@ -867,7 +921,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.F("products.exportDataError", ex.Message);
+                StatusMessage = PosLocalization.F("products.exportDataError", SafeOperatorError());
                 _logger.LogError(ex, "Products export data failed");
             }
             finally
@@ -891,7 +945,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.F("products.priceHistoryOpenError", ex.Message);
+                StatusMessage = PosLocalization.F("products.priceHistoryOpenError", SafeOperatorError());
                 _logger.LogError(ex, "Open price history failed");
             }
         }
@@ -913,6 +967,11 @@ namespace Win7POS.Wpf.Products
             (NextPageCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (GoToPageCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ClearFiltersCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private static string SafeOperatorError()
+        {
+            return PosLocalization.T("app.genericErrorCheckLog");
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

@@ -11,7 +11,7 @@ public sealed class SqliteConnectionPolicyTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
-    public void NewAndLegacyDatabases_PreservePolicyRollbackAndIntegrity()
+    public void NewAndLegacyDatabases_PreservePolicyRollbackAndIntegrityAfterReconnect()
     {
         SQLitePCL.Batteries_V2.Init();
         foreach (var legacy in new[] { false, true })
@@ -28,20 +28,11 @@ public sealed class SqliteConnectionPolicyTests
                 DbInitializer.EnsureCreated(options);
                 var factory = new SqliteConnectionFactory(options);
 
-                string journalMode;
-                long synchronous;
                 using (var first = factory.Open())
                 using (var second = factory.Open())
                 {
                     AssertConnectionPolicy(first);
                     AssertConnectionPolicy(second);
-                    journalMode = ScalarString(first, "PRAGMA journal_mode;").ToLowerInvariant();
-                    synchronous = ScalarLong(first, "PRAGMA synchronous;");
-                    Assert.IsTrue(
-                        journalMode == "delete" || journalMode == "truncate" ||
-                        journalMode == "persist" || journalMode == "wal",
-                        $"Unsafe or unsupported journal mode observed: {journalMode}");
-                    Assert.AreEqual(2L, synchronous, "SQLite synchronous must remain FULL (2).");
 
                     using (var transaction = first.BeginTransaction())
                     {
@@ -63,26 +54,140 @@ public sealed class SqliteConnectionPolicyTests
                         0L,
                         ScalarLong(first, "SELECT COUNT(1) FROM audit_log WHERE action='rollback-probe';"),
                         "The injected failure must not leave a partial transaction.");
-                    WriteCheckpointEvidence(first, legacy ? "legacy" : "new");
+                    WriteRuntimeEvidence(first, legacy ? "legacy" : "new", dbPath);
                 }
 
                 SqliteConnectionFactory.ClearAllPools();
                 using (var reopened = factory.Open())
                 {
+                    AssertConnectionPolicy(reopened);
                     Assert.AreEqual("ok", ScalarString(reopened, "PRAGMA integrity_check;"));
+                    AssertNoForeignKeyViolations(reopened);
                     if (legacy)
                         Assert.AreEqual(1L, ScalarLong(reopened, "SELECT COUNT(1) FROM legacy_probe;"));
                 }
 
                 TestContext.WriteLine(
                     $"SQLITE_OBSERVED database={(legacy ? "legacy" : "new")} " +
-                    $"journal_mode={journalMode} synchronous={synchronous} foreign_keys=1 busy_timeout=5000 integrity=ok");
+                    "journal_mode=delete locking_mode=normal synchronous=2 " +
+                    "foreign_keys=1 busy_timeout=5000 " +
+                    "temp_store=1 cache_size=-2048 integrity=ok foreign_key_check=ok");
             }
             finally
             {
                 SqliteConnectionFactory.ClearAllPools();
                 Directory.Delete(root, recursive: true);
             }
+        }
+    }
+
+    [TestMethod]
+    public async Task ExclusiveCommitFence_DrainsSharedReader_PreservesProviderTransaction_AndRestoresNormalMode()
+    {
+        SQLitePCL.Batteries_V2.Init();
+        var root = CreateTemporaryRoot();
+        var dbPath = Path.Combine(root, "pos.db");
+        IDisposable? commitFence = null;
+        try
+        {
+            var options = PosDbOptions.ForPath(dbPath);
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            using var readerConnection = factory.Open();
+            using var fencedConnection = factory.Open();
+            using var readerTransaction =
+                readerConnection.BeginTransaction(deferred: true);
+            Assert.AreEqual(
+                0L,
+                ScalarLong(
+                    readerConnection,
+                    "SELECT COUNT(1) FROM audit_log;",
+                    readerTransaction));
+            using var pendingReaderProbe = new SqliteConnection(
+                $"Data Source={dbPath};Default Timeout=1;Pooling=False");
+            pendingReaderProbe.Open();
+
+            var fenceStarted = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var fenceTask = Task.Run(() =>
+            {
+                fenceStarted.TrySetResult(true);
+                return SqliteConnectionFactory
+                    .AcquireExclusiveCommitFence(fencedConnection);
+            });
+
+            await AwaitWithTimeout(
+                fenceStarted.Task,
+                "The commit fence task did not start.");
+            Assert.IsTrue(
+                await WaitForSqliteBusyAsync(
+                    pendingReaderProbe,
+                    "SELECT COUNT(1) FROM audit_log;"),
+                "The pending EXCLUSIVE fence did not reject a new reader.");
+            Assert.IsFalse(
+                fenceTask.IsCompleted,
+                "The commit fence did not wait for the existing SHARED reader.");
+
+            readerTransaction.Dispose();
+            commitFence = await AwaitWithTimeout(
+                fenceTask,
+                "The commit fence did not acquire after the SHARED reader drained.");
+            Assert.AreEqual(
+                "exclusive",
+                ScalarString(
+                        fencedConnection,
+                        "PRAGMA main.locking_mode;")
+                    .ToLowerInvariant());
+
+            var readerBlockedBeforeProviderTransaction =
+                Assert.ThrowsExactly<SqliteException>(() =>
+                    ScalarLong(
+                        pendingReaderProbe,
+                        "SELECT COUNT(1) FROM audit_log;"));
+            Assert.AreEqual(
+                5,
+                readerBlockedBeforeProviderTransaction.SqliteErrorCode,
+                "The acquired fence must block readers before the provider transaction begins.");
+
+            using (var providerTransaction =
+                fencedConnection.BeginTransaction())
+            {
+                Execute(
+                    fencedConnection,
+                    "INSERT INTO audit_log(ts, action, details) " +
+                    "VALUES(5, 'exclusive-commit-fence', 'probe');",
+                    providerTransaction);
+                providerTransaction.Commit();
+            }
+
+            var readerBlockedAfterProviderCommit =
+                Assert.ThrowsExactly<SqliteException>(() =>
+                ScalarLong(
+                    pendingReaderProbe,
+                    "SELECT COUNT(1) FROM audit_log;"));
+            Assert.AreEqual(
+                5,
+                readerBlockedAfterProviderCommit.SqliteErrorCode,
+                "The retained EXCLUSIVE fence must block readers after the provider COMMIT.");
+
+            commitFence.Dispose();
+            commitFence = null;
+            AssertConnectionPolicy(fencedConnection);
+
+            using var recovered = factory.Open();
+            AssertConnectionPolicy(recovered);
+            Assert.AreEqual(
+                1L,
+                ScalarLong(
+                    recovered,
+                    "SELECT COUNT(1) FROM audit_log " +
+                    "WHERE action='exclusive-commit-fence';"));
+        }
+        finally
+        {
+            commitFence?.Dispose();
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(root, recursive: true);
         }
     }
 
@@ -130,6 +235,95 @@ public sealed class SqliteConnectionPolicyTests
             Execute(second, "INSERT INTO audit_log(ts, action, details) VALUES(4, 'busy-recovered', 'probe');");
             Assert.AreEqual(1L, ScalarLong(second, "SELECT COUNT(1) FROM audit_log WHERE action='busy-recovered';"));
             TestContext.WriteLine($"SQLITE_BUSY_TIMEOUT elapsed_ms={stopwatch.ElapsedMilliseconds} recovered=true");
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void Factory_ReassertsDeletePolicyWhenAReopenedDatabaseWasChangedToWal()
+    {
+        SQLitePCL.Batteries_V2.Init();
+        var root = CreateTemporaryRoot();
+        var dbPath = Path.Combine(root, "pos.db");
+        try
+        {
+            var options = PosDbOptions.ForPath(dbPath);
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+
+            using (var external = new SqliteConnection($"Data Source={dbPath}"))
+            {
+                external.Open();
+                Assert.AreEqual("wal", ScalarString(external, "PRAGMA journal_mode=WAL;").ToLowerInvariant());
+            }
+
+            SqliteConnectionFactory.ClearAllPools();
+            using (var reopened = factory.Open())
+            {
+                AssertConnectionPolicy(reopened);
+                Assert.AreEqual("ok", ScalarString(reopened, "PRAGMA integrity_check;"));
+                AssertNoForeignKeyViolations(reopened);
+            }
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void RuntimePolicyVerification_FailsClosedForAnUnverifiedConnection()
+    {
+        SQLitePCL.Batteries_V2.Init();
+        var root = CreateTemporaryRoot();
+        var dbPath = Path.Combine(root, "pos.db");
+        try
+        {
+            var options = PosDbOptions.ForPath(dbPath);
+            DbInitializer.EnsureCreated(options);
+
+            using var connection = new SqliteConnection($"Data Source={dbPath}");
+            connection.Open();
+            Execute(connection, "PRAGMA journal_mode=DELETE;");
+            Execute(connection, "PRAGMA synchronous=FULL;");
+            Execute(connection, "PRAGMA foreign_keys=ON;");
+            Execute(connection, "PRAGMA busy_timeout=5000;");
+            Execute(connection, "PRAGMA temp_store=FILE;");
+            Execute(connection, "PRAGMA cache_size=-1024;");
+
+            var error = Assert.ThrowsExactly<InvalidOperationException>(
+                () => SqliteConnectionFactory.VerifyRuntimePolicy(connection));
+            StringAssert.Contains(error.Message, "cache_size");
+            StringAssert.Contains(error.Message, "-2048");
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task OpenAsync_AppliesAndVerifiesTheSameRuntimePolicy()
+    {
+        SQLitePCL.Batteries_V2.Init();
+        var root = CreateTemporaryRoot();
+        var dbPath = Path.Combine(root, "pos.db");
+        try
+        {
+            var options = PosDbOptions.ForPath(dbPath);
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+
+            using var connection = await factory.OpenAsync();
+            AssertConnectionPolicy(connection);
+            Assert.AreEqual("ok", ScalarString(connection, "PRAGMA integrity_check;"));
+            AssertNoForeignKeyViolations(connection);
         }
         finally
         {
@@ -307,19 +501,34 @@ public sealed class SqliteConnectionPolicyTests
 
     private static void AssertConnectionPolicy(SqliteConnection connection)
     {
+        Assert.AreEqual("delete", ScalarString(connection, "PRAGMA journal_mode;").ToLowerInvariant());
+        Assert.AreEqual("normal", ScalarString(connection, "PRAGMA main.locking_mode;").ToLowerInvariant());
+        Assert.AreEqual(2L, ScalarLong(connection, "PRAGMA synchronous;"));
         Assert.AreEqual(1L, ScalarLong(connection, "PRAGMA foreign_keys;"));
         Assert.AreEqual(5000L, ScalarLong(connection, "PRAGMA busy_timeout;"));
+        Assert.AreEqual(1L, ScalarLong(connection, "PRAGMA temp_store;"));
+        Assert.AreEqual(-2048L, ScalarLong(connection, "PRAGMA cache_size;"));
     }
 
-    private void WriteCheckpointEvidence(SqliteConnection connection, string databaseKind)
+    private static void AssertNoForeignKeyViolations(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA wal_checkpoint(FULL);";
+        command.CommandText = "PRAGMA foreign_key_check;";
         using var reader = command.ExecuteReader();
-        Assert.IsTrue(reader.Read(), "wal_checkpoint must return its status row.");
+        Assert.IsFalse(reader.Read(), "foreign_key_check reported an integrity violation.");
+    }
+
+    private void WriteRuntimeEvidence(SqliteConnection connection, string databaseKind, string dbPath)
+    {
+        var pageSize = ScalarLong(connection, "PRAGMA page_size;");
+        var pageCount = ScalarLong(connection, "PRAGMA page_count;");
+        var cacheSize = ScalarLong(connection, "PRAGMA cache_size;");
+        var databaseBytes = new FileInfo(dbPath).Length;
         TestContext.WriteLine(
-            $"SQLITE_CHECKPOINT database={databaseKind} busy={reader.GetInt64(0)} " +
-            $"log_frames={reader.GetInt64(1)} checkpointed_frames={reader.GetInt64(2)}");
+            $"SQLITE_RUNTIME_POLICY database={databaseKind} journal_mode=delete " +
+            $"locking_mode=normal synchronous=2 " +
+            $"temp_store=1 cache_size_kib={cacheSize} page_size={pageSize} " +
+            $"page_count={pageCount} database_bytes={databaseBytes}");
     }
 
     private static void SeedLegacyProbe(string dbPath)
@@ -351,6 +560,29 @@ public sealed class SqliteConnectionPolicyTests
         return await task;
     }
 
+    private static async Task<bool> WaitForSqliteBusyAsync(
+        SqliteConnection connection,
+        string sql)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(4);
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                ScalarLong(connection, sql);
+            }
+            catch (SqliteException ex)
+                when (ex.SqliteErrorCode == 5)
+            {
+                return true;
+            }
+
+            await Task.Delay(20);
+        }
+
+        return false;
+    }
+
     private static void Execute(
         SqliteConnection connection,
         string sql,
@@ -364,8 +596,17 @@ public sealed class SqliteConnectionPolicyTests
 
     private static long ScalarLong(SqliteConnection connection, string sql)
     {
+        return ScalarLong(connection, sql, null);
+    }
+
+    private static long ScalarLong(
+        SqliteConnection connection,
+        string sql,
+        SqliteTransaction? transaction)
+    {
         using var command = connection.CreateCommand();
         command.CommandText = sql;
+        command.Transaction = transaction;
         return Convert.ToInt64(command.ExecuteScalar());
     }
 

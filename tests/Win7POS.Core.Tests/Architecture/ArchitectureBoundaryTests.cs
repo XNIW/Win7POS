@@ -107,7 +107,7 @@ public sealed class ArchitectureBoundaryTests
         AssertNoMatches(
             root,
             "src/Win7POS.Data",
-            @"\bSystem\.Windows\b|\bWindows\.Forms\b|\bMicrosoft\.Win32\b|\bPrintDialog\b|\bPrintQueue\b|\bLocalPrintServer\b|\bPresentationFramework\b",
+            @"\bSystem\.Windows\b|\bWindows\.Forms\b|\bMicrosoft\.Win32\b(?!\.SafeHandles)|\bPrintDialog\b|\bPrintQueue\b|\bLocalPrintServer\b|\bPresentationFramework\b",
             ".cs",
             ".csproj");
     }

@@ -66,6 +66,7 @@ $required = @(
     "src/Win7POS.Core/Models/Sale.cs",
     "src/Win7POS.Data/DbInitializer.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs",
     "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs",
     "scripts/start-offline-sales-qa.ps1",
     "docs/QA/WIN7POS_OFFLINE_SALES_SANDBOX.md"
@@ -94,6 +95,7 @@ $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.Secondar
 $saleModel = Read-Text "src/Win7POS.Core/Models/Sale.cs"
 $dbInitializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$saleTransactionWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
 $uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $offlineQaLauncher = Read-Text "scripts/start-offline-sales-qa.ps1"
 $offlineQaDocs = Read-Text "docs/QA/WIN7POS_OFFLINE_SALES_SANDBOX.md"
@@ -224,7 +226,7 @@ if ([string]::IsNullOrWhiteSpace($testReceiptBody) -or
 
 if ($workflow -match 'ReceiptShopInfo\s+receiptShopSnapshot\s*=\s*null' -and
     $workflow -match 'receiptShopSnapshot\s*\?\?' -and
-    $posVm -match 'CompleteSaleAsync\([\s\S]{0,240}draft\.ShopInfo') {
+    $posVm -match 'CompleteSaleAsync\([\s\S]{0,420}draft\.ShopInfo') {
     Pass "payment freezes the shop snapshot used by completed-sale receipt output"
 } else {
     Fail "payment preview and completed-sale receipt must use the same shop snapshot"
@@ -400,7 +402,7 @@ if ($spooler -match 'MaximumReceiptPages\s*=\s*128' -and
 
 if ($saleModel -match 'ReceiptShopSnapshotJson' -and
     $dbInitializer -match 'receipt_shop_snapshot' -and
-    $saleRepository -match 'receipt_shop_snapshot' -and
+    $saleTransactionWriter -match 'receipt_shop_snapshot' -and
     $workflow -match 'SerializeReceiptShopSnapshot' -and
     $workflow -match 'GetReceiptShopInfoNoLockAsync' -and
     $uiSmoke -match 'VerifyReceiptShopSnapshotReprintAsync') {
@@ -508,16 +510,23 @@ if ($physicalQaIsFailClosed) {
 
 $trustedSeedIsFailClosed =
     $uiSmoke -match 'HasArg\(args,\s*"--seed-trusted-session"\)' -and
-    $uiSmoke -match 'EnsureSyntheticTrustedSessionSeedPath\(dataDir\)' -and
-    $uiSmoke -match 'Path\.IsPathRooted\(dataDir\)' -and
+    $uiSmoke -match 'EnsureSyntheticTrustedSessionSeedPath\(\s*dataDir\s*,' -and
+    $uiSmoke -match 'EnsureQaPath\(' -and
+    $uiSmoke -match 'Path\.IsPathRooted\(path\)' -and
     $uiSmoke -match '"Win7POS-QA"' -and
     $uiSmoke -match 'DriveType\.Fixed' -and
     $uiSmoke -match 'existingAncestor' -and
     $uiSmoke -match 'FileAttributes\.ReparsePoint' -and
-    $uiSmoke -match 'Directory\.EnumerateFileSystemEntries\(fullPath\)\.Any\(\)' -and
+    $uiSmoke -match 'requireEmpty\s*&&\s*entries\.Length\s*>\s*0' -and
+    $uiSmoke -match '"Found:\s*"' -and
+    $uiSmoke -match 'requirePreparedState\s*&&\s*entries\.Length\s*==\s*0' -and
+    $uiSmoke -match 'Restart verification must reuse prepared state without --seed-trusted-session' -and
+    $uiSmoke -match 'EnsureAuthorizationLeaseDiagnosticsPath' -and
+    $uiSmoke -match 'diagnostics must be outside WIN7POS_DATA_DIR' -and
+    $uiSmoke -match 'SearchOption\.AllDirectories' -and
     $uiSmoke -match 'PosOnlineContract\.OfflineAuthorizationMaxAgeSeconds'
 $trustedSeedGuardIndex = $uiSmoke.IndexOf(
-    'dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);',
+    'dataDir = EnsureSyntheticTrustedSessionSeedPath(',
     [System.StringComparison]::Ordinal)
 $seedDirectoryCreateIndex = $uiSmoke.IndexOf(
     'Directory.CreateDirectory(dataDir);',
@@ -526,9 +535,9 @@ $trustedSeedIsFailClosed = $trustedSeedIsFailClosed -and
     $trustedSeedGuardIndex -ge 0 -and
     $seedDirectoryCreateIndex -gt $trustedSeedGuardIndex
 if ($trustedSeedIsFailClosed) {
-    Pass "synthetic trusted-session seed is explicit and restricted to a new Win7POS-QA directory"
+    Pass "synthetic trusted-session seed is explicit, empty-root-only and isolated from restart diagnostics"
 } else {
-    Fail "synthetic trusted-session seed must be explicit and fail closed outside a new Win7POS-QA directory"
+    Fail "synthetic trusted-session seed must fail closed outside a new or prepared restart Win7POS-QA directory"
 }
 
 $offlineQaIsFailClosed =

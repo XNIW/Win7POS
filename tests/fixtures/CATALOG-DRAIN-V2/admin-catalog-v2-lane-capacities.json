@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "contract": "catalog-v2 sequential lane drain",
+  "adminRepository": "XNIW/merchandise-control-admin-web",
+  "adminMainSha": "7ff0f6a0dfd9e1203cd07834f73ecc4269abc714",
+  "sourcePath": "supabase/migrations/20260722013109_cross_platform_sync_event_completeness.sql",
+  "sourceBlobSha": "e29af8125ed2518edd11f473a7d51c034c10f7e1",
+  "effectiveLaneCapacities": {
+    "categories": 240,
+    "suppliers": 240,
+    "products": 60,
+    "prices": 120
+  },
+  "observedAdminIntegrityEnvelopeNotPosLimits": {
+    "categories": 25000,
+    "suppliers": 25000,
+    "products": 125000,
+    "prices": 175000
+  },
+  "posClientContinuationPolicy": {
+    "businessRowOrPageMaximum": null,
+    "activePageBudgetPurpose": "run sizing and timeout derivation only; never a continuation ceiling",
+    "completionCondition": "hasMore=false",
+    "cursorFingerprintPersistence": "unique SQLite app_settings key per staged page; removed with the staged generation",
+    "technicalResourceLimits": [
+      "single staged page bytes",
+      "dynamic total staged bytes derived from available disk",
+      "available disk reserve checked per page",
+      "cancellation",
+      "derived overall progress timeout",
+      "no-progress watchdog",
+      "cursor/protocol/SQLite/numeric-overflow failures"
+    ]
+  },
+  "acceptanceManifestExample": {
+    "categories": 71,
+    "suppliers": 102,
+    "products": 19763,
+    "prices": 41228,
+    "calculatedSequentialPages": 676
+  }
+}

@@ -61,6 +61,85 @@ public sealed class PosShopTransitionGuardTests
     }
 
     [TestMethod]
+    public async Task Evaluate_BlocksDifferentShopWhenArticleOutboxIsUnresolved()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        await new ProductRepository(db.Factory).CreateLocalArticleAsync(
+            new LocalArticleCreateRequest
+            {
+                Barcode = "SHOP-ARTICLE-001",
+                PrimaryName = "Pending shop article",
+                RetailPrice = 100,
+                PurchasePrice = 50,
+                InitialStock = 1
+            },
+            ProductWriteOrigin.LocalUserSave);
+
+        var decision = await new PosShopTransitionGuard(db.Factory)
+            .EvaluateAsync("shop-a", "SHOP-A", "shop-b", "SHOP-B");
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.IsTrue(decision.HasUnresolvedOutbox);
+        Assert.AreEqual(
+            "shop_switch_blocked_unresolved_outbox",
+            decision.Code);
+    }
+
+    [TestMethod]
+    [DataRow("waiting_dependency")]
+    [DataRow("pending_intent")]
+    [DataRow("pending_upload")]
+    [DataRow("pending_finalize")]
+    [DataRow("pending_remove")]
+    [DataRow("in_progress")]
+    [DataRow("retry_wait")]
+    [DataRow("failed_blocked")]
+    [DataRow("cleanup_pending")]
+    public async Task Evaluate_BlocksDifferentShopForEveryUnresolvedProductImageState(
+        string state)
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        await EnqueueProductImageAsync(db.Factory, state);
+
+        var decision = await new PosShopTransitionGuard(db.Factory)
+            .EvaluateAsync("shop-a", "SHOP-A", "shop-b", "SHOP-B");
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.IsTrue(decision.HasUnresolvedOutbox);
+        Assert.AreEqual(
+            "shop_switch_blocked_unresolved_outbox",
+            decision.Code);
+    }
+
+    [TestMethod]
+    [DataRow("waiting_dependency")]
+    [DataRow("pending_intent")]
+    [DataRow("pending_upload")]
+    [DataRow("pending_finalize")]
+    [DataRow("pending_remove")]
+    [DataRow("in_progress")]
+    [DataRow("retry_wait")]
+    [DataRow("failed_blocked")]
+    [DataRow("cleanup_pending")]
+    public async Task ApplyAuthorizedTransition_RechecksEveryProductImageState(
+        string state)
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var guard = new PosShopTransitionGuard(db.Factory);
+        var decision = await guard.EvaluateAsync(
+            "shop-a", "SHOP-A", "shop-b", "SHOP-B");
+        Assert.IsTrue(decision.Allowed);
+
+        await EnqueueProductImageAsync(db.Factory, state);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => guard.ApplyAuthorizedTransitionAsync(decision));
+    }
+
+    [TestMethod]
     public async Task ApplyAuthorizedTransition_ResetsShopCacheAndPreservesHistoryAndOfficialSnapshot()
     {
         using var db = TestDb.Create();
@@ -109,6 +188,36 @@ public sealed class PosShopTransitionGuardTests
     }
 
     [TestMethod]
+    public async Task Evaluate_BlocksDifferentShopWhenCustomerOrderInboxIsUnresolved()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        await InsertUnresolvedCustomerOrderAsync(db.Factory, "shop-a");
+
+        var decision = await new PosShopTransitionGuard(db.Factory)
+            .EvaluateAsync("shop-a", "SHOP-A", "shop-b", "SHOP-B");
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.IsTrue(decision.HasUnresolvedOutbox);
+        Assert.AreEqual("shop_switch_blocked_unresolved_outbox", decision.Code);
+    }
+
+    [TestMethod]
+    public async Task ApplyAuthorizedTransition_RechecksCustomerOrderInboxInsideTransaction()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var guard = new PosShopTransitionGuard(db.Factory);
+        var decision = await guard.EvaluateAsync(
+            "shop-a", "SHOP-A", "shop-b", "SHOP-B");
+        Assert.IsTrue(decision.Allowed);
+        await InsertUnresolvedCustomerOrderAsync(db.Factory, "shop-a");
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => guard.ApplyAuthorizedTransitionAsync(decision));
+    }
+
+    [TestMethod]
     public async Task OfflineAuthorization_RequiresRequestedShopToMatchCoherentCurrentIdentity()
     {
         using var db = TestDb.Create();
@@ -144,6 +253,51 @@ public sealed class PosShopTransitionGuardTests
         });
     }
 
+    private static async Task EnqueueProductImageAsync(
+        SqliteConnectionFactory factory,
+        string state)
+    {
+        long productId;
+        using (var connection = factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
+VALUES('SHOP-IMAGE-001', 'Pending image', 100, '10000000-0000-4000-8000-000000000150', 1);");
+            productId = await connection.ExecuteScalarAsync<long>(
+                "SELECT id FROM products WHERE barcode = 'SHOP-IMAGE-001';");
+        }
+        var operation = await new ProductImageOperationOutboxRepository(factory)
+            .EnqueueReplaceAsync(
+                new ProductImageReplaceEnqueueRequest
+                {
+                    LocalProductId = productId,
+                    IntendedLocalVersionIdentity = "local-image-shop-transition",
+                    PayloadHash = "sha256:" + new string('a', 64),
+                    Main = new ProductImageStagedVariant
+                    {
+                        Bytes = 10,
+                        Height = 2,
+                        Identity = "stage-shop-transition-main.jpg",
+                        Sha256 = new string('b', 64),
+                        Width = 2
+                    },
+                    Thumb = new ProductImageStagedVariant
+                    {
+                        Bytes = 10,
+                        Height = 2,
+                        Identity = "stage-shop-transition-thumb.jpg",
+                        Sha256 = new string('c', 64),
+                        Width = 2
+                    }
+                },
+                (_, _) => "sha256:" + new string('d', 64));
+        using var update = factory.Open();
+        await update.ExecuteAsync(
+            "UPDATE product_image_operation_outbox SET state = @state " +
+            "WHERE operation_id = @operationId;",
+            new { state, operationId = operation.OperationId });
+    }
+
     private static async Task InsertAmbiguousLegacyCatalogImportAsync(SqliteConnectionFactory factory)
     {
         using var conn = factory.Open();
@@ -156,6 +310,41 @@ VALUES(
   'legacy-client-import', 'legacy-client-import:pos-catalog-import-v1',
   'pos-catalog-import-v1', 'catalog_import', '', '', 'supplier_excel', '{}', 'legacy-hash',
   'pending', 0, 0, 1, 1);");
+    }
+
+    private static async Task InsertUnresolvedCustomerOrderAsync(
+        SqliteConnectionFactory factory,
+        string shopId)
+    {
+        using var connection = factory.Open();
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await connection.ExecuteAsync(@"
+INSERT INTO customer_order_inbox(
+  handoff_id, event_idempotency_key, order_id, shop_id, order_code,
+  event_type, correlation_id, status_version, current_status_version,
+  order_status, fulfillment_mode, currency_code, total_clp, payload_json,
+  payload_hash, lease_token, lease_expires_at, remote_attempt_count, state,
+  ack_outcome, ack_idempotency_key, ack_expected_status_version,
+  received_at, updated_at)
+VALUES(
+  @handoffId, @eventIdempotencyKey, @orderId, @shopId, 'MC-SHOP-GUARD',
+  'customer_order.accepted.v1', @correlationId, 2, 2,
+  'accepted', 'pickup', 'CLP', 1000, '{}',
+  @payloadHash, @leaseToken, @leaseExpiresAt, 1, 'ack_pending',
+  'accepted', @ackIdempotencyKey, 2, @nowMs, @nowMs);",
+            new
+            {
+                ackIdempotencyKey = Guid.NewGuid().ToString("D"),
+                correlationId = Guid.NewGuid().ToString("D"),
+                eventIdempotencyKey = Guid.NewGuid().ToString("D"),
+                handoffId = Guid.NewGuid().ToString("D"),
+                leaseExpiresAt = nowMs + 300000,
+                leaseToken = Guid.NewGuid().ToString("D"),
+                nowMs,
+                orderId = Guid.NewGuid().ToString("D"),
+                payloadHash = "sha256:" + new string('b', 64),
+                shopId
+            });
     }
 
     private static async Task SeedShopACacheAsync(SqliteConnectionFactory factory)

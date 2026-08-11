@@ -12,11 +12,14 @@ namespace Win7POS.Wpf.Pos
 {
     public partial class PosView : UserControl
     {
+        public event Action CatalogWarningDetailsRequested;
+
         public PosView()
         {
             InitializeComponent();
             var vm = PosViewComposition.CreateViewModel();
             vm.FocusBarcodeRequested += FocusBarcode;
+            vm.StatusToastDetailsRequested += () => CatalogWarningDetailsRequested?.Invoke();
             DataContext = vm;
             Loaded += OnLoaded;
         }

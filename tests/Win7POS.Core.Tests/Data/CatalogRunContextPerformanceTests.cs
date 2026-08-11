@@ -48,14 +48,18 @@ public sealed class CatalogRunContextPerformanceTests
         Assert.AreEqual(1, second.ProductsApplied);
         Assert.AreEqual(1, third.ProductsApplied);
         Assert.AreEqual(3, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(3L, run.Diagnostics.CommittedTransactionCount);
         Assert.AreEqual(8, run.Diagnostics.PreparedCommandCount);
         Assert.AreEqual(2, run.Diagnostics.ReferenceMapRefreshQueryCount);
         Assert.AreEqual(3, run.Diagnostics.ProductIdentityQueryCount);
         Assert.AreEqual(3, run.Diagnostics.PendingStockQueryCount);
-        Assert.AreEqual(8, run.Diagnostics.ScopeSqlQueryCount);
+        Assert.AreEqual(3L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+        Assert.AreEqual(14, run.Diagnostics.ScopeSqlQueryCount);
         Assert.AreEqual(18, run.Diagnostics.LegacyScopeSqlQueryEstimate);
         Assert.AreEqual(1L, run.Diagnostics.ProductIdentityRowsLoaded);
         Assert.AreEqual(3L, run.Diagnostics.StagedProductIdentityCount);
+        Assert.AreEqual(3L, run.Diagnostics.RelinkStageSqlCommandCount);
 
         using var verify = db.Factory.Open();
         Assert.AreEqual(2L, await verify.ExecuteScalarAsync<long>(
@@ -67,6 +71,236 @@ JOIN categories c ON c.id = m.category_id
 JOIN suppliers s ON s.id = m.supplier_id
 WHERE c.remote_category_id = 'category-run'
   AND s.remote_supplier_id = 'supplier-run';"));
+    }
+
+    [TestMethod]
+    public async Task RelinkStagesThousandIdsWithOneBoundedJsonCommand()
+    {
+        using var db = TestDb.Create();
+        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
+        var products = Enumerable.Range(1, 1000)
+            .Select(index => Product(
+                "product-bounded-" + index,
+                "BOUNDED-" + index.ToString("D4"),
+                index))
+            .ToArray();
+
+        var result = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-run",
+                    Name = "Run Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-run",
+                    Name = "Run Supplier"
+                }
+            },
+            Products = products
+        });
+
+        Assert.AreEqual(1000, result.ProductsApplied);
+        Assert.AreEqual(1L, run.Diagnostics.RelinkStageSqlCommandCount);
+        Assert.AreEqual(1L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+    }
+
+    [TestMethod]
+    public async Task LegacyRebindPageDoesNotRepeatProtectedProductLookup()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-run",
+                    Name = "Run Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-run",
+                    Name = "Run Supplier"
+                }
+            },
+            Products = new[] { Product("product-legacy-1", "LEGACY-OLD", 1) }
+        });
+
+        using var run = repository.CreateRunContext();
+        var result = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Products = new[]
+            {
+                Product("product-legacy-1", "LEGACY-NEW", 2),
+                Product("product-legacy-2", "LEGACY-002", 2),
+                Product("product-legacy-3", "LEGACY-003", 2)
+            }
+        });
+
+        Assert.AreEqual(3, result.ProductsApplied);
+        Assert.AreEqual(1L, run.Diagnostics.ProtectedProductQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.ProtectedProductRowsLoaded);
+    }
+
+    [TestMethod]
+    public void SqliteNoCaseBarcodeKeyFoldsAsciiOnly()
+    {
+        Assert.AreEqual(
+            "abc-123",
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("ABC-123"));
+        Assert.AreEqual(
+            "already-lower",
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("already-lower"));
+        Assert.AreNotEqual(
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("Ä"),
+            RemoteCatalogBatchRepository.NormalizeSqliteNoCaseBarcodeKey("ä"));
+    }
+
+    [TestMethod]
+    public async Task PriceOnlyPagesPublishExactRemotePriceApplyDiagnostics()
+    {
+        using var db = TestDb.Create();
+        await SeedPriceOnlyProductsAsync(db);
+        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
+
+        var first = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Prices = new[]
+            {
+                Price("product-run-1", "price-run-1", 101),
+                Price("product-run-2", "price-run-2", 102)
+            }
+        });
+        var second = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Prices = new[]
+            {
+                Price("product-run-3", "price-run-3", 103)
+            }
+        });
+
+        Assert.AreEqual(2, first.PricesApplied);
+        Assert.AreEqual(1, second.PricesApplied);
+        Assert.AreEqual(2, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(2L, run.Diagnostics.CommittedTransactionCount);
+        Assert.AreEqual(14L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(20L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
+        Assert.AreEqual(2L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
+        Assert.AreEqual(2L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);
+        Assert.AreEqual(3L, run.Diagnostics.RemotePriceApply.StagedRowCount);
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(3L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id IN ('price-run-1', 'price-run-2', 'price-run-3');"));
+        Assert.AreEqual(3L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id IN ('price-run-1', 'price-run-2', 'price-run-3');"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM remote_catalog_pending_prices;"));
+    }
+
+    [TestMethod]
+    public async Task FailedPricePageDoesNotPublishRemotePriceApplyDiagnostics()
+    {
+        using var db = TestDb.Create();
+        await SeedPriceOnlyProductsAsync(db);
+        using (var trigger = db.Factory.Open())
+        {
+            await trigger.ExecuteAsync(@"
+CREATE TRIGGER fail_remote_price_diagnostics_owner_insert
+BEFORE INSERT ON remote_catalog_price_ownership
+WHEN NEW.remote_price_id = 'price-run-rollback'
+BEGIN
+  SELECT RAISE(ABORT, 'fault_remote_price_diagnostics_owner_insert');
+END;");
+        }
+
+        using (var failedRun = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext())
+        {
+            await Assert.ThrowsExactlyAsync<SqliteException>(() => failedRun.ApplyAsync(
+                new RemoteCatalogBatch
+                {
+                    Prices = new[]
+                    {
+                        Price("product-run-2", "price-run-rollback", 202)
+                    }
+                }));
+
+            Assert.AreEqual(0, failedRun.Diagnostics.PagesApplied);
+            Assert.AreEqual(0L, failedRun.Diagnostics.CommittedTransactionCount);
+            Assert.AreEqual(0L, failedRun.Diagnostics.RemotePriceApply.SqlCommandCount);
+            Assert.AreEqual(0L, failedRun.Diagnostics.RemotePriceApply.SqlStatementCount);
+        }
+
+        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
+        var committed = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Prices = new[]
+            {
+                Price("product-run-1", "price-run-committed", 201)
+            }
+        });
+
+        Assert.AreEqual(1, committed.PricesApplied);
+        Assert.AreEqual(1, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(1L, run.Diagnostics.CommittedTransactionCount);
+        Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(10L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.StagedRowCount);
+
+        await Assert.ThrowsExactlyAsync<SqliteException>(() => run.ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                Prices = new[]
+                {
+                    Price("product-run-2", "price-run-rollback", 202)
+                }
+            }));
+
+        Assert.AreEqual(1, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(10L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.StagedRowCount);
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = 'price-run-committed';"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = 'price-run-rollback';"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = 'price-run-rollback';"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM remote_catalog_pending_prices
+WHERE remote_price_id = 'price-run-rollback';"));
     }
 
     [TestMethod]
@@ -239,6 +473,51 @@ SELECT supplier_id FROM product_meta WHERE barcode = 'RUN-TOMB-002';"));
             SupplierName = "Run Supplier",
             UnitPrice = 100
         };
+    }
+
+    private static RemoteCatalogPriceWrite Price(
+        string remoteProductId,
+        string remotePriceId,
+        int price)
+    {
+        return new RemoteCatalogPriceWrite
+        {
+            EffectiveAt = "2026-07-23T10:00:00Z",
+            Price = price,
+            RemotePriceId = remotePriceId,
+            RemoteProductId = remoteProductId,
+            Source = "catalog_pull",
+            Type = "retail"
+        };
+    }
+
+    private static Task<RemoteCatalogBatchApplyResult> SeedPriceOnlyProductsAsync(TestDb db)
+    {
+        return new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-run",
+                    Name = "Run Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-run",
+                    Name = "Run Supplier"
+                }
+            },
+            Products = new[]
+            {
+                Product("product-run-1", "PRICE-RUN-001", 1),
+                Product("product-run-2", "PRICE-RUN-002", 2),
+                Product("product-run-3", "PRICE-RUN-003", 3)
+            }
+        });
     }
 
     private sealed class TestDb : IDisposable

@@ -61,6 +61,8 @@ else {
 }
 
 $main = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
+$startupCoordinatorPolicy = Read-Text "src/Win7POS.Core/Online/PosStartupCoordinatorPolicy.cs"
 $loadedMatch = [regex]::Match(
     $main,
     'private\s+async\s+void\s+OnLoadedAsync[\s\S]*?(?=\r?\n\s*private\s+async\s+Task<StartOfDaySyncResult>)')
@@ -222,14 +224,15 @@ $uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 Assert-Contains "recovery access dialog has 20-cycle lifecycle coverage" $uiSmoke "recoveryAccessCycles=20"
 Assert-Contains "recovery lifecycle opens the real access dialog" $uiSmoke "new PosOnlineFirstLoginDialog()"
 
-Assert-Contains "shell evaluates catalog before PosView" $main "PosShellStartupPolicy.Determine"
+Assert-Contains "startup coordinator evaluates catalog before PosView" $startupCoordinator "PosStartupCoordinatorPolicy.DetermineShellMode"
+Assert-Contains "startup coordinator policy preserves catalog shell decision" $startupCoordinatorPolicy "PosShellStartupPolicy.Determine"
 Assert-Contains "shell has controlled recovery mode" $main "EnterRecoveryModeAsync"
 Assert-Contains "local recovery explains that online access is required for POS" $main 'localRecoveryAccess ? "access.login.recoveryOnlineRequired"'
 Assert-Contains "only proven local recovery is lease-free" $recoveryPolicy "IsLeaseFreeLocalRecovery"
 Assert-Contains "shell derives lease behavior from access provenance" $main "HasLeaseFreeLocalRecoveryAccess"
 Assert-Contains "recovery shell stops the normal sync status timer" $main '_syncStatusTimer?.Stop()'
-if ($main -match 'TriggerAdaptiveOnlineRefreshAsync[\s\S]{0,450}_authenticatedAccessMode\s*==\s*PosAuthenticatedAccessMode\.LocalRecovery' -and
-    $main -match 'ShowSyncCenterDialog\(Window owner = null\)[\s\S]{0,260}_authenticatedAccessMode\s*==\s*PosAuthenticatedAccessMode\.LocalRecovery') {
+if ($startupCoordinator -match 'TriggerAdaptiveOnlineRefreshAsync[\s\S]{0,450}state\.AccessMode\s*==\s*PosAuthenticatedAccessMode\.LocalRecovery' -and
+    $main -match 'ShowSyncCenterDialog\(Window owner = null\)[\s\S]{0,260}CurrentAccessMode\s*==\s*PosAuthenticatedAccessMode\.LocalRecovery') {
     Pass "recovery shell blocks manual and coordinated online sync"
 } else {
     Fail "recovery shell must block every Sync Center execution path"
@@ -250,18 +253,27 @@ if ($main -match 'MainTabControl_SelectionChanged[\s\S]{0,500}!IsRecoveryTab[\s\
 $permissionMethod = [regex]::Match(
     $main,
     'private\s+bool\s+HasCurrentPermission\(string\s+permissionCode\)[\s\S]*?(?=\r?\n\s*private\s+)').Value
+$normalPermissionIndex = $permissionMethod.IndexOf(
+    'new PermissionService(session)',
+    [System.StringComparison]::Ordinal)
 $leaseFreeIndex = $permissionMethod.IndexOf(
     'HasLeaseFreeLocalRecoveryAccess()',
     [System.StringComparison]::Ordinal)
-$normalLeaseIndex = $permissionMethod.IndexOf(
-    'session.EnsureAuthorizationValid()',
+$localRecoveryPermissionIndex = $permissionMethod.IndexOf(
+    'new LocalRecoveryPermissionService(session)',
     [System.StringComparison]::Ordinal)
-$recoveryPermissionIndex = $permissionMethod.IndexOf(
-    'LocalRecoveryPermissionPolicy.IsGranted(user, permissionCode)',
+$remoteRecoveryAllowlistIndex = $permissionMethod.IndexOf(
+    'LocalRecoveryPermissionPolicy.IsAllowed(',
     [System.StringComparison]::Ordinal)
-if ($leaseFreeIndex -ge 0 -and $normalLeaseIndex -gt $leaseFreeIndex -and
-    $recoveryPermissionIndex -gt $normalLeaseIndex) {
-    Pass "remote recovery validates its lease before the recovery allowlist"
+$remoteRecoveryPermissionIndex = $permissionMethod.LastIndexOf(
+    'new PermissionService(session)',
+    [System.StringComparison]::Ordinal)
+if ($normalPermissionIndex -ge 0 -and
+    $leaseFreeIndex -gt $normalPermissionIndex -and
+    $localRecoveryPermissionIndex -gt $leaseFreeIndex -and
+    $remoteRecoveryAllowlistIndex -gt $localRecoveryPermissionIndex -and
+    $remoteRecoveryPermissionIndex -gt $remoteRecoveryAllowlistIndex) {
+    Pass "only proven local recovery bypasses the lease; remote recovery remains lease-bound and allowlisted"
 } else {
     Fail "recovery permissions must bypass the lease only for proven local-recovery provenance"
 }
@@ -273,7 +285,7 @@ $cancelBranch = [regex]::Match(
     $operatorChangeMethod,
     'if\s*\(!accessAccepted[^\{]*\{[\s\S]*?(?=\r?\n\s*var\s+session\s*=)').Value
 if ($cancelBranch.Length -gt 0 -and
-    $cancelBranch -notmatch '_authenticatedAccessMode\s*=(?!=)' -and
+    $cancelBranch -notmatch 'SetAuthenticatedAccessMode\s*\(' -and
     $cancelBranch -notmatch 'EnterRecoveryModeAsync\(') {
     Pass "cancelled POS access never commits an access mode or enters recovery"
 } else {
@@ -281,7 +293,8 @@ if ($cancelBranch.Length -gt 0 -and
 }
 Assert-Contains "cancelled operator change rechecks trusted identity binding" $operatorChangeMethod "IsSessionBoundToCurrentTrustedIdentityAsync"
 Assert-Contains "trusted identity mismatch forces the stale session out" $operatorChangeMethod "existingSession.LogoutForced()"
-if ($main -match 'private\s+async\s+Task<bool>\s+ExitRecoveryModeAsync\(\)[\s\S]{0,500}HasNormalAuthorizedAccessForRecoveryExit\(\)[\s\S]{0,3500}_recoveryMode\s*=\s*false') {
+if ($main -match 'private\s+async\s+Task<bool>\s+ExitRecoveryModeAsync\(\)[\s\S]{0,700}coordinator[\s\S]{0,80}\.ValidateRecoveryExitAsync[\s\S]{0,2500}coordinator[\s\S]{0,80}\.CompleteRecoveryExitAsync' -and
+    $startupCoordinator -match 'CompleteRecoveryExitAsync[\s\S]{0,450}Interlocked\.Exchange\(ref\s+_recoveryMode,\s*0\)') {
     Pass "recovery exit validates normal authorized access before opening POS"
 } else {
     Fail "recovery exit must validate normal authorized access before clearing recovery mode"

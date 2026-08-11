@@ -3,9 +3,11 @@ namespace Win7POS.Core.Online
     public sealed class PosTrustedDeviceSession
     {
         public string DeviceToken { get; set; }
+        public string EffectiveOfflineAuthorizationExpiresAt { get; set; }
         public string GenerationId { get; set; }
         public string LastOkLocalAt { get; set; }
         public string LastOkServerAt { get; set; }
+        public bool OfflineAuthorizationAttested { get; set; }
         public string PosSessionId { get; set; }
         public string SessionExpiresAt { get; set; }
         public string SessionToken { get; set; }
@@ -18,5 +20,6 @@ namespace Win7POS.Core.Online
         public string StaffDisplayName { get; set; }
         public string StaffId { get; set; }
         public string StaffRoleKey { get; set; }
+        public int TrustedStateFormatVersion { get; set; }
     }
 }

@@ -27,8 +27,18 @@ $required = @(
     "src/Win7POS.Core/Online/CatalogHeartbeatPolicy.cs",
     "src/Win7POS.Core/Online/CatalogFullLaneEvidenceTracker.cs",
     "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs",
+    "src/Win7POS.Core/Online/CatalogAuthoritativeDrainBudgetPolicy.cs",
     "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
+    "src/Win7POS.Data/Repositories/RemoteCatalogBatchMapper.cs",
+    "src/Win7POS.Data/Repositories/CatalogMutationGate.cs",
+    "src/Win7POS.Data/Repositories/LocalProductWriter.cs",
+    "src/Win7POS.Data/Repositories/ProductIdentityPolicy.cs",
+    "src/Win7POS.Data/Repositories/ProductMetaReference.cs",
+    "src/Win7POS.Data/Repositories/ProductMetaResolver.cs",
+    "src/Win7POS.Data/Repositories/RemoteCatalogProductWriter.cs",
+    "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
     "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs",
     "src/Win7POS.Core/Online/OnlineSyncSupervisorContracts.cs",
@@ -37,9 +47,12 @@ $required = @(
     "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs",
     "tests/Win7POS.Core.Tests/Data/CatalogFullResponseStageRepositoryTests.cs",
     "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs",
+    "tests/Win7POS.Core.Tests/Data/LocalProductWriterTests.cs",
+    "tests/Win7POS.Core.Tests/Data/RemoteCatalogProductWriterTests.cs",
     "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs",
     "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs",
     "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs",
+    "tests/Win7POS.Core.Tests/Online/CatalogAuthoritativeDrainBudgetPolicyTests.cs",
     "tests/Win7POS.Core.Tests/Online/CatalogHeartbeatPolicyTests.cs"
 )
 
@@ -55,11 +68,13 @@ if ($fail) {
 
 $client = (Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs") + "`n" + (Read-Text "src/Win7POS.Core/Online/PosOnlineTransportContracts.cs")
 $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
 $syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $supervisor = Read-Text "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs"
 $supervisorContracts = Read-Text "src/Win7POS.Core/Online/OnlineSyncSupervisorContracts.cs"
 $fullLaneEvidence = Read-Text "src/Win7POS.Core/Online/CatalogFullLaneEvidenceTracker.cs"
 $paginationPolicy = Read-Text "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs"
+$authoritativeDrainPolicy = Read-Text "src/Win7POS.Core/Online/CatalogAuthoritativeDrainBudgetPolicy.cs"
 $fullStage = Read-Text "src/Win7POS.Data/Online/CatalogFullResponseStageRepository.cs"
 $shopState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
 $catalogImportOutbox = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
@@ -70,6 +85,14 @@ $heartbeatPolicy = Read-Text "src/Win7POS.Core/Online/CatalogHeartbeatPolicy.cs"
 $cli = Read-Text "src/Win7POS.Cli/Program.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$catalogMutationGate = Read-Text "src/Win7POS.Data/Repositories/CatalogMutationGate.cs"
+$localProductWriter = Read-Text "src/Win7POS.Data/Repositories/LocalProductWriter.cs"
+$batchMapper = Read-Text "src/Win7POS.Data/Repositories/RemoteCatalogBatchMapper.cs"
+$productIdentityPolicy = Read-Text "src/Win7POS.Data/Repositories/ProductIdentityPolicy.cs"
+$productMetaReference = Read-Text "src/Win7POS.Data/Repositories/ProductMetaReference.cs"
+$productMetaResolver = Read-Text "src/Win7POS.Data/Repositories/ProductMetaResolver.cs"
+$remoteCatalogProductWriter = Read-Text "src/Win7POS.Data/Repositories/RemoteCatalogProductWriter.cs"
+$remotePriceHistoryRepository = Read-Text "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs"
 $categoryRepository = Read-Text "src/Win7POS.Data/Repositories/CategoryRepository.cs"
 $supplierRepository = Read-Text "src/Win7POS.Data/Repositories/SupplierRepository.cs"
 $categorySupplierResolver = Read-Text "src/Win7POS.Data/Import/CategorySupplierResolver.cs"
@@ -80,9 +103,13 @@ $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalogExactnessTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs"
 $batchRepositoryTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs"
+$runContextPerformanceTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogRunContextPerformanceTests.cs"
+$localProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/LocalProductWriterTests.cs"
+$remoteCatalogProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogProductWriterTests.cs"
 $referenceTombstoneTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs"
 $restoreTests = Read-Text "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs"
 $paginationTests = Read-Text "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs"
+$authoritativeDrainTests = Read-Text "tests/Win7POS.Core.Tests/Online/CatalogAuthoritativeDrainBudgetPolicyTests.cs"
 $heartbeatTests = Read-Text "tests/Win7POS.Core.Tests/Online/CatalogHeartbeatPolicyTests.cs"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
@@ -107,11 +134,11 @@ if ($syncHost -notmatch "new\s+OnlineSyncSupervisor\([\s\S]{0,700}StopAuthentica
     Fail "catalog auth denial must latch the generation, stop its durable fence and clear trust globally"
 } else { Pass "catalog auth denial latches the generation and stops all supervisor lanes" }
 if ($service -notmatch "RemoteCatalogBatchRepository" -or
-    $service -notmatch "ApplyAsync\(\s*batch,\s*cancellationToken,\s*new\s+RemoteCatalogCommitFence") { Fail "catalog pages are not delegated to the fenced batch repository with cancellation" } else { Pass "catalog pages use the cancellation-aware fenced batch repository" }
+    $service -notmatch "\.ApplyAsync\(\s*batch,\s*cancellationToken,\s*CreateCommitFence") { Fail "catalog pages are not delegated to the fenced batch repository with cancellation" } else { Pass "catalog pages use the cancellation-aware fenced batch repository" }
 if ($batchRepository -notmatch "class RemoteCatalogBatchRepository" -or $batchRepository -notmatch "Task<RemoteCatalogBatchApplyResult>\s+ApplyAsync") { Fail "remote catalog batch repository contract missing" } else { Pass "remote catalog batch repository contract present" }
 $batchWriteBody = [regex]::Match(
     $batchRepository,
-    "internal\s+async\s+Task<RemoteCatalogBatchApplyResult>\s+ApplyWithinRunAsync[\s\S]*?(?=\r?\n\s*private\s+static\s+async\s+Task\s+RequireCommitFenceAsync)").Value
+    "internal\s+async\s+Task<RemoteCatalogBatchApplyResult>\s+ApplyWithinRunAsync[\s\S]*?(?=\r?\n\s*private\s+static\s+void\s+ValidateBatchContent)").Value
 $batchCancellationIndex = $batchWriteBody.LastIndexOf("cancellationToken.ThrowIfCancellationRequested")
 $batchTransactionIndex = $batchWriteBody.IndexOf("conn.BeginTransaction")
 $batchCommitIndex = $batchWriteBody.IndexOf("tx.Commit()")
@@ -144,18 +171,54 @@ if ($service -notmatch "using\s+var\s+catalogApplyRun[\s\S]{0,180}CreateRunConte
 } else {
     Pass "catalog sync reuses one apply context across pages"
 }
+$atomicCommitIndex = $batchRepository.IndexOf("public async Task CommitAtomicFullRefreshAsync")
+$physicalAtomicCommitIndex = if ($atomicCommitIndex -ge 0) {
+    $batchRepository.IndexOf("_atomicTransaction.Commit();", $atomicCommitIndex)
+} else {
+    -1
+}
+$atomicDiagnosticsIndex = if ($atomicCommitIndex -ge 0) {
+    $batchRepository.IndexOf("CompleteCommittedAtomicFullRefresh(", $physicalAtomicCommitIndex)
+} else {
+    -1
+}
+if ($service -notmatch "StageAuthoritativePageAsync" -or
+    $service -notmatch "BeginAtomicFullRefreshAsync" -or
+    $service -notmatch "CommitAtomicFullRefreshAsync" -or
+    $batchRepository -notmatch "public\s+async\s+Task<CatalogAuthoritativeStageEvidence>\s+StageAuthoritativePageAsync" -or
+    $batchRepository -notmatch "LoadFullStagePageAsync" -or
+    $batchRepository -notmatch "RecordUncommittedAtomicPage" -or
+    $physicalAtomicCommitIndex -lt $atomicCommitIndex -or
+    $atomicDiagnosticsIndex -lt $physicalAtomicCommitIndex -or
+    $batchRepositoryTests -notmatch "AtomicFullRefreshFailureRollsBackEveryAppliedPage" -or
+    $batchRepositoryTests -notmatch "AuthoritativeStagePageFailure_PreservesPriorScratchAndLiveCatalog" -or
+    $batchRepositoryTests -notmatch "TerminalScratchPage_IsReadBeforeShortWriterStage_WithoutDatabaseLocked") {
+    Fail "authoritative scratch staging must use short crash-safe transactions and promotion must remain run-atomic"
+} else {
+    Pass "authoritative scratch staging is crash-safe and full-refresh promotion remains run-atomic"
+}
 if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
     $batchRepository -notmatch "LoadPageProductIdentitiesAsync" -or
     $batchRepository -notmatch "LoadPagePendingStockAsync" -or
-    $batchRepository -notmatch "PreparedCommandCount") {
+    $batchRepository -notmatch "PreparedCommandCount" -or
+    $batchRepository -notmatch "ProductIdentityStageRowsPerChunk" -or
+    $batchRepository -notmatch "ProductIdentityStageChunkCount" -or
+    $batchRepository -notmatch "ProductStageRowsPerChunk" -or
+    $batchRepository -notmatch "ProductStageChunkCount" -or
+    $batchRepository -notmatch "JsonChunkParameterName" -or
+    $batchRepository -notmatch "FROM\s+json_each\(" -or
+    $batchRepository -notmatch "BuildProductIdentityRowsJson" -or
+    $batchRepository -notmatch "BuildProductRowsJson") {
     Fail "catalog run context must use page-scoped identity/pending-stock queries and prepared commands"
 } else {
-    Pass "catalog run context uses page-scoped queries and prepared commands"
+    Pass "catalog run context uses page-scoped queries and bounded JSON staging commands"
 }
 if ($batchRepository -notmatch "UpsertRemoteInTransactionAsync" -or
-    $batchRepository -notmatch "UpsertProductAndMetaInTransactionCoreAsync" -or
-    $batchRepository -notmatch "UpsertOrQueueRemotePriceHistoryInTransactionAsync" -or
-    $batchRepository -notmatch "ApplyRemoteProductTombstoneInTransactionAsync") {
+    $batchRepository -notmatch "RemoteCatalogProductWriter\s*\.\s*UpsertProductAndMetaInTransactionCoreAsync" -or
+    $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*UpsertOrQueueRemotePriceHistoryInTransactionAsync" -or
+    $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*ApplyPendingRemotePricesInTransactionAsync" -or
+    $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*PrepareAuthoritativeRemotePriceRepairAsync" -or
+    $batchRepository -notmatch "RemoteCatalogProductWriter\s*\.\s*ApplyRemoteProductTombstoneInTransactionAsync") {
     Fail "catalog batch does not keep all catalog mutations inside the shared transaction"
 } else {
     Pass "catalog batch routes products, references, prices and tombstones through one transaction"
@@ -175,26 +238,29 @@ if ($service -notmatch "Limit\s*=\s*CatalogPullPageLimit") { Fail "catalog pull 
 if ($service -notmatch "PosCatalogPullProgress" -or $service -notmatch "IProgress<PosCatalogPullProgress>" -or $service -notmatch "ForCatalogPage") { Fail "catalog pull progress callback missing" } else { Pass "catalog pull progress callback present" }
 if ($service -match "MaxCatalogPullPages\s*=\s*10") { Fail "catalog pull page cap regressed to unsafe low value" } else { Pass "unsafe MaxCatalogPullPages=10 absent" }
 if ($service -notmatch "MaxBackgroundCatalogPullPages") { Fail "background catalog pull cap missing" } else { Pass "background catalog pull cap present" }
-$hardCapMatch = [regex]::Match($service, "MaxAuthoritativeCatalogPullPages\s*=\s*(\d+)")
-if (-not $hardCapMatch.Success -or [int]$hardCapMatch.Groups[1].Value -lt 100) {
-    Fail "authoritative catalog hard ceiling is missing or too low for 100,000-row lanes"
-} else { Pass "authoritative catalog hard ceiling supports 100,000-row lanes" }
-if ($service -notmatch "effectiveMaxPages" -or
-    $service -notmatch "firstPageBudget\.PageBudget" -or
-    $paginationPolicy -notmatch "CalculatePageBudget" -or
-    $paginationPolicy -notmatch "Math\.Max\(" -or
-    $service -notmatch "for\s*\(var page = 1; page <= effectiveMaxPages; page\+\+\)") {
-    Fail "server-selected full_refresh does not use an authoritative lane-derived budget"
+if ($service -match "MaxAuthoritativeCatalogPullPages|effectiveMaxPages|safePageCeiling" -or
+    $service -notmatch "while\s*\(fullRefresh\s*\|\|\s*page\s*<=\s*deltaPageLimit\)" -or
+    $service -notmatch "CatalogAuthoritativeDrainBudgetPolicy\.Calculate" -or
+    $authoritativeDrainPolicy -notmatch "checked\(" -or
+    $authoritativeDrainPolicy -notmatch "ActivePageBudget" -or
+    $authoritativeDrainTests -notmatch "LargeFiniteManifests_HaveNoProductionPageCeiling") {
+    Fail "authoritative full refresh must use checked lane-derived sizing without a production page ceiling"
 } else {
-    Pass "server-selected full_refresh uses the authoritative lane-derived budget"
+    Pass "authoritative full refresh uses checked lane-derived sizing and drains without a page ceiling"
 }
-if ($paginationPolicy -notmatch "ExpandFullPageBudgetForTombstoneContinuation" -or
-    $paginationPolicy -notmatch "!cumulative\.HasAnyTombstones" -or
-    $service -notmatch "ExpandFullPageBudgetForTombstoneContinuation" -or
-    $paginationTests -notmatch "FullHasMore_TombstonesCanContinueBeyondActiveSummaryBudget") {
-    Fail "full tombstone chains must drain beyond the active-only summary budget within the hard ceiling"
+if ($authoritativeDrainPolicy -notmatch "catalog_authoritative_sqlite_failure" -or
+    $service -notmatch "catch\s*\(Exception\s+ex\)\s*when\s*\([\s\S]{0,180}authoritativeRunObserved[\s\S]{0,180}IsSqliteFailure\(ex\)" -or
+    $service -notmatch "StoreCatalogFailureForGenerationAsync\([\s\S]{0,240}sqliteCode") {
+    Fail "authoritative SQLite failures must retain a typed technical result"
 } else {
-    Pass "full tombstone chains drain to a validated terminal page beyond the active-only summary budget"
+    Pass "authoritative SQLite failures retain a typed technical result"
+}
+if ($service -notmatch "if\s*\(!response\.HasMore\)[\s\S]{0,80}break;" -or
+    $service -notmatch "StageAuthoritativePageAsync" -or
+    $paginationTests -notmatch "FullHasMore_TombstonesCanContinueBeyondActiveSummaryBudget") {
+    Fail "full tombstone chains must drain beyond the active-only sizing budget until hasMore=false"
+} else {
+    Pass "full tombstone chains drain to a validated terminal page at hasMore=false"
 }
 if ($fullLaneEvidence -notmatch "ProductActiveTombstoneConflictCode" -or
     $fullLaneEvidence -notmatch "CategoryActiveTombstoneConflictCode" -or
@@ -205,7 +271,7 @@ if ($fullLaneEvidence -notmatch "ProductActiveTombstoneConflictCode" -or
 } else {
     Pass "full snapshot active/tombstone overlap fails before destructive promotion"
 }
-if ($mainWindow -notmatch "QueueBackgroundOnlineRefresh[\s\S]{0,700}_onlineSyncHost\?\.StartContinuous\(\)" -or
+if ($startupCoordinator -notmatch "StartBackground[\s\S]{0,500}host\.StartContinuous\(\)" -or
     $supervisor -notmatch 'new\s+OnlineSyncLaneOutcome\(false,\s*"lane_exception"\)' -or
     $supervisor -notmatch "OnlineSyncLaneSchedulePolicy\.Evaluate[\s\S]{0,700}if\s*\(schedule\.ShouldSchedule\)[\s\S]{0,120}Schedule\(slot,\s*schedule\.Delay,\s*outcome\)" -or
     $supervisorContracts -notmatch "outcome\.AuthenticationDenied\s*\|\|\s*outcome\.Terminal[\s\S]{0,260}OnlineSyncLaneScheduleDecision\(false" -or
@@ -232,21 +298,31 @@ $networkIndex = $service.IndexOf("new PosAdminWebClient")
 if ($capturedSessionCheckIndex -lt 0 -or $bindingIndex -lt 0 -or $networkIndex -lt 0 -or $capturedSessionCheckIndex -gt $bindingIndex -or $capturedSessionCheckIndex -gt $networkIndex -or $shopState -notmatch "catalog_session_shop_changed") { Fail "captured catalog session must be revalidated inside the transition barrier before bind/network" } else { Pass "captured catalog session is revalidated before bind/network" }
 if ($shopState -notmatch "pos\.catalog\.bound_shop_id" -or $shopState -notmatch "pos\.catalog\.bound_shop_code" -or $shopState -notmatch "Catalog state shop binding mismatch") { Fail "persistent catalog shop binding missing" } else { Pass "persistent catalog shop binding present" }
 if ($service -notmatch "stagedResponseShopError[\s\S]*response_shop_mismatch[\s\S]*ApplyCatalogAsync") { Fail "catalog response shop must be validated before local apply" } else { Pass "catalog response shop validated before local apply" }
-if ($service -notmatch "var\s+authoritativeProductIds\s*=\s*new List<string>" -or
-    $service -notmatch "var\s+authoritativeCategoryIds\s*=\s*new HashSet<string>" -or
-    $service -notmatch "var\s+authoritativeSupplierIds\s*=\s*new HashSet<string>" -or
-    $service -notmatch "CatalogFullLaneEvidenceTracker") {
-    Fail "full refresh must retain raw product rows and distinct validated reference identities"
+if ($service -notmatch "StageAuthoritativePageAsync" -or
+    $batchRepository -notmatch "catalog_authoritative_id_stage" -or
+    $batchRepository -notmatch "category_remote_id" -or
+    $batchRepository -notmatch "supplier_remote_id" -or
+    $batchRepository -notmatch "product_remote_id") {
+    Fail "full refresh must durably retain authoritative rows and validated reference identities"
 } else {
-    Pass "full refresh retains raw product evidence and distinct reference identities"
+    Pass "full refresh durably retains authoritative rows and reference identities"
 }
-$rawIdCollector = [regex]::Match($service, "private static void AddRemoteIds[\s\S]*?(?=\r?\n\s*private static)").Value
-if ($rawIdCollector -notmatch "ICollection<string>" -or
-    $rawIdCollector -notmatch "target\.Add\(Normalize\(selector\(value\)\)\)" -or
-    $rawIdCollector -match "IsNullOrWhiteSpace|Distinct\(|HashSet") {
-    Fail "authoritative ID collector must preserve empty and duplicate raw rows for exactness audit"
+if ($batchRepository -notmatch "AddStageOccurrences" -or
+    $batchRepository -notmatch "occurrences\[key\]\s*=\s*checked\(count\s*\+\s*1\)" -or
+    $batchRepository -notmatch "occurrence_count") {
+    Fail "authoritative staging must preserve invalid and duplicate row evidence"
 } else {
-    Pass "authoritative ID collector preserves invalid/duplicate evidence"
+    Pass "authoritative staging preserves invalid/duplicate evidence"
+}
+if ($service -notmatch "RemoteCatalogBatchMapper\.BuildRemoteCatalogBatch" -or
+    $batchMapper -notmatch "ReuseValidatedAuthoritativeStagePage\s*=\s*authoritativeFullRefresh\s*&&\s*stagePage\s*!=\s*null" -or
+    $batchRepository -notmatch "RequireValidatedAuthoritativeStagePageAsync" -or
+    $batchRepository -notmatch "Validated authoritative catalog stage scope is missing or ambiguous" -or
+    $batchRepository -notmatch "UPDATE catalog_authoritative_stage_scope[\s\S]{0,180}SET transition_epoch" -or
+    $batchRepository -notmatch "Validated authoritative catalog stage page is missing or ambiguous") {
+    Fail "validated full-refresh stage reuse must adopt the fenced epoch and fail closed on missing scope/page evidence"
+} else {
+    Pass "validated full-refresh stage is adopted once and reused with fail-closed scope/page checks"
 }
 if ($service -notmatch "CatalogFullRefreshReconciler" -or $fullRefresh -notmatch "NOT EXISTS" -or $fullRefresh -notmatch "remote_product_id" -or $fullRefresh -notmatch "remote_category_id" -or $fullRefresh -notmatch "remote_supplier_id") { Fail "full_refresh reconciliation missing" } else { Pass "full_refresh reconciles remote rows absent from authoritative snapshot" }
 if ($service -notmatch "RequestFullRepairWhileBarrierHeldAsync" -or
@@ -269,10 +345,13 @@ if ($service -notmatch "IsCatalogCursorRejectionCode" -or
     Pass "expired/rejected cursors probe a controlled non-destructive full-refresh boundary"
 }
 $catalogApplyIndex = $service.IndexOf("var applyStats = await ApplyCatalogAsync(")
-$ambiguityGuardIndex = $service.IndexOf("var paginationSafety = CatalogPaginationSafetyPolicy.EvaluateTerminalPage(")
-$compatibilityIndex = $service.IndexOf("var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull")
+$ambiguityGuardIndex = $service.IndexOf(
+    "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",
+    $compatibilityIndex)
+$compatibilityIndex = $service.IndexOf("var compatibilityAssessment = PosOnlineCompatibilityValidator.AssessCatalogPull")
 $responseShopIndex = $service.IndexOf("var stagedResponseShopError = OutboxShopBinding.GetMismatchCode(")
 $stageAppendIndex = $service.IndexOf("fullStage.AppendAsync(")
+$authoritativeStageIndex = $service.IndexOf("StageAuthoritativePageAsync(")
 $promotionMarkerIndex = $service.IndexOf("Only a completely drained and protocol-validated full chain")
 $promotionResetIndex = if ($promotionMarkerIndex -ge 0) {
     $service.IndexOf("RequestFullRepairWhileBarrierHeldAsync(", $promotionMarkerIndex)
@@ -284,11 +363,13 @@ if ($catalogApplyIndex -lt 0 -or
     $ambiguityGuardIndex -le $compatibilityIndex -or
     $responseShopIndex -le $ambiguityGuardIndex -or
     $stageAppendIndex -lt $responseShopIndex -or
+    $authoritativeStageIndex -lt $stageAppendIndex -or
     $promotionMarkerIndex -lt $stageAppendIndex -or
+    $promotionMarkerIndex -lt $authoritativeStageIndex -or
     $promotionResetIndex -lt $promotionMarkerIndex -or
     $stagedApplyIndex -lt $promotionResetIndex -or
     $service -notmatch "var\s+requestCursor\s*=\s*networkCursor" -or
-    $service -notmatch "networkCursor\s*=\s*result\.Value\.SyncCursor") {
+    $service -notmatch "networkCursor\s*=\s*response\.SyncCursor") {
     Fail "full_refresh must validate every response, advance the network cursor, stage the drained chain, then reset/apply"
 } else {
     Pass "full_refresh validates and stages the drained cursor chain before reset/apply"
@@ -302,21 +383,25 @@ if ($preStageValidationBlock -match "ApplyCatalogAsync") {
     Pass "full response is not applied before validation and durable staging"
 }
 if ($fullStage -notmatch "MaximumPageBytes\s*=\s*8\s*\*\s*1024\s*\*\s*1024" -or
-    $fullStage -notmatch "MaximumRunBytes\s*=\s*512L\s*\*\s*1024L\s*\*\s*1024L" -or
+    $fullStage -notmatch "TryCreateResourceBudget" -or
+    $fullStage -notmatch "TryCalculateMaximumStagedBytes" -or
+    $fullStage -notmatch "availableBytes\s*-\s*MinimumFreeDiskReserveBytes" -or
+    $fullStage -notmatch "CursorKey\(generationId,\s*cursorFingerprint\)" -or
+    $fullStage -notmatch "ON CONFLICT\(key\) DO NOTHING" -or
     $fullStage -notmatch "DataContractJsonSerializer" -or
     $fullStage -notmatch "DELETE FROM app_settings WHERE key GLOB @pattern" -or
     $fullStage -notmatch "LoadPageAsync" -or
     $service -notmatch "fullStage\.BeginAsync" -or
     $service -notmatch "fullStage\.AppendAsync" -or
-    $service -notmatch "fullStage\.LoadPageAsync" -or
+    $service -notmatch "LoadFullStagePageAsync" -or
     $service -notmatch "fullStage\.ClearAsync") {
-    Fail "bounded durable full-chain staging contract is incomplete"
+    Fail "resource-derived durable full-chain staging and cursor uniqueness contract is incomplete"
 } else {
-    Pass "full-chain staging is durable, generation-scoped and bounded"
+    Pass "full-chain staging is durable, generation-scoped and technically resource-bounded"
 }
 $ambiguityFailureBlock = [regex]::Match(
     $service,
-    'if \(!paginationSafety\.Allowed\)[\s\S]*?(?=\r?\n\s*if \(page == 1 && pageIsFullRefresh\))').Value
+    'if \(!stagedPaginationSafety\.Allowed\)[\s\S]*?(?=\r?\n\s*receivedFullLanes\s*=\s*cumulativeFullLaneCounts)').Value
 if ($paginationPolicy -notmatch "server_catalog_pagination_ambiguous" -or
     $ambiguityFailureBlock -notmatch "StoreCatalogFailureAsync" -or
     $ambiguityFailureBlock -notmatch "BootstrapStatusFailedRetryable" -or
@@ -342,25 +427,27 @@ if ($service -notmatch "if\s*\(applyStats\.RowsSkipped\s*>\s*0\)[\s\S]{0,600}Req
 } else {
     Pass "catalog apply conflicts/skips force a full-repair boundary"
 }
-$reconcileIndex = $service.IndexOf(".ReconcileAndVerifyAsync(")
-$storeExactnessIndex = $service.IndexOf(".StoreExactnessAsync(")
-$authoritativeCursorIndex = $service.IndexOf("authoritativeSnapshotCommitted: true")
-$saleSafeIndex = $service.IndexOf("StoreCatalogSaleSafeAsync(")
+$reconcileIndex = $service.IndexOf(".ReconcileAndVerifyWithinAtomicApplyAsync(")
+$finalizeIndex = $service.IndexOf(".FinalizeVerifiedFullRefreshWithinTransactionAsync(")
+$serviceAtomicCommitIndex = $service.IndexOf(".CommitAtomicFullRefreshAsync(")
 if ($reconcileIndex -lt 0 -or
-    $storeExactnessIndex -lt $reconcileIndex -or
-    $authoritativeCursorIndex -lt $storeExactnessIndex -or
-    $saleSafeIndex -lt $authoritativeCursorIndex) {
-    Fail "full_refresh must reconcile, persist exactness, then commit cursor and sale-safe state in order"
+    $serviceAtomicCommitIndex -lt $reconcileIndex -or
+    $finalizeIndex -lt $serviceAtomicCommitIndex -or
+    $service -notmatch "CommitAtomicFullRefreshAsync\(\s*\(connection, transaction\)\s*=>\s*catalogState\.FinalizeVerifiedFullRefreshWithinTransactionAsync" -or
+    $shopState -notmatch "FinalizeVerifiedFullRefreshWithinTransactionAsync" -or
+    $shopState -notmatch "StoreExactnessWithinTransactionAsync" -or
+    $shopState -notmatch "RequireExactnessSaleSafetyAsync") {
+    Fail "full_refresh must atomically finalize exactness, cursor and sale-safe state before live promotion"
 } else {
-    Pass "exactness is persisted before authoritative cursor and sale-safe state"
+    Pass "exactness, cursor and sale-safe state finalize atomically before live promotion"
 }
 $activeProductsIndex = $service.IndexOf("var activeRemoteProducts")
-if ($activeProductsIndex -lt $storeExactnessIndex -or
-    $activeProductsIndex -gt $authoritativeCursorIndex -or
+if ($activeProductsIndex -lt 0 -or
+    $service -notmatch "if\s*\(!fullRefresh\)\s*\{\s*var activeRemoteProducts" -or
     $service -notmatch "catalog_partial_delta_no_active_products") {
-    Fail "zero-active catalogs must fail and request repair before final/full cursor or partial-delta continuation"
+    Fail "zero-active delta catalogs must fail and request repair before continuation"
 } else {
-    Pass "zero-active full and partial-delta states fail closed before sale-safe/cursor completion"
+    Pass "zero-active delta states fail closed before sale-safe completion"
 }
 if ($service -notmatch "AuditCurrentAsync" -or
     $service -notmatch "FindInvariantError\(deltaAudit\)" -or
@@ -371,11 +458,10 @@ if ($service -notmatch "AuditCurrentAsync" -or
 }
 if ($service -notmatch "exactness\.Status\s*!=\s*CatalogCompletenessStatus\.Verified" -or
     $service -notmatch "exactness\.RepairRequired" -or
-    $service.IndexOf("exactness.RepairRequired") -lt $storeExactnessIndex -or
-    $service.IndexOf("exactness.RepairRequired") -gt $authoritativeCursorIndex) {
-    Fail "every non-verified/repair-required exactness result must fail closed before authoritative cursor commit"
+    $service.IndexOf("exactness.RepairRequired") -gt $serviceAtomicCommitIndex) {
+    Fail "every non-verified/repair-required exactness result must fail closed before live promotion"
 } else {
-    Pass "non-verified exactness fails closed before cursor commit"
+    Pass "non-verified exactness fails closed before live promotion"
 }
 if ($service -notmatch "snapshotCatalogVersion" -or
     $service -notmatch "catalog_version_changed_mid_pull" -or
@@ -392,20 +478,20 @@ if ($service -notmatch "snapshotSummary" -or
     Pass "multi-page pull pins catalog summary"
 }
 if ($shopState -notmatch "SummaryPinned\s*&&\s*!summaryPresent[\s\S]{0,200}catalog_summary_missing_across_runs" -or
-    $service -notmatch "snapshotSummaryPinned\s*&&\s*result\.Value\.CatalogSummary\s*==\s*null" -or
+    $service -notmatch "snapshotSummaryPinned\s*&&\s*response\.CatalogSummary\s*==\s*null" -or
     $service -notmatch 'const string summaryMissingCode\s*=\s*"catalog_summary_missing_mid_pull"[\s\S]{0,700}RequestFullRepairWhileBarrierHeldAsync' -or
     $catalogExactnessTests -notmatch "catalog_summary_missing_across_runs") {
     Fail "a pinned catalog summary may disappear without forcing repair"
 } else {
     Pass "pinned catalog summary presence is fail-closed within and across runs"
 }
-if ($service -notmatch "const string versionChangedCode[\s\S]{0,600}RequestFullRepairWhileBarrierHeldAsync[\s\S]{0,600}StoreCatalogFailureAsync\(versionChangedCode\)" -or
-    $service -notmatch "const string summaryChangedCode[\s\S]{0,600}RequestFullRepairWhileBarrierHeldAsync[\s\S]{0,600}StoreCatalogFailureAsync\(summaryChangedCode\)" -or
-    $service -notmatch "const string cursorProgressCode[\s\S]{0,600}RequestFullRepairWhileBarrierHeldAsync[\s\S]{0,600}StoreCatalogFailureAsync\(cursorProgressCode\)" -or
-    $service -notmatch "page\s*>\s*1\s*&&\s*pageIsFullRefresh\s*!=\s*fullRefresh[\s\S]{0,600}RequestFullRepairWhileBarrierHeldAsync[\s\S]{0,600}catalog_sync_mode_changed") {
-    Fail "snapshot pin, mode or cursor violations can resume from a mixed checkpoint"
+if ($service -notmatch "const string versionChangedCode[\s\S]{0,1200}if\s*\(!pageIsFullRefresh\s*&&\s*!fullRefresh\)[\s\S]{0,600}RequestFullRepairWhileBarrierHeldAsync[\s\S]{0,600}StoreCatalogFailureAsync\(versionChangedCode\)" -or
+    $service -notmatch "const string summaryChangedCode[\s\S]{0,1200}if\s*\(!pageIsFullRefresh\s*&&\s*!fullRefresh\)[\s\S]{0,600}RequestFullRepairWhileBarrierHeldAsync[\s\S]{0,600}StoreCatalogFailureAsync\(summaryChangedCode\)" -or
+    $service -notmatch "var\s+cursorProgressCode[\s\S]{0,600}if\s*\(!pageIsFullRefresh\s*&&\s*!fullRefresh\)[\s\S]{0,600}RequestFullRepairWhileBarrierHeldAsync[\s\S]{0,600}StoreCatalogFailureAsync\(cursorProgressCode\)" -or
+    $service -notmatch "page\s*>\s*1\s*&&\s*pageIsFullRefresh\s*!=\s*fullRefresh[\s\S]{0,900}if\s*\(!fullRefresh\)[\s\S]{0,600}RequestFullRepairWhileBarrierHeldAsync[\s\S]{0,600}catalog_sync_mode_changed") {
+    Fail "delta snapshot pin, mode or cursor violations can resume from a mixed checkpoint"
 } else {
-    Pass "snapshot pin, mode and cursor violations reset the resumable cursor and require full repair"
+    Pass "delta snapshot pin, mode and cursor violations reset the resumable cursor and require full repair"
 }
 if ($service -notmatch "seenCursorFingerprints" -or
     $service -notmatch "responseCursor\.Length\s*==\s*0" -or
@@ -449,7 +535,7 @@ if ($service -notmatch "LoadDeltaChainAsync" -or
 } else {
     Pass "resumable delta pulls reject partial/corrupt checkpoints before network apply"
 }
-if ($service -notmatch "ValidateCatalogPull" -or $compatibility -notmatch "catalog_schema_not_supported" -or $compatibility -notmatch "catalog_capability_not_supported" -or $compatibility -notmatch "policy_contract_not_supported") { Fail "catalog schema/policy/capability fail-closed validation missing" } else { Pass "catalog schema, policy and capabilities fail closed" }
+if ($service -notmatch "AssessCatalogPull" -or $compatibility -notmatch "ValidateCatalogPull" -or $compatibility -notmatch "catalog_schema_not_supported" -or $compatibility -notmatch "catalog_capability_not_supported" -or $compatibility -notmatch "policy_contract_not_supported") { Fail "catalog schema/policy/capability fail-closed validation missing" } else { Pass "catalog schema, policy and capabilities fail closed" }
 if ($compatibility -notmatch "ValidateCatalogVersion\(response\.CatalogVersion\)" -or
     $compatibility -notmatch "IsRequiredCanonicalText" -or
     $compatibility -notmatch "CatalogVersionMaximumLength" -or
@@ -477,22 +563,22 @@ if ($compatibility -notmatch "ValidateCatalogRows" -or
     $compatibility -notmatch "catalog_category_row_invalid" -or
     $compatibility -notmatch "catalog_supplier_row_invalid" -or
     $compatibility -notmatch "catalog_product_tombstone_invalid" -or
-    $compatibility.IndexOf("ValidateCatalogRows(response.Catalog)") -gt $compatibility.IndexOf("ValidateCatalogSummary(response.CatalogSummary)")) {
+    $compatibility.IndexOf("ValidateCatalogRows(response.Catalog, validateDisplayText)") -gt $compatibility.IndexOf("ValidateCatalogSummary(response.CatalogSummary)")) {
     Fail "catalog payload rows must be validated fail-closed before apply/summary verification"
 } else {
     Pass "catalog products, references, prices and tombstones are validated before apply"
 }
 $compatibilityIndex = $service.IndexOf(
-    "ValidateCatalogPull(result.Value)",
+    "AssessCatalogPull(result.Value)",
     [System.StringComparison]::Ordinal)
 $evidenceIndex = $service.IndexOf(
-    "fullLaneEvidence.Add(result.Value.Catalog)",
+    ".StageAuthoritativePageAsync(",
     [System.StringComparison]::Ordinal)
 $terminalIndex = $service.IndexOf(
     "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",
     [System.StringComparison]::Ordinal)
 $budgetIndex = $service.IndexOf(
-    "CatalogPaginationSafetyPolicy.CalculatePageBudget(",
+    "CatalogAuthoritativeDrainBudgetPolicy.Calculate(",
     [System.StringComparison]::Ordinal)
 $stageAppendIndex = $service.IndexOf(
     "fullStage.AppendAsync(",
@@ -574,7 +660,7 @@ if ($compatibility -notmatch "row\.ProductName" -or
     Pass "remote catalog persisted text is bounded and Unicode-valid at ingress"
 }
 if ($batchRepository -notmatch "ValidateBatchContent\(batch\)" -or
-    $batchRepository.IndexOf("ValidateBatchContent(batch)") -gt $batchRepository.IndexOf("CatalogMetaWriteGate.WaitAsync") -or
+    $batchRepository.IndexOf("ValidateBatchContent(batch)") -gt $batchRepository.IndexOf("CatalogMutationGate.Instance.WaitAsync") -or
     $batchRepositoryTests -notmatch "ApplyAsync_RejectsOversizedProductTextBeforeAnyMutation" -or
     $batchRepositoryTests -notmatch "ApplyAsync_RejectsMalformedTimestampBeforeAnyMutation" -or
     $fullRefresh -notmatch "EnsureOptionalTimestamp\([\s\S]{0,160}generatedAt" -or
@@ -628,26 +714,180 @@ if ($client -notmatch 'DataMember\(Name = "syncCursor"') { Fail "catalog pull sy
 if ($client -notmatch 'DataMember\(Name = "catalogVersion"') { Fail "catalog version wire field missing" } else { Pass "catalog version wire field present" }
 if ($client -notmatch 'DataMember\(Name = "hasMore"') { Fail "hasMore wire field missing" } else { Pass "hasMore wire field present" }
 if ($client -notmatch 'DataMember\(Name = "tombstones"') { Fail "tombstones wire field missing" } else { Pass "tombstones wire field present" }
-if ($repository -notmatch "remote_product_id") { Fail "remote product id column missing in repository" } else { Pass "remote product id used in repository" }
-if ($repository -notmatch "remote_catalog_pending_prices" -or $repository -notmatch "QueuePendingRemotePriceAsync" -or $repository -notmatch "ApplyPendingRemotePricesAsync") { Fail "pending remote price replay missing" } else { Pass "pending remote price replay present" }
-if ($repository -notmatch "PendingRemotePriceReplayBatchSize" -or $repository -notmatch "while\s*\(true\)" -or $repository -notmatch "canonical" -or $repository -notmatch "GROUP BY remote_product_id") { Fail "pending remote price replay must drain all resolvable batches against a canonical product per remote_product_id" } else { Pass "pending remote price replay drains all resolvable batches against canonical remote product" }
-if ($repository -notmatch "remote_price_id" -or $initializer -notmatch "remote_price_id" -or $service -notmatch "RemotePriceId\s*=\s*Normalize\(row\.PriceId\)" -or $batchRepository -notmatch "price\.RemotePriceId") { Fail "remote priceId idempotency missing" } else { Pass "remote priceId idempotency present" }
+if ($remoteCatalogProductWriter -notmatch "remote_product_id") { Fail "remote product id column missing in remote product writer" } else { Pass "remote product id used in remote product writer" }
+if ($batchRepository -notmatch "LoadPageProtectedProductsAsync" -or
+    $batchRepository -notmatch "protectedProductIdsByRemoteId" -or
+    $batchRepository -notmatch "protectedProductIdsByBarcode" -or
+    $batchRepository -notmatch "NormalizeSqliteNoCaseBarcodeKey\(\s*protectedProduct\.Barcode\s*\)" -or
+    $batchRepository -notmatch "NormalizeSqliteNoCaseBarcodeKey\(normalizedBarcode\)" -or
+    $batchRepository -match "protectedProductIdsByBarcode[\s\S]{0,200}StringComparer\.OrdinalIgnoreCase" -or
+    $batchRepository -notmatch "protectedProductLookupCompleted:\s*true" -or
+    $remoteCatalogProductWriter -notmatch "if\s*\(\s*!protectedProductLookupCompleted\s*\)" -or
+    $batchRepository -match "foreach\s*\([^)]*pageProducts[^)]*\)[\s\S]{0,5000}FindProtectedProductIdAsync") {
+    Fail "pending article mutations must use SQLite-compatible barcode keys and one page-bounded protected-product lookup across fallback writers"
+} else {
+    Pass "pending article mutations use SQLite-compatible barcode keys and one page-bounded lookup across fallback writers"
+}
+if ($remotePriceHistoryRepository -notmatch "remote_catalog_pending_prices" -or $remotePriceHistoryRepository -notmatch "QueuePendingRemotePriceAsync" -or $remotePriceHistoryRepository -notmatch "ApplyPendingRemotePricesAsync") { Fail "pending remote price replay missing" } else { Pass "pending remote price replay present" }
+if ($remotePriceHistoryRepository -notmatch "PendingRemotePriceReplayBatchSize" -or $remotePriceHistoryRepository -notmatch "while\s*\(true\)" -or $remotePriceHistoryRepository -notmatch "canonical" -or $remotePriceHistoryRepository -notmatch "GROUP BY remote_product_id") { Fail "pending remote price replay must drain all resolvable batches against a canonical remote product per remote_product_id" } else { Pass "pending remote price replay drains all resolvable batches against canonical remote product" }
+if ($remotePriceHistoryRepository -notmatch "remote_price_id" -or $initializer -notmatch "remote_price_id" -or $batchMapper -notmatch "RemotePriceId\s*=\s*Normalize\(row\.PriceId\)" -or $batchRepository -notmatch "price\.RemotePriceId") { Fail "remote priceId idempotency missing" } else { Pass "remote priceId idempotency present" }
+if ($repository -notmatch "private readonly RemotePriceHistoryRepository _remotePriceHistory" -or
+    $repository -notmatch "_remotePriceHistory\.UpsertRemotePriceHistoryAsync" -or
+    $repository -notmatch "_remotePriceHistory\.UpsertOrQueueRemotePriceHistoryAsync" -or
+    $repository -notmatch "_remotePriceHistory\.ApplyPendingRemotePricesAsync") {
+    Fail "ProductRepository must preserve its remote price facade through the extracted collaborator"
+} else {
+    Pass "ProductRepository delegates remote price operations through the extracted collaborator"
+}
+$localFacadeMethods = @(
+    "UpsertAsync",
+    "UpsertMetaAsync",
+    "UpsertMetaFullAsync",
+    "DeleteByBarcodeAsync",
+    "UpsertProductAndMetaInTransactionAsync",
+    "UpdateProductAndMetaInTransactionAsync",
+    "UpdateProductAndMetaWithPriceHistoryAsync",
+    "InsertPriceHistoryAsync",
+    "UpdateProductPricesAsync",
+    "UpdateAsync"
+)
+$missingLocalFacadeMethods = @($localFacadeMethods | Where-Object {
+    $repository -notmatch ("_localProductWriter\s*\.\s*{0}\s*\(" -f [regex]::Escape($_))
+})
+if ($repository -notmatch "private readonly LocalProductWriter _localProductWriter" -or
+    $missingLocalFacadeMethods.Count -gt 0) {
+    Fail "ProductRepository must preserve every local mutation through LocalProductWriter: $($missingLocalFacadeMethods -join ', ')"
+} else {
+    Pass "ProductRepository delegates every local mutation through LocalProductWriter"
+}
+if ($repository -notmatch "string\.IsNullOrWhiteSpace\(remoteProductId\)" -or
+    $repository -notmatch "_localProductWriter\.UpsertProductAndMetaInTransactionAsync" -or
+    $repository -notmatch "_remoteProductWriter\.UpsertProductAndMetaInTransactionAsync" -or
+    $repository -notmatch "_remoteProductWriter\.ApplyRemoteProductTombstoneAsync" -or
+    $repository -notmatch "private readonly RemoteCatalogProductWriter _remoteProductWriter") {
+    Fail "ProductRepository must preserve explicit local/remote writer delegation"
+} else {
+    Pass "ProductRepository keeps blank-vs-remote product ownership explicit"
+}
+if ($localProductWriter -notmatch "SalesReceiptContentPolicy\.EnsureValidProductIdentity" -or
+    $localProductWriter -notmatch "ProductIdentityPolicy\.IsReservedBarcode" -or
+    $localProductWriter -notmatch "product_price_history" -or
+    $localProductWriter -notmatch "remote_deleted_at" -or
+    $localProductWriter -notmatch "sales_sync_outbox") {
+    Fail "LocalProductWriter must retain local identity validation, soft-delete, price history and pending-stock safeguards"
+} else {
+    Pass "LocalProductWriter retains local write safeguards"
+}
+if ($productIdentityPolicy -notmatch "IsReservedBarcode" -or
+    $productIdentityPolicy -notmatch '"DISC:"' -or
+    $productIdentityPolicy -notmatch '"MANUAL:"' -or
+    $productIdentityPolicy -notmatch "StringComparison\.Ordinal") {
+    Fail "ProductIdentityPolicy must retain the exact reserved barcode rules shared by local and remote writers"
+} else {
+    Pass "ProductIdentityPolicy retains shared reserved barcode rules"
+}
+if ($productMetaReference -notmatch "internal sealed class ProductMetaReference" -or
+    $productMetaReference -notmatch "int\? Id" -or
+    $productMetaReference -notmatch "string Name") {
+    Fail "ProductMetaReference must remain a shared metadata value object outside ProductRepository"
+} else {
+    Pass "ProductMetaReference is shared outside ProductRepository"
+}
+if ($productMetaResolver -notmatch "ResolveSupplierReferenceAsync" -or
+    $productMetaResolver -notmatch "ResolveCategoryReferenceAsync" -or
+    $productMetaResolver -notmatch "FindSupplierByNormalizedNameAsync" -or
+    $productMetaResolver -notmatch "FindCategoryByNormalizedNameAsync" -or
+    $productMetaResolver -notmatch "NormalizeCatalogName" -or
+    $productMetaResolver -notmatch "StringComparison\.OrdinalIgnoreCase") {
+    Fail "ProductMetaResolver must own normalized supplier/category resolution"
+} else {
+    Pass "ProductMetaResolver owns normalized supplier/category resolution"
+}
+if ($repository -match "internal\s+sealed\s+class\s+ProductMetaReference" -or
+    $repository -match "private\s+static\s+(async\s+)?Task<ProductMetaReference>\s+ResolveSupplierReferenceAsync" -or
+    $repository -match "private\s+static\s+(async\s+)?Task<ProductMetaReference>\s+ResolveCategoryReferenceAsync" -or
+    $repository -match "private\s+static\s+Task<ProductMetaReference>\s+FindSupplierByNormalizedNameAsync" -or
+    $repository -match "private\s+static\s+Task<ProductMetaReference>\s+FindCategoryByNormalizedNameAsync") {
+    Fail "ProductRepository must not retain duplicate local metadata resolver ownership"
+} else {
+    Pass "ProductRepository has no duplicate local metadata resolver ownership"
+}
+if ($localProductWriter -notmatch "UpsertProductAndMetaInTransactionCoreAsync\s*\(\s*SqliteConnection\s+conn\s*,\s*SqliteTransaction\s+tx" -or
+    $localProductWriterTests -notmatch "LocalProductWriter_CallerTransactionRollbackLeavesNoLocalRows" -or
+    $localProductWriterTests -notmatch "LocalProductWriter_AndProductFacade_KeepLocalMutationParity" -or
+    $localProductWriterTests -notmatch "LocalProductWriter_AndProductFacade_RejectReservedBarcodeWithoutMutation" -or
+    $localProductWriterTests -notmatch "LocalProductWriter_ConcurrentFacadeReads_LeaveLocalStateUnchanged") {
+    Fail "local writer must retain caller-owned transaction semantics and direct parity/read/negative regressions"
+} else {
+    Pass "local writer transaction ownership and direct parity/read/negative regressions are present"
+}
+if ($remoteCatalogProductWriter -notmatch "UpsertProductAndMetaInTransactionCoreAsync\s*\(\s*SqliteConnection\s+conn\s*,\s*SqliteTransaction\s+tx" -or
+    $remoteCatalogProductWriter -notmatch "ApplyRemoteProductTombstoneInTransactionAsync\s*\(\s*SqliteConnection\s+conn\s*,\s*SqliteTransaction\s+tx" -or
+    $remoteCatalogProductWriter -notmatch "ProductIdentityPolicy\.IsReservedBarcode" -or
+    $remoteCatalogProductWriter -notmatch "CanonicalizeRemoteProductBeforeUpsertAsync" -or
+    $remoteCatalogProductWriter -notmatch "DeactivateRemoteProductDuplicatesAsync" -or
+    $remoteCatalogProductWriter -notmatch "hasPendingLocalStock" -or
+    $remoteCatalogProductWriter -notmatch "sales_sync_outbox" -or
+    $remoteCatalogProductWriter -notmatch "stockQtyToWrite = existingStock" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_CallerTransactionRollbackLeavesNoRemoteRows" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_AndProductFacade_KeepRemoteMutationParity" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_AndProductFacade_RejectReservedBarcodeWithoutMutation" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_AndProductFacade_KeepTombstoneParityAndIdempotence" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_PreservesPendingLocalStockAcrossCanonicalBarcodeChange") {
+    Fail "remote product writer must retain caller transactions, identity safeguards and direct parity regressions"
+} else {
+    Pass "remote product writer retains transaction ownership, identity safeguards and direct parity regressions"
+}
+if ($remoteCatalogProductWriter -notmatch "internal sealed class CatalogProductPreparedCommands" -or
+    $remoteCatalogProductWriter -notmatch "internal sealed class CatalogProductBatchContext" -or
+    $batchRepository -notmatch "RemoteCatalogProductWriter\.CatalogProductPreparedCommands" -or
+    $batchRepository -notmatch "RemoteCatalogProductWriter\.CatalogProductBatchContext" -or
+    $batchRepository -match "ProductRepository\.(CatalogProductPreparedCommands|CatalogProductBatchContext|ProductMetaReference)") {
+    Fail "remote catalog batch must consume extracted remote writer types directly"
+} else {
+    Pass "remote catalog batch consumes extracted remote writer types directly"
+}
+if ($repository -match "CanonicalizeRemoteProductBeforeUpsertAsync|DeactivateRemoteProductDuplicatesAsync|ApplyRemoteProductTombstoneInTransactionAsync|UpsertProductAndMetaInTransactionCoreAsync|CatalogProductPreparedCommands|CatalogProductBatchContext|ProductMetaReference|CatalogMutationGate\.Instance|remote_product_id|remote_deleted_at") {
+    Fail "ProductRepository must remain a façade and must not retain remote writer implementation ownership"
+} else {
+    Pass "ProductRepository has no remote writer implementation ownership"
+}
+if ($catalogMutationGate -notmatch "SemaphoreSlim\s+Instance\s*=\s*new\s+SemaphoreSlim\(1\s*,\s*1\)" -or
+    $localProductWriter -notmatch "CatalogMutationGate\.Instance\.WaitAsync" -or
+    $remoteCatalogProductWriter -notmatch "CatalogMutationGate\.Instance\.WaitAsync" -or
+    $batchRepository -notmatch "CatalogMutationGate\.Instance\.WaitAsync" -or
+    $fullRefresh -notmatch "CatalogMutationGate\.Instance\.WaitAsync") {
+    Fail "local writes, remote products, catalog batches and full refresh must share CatalogMutationGate.Instance"
+} else {
+    Pass "local writes, remote products, catalog batches and full refresh share one mutation gate"
+}
+$transactionHelpersValid = $true
+foreach ($transactionMethod in @(
+    "UpsertOrQueueRemotePriceHistoryInTransactionAsync",
+    "ApplyPendingRemotePricesInTransactionAsync",
+    "PrepareAuthoritativeRemotePriceRepairAsync")) {
+    if ($remotePriceHistoryRepository -notmatch ("{0}\s*\(\s*SqliteConnection\s+conn\s*,\s*SqliteTransaction\s+tx" -f $transactionMethod)) {
+        Fail "remote price transaction helper $transactionMethod must accept the caller connection and transaction"
+        $transactionHelpersValid = $false
+    }
+}
+if ($transactionHelpersValid) { Pass "remote price transaction helpers retain the caller transaction boundary" }
 if ($initializer -notmatch "remote_catalog_price_evidence_quarantine" -or
-    $repository -notmatch "PrepareAuthoritativeRemotePriceRepairAsync" -or
-    $repository -notmatch "StoreRemotePriceOwnershipAsync" -or
+    $remotePriceHistoryRepository -notmatch "PrepareAuthoritativeRemotePriceRepairAsync" -or
+    $remotePriceHistoryRepository -notmatch "StoreRemotePriceOwnershipAsync" -or
     $batchRepository -notmatch "AuthoritativeFullRefresh" -or
-    $service -notmatch "AuthoritativeFullRefresh\s*=\s*authoritativeFullRefresh" -or
+    $batchMapper -notmatch "AuthoritativeFullRefresh\s*=\s*authoritativeFullRefresh" -or
     $catalogImportOutbox -notmatch "EnsureAssignedRemotePriceOwnershipAsync" -or
-    $catalogImportOutbox -notmatch "StoreRemotePriceOwnershipAsync") {
+    $catalogImportOutbox -notmatch "RemotePriceHistoryRepository\s*\.\s*StoreRemotePriceOwnershipAsync") {
     Fail "remote price ownership must be atomic for pull/import writers and legacy evidence must be quarantined only on authoritative full refresh"
 } else {
     Pass "remote price ownership is atomic and authoritative repair preserves legacy evidence in quarantine"
 }
 if ($batchRepository -notmatch "PricesSkipped" -or
     $service -notmatch "PriceRowsSkipped\s*=\s*applied\.PricesSkipped" -or
-    $service -notmatch "PriceRowsAccepted\s*=\s*totalStats\.PriceRowsApplied\s*\+\s*totalStats\.PriceRowsQueued" -or
+    $service -notmatch "PriceRowsAccepted\s*=\s*(checked\()?\s*totalStats\.PriceRowsApplied\s*\+\s*totalStats\.PriceRowsQueued" -or
     $service -notmatch "InvalidPriceRows\s*=\s*totalStats\.PriceRowsSkipped" -or
-    $service -notmatch "DuplicatePriceRows\s*=\s*duplicatePriceRows" -or
+    $fullRefresh -notmatch "runContext\.DuplicatePriceRows\s*=\s*evidence\.DuplicatePrices" -or
     $fullRefresh -notmatch "catalog_invalid_price_rows" -or
     $fullRefresh -notmatch "catalog_duplicate_price_rows" -or
     $fullRefresh -notmatch "catalog_prices_not_fully_applied") {
@@ -655,11 +895,11 @@ if ($batchRepository -notmatch "PricesSkipped" -or
 } else {
     Pass "price received/accepted/skipped/duplicate evidence is verified fail-closed"
 }
-if ($repository -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in repository" } else { Pass "remote tombstone column used in repository" }
-if ($repository -notmatch "ApplyRemoteProductTombstoneAsync") { Fail "remote product tombstone apply missing" } else { Pass "remote product tombstone apply present" }
-if ($repository -notmatch "CanonicalizeRemoteProductBeforeUpsertAsync" -or $repository -notmatch "DeactivateRemoteProductDuplicatesAsync" -or $repository -notmatch "remote_product_id\s*=\s*@remoteProductId[\s\S]{0,160}barcode\s*<>\s*@barcode") { Fail "remote product upsert must canonicalize remote_product_id and deactivate duplicate active barcodes" } else { Pass "remote product upsert canonicalizes remote_product_id duplicates" }
-if ($repository -notmatch "hasPendingLocalStock" -or $repository -notmatch "sales_sync_outbox" -or $repository -notmatch "'pending', 'retry', 'in_progress', 'failed_blocked'" -or $repository -notmatch "stockQtyToWrite = existingStock") { Fail "catalog upsert must preserve stock_qty when unresolved local stock movements exist" } else { Pass "catalog upsert preserves unresolved local stock" }
-$tombstoneMethod = [regex]::Match($repository, "ApplyRemoteProductTombstoneAsync[\s\S]*?UpsertRemotePriceHistoryAsync").Value
+if ($remoteCatalogProductWriter -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in remote product writer" } else { Pass "remote tombstone column used in remote product writer" }
+if ($repository -notmatch "ApplyRemoteProductTombstoneAsync") { Fail "remote product tombstone facade missing" } else { Pass "remote product tombstone facade present" }
+if ($remoteCatalogProductWriter -notmatch "CanonicalizeRemoteProductBeforeUpsertAsync" -or $remoteCatalogProductWriter -notmatch "DeactivateRemoteProductDuplicatesAsync" -or $remoteCatalogProductWriter -notmatch "remote_product_id\s*=\s*@remoteProductId[\s\S]{0,160}barcode\s*<>\s*@barcode") { Fail "remote product upsert must canonicalize remote_product_id and deactivate duplicate active barcodes" } else { Pass "remote product upsert canonicalizes remote_product_id duplicates" }
+if ($remoteCatalogProductWriter -notmatch "hasPendingLocalStock" -or $remoteCatalogProductWriter -notmatch "sales_sync_outbox" -or $remoteCatalogProductWriter -notmatch "'pending', 'retry', 'in_progress', 'failed_blocked'" -or $remoteCatalogProductWriter -notmatch "stockQtyToWrite = existingStock") { Fail "catalog upsert must preserve stock_qty when unresolved local stock movements exist" } else { Pass "catalog upsert preserves unresolved local stock" }
+$tombstoneMethod = [regex]::Match($remoteCatalogProductWriter, "ApplyRemoteProductTombstoneInTransactionAsync[\s\S]*?return rows > 0;").Value
 if ($tombstoneMethod -notmatch "is_active\s*=\s*0" -or $tombstoneMethod -notmatch "remote_deleted_at") { Fail "product tombstone must soft-delete/inactivate products" } else { Pass "product tombstone is soft-delete/inactive" }
 if ($tombstoneMethod -match "DELETE\s+FROM") { Fail "product tombstone must not purge rows" } else { Pass "product tombstone does not purge rows" }
 if ($batchRepository -notmatch "CategoryRepository\.UpsertRemoteInTransactionAsync" -or $batchRepository -notmatch "SupplierRepository\.UpsertRemoteInTransactionAsync") { Fail "remote category/supplier identities are not persisted by the batch repository" } else { Pass "remote category/supplier identities persisted by the batch repository" }
@@ -678,20 +918,26 @@ if ($initializer -notmatch "remote_catalog_product_references" -or
 }
 $relinkMethod = [regex]::Match(
     $batchRepository,
-    'private static Task<int> RelinkRemoteProductReferencesAsync[\s\S]*?private static string NormalizeBarcode').Value
+    'private static Task<RemoteCatalogRelinkResult> RelinkRemoteProductReferencesAsync[\s\S]*?private static string NormalizeBarcode').Value
 if ($relinkMethod -notmatch "temp_catalog_relink_product_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_category_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_supplier_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_barcodes" -or
+    $relinkMethod -notmatch "json_each\(@productIdsJson\)" -or
+    $relinkMethod -notmatch "json_each\(@categoryIdsJson\)" -or
+    $relinkMethod -notmatch "json_each\(@supplierIdsJson\)" -or
+    $batchRepository -notmatch "RelinkStageRowsPerCommand\s*=\s*1000" -or
     $relinkMethod -notmatch "WHERE barcode IN\s*\(\s*SELECT barcode\s*FROM temp_catalog_relink_barcodes" -or
     $relinkMethod -match "UPDATE product_meta[\s\S]{0,3000}WHERE EXISTS" -or
     $initializer -notmatch "idx_remote_product_refs_category" -or
     $initializer -notmatch "idx_remote_product_refs_supplier" -or
     $batchRepositoryTests -notmatch "product_meta_relink_touch_log" -or
-    $batchRepositoryTests -notmatch "WHERE barcode = 'UNRELATED-REF'") {
+    $batchRepositoryTests -notmatch "WHERE barcode = 'UNRELATED-REF'" -or
+    $runContextPerformanceTests -notmatch "RelinkStagesThousandIdsWithOneBoundedJsonCommand" -or
+    $runContextPerformanceTests -notmatch "Assert\.AreEqual\(1L,\s*run\.Diagnostics\.RelinkStageSqlCommandCount\)") {
     Fail "reference relink must target only page-affected products through indexed temporary sets"
 } else {
-    Pass "reference relink targets only page-affected products and preserves unrelated rows"
+    Pass "reference relink uses bounded JSON staging, targets page-affected products and preserves unrelated rows"
 }
 $referenceCleanup = [regex]::Match(
     $batchRepository,
@@ -707,14 +953,14 @@ if ($categoryRepository -notmatch "remote_category_id" -or $categoryRepository -
 if ($supplierRepository -notmatch "remote_supplier_id" -or $supplierRepository -notmatch "remote_deleted_at" -or $supplierRepository -notmatch "is_active\s*=\s*0") { Fail "supplier remote identity/tombstone state missing" } else { Pass "supplier remote identity/tombstone state present" }
 if ($categoryRepository -match "DELETE\s+FROM\s+categories" -or $supplierRepository -match "DELETE\s+FROM\s+suppliers") { Fail "category/supplier tombstones must not purge reference rows" } else { Pass "category/supplier tombstones are non-destructive" }
 if ($initializer -notmatch "remote_category_id" -or $initializer -notmatch "remote_supplier_id" -or $initializer -notmatch "idx_categories_remote_category_id" -or $initializer -notmatch "idx_suppliers_remote_supplier_id") { Fail "category/supplier remote identity migration or indexes missing" } else { Pass "category/supplier remote identity migration present" }
-$localReferenceWriters = @($categorySupplierResolver, $productImportApply, $productDbImporter, $repository) -join "`n"
+$localReferenceWriters = @($categorySupplierResolver, $productImportApply, $productDbImporter, $productMetaResolver) -join "`n"
 if ($localReferenceWriters -match "INSERT\s+OR\s+REPLACE\s+INTO\s+(categories|suppliers)") { Fail "local import can destructively replace remote category/supplier identity" } else { Pass "local import does not replace remote category/supplier identity" }
-if ($categorySupplierResolver -notmatch "COALESCE\(is_active, 1\) = 1" -or $repository -notmatch "COALESCE\(is_active, 1\) = 1") { Fail "local reference resolution can reuse remote tombstones" } else { Pass "local reference resolution excludes remote tombstones" }
+if ($categorySupplierResolver -notmatch "COALESCE\(is_active, 1\) = 1" -or $productMetaResolver -notmatch "COALESCE\(is_active, 1\) = 1") { Fail "local reference resolution can reuse remote tombstones" } else { Pass "local reference resolution excludes remote tombstones" }
 if ($productImportApply -notmatch "remote_supplier_id" -or $productImportApply -notmatch "remote_category_id" -or $productDbImporter -notmatch "remote_supplier_id" -or $productDbImporter -notmatch "remote_category_id") { Fail "local import remote-identity collision guards missing" } else { Pass "local import remote-identity collision guards present" }
 if ($initializer -notmatch "remote_product_id") { Fail "remote product id column missing in db initializer" } else { Pass "remote product id column present" }
 if ($initializer -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in db initializer" } else { Pass "remote tombstone column present" }
 if ($initializer -notmatch "is_active") { Fail "active product column missing in db initializer" } else { Pass "active product column present" }
-if ($mainWindow -notmatch "OnlineSyncLane\.CatalogDelta" -or
+if ($startupCoordinator -notmatch "OnlineSyncLane\.CatalogDelta" -or
     $syncHost -notmatch "TryPullCatalogForSupervisorAsync") { Fail "startup catalog supervisor lane missing" } else { Pass "startup catalog supervisor lane present" }
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }

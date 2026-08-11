@@ -26,6 +26,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private static readonly FileLogger _logger = new FileLogger("PosAccessDialog");
         private const string SafeStartLoopbackOnlyReason = "safe_start_loopback_only";
+        private const int InitialCatalogTimeoutMinutes = 12;
 
         private readonly SqliteConnectionFactory _factory;
         private readonly bool _ownsSyncHost;
@@ -47,6 +48,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _pendingRemoteRecoveryStaffCode;
         private string _activeSetupStep;
         private string _lastAccessAttemptId;
+        private PosRuntimeDiagnostic _lastRuntimeDiagnostic;
         private PosAccessRecoveryDecision _recoveryDecision;
         private PosUserBootstrapState _bootstrapState = new PosUserBootstrapState();
         private PosAdminWebOptions _lastOptions;
@@ -372,7 +374,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     _factory,
                     _trustedDeviceStore,
                     _syncHost);
-                using (_activeCts = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
+                using (_activeCts = new CancellationTokenSource(
+                    TimeSpan.FromMinutes(InitialCatalogTimeoutMinutes)))
                 {
                     IProgress<PosCatalogPullProgress> progress = new Progress<PosCatalogPullProgress>(UpdateSetupProgress);
                     LogAccessInfo(attemptId, "online_bootstrap_start", "adminUrlConfigured=yes");
@@ -399,7 +402,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                     if (result.Success && !result.CanOpenPos)
                     {
-                        ShowError(result.Message);
+                        ShowCatalogFailure(result.Diagnostic, result.Message);
                         var recoveryUsername = await FindLeaseBoundRemoteStaffUsernameAsync(
                             shopCode,
                             staffCode).ConfigureAwait(true);
@@ -1210,7 +1213,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             try
             {
-                using (_activeCts = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
+                using (_activeCts = new CancellationTokenSource(
+                    TimeSpan.FromMinutes(InitialCatalogTimeoutMinutes)))
                 {
                     IProgress<PosCatalogPullProgress> progress = new Progress<PosCatalogPullProgress>(UpdateSetupProgress);
                     progress.Report(PosCatalogPullProgress.ForPhase("catalog"));
@@ -1230,13 +1234,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         catalogSaleSafe
                         ? PosCatalogPullOutcome.CompletedOk(
                             lane.CatalogPagesProcessed,
-                            productsApplied: lane.CatalogRowsApplied)
+                            productsApplied: lane.CatalogRowsApplied,
+                            diagnostic: lane.CatalogDiagnostic)
                         : PosCatalogPullOutcome.Failure(
                             lane.Code,
                             lane.AuthenticationDenied,
                             lane.CatalogHasMore,
                             lane.CatalogPagesProcessed,
-                            productsApplied: lane.CatalogRowsApplied);
+                            productsApplied: lane.CatalogRowsApplied,
+                            diagnostic: lane.CatalogDiagnostic);
                     LogCatalogRetryInfo(
                         catalogRetryId,
                         "pull_result",
@@ -1274,9 +1280,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         return;
                     }
 
-                    ShowError(outcome.AuthDenied
-                        ? PosLocalization.T("onlineFirstLogin.catalogAuthDenied")
-                        : PosLocalization.T("onlineFirstLogin.catalogIncomplete"));
+                    if (outcome.AuthDenied)
+                    {
+                        ShowError(PosLocalization.T("onlineFirstLogin.catalogAuthDenied"));
+                    }
+                    else
+                    {
+                        ShowCatalogFailure(outcome.Diagnostic, PosLocalization.T("onlineFirstLogin.catalogIncomplete"));
+                    }
 
                     if (outcome.AuthDenied || RequiresFreshLogin(outcome))
                     {
@@ -1326,14 +1337,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private static string GetAppVersion()
         {
-            try
-            {
-                return Assembly.GetExecutingAssembly().GetName().Version?.ToString();
-            }
-            catch
-            {
-                return null;
-            }
+            return PosApplicationVersion.GetCurrent();
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
@@ -1389,6 +1393,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SetSecondaryInputDetailsVisible(false);
             RetryDownloadButton.Visibility = Visibility.Collapsed;
             RetryDownloadButton.IsEnabled = false;
+            ClearTechnicalDiagnostic();
             ConnectButton.IsEnabled = false;
             RecoveryButton.IsEnabled = false;
             ShowProgressPanel();
@@ -1623,6 +1628,104 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 p.TombstonesApplied);
         }
 
+        private void ShowCatalogFailure(PosRuntimeDiagnostic diagnostic, string fallbackMessage)
+        {
+            _lastRuntimeDiagnostic = diagnostic;
+            ShowProgressPanel();
+            _activeSetupStep = "catalog";
+            SetStepState(StepAccessGlyph, StepAccessGlyphText, StepAccessText, "done", PosLocalization.T("onlineFirstLogin.stepAccessVerified"));
+            SetStepState(StepDeviceGlyph, StepDeviceGlyphText, StepDeviceText, "done", PosLocalization.T("onlineFirstLogin.stepDeviceLinked"));
+            SetStepState(StepOperatorGlyph, StepOperatorGlyphText, StepOperatorText, "done", PosLocalization.T("onlineFirstLogin.stepOperatorConfigured"));
+            SetStepState(StepCatalogGlyph, StepCatalogGlyphText, StepCatalogText, "failed", PosLocalization.T("onlineFirstLogin.stepCatalogDownload"));
+            SetStepState(StepFinalizeGlyph, StepFinalizeGlyphText, StepFinalizeText, "pending", PosLocalization.T("onlineFirstLogin.stepFinalizeLocalDb"));
+            SetupProgressBar.IsIndeterminate = false;
+            SetupProgressBar.Value = 72;
+            SetupPhaseTitleText.Text = PosLocalization.T("onlineFirstLogin.phaseCatalogUnavailable");
+            SetupPhaseText.Text = PosLocalization.T("onlineFirstLogin.catalogBlockedSafety");
+            UpdateSetupCounts(null);
+
+            if (diagnostic == null)
+            {
+                TechnicalDetailsExpander.Visibility = Visibility.Collapsed;
+                CopyDiagnosticsButton.Visibility = Visibility.Collapsed;
+                ShowError(string.IsNullOrWhiteSpace(fallbackMessage)
+                    ? PosLocalization.T("onlineFirstLogin.catalogIncomplete")
+                    : fallbackMessage);
+                return;
+            }
+
+            TechnicalDetailsText.Text = BuildLocalizedDiagnosticDetails(diagnostic);
+            TechnicalDetailsExpander.IsExpanded = false;
+            TechnicalDetailsExpander.Visibility = Visibility.Visible;
+            CopyDiagnosticsButton.Visibility = Visibility.Visible;
+            CopyDiagnosticsButton.IsEnabled = true;
+            ShowError(PosLocalization.T("onlineFirstLogin.catalogBlockedSummary"));
+        }
+
+        private void ClearTechnicalDiagnostic()
+        {
+            _lastRuntimeDiagnostic = null;
+            TechnicalDetailsText.Text = string.Empty;
+            TechnicalDetailsExpander.IsExpanded = false;
+            TechnicalDetailsExpander.Visibility = Visibility.Collapsed;
+            CopyDiagnosticsButton.Visibility = Visibility.Collapsed;
+            CopyDiagnosticsButton.IsEnabled = false;
+        }
+
+        private void OnCopyDiagnosticsClick(object sender, RoutedEventArgs e)
+        {
+            var diagnostic = _lastRuntimeDiagnostic;
+            if (diagnostic == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(BuildLocalizedDiagnosticDetails(diagnostic));
+                _logger.LogInfo(
+                    "POS access diagnostic copied: operation=" + diagnostic.Operation +
+                    " stage=" + diagnostic.Stage +
+                    " supportId=" + SafeAuditValue(diagnostic.SupportId));
+                ShowInfo(PosLocalization.T("onlineFirstLogin.diagnosticsCopied"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("POS access diagnostic copy failed.", ex);
+                ShowError(PosLocalization.T("onlineFirstLogin.diagnosticsCopyFailed"));
+            }
+        }
+
+        private static string BuildLocalizedDiagnosticDetails(PosRuntimeDiagnostic diagnostic)
+        {
+            if (diagnostic == null)
+            {
+                return string.Empty;
+            }
+
+            return PosLocalization.F(
+                "onlineFirstLogin.diagnosticDetails",
+                diagnostic.Operation,
+                diagnostic.Stage,
+                diagnostic.Code,
+                diagnostic.HttpStatus.HasValue
+                    ? diagnostic.HttpStatus.Value.ToString(CultureInfo.InvariantCulture)
+                    : PosLocalization.T("common.unavailableShort"),
+                diagnostic.PageNumber.HasValue
+                    ? diagnostic.PageNumber.Value.ToString(CultureInfo.InvariantCulture)
+                    : PosLocalization.T("common.unavailableShort"),
+                diagnostic.PagesProcessed.ToString(CultureInfo.InvariantCulture),
+                diagnostic.RowsApplied.ToString(CultureInfo.InvariantCulture),
+                diagnostic.CatalogSaleSafe
+                    ? PosLocalization.T("onlineFirstLogin.diagnosticYes")
+                    : PosLocalization.T("onlineFirstLogin.diagnosticNo"),
+                diagnostic.Retryable
+                    ? PosLocalization.T("onlineFirstLogin.diagnosticYes")
+                    : PosLocalization.T("onlineFirstLogin.diagnosticNo"),
+                diagnostic.SupportId,
+                diagnostic.OccurredAtUtc.ToString("o", CultureInfo.InvariantCulture));
+        }
+
         private static void SetStepState(Border glyph, TextBlock glyphText, TextBlock labelText, string state, string label)
         {
             var normalized = (state ?? string.Empty).Trim().ToLowerInvariant();
@@ -1765,12 +1868,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var details =
                 "result=" + normalizedResult +
                 " code=" + SafeAuditValue(result?.Code) +
-                " clientRequestId=" + SafeAuditValue(result?.ClientRequestId) +
-                " serverRequestId=" + SafeAuditValue(result?.ServerRequestId) +
-                " cfRay=" + SafeAuditValue(result?.CfRay) +
+                " clientRequestId=" + PosTechnicalIdentifier.Redact(result?.ClientRequestId) +
+                " serverRequestId=" + PosTechnicalIdentifier.Redact(result?.ServerRequestId) +
+                " cfRay=" + PosTechnicalIdentifier.Redact(result?.CfRay) +
                 " catalogStatus=" + SafeAuditValue(result?.CatalogStatus) +
                 " catalogSaleSafe=" + BoolText(result != null && result.CatalogSaleSafe) +
-                " requiresRetry=" + BoolText(result != null && result.RequiresRetry);
+                " requiresRetry=" + BoolText(result != null && result.RequiresRetry) +
+                " diagnosticOperation=" + SafeAuditValue(result?.Diagnostic?.Operation) +
+                " diagnosticStage=" + SafeAuditValue(result?.Diagnostic?.Stage) +
+                " httpStatus=" + (result?.Diagnostic?.HttpStatus?.ToString() ?? "none") +
+                " supportId=" + SafeAuditValue(result?.Diagnostic?.SupportId);
 
             if (result != null && result.CanOpenPos)
             {

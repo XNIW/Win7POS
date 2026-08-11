@@ -58,9 +58,9 @@
     <system:Double x:Key="Spacing16">16</system:Double>
     <system:Double x:Key="Spacing24">24</system:Double>
     <system:Double x:Key="Spacing32">32</system:Double>
-    <system:Double x:Key="RadiusSmall">6</system:Double>
-    <system:Double x:Key="RadiusMedium">8</system:Double>
-    <system:Double x:Key="RadiusLarge">12</system:Double>
+    <CornerRadius x:Key="RadiusSmall">6</CornerRadius>
+    <CornerRadius x:Key="RadiusMedium">8</CornerRadius>
+    <CornerRadius x:Key="RadiusLarge">12</CornerRadius>
     <system:Double x:Key="ButtonHeightCompact">36</system:Double>
     <system:Double x:Key="ButtonHeightStandard">40</system:Double>
     <system:Double x:Key="ButtonHeightTouch">44</system:Double>

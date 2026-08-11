@@ -1,0 +1,27 @@
+{
+  "evidencePath": "C:\\Dev\\_codex-evidence\\win7pos-authoritative-drain-v2-loopback-20260727",
+  "failureCode": "success_outcome_was_incomplete",
+  "exceptionType": "InvalidOperationException",
+  "failureStage": "terminal-authoritative-evidence-stage",
+  "underlyingFailure": "sqlite_writer_lock_conflicted_with_scratch_page_reader",
+  "requests": 676,
+  "lastPersistedPage": 675,
+  "terminalResponseReceived": true,
+  "manifest": {
+    "categories": 71,
+    "suppliers": 102,
+    "products": 19763,
+    "prices": 41228
+  },
+  "lastPersistedLaneCounts": {
+    "categories": 71,
+    "suppliers": 102,
+    "products": 19763,
+    "prices": 41160
+  },
+  "lastPersistedStageBytes": 14421703,
+  "exactness": "Unverified",
+  "preflightReached": false,
+  "liveGenerationUnchanged": true,
+  "correction": "read each bounded scratch page before a short per-page evidence writer transaction; load promotion pages through the existing atomic writer connection"
+}

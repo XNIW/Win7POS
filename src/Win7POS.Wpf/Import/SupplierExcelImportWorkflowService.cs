@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core;
 using Win7POS.Core.Import;
@@ -12,6 +14,7 @@ using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.Import
@@ -37,18 +40,35 @@ namespace Win7POS.Wpf.Import
             string filePath,
             IDictionary<int, string> columnOverrides = null)
         {
+            return await AnalyzeAsync(filePath, columnOverrides, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        public async Task<SupplierImportAnalysis> AnalyzeAsync(
+            string filePath,
+            IDictionary<int, string> columnOverrides,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             DbInitializer.EnsureCreated(_options);
-            var table = await Task.Run(() => SupplierExcelImportReader.ReadFirstWorksheet(filePath)).ConfigureAwait(false);
-            var products = await LoadExistingProductsForTableAsync(table, columnOverrides).ConfigureAwait(false);
-            return SupplierImportAnalyzer.Analyze(table, products, columnOverrides);
+            var table = await Task.Run(
+                () => SupplierExcelImportReader.ReadFirstWorksheet(filePath, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+            var products = await LoadExistingProductsForTableAsync(
+                table,
+                columnOverrides,
+                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var analysis = SupplierImportAnalyzer.Analyze(table, products, cancellationToken, columnOverrides);
+            LogDetectionTrace(analysis.DetectionTrace);
+            return analysis;
         }
 
         public async Task<SupplierImportSyncPreview> BuildSyncPreviewAsync(
             IReadOnlyList<SupplierImportEditableRow> rows)
         {
             DbInitializer.EnsureCreated(_options);
-            var products = await LoadExistingProductsForRowsAsync(rows).ConfigureAwait(false);
-            return SupplierImportAnalyzer.BuildSyncPreview(rows, products);
+            var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
+            return await applier.BuildPreviewAsync(rows).ConfigureAwait(false);
         }
 
         public async Task<SupplierExcelApplyUiResult> ApplyAsync(
@@ -79,7 +99,9 @@ namespace Win7POS.Wpf.Import
 
             var summary = BuildApplySummary(result, backupPath, dryRun, warningCount, skippedByOperator);
             if (result.Errors > 0)
-                throw new InvalidOperationException(summary);
+                throw new SupplierExcelImportWorkflowException(
+                    PosLocalization.T("supplierExcelImport.applyFailedFriendly"),
+                    summary);
             return new SupplierExcelApplyUiResult
             {
                 BackupPath = backupPath,
@@ -102,15 +124,26 @@ namespace Win7POS.Wpf.Import
             DemandApplyAuthorization();
             DbInitializer.EnsureCreated(_options);
             if (preview == null)
-                throw new InvalidOperationException("Sync DB preview richiesto prima di applicare.");
+                throw new SupplierExcelImportWorkflowException(
+                    PosLocalization.T("supplierExcelImport.recalculateBeforeApply"),
+                    "supplier_import_preview_missing");
 
             // The apply-time authorizer can surface WPF permission UI, so retain
             // the caller context until authorization has completed.
             var rebuilt = await BuildSyncPreviewAsync(preview.FinalRows).ConfigureAwait(true);
             if (!rebuilt.CanApply)
-                throw new InvalidOperationException(BuildPreviewErrorSummary(rebuilt));
+                throw new SupplierExcelImportWorkflowException(
+                    PosLocalization.T("supplierExcelImport.previewHasErrors"),
+                    BuildPreviewErrorSummary(rebuilt));
             if (!string.Equals(rebuilt.Fingerprint, preview.Fingerprint, StringComparison.Ordinal))
-                throw new InvalidOperationException("Sync DB preview non aggiornato: torna allo Step 3 e ricalcola Sync DB.");
+                throw new SupplierExcelImportWorkflowException(
+                    PosLocalization.T("supplierExcelImport.syncPreviewStale"),
+                    "supplier_import_preview_stale:fingerprint");
+            string applyBaselineMismatch;
+            if (!SupplierImportAnalyzer.TryMatchApplyExpectations(preview, rebuilt, out applyBaselineMismatch))
+                throw new SupplierExcelImportWorkflowException(
+                    PosLocalization.T("supplierExcelImport.syncPreviewStale"),
+                    "supplier_import_preview_stale:" + (applyBaselineMismatch ?? "baseline"));
 
             var backupPath = string.Empty;
             if (!dryRun)
@@ -143,7 +176,9 @@ namespace Win7POS.Wpf.Import
 
             var summary = BuildApplySummary(result, backupPath, dryRun, rebuilt.Summary.WarningCount, rebuilt.Summary.SkippedRows);
             if (result.Errors > 0)
-                throw new InvalidOperationException(summary);
+                throw new SupplierExcelImportWorkflowException(
+                    PosLocalization.T("supplierExcelImport.applyFailedFriendly"),
+                    summary);
             if (!dryRun && result.CatalogImportOutboxId > 0)
             {
                 PosOnlineSyncSignalBus.Signal(
@@ -171,23 +206,50 @@ namespace Win7POS.Wpf.Import
         {
             if (!_authorizeApply())
             {
-                throw new InvalidOperationException(
-                    Win7POS.Wpf.Localization.PosLocalization.F(
+                throw new SupplierExcelImportWorkflowException(
+                    PosLocalization.F(
                         "common.permissionDeniedOperation",
-                        Win7POS.Wpf.Localization.PosLocalization.T(
-                            "products.operationImportCatalog")));
+                        PosLocalization.T("products.operationImportCatalog")),
+                    "supplier_import_authorization_denied");
             }
+        }
+
+        private void LogDetectionTrace(SupplierImportDetectionTrace trace)
+        {
+            if (trace == null) return;
+            var decisions = trace.FieldDecisions
+                .Take(AndroidImportKeys.AllKeys.Length)
+                .Select(decision =>
+                    (decision.Field ?? string.Empty) + "=" +
+                    (decision.SelectedColumnIndex.HasValue
+                        ? decision.SelectedColumnIndex.Value.ToString(CultureInfo.InvariantCulture)
+                        : "-") + "," +
+                    (decision.Confidence ?? "low") + "," +
+                    (decision.Reason ?? "not-evaluated") + ",scores[" +
+                    string.Join(",", decision.Candidates.Take(3).Select(candidate =>
+                        candidate.ColumnIndex.ToString(CultureInfo.InvariantCulture) + ":" +
+                        candidate.Score.ToString("0.000", CultureInfo.InvariantCulture))) + "]");
+            _logger.LogInfo(
+                "Supplier import detection mode=" + (trace.HeaderMode ?? string.Empty) +
+                " dataRowIndex=" + trace.DataRowIndex.ToString(CultureInfo.InvariantCulture) +
+                " headerRows=" + string.Join(",", trace.HeaderRows.Take(2)) +
+                " sampleSize=" + trace.SampleSize.ToString(CultureInfo.InvariantCulture) +
+                " decisions=" + string.Join(";", decisions));
         }
 
         private async Task<IReadOnlyList<ProductDetailsRow>> LoadExistingProductsForTableAsync(
             SupplierExcelRawTable table,
-            IDictionary<int, string> columnOverrides)
+            IDictionary<int, string> columnOverrides,
+            CancellationToken cancellationToken)
         {
             var preliminary = SupplierImportAnalyzer.Analyze(
                 table,
                 Array.Empty<ProductDetailsRow>(),
+                cancellationToken,
                 columnOverrides);
-            return await LoadExistingProductsForRowsAsync(preliminary.EditableRows).ConfigureAwait(false);
+            var products = await LoadExistingProductsForRowsAsync(preliminary.EditableRows).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return products;
         }
 
         private async Task<IReadOnlyList<ProductDetailsRow>> LoadExistingProductsForRowsAsync(
@@ -225,32 +287,32 @@ namespace Win7POS.Wpf.Import
         {
             var lines = new List<string>
             {
-                "Supplier Excel Import",
-                "Mode: " + (dryRun ? "DRY-RUN" : "APPLY"),
-                "Inserted: " + result.Inserted,
-                "Updated: " + result.Updated,
-                "No change: " + result.NoChange,
-                "Skipped: " + skippedByOperator,
-                "Skipped by operator: " + skippedByOperator,
-                "Warning count: " + warningCount,
-                "Error count: " + result.Errors,
-                "Products(inserted/updated/noChange/errors): " +
-                    result.Inserted + "/" + result.Updated + "/" + result.NoChange + "/" + result.Errors,
-                "Suppliers/Categories created: " + result.SuppliersCreated + "/" + result.CategoriesCreated,
-                "Price history inserted: " + result.PriceHistoryInserted,
-                "Changed barcodes: " + result.ChangedBarcodes.Count,
-                "Catalog import outbox: " + (
-                    result.CatalogImportOutboxId > 0
-                        ? "pending #" + result.CatalogImportOutboxId
-                        : "not queued")
+                PosLocalization.T("supplierExcelImport.resultTitle"),
+                PosLocalization.F(
+                    "supplierExcelImport.resultMode",
+                    PosLocalization.T(dryRun
+                        ? "supplierExcelImport.resultModeDryRun"
+                        : "supplierExcelImport.resultModeApply")),
+                PosLocalization.F("supplierExcelImport.resultInserted", result.Inserted),
+                PosLocalization.F("supplierExcelImport.resultUpdated", result.Updated),
+                PosLocalization.F("supplierExcelImport.resultNoChange", result.NoChange),
+                PosLocalization.F("supplierExcelImport.resultSkipped", skippedByOperator),
+                PosLocalization.F("supplierExcelImport.resultWarnings", warningCount),
+                PosLocalization.F("supplierExcelImport.resultErrors", result.Errors),
+                PosLocalization.F(
+                    "supplierExcelImport.resultCreatedGroups",
+                    result.SuppliersCreated,
+                    result.CategoriesCreated),
+                PosLocalization.F("supplierExcelImport.resultPriceHistory", result.PriceHistoryInserted),
+                PosLocalization.F("supplierExcelImport.resultChangedProducts", result.ChangedBarcodes.Count),
+                result.CatalogImportOutboxId > 0
+                    ? PosLocalization.F("supplierExcelImport.resultOutboxPending", result.CatalogImportOutboxId)
+                    : PosLocalization.T("supplierExcelImport.resultOutboxNotQueued")
             };
             if (!string.IsNullOrWhiteSpace(backupPath))
-                lines.Insert(1, "Backup path: " + backupPath);
+                lines.Insert(1, PosLocalization.F("supplierExcelImport.resultBackup", backupPath));
             if (result.ErrorMessages.Count > 0)
-            {
-                lines.Add("Errors:");
-                lines.AddRange(result.ErrorMessages.Select(x => " - " + x));
-            }
+                lines.Add("diagnostic_error_count=" + result.ErrorMessages.Count.ToString(CultureInfo.InvariantCulture));
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -258,18 +320,31 @@ namespace Win7POS.Wpf.Import
         {
             var lines = new List<string>
             {
-                "Sync DB preview contiene errori. Ricalcola e correggi prima di applicare.",
-                "New: " + preview.Summary.NewProducts,
-                "Updated: " + preview.Summary.UpdatedProducts,
-                "No change: " + preview.Summary.NoChangeRows,
-                "Skipped: " + preview.Summary.SkippedRows,
-                "Warning count: " + preview.Summary.WarningCount,
-                "Error count: " + preview.Summary.ErrorCount
+                "supplier_import_preview_invalid",
+                "new=" + preview.Summary.NewProducts,
+                "updated=" + preview.Summary.UpdatedProducts,
+                "no_change=" + preview.Summary.NoChangeRows,
+                "skipped=" + preview.Summary.SkippedRows,
+                "warnings=" + preview.Summary.WarningCount,
+                "errors=" + preview.Summary.ErrorCount
             };
             lines.AddRange(preview.Errors.Select(error =>
-                " - Riga " + error.RowIndex + " " + error.Barcode + ": " + error.Message));
+                "row=" + error.RowIndex + " barcode=" + error.Barcode + " code=validation_error"));
             return string.Join(Environment.NewLine, lines);
         }
+    }
+
+    internal sealed class SupplierExcelImportWorkflowException : InvalidOperationException
+    {
+        public SupplierExcelImportWorkflowException(string operatorMessage, string diagnosticMessage)
+            : base(diagnosticMessage ?? string.Empty)
+        {
+            OperatorMessage = string.IsNullOrWhiteSpace(operatorMessage)
+                ? PosLocalization.T("supplierExcelImport.applyFailedFriendly")
+                : operatorMessage;
+        }
+
+        public string OperatorMessage { get; }
     }
 
     public sealed class SupplierExcelApplyUiResult

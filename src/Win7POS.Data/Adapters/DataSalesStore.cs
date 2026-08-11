@@ -6,7 +6,7 @@ using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.Adapters
 {
-    public sealed class DataSalesStore : ISalesStore
+    internal sealed class DataSalesStore : ISalesStore
     {
         private readonly SaleRepository _sales;
 

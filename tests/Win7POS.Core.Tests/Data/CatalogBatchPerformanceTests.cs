@@ -8,6 +8,98 @@ public sealed class CatalogBatchPerformanceTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
+    public async Task BatchPriceOnlyScenarioReportsExactRemotePriceApplyDiagnostics()
+    {
+        const int rows = 3;
+        const int pageSize = 2;
+        var samples = await CatalogBatchPerformanceScenario.RunAsync(
+            "batch-price-only",
+            rows,
+            iterations: 1,
+            pageSize);
+
+        Assert.AreEqual(1, samples.Count);
+        var sample = samples[0];
+        Assert.AreEqual(2, sample.LogicalRequestCount);
+        Assert.AreEqual(3L, sample.ProductCount);
+        Assert.AreEqual(3L, sample.PriceCount);
+        Assert.AreEqual(0L, sample.PendingPriceCount);
+        Assert.AreEqual(14L, sample.RemotePriceApplySqlCommandCount);
+        Assert.AreEqual(20L, sample.RemotePriceApplySqlStatementCount);
+        Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
+        Assert.AreEqual(2L, sample.RemotePriceApplyPreparedCommandCount);
+        Assert.AreEqual(2L, sample.RemotePriceApplySetBasedPageCount);
+        Assert.AreEqual(3L, sample.RemotePriceApplyStagedRowCount);
+    }
+
+    [TestMethod]
+    public async Task BatchPriceOnlyUsesBoundedSetBasedCommandsForThousandRowPage()
+    {
+        const int rows = 1_000;
+        var samples = await CatalogBatchPerformanceScenario.RunAsync(
+            "batch-price-only",
+            rows,
+            iterations: 1,
+            pageSize: rows);
+
+        var sample = samples.Single();
+        Assert.AreEqual((long)rows, sample.ProductCount);
+        Assert.AreEqual((long)rows, sample.PriceCount);
+        Assert.AreEqual(0L, sample.PendingPriceCount);
+        Assert.AreEqual(7L, sample.RemotePriceApplySqlCommandCount);
+        Assert.AreEqual(19L, sample.RemotePriceApplySqlStatementCount);
+        Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
+        Assert.AreEqual(1L, sample.RemotePriceApplyPreparedCommandCount);
+        Assert.AreEqual(1L, sample.RemotePriceApplySetBasedPageCount);
+        Assert.AreEqual((long)rows, sample.RemotePriceApplyStagedRowCount);
+    }
+
+    [TestMethod]
+    public async Task BatchFullPathUsesBoundedProductStageCommandsForThousandRowPage()
+    {
+        const int rows = 1_000;
+        var samples = await CatalogBatchPerformanceScenario.RunAsync(
+            "batch-paged-full",
+            rows,
+            iterations: 1,
+            pageSize: rows);
+
+        var sample = samples.Single();
+        Assert.AreEqual((long)rows, sample.ProductCount);
+        Assert.AreEqual((long)rows, sample.PriceCount);
+        Assert.AreEqual(0L, sample.PendingPriceCount);
+        Assert.AreEqual("Verified", sample.ExactnessStatus);
+        Assert.AreEqual(0L, sample.AuthoritativeStageRowsAfter);
+        Assert.IsTrue(
+            sample.ContextSqlCommandCount <= 15L,
+            $"Expected at most 15 run-context SQL commands, observed {sample.ContextSqlCommandCount}.");
+    }
+
+    [TestMethod]
+    public async Task BatchNoChangeSkipsApplyWithoutPriceHistoryWrites()
+    {
+        const int rows = 200;
+        var samples = await CatalogBatchPerformanceScenario.RunAsync(
+            "batch-no-change",
+            rows,
+            iterations: 1,
+            pageSize: 100);
+
+        var sample = samples.Single();
+        Assert.AreEqual((long)rows, sample.ProductCount);
+        Assert.AreEqual((long)rows, sample.PriceCount);
+        Assert.AreEqual(0L, sample.PendingPriceCount);
+        Assert.AreEqual("Verified", sample.ExactnessStatus);
+        Assert.AreEqual(0, sample.LogicalRequestCount);
+        Assert.AreEqual(0L, sample.ContextSqlCommandCount);
+        Assert.AreEqual(0L, sample.RemotePriceApplySqlCommandCount);
+        Assert.AreEqual(0L, sample.RemotePriceApplySqlStatementCount);
+        Assert.IsTrue(
+            sample.ElapsedMilliseconds <= 1_500d,
+            $"No-change skip exceeded 1.5 seconds: {sample.ElapsedMilliseconds:F3} ms.");
+    }
+
+    [TestMethod]
     public async Task CompareLegacyAndBatchApply()
     {
         if (!string.Equals(
@@ -26,7 +118,8 @@ public sealed class CatalogBatchPerformanceTests
             .ToLowerInvariant();
         var modes = requestedMode == "legacy" || requestedMode == "batch" ||
                     requestedMode == "batch-paged" || requestedMode == "batch-paged-full" ||
-                    requestedMode == "batch-delta"
+                    requestedMode == "batch-delta" || requestedMode == "batch-price-only" ||
+                    requestedMode == "batch-no-change"
             ? new[] { requestedMode }
             : new[] { "legacy", "batch" };
         var samplesByMode = new Dictionary<string, IReadOnlyList<CatalogBatchPerformanceSample>>(
@@ -45,7 +138,30 @@ public sealed class CatalogBatchPerformanceTests
                 Assert.AreEqual(sample.ExpectedPriceCount, sample.PriceCount);
                 Assert.AreEqual(0L, sample.PendingPriceCount);
                 if (mode == "batch-paged-full")
+                {
                     Assert.AreEqual("Verified", sample.ExactnessStatus);
+                    Assert.AreEqual(0L, sample.AuthoritativeStageRowsAfter);
+                }
+                if (mode == "batch-price-only")
+                {
+                    var pages = (rows + pageSize - 1) / pageSize;
+                    var stageCommands = Enumerable.Range(0, pages)
+                        .Sum(page =>
+                        {
+                            var pageRows = Math.Min(pageSize, rows - (page * pageSize));
+                            return (pageRows + 99) / 100;
+                        });
+                    Assert.AreEqual(
+                        7L * pages,
+                        sample.RemotePriceApplySqlCommandCount);
+                    Assert.AreEqual(
+                        (long)stageCommands + (9L * pages),
+                        sample.RemotePriceApplySqlStatementCount);
+                    Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
+                    Assert.AreEqual((long)pages, sample.RemotePriceApplyPreparedCommandCount);
+                    Assert.AreEqual((long)pages, sample.RemotePriceApplySetBasedPageCount);
+                    Assert.AreEqual((long)rows, sample.RemotePriceApplyStagedRowCount);
+                }
                 TestContext.WriteLine(sample.ToEvidenceLine());
             }
         }

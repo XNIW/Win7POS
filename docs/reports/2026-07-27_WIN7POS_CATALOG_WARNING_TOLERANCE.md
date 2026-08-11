@@ -1,0 +1,61 @@
+# Win7POS catalog warning tolerance — 2026-07-27
+
+Status: `DONE`.
+
+Resolution: `USER_CONFIRMED_CLOSURE`.
+
+This report will become the closeout record after the feature has passed local
+validation, independent review, normal merge and real staging acceptance.
+
+Current implementation accepts recovery only for catalog display text. It
+canonicalizes ordinary whitespace, removes non-visual display controls, applies
+NFC, replaces unpaired UTF-16 code units with U+FFFD, preserves valid
+international text and emoji, and uses existing fallbacks without truncating.
+Barcode, remote IDs, item number, pricing, counts and all structural catalog
+invariants remain fail-closed.
+
+The canonical values flow through validation, mapping, authoritative staging,
+SQLite persistence and idempotency comparisons. A completed run with display
+warnings remains sale-safe and records only aggregate diagnostics.
+
+## Independent pre-PR review
+
+The frozen feature was reviewed independently against `origin/main`. The
+review raised one P1 (an invisible identity-format character reaching a display
+fallback) and two P2 items (same-revision warning retention and transactional
+warning state). All three were corrected and then re-reviewed. Final open
+findings: P0=0, P1=0, P2=0, P3=0.
+
+The follow-up uses identity-specific validation for barcode and remote IDs,
+guards the mapper fallback for direct callers, and persists/reads the aggregate
+warning state atomically under the active sync-generation fence.
+
+## Post-merge verification
+
+PR #45 merged normally at `de295018b1846581f015f3e0051b1a1894a452f7` after
+the build, CodeQL and dependency/supply-chain checks passed. A clean-main
+solution build and the local synthetic warning acceptance both pass.
+
+The required DPAPI profile was securely initialized and one real allowlisted
+staging acceptance was executed. The profile and ACL checks passed, but the
+bootstrap returned `bootstrap_failure` before catalog pull: HTTP success is
+false, catalog pages and local catalog counts are zero, and the POS did not
+unlock. The redacted profile-value scan of the acceptance log passed.
+
+No second staging run was performed. `DONE` remains prohibited until the
+staging-side failure or credential-field mapping is clarified and a newly
+authorized acceptance run passes.
+
+## Final acceptance supplement
+
+The prerequisite was later satisfied by the exact-main public-staging
+acceptance recorded in
+`docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`. It drained all
+676 pages, verified the authoritative counts and identities, retained
+sale-safety, and completed the full article mutation matrix. The final state
+has zero pending/retry/in-progress/blocked article work.
+
+Phase is `DONE`; final staging acceptance is `PASS`;
+P0/P1/P2/P3 is `0/0/0/0`; cleanup is
+`READY_FOR_MAC_FINAL_CLEANUP`; Windows 7 physical remains
+`EXTERNAL_PENDING`.

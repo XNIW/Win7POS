@@ -128,7 +128,7 @@ namespace Win7POS.Data.Online
                     return;
 
                 next = _waiters
-                    .OrderByDescending(item => item.Lane == OnlineSyncLane.Heartbeat)
+                    .OrderByDescending(item => LanePriority(item.Lane))
                     .ThenBy(item => item.Sequence)
                     .First();
                 _waiters.Remove(next);
@@ -138,6 +138,26 @@ namespace Win7POS.Data.Online
 
             next.Cancellation.Dispose();
             next.Completion.TrySetResult(new Lease(this));
+        }
+
+        private static int LanePriority(OnlineSyncLane lane)
+        {
+            switch (lane)
+            {
+                case OnlineSyncLane.Heartbeat:
+                    return 3;
+                case OnlineSyncLane.SalesOutbox:
+                case OnlineSyncLane.CustomerOrders:
+                    return 2;
+                case OnlineSyncLane.CatalogImportOutbox:
+                case OnlineSyncLane.CatalogDelta:
+                    return 1;
+                case OnlineSyncLane.ArticleMutationOutbox:
+                case OnlineSyncLane.ProductImageOutbox:
+                    return 0;
+                default:
+                    return 0;
+            }
         }
 
         private void ThrowIfUnavailable()

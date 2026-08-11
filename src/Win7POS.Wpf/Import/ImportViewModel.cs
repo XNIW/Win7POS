@@ -9,6 +9,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Data;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Import
@@ -27,6 +28,7 @@ namespace Win7POS.Wpf.Import
         private bool _updateName = false;
         private bool _dryRun = true;
         private string _lastAnalyzeFingerprint = string.Empty;
+        private readonly FileLogger _logger = new FileLogger("ImportViewModel");
 
         // Preview items (kept as object to avoid hard coupling if core types change)
         public ObservableCollection<object> DiffItems { get; } = new ObservableCollection<object>();
@@ -234,8 +236,9 @@ namespace Win7POS.Wpf.Import
             }
             catch (Exception ex)
             {
-                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
-                Summary = ex.ToString();
+                _logger.LogError(ex, "Catalog import analysis failed");
+                Status = PosLocalization.T("import.analysisFailedFriendly");
+                Summary = Status;
             }
             finally
             {
@@ -313,7 +316,9 @@ namespace Win7POS.Wpf.Import
             }
             catch (Exception ex)
             {
-                Status = PosLocalization.F("import.applyError", ex.Message);
+                _logger.LogError(ex, "Catalog import apply failed");
+                Status = GetSafeApplyFailure(ex);
+                Summary = Status;
             }
             finally
             {
@@ -326,6 +331,27 @@ namespace Win7POS.Wpf.Import
             (BrowseCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AnalyzeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ApplyCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private static string GetSafeApplyFailure(Exception ex)
+        {
+            var safeKeys = new[]
+            {
+                "import.previewStale",
+                "import.missingAnalyzedRows",
+                "import.analyzeFirst",
+                "import.applyRowErrors"
+            };
+            foreach (var key in safeKeys)
+            {
+                var safeMessage = PosLocalization.T(key);
+                if (string.Equals(ex?.Message, safeMessage, StringComparison.Ordinal))
+                {
+                    return safeMessage;
+                }
+            }
+
+            return PosLocalization.T("import.applyFailedFriendly");
         }
 
         private void InvalidateAnalyzeResult(string status)

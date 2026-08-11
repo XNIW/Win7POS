@@ -842,6 +842,36 @@ WHERE key IN (
             string expectedPreviousMode = null,
             OnlineSyncGeneration generation = null)
         {
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction(deferred: generation == null))
+            {
+                await StoreExactnessWithinTransactionAsync(
+                    conn,
+                    tx,
+                    trustedShopId,
+                    trustedShopCode,
+                    exactness,
+                    expectedEpoch,
+                    expectedPreviousCursor,
+                    expectedPreviousMode,
+                    generation).ConfigureAwait(false);
+                tx.Commit();
+            }
+        }
+
+        internal async Task StoreExactnessWithinTransactionAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string trustedShopId,
+            string trustedShopCode,
+            CatalogExactnessResult exactness,
+            long expectedEpoch = -1,
+            string expectedPreviousCursor = null,
+            string expectedPreviousMode = null,
+            OnlineSyncGeneration generation = null)
+        {
+            if (conn == null) throw new ArgumentNullException(nameof(conn));
+            if (tx == null) throw new ArgumentNullException(nameof(tx));
             if (exactness == null) throw new ArgumentNullException(nameof(exactness));
 
             var suppliedContext = exactness.Context;
@@ -873,21 +903,18 @@ WHERE key IN (
             var normalizedShopId = Normalize(trustedShopId);
             var normalizedShopCode = OutboxShopBinding.NormalizeCode(trustedShopCode);
 
-            using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction(deferred: generation == null))
-            {
-                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
-                await RequireCommitStateAsync(
-                    conn,
-                    tx,
-                    normalizedShopId,
-                    normalizedShopCode,
-                    expectedEpoch,
-                    expectedPreviousCursor,
-                    expectedPreviousMode).ConfigureAwait(false);
-                await ClearExactnessAsync(conn, tx).ConfigureAwait(false);
+            await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
+            await RequireCommitStateAsync(
+                conn,
+                tx,
+                normalizedShopId,
+                normalizedShopCode,
+                expectedEpoch,
+                expectedPreviousCursor,
+                expectedPreviousMode).ConfigureAwait(false);
+            await ClearExactnessAsync(conn, tx).ConfigureAwait(false);
 
-                await SetAsync(conn, tx, CompletenessStatusKey, canonical.Status.ToString()).ConfigureAwait(false);
+            await SetAsync(conn, tx, CompletenessStatusKey, canonical.Status.ToString()).ConfigureAwait(false);
                 await SetAsync(conn, tx, CompletenessCodeKey, SafeCode(canonical.Code)).ConfigureAwait(false);
                 await SetAsync(conn, tx, RepairRequiredKey, canonical.RepairRequired ? "1" : "0").ConfigureAwait(false);
                 await SetAsync(conn, tx, ExactnessEvaluatedAtKey, canonical.EvaluatedAt).ConfigureAwait(false);
@@ -959,9 +986,9 @@ WHERE key IN (
                 await SetLongAsync(conn, tx, ExactnessPrefix + "actual_distinct_category_ids", audit.DistinctActiveRemoteCategoryIds).ConfigureAwait(false);
                 await SetLongAsync(conn, tx, ExactnessActiveSuppliersKey, audit.ActiveRemoteSuppliers).ConfigureAwait(false);
                 await SetLongAsync(conn, tx, ExactnessPrefix + "actual_distinct_supplier_ids", audit.DistinctActiveRemoteSupplierIds).ConfigureAwait(false);
-                await SetLongAsync(conn, tx, ExactnessPrefix + "duplicate_product_ids", audit.DuplicateAuthoritativeProductIds + audit.DuplicateActiveRemoteProductIds).ConfigureAwait(false);
-                await SetLongAsync(conn, tx, ExactnessPrefix + "duplicate_category_ids", audit.DuplicateAuthoritativeCategoryIds + audit.DuplicateActiveRemoteCategoryIds).ConfigureAwait(false);
-                await SetLongAsync(conn, tx, ExactnessPrefix + "duplicate_supplier_ids", audit.DuplicateAuthoritativeSupplierIds + audit.DuplicateActiveRemoteSupplierIds).ConfigureAwait(false);
+                await SetLongAsync(conn, tx, ExactnessPrefix + "duplicate_product_ids", checked(audit.DuplicateAuthoritativeProductIds + audit.DuplicateActiveRemoteProductIds)).ConfigureAwait(false);
+                await SetLongAsync(conn, tx, ExactnessPrefix + "duplicate_category_ids", checked(audit.DuplicateAuthoritativeCategoryIds + audit.DuplicateActiveRemoteCategoryIds)).ConfigureAwait(false);
+                await SetLongAsync(conn, tx, ExactnessPrefix + "duplicate_supplier_ids", checked(audit.DuplicateAuthoritativeSupplierIds + audit.DuplicateActiveRemoteSupplierIds)).ConfigureAwait(false);
                 await SetLongAsync(conn, tx, ExactnessPrefix + "duplicate_active_barcodes", audit.DuplicateActiveBarcodes).ConfigureAwait(false);
                 await SetLongAsync(conn, tx, ExactnessPrefix + "invalid_product_ids", audit.InvalidAuthoritativeProductIds).ConfigureAwait(false);
                 await SetLongAsync(conn, tx, ExactnessPrefix + "invalid_category_ids", audit.InvalidAuthoritativeCategoryIds).ConfigureAwait(false);
@@ -997,9 +1024,145 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
                         },
                         tx).ConfigureAwait(false);
                 }
+        }
 
-                tx.Commit();
+        /// <summary>
+        /// Finalizes a verified full snapshot in the same transaction as its live
+        /// replacement. A finalization error therefore rolls back both the catalog and
+        /// its sale-safety state together.
+        /// </summary>
+        public async Task FinalizeVerifiedFullRefreshWithinTransactionAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string trustedShopId,
+            string trustedShopCode,
+            CatalogExactnessResult exactness,
+            string syncCursor,
+            string generatedAt,
+            long expectedEpoch,
+            string expectedPreviousCursor,
+            string expectedPreviousMode,
+            string committedRevision,
+            long reconciledImportAckGeneration,
+            OnlineSyncGeneration generation)
+        {
+            if (conn == null) throw new ArgumentNullException(nameof(conn));
+            if (tx == null) throw new ArgumentNullException(nameof(tx));
+            if (exactness == null) throw new ArgumentNullException(nameof(exactness));
+
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                generatedAt,
+                "catalog.generated_at");
+            RemoteCatalogContentPolicy.EnsureOptionalCanonicalText(
+                syncCursor,
+                RemoteCatalogContentPolicy.SyncCursorMaximumLength,
+                "catalog.sync_cursor");
+            var canonical = CatalogExactnessVerifier.Evaluate(
+                exactness.Expected,
+                exactness.Audit,
+                exactness.Context);
+            if (canonical.Status != CatalogCompletenessStatus.Verified ||
+                canonical.RepairRequired)
+            {
+                throw new InvalidOperationException("catalog_exactness_not_verified");
             }
+
+            await StoreExactnessWithinTransactionAsync(
+                conn,
+                tx,
+                trustedShopId,
+                trustedShopCode,
+                canonical,
+                expectedEpoch,
+                expectedPreviousCursor,
+                expectedPreviousMode,
+                generation).ConfigureAwait(false);
+
+            var value = string.IsNullOrWhiteSpace(generatedAt)
+                ? DateTimeOffset.UtcNow.ToString("O")
+                : generatedAt.Trim();
+            var cursor = string.IsNullOrWhiteSpace(syncCursor)
+                ? value
+                : syncCursor.Trim();
+            var normalizedShopId = Normalize(trustedShopId);
+            var normalizedShopCode = OutboxShopBinding.NormalizeCode(trustedShopCode);
+
+            await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
+            await RequireCommitStateAsync(
+                conn,
+                tx,
+                normalizedShopId,
+                normalizedShopCode,
+                expectedEpoch,
+                expectedPreviousCursor,
+                expectedPreviousMode).ConfigureAwait(false);
+            await RequireExactnessSaleSafetyAsync(
+                conn,
+                tx,
+                normalizedShopId,
+                normalizedShopCode,
+                requireEvidence: true).ConfigureAwait(false);
+            await SetAsync(conn, tx, LastSyncAtKey, value).ConfigureAwait(false);
+            await SetAsync(conn, tx, LastSyncCursorKey, cursor).ConfigureAwait(false);
+            await SetAsync(conn, tx, LastSyncModeKey, "full_refresh").ConfigureAwait(false);
+            await ClearDeltaChainAsync(conn, tx).ConfigureAwait(false);
+
+            var normalizedRevision = CatalogHeartbeatPolicy.NormalizeRevision(committedRevision);
+            if (!string.IsNullOrWhiteSpace(committedRevision) &&
+                normalizedRevision.Length == 0)
+            {
+                throw new InvalidDataException("Catalog committed revision is invalid.");
+            }
+
+            await RequireCommitStateAsync(
+                conn,
+                tx,
+                normalizedShopId,
+                normalizedShopCode,
+                expectedEpoch,
+                cursor,
+                "full_refresh").ConfigureAwait(false);
+            await RequireExactnessSaleSafetyAsync(
+                conn,
+                tx,
+                normalizedShopId,
+                normalizedShopCode).ConfigureAwait(false);
+            await SetAsync(conn, tx, SaleSafeAtKey, value).ConfigureAwait(false);
+            var initialCompleted = await GetAsync(conn, tx, InitialCompletedAtKey)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(initialCompleted))
+            {
+                await SetAsync(conn, tx, InitialCompletedAtKey, value).ConfigureAwait(false);
+            }
+
+            if (normalizedRevision.Length > 0)
+            {
+                await SetAsync(conn, tx, CommittedRevisionKey, normalizedRevision)
+                    .ConfigureAwait(false);
+                await SetAsync(conn, tx, CommittedRevisionAtKey, value)
+                    .ConfigureAwait(false);
+            }
+
+            var ackRaw = await GetAsync(conn, tx, ImportAckGenerationKey).ConfigureAwait(false);
+            var reconciledRaw = await GetAsync(conn, tx, ImportReconciledGenerationKey)
+                .ConfigureAwait(false);
+            if (!TryParseNonNegativeGeneration(ackRaw, out var currentAckGeneration) ||
+                !TryParseNonNegativeGeneration(reconciledRaw, out var currentReconciledGeneration) ||
+                currentReconciledGeneration > currentAckGeneration ||
+                reconciledImportAckGeneration < 0 ||
+                reconciledImportAckGeneration > currentAckGeneration)
+            {
+                throw new InvalidOperationException("catalog_import_ack_generation_invalid");
+            }
+
+            var nextReconciled = Math.Max(
+                currentReconciledGeneration,
+                reconciledImportAckGeneration);
+            await SetAsync(
+                conn,
+                tx,
+                ImportReconciledGenerationKey,
+                nextReconciled.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
         }
 
         public async Task<CatalogExactnessState> LoadExactnessAsync()
@@ -1207,113 +1370,21 @@ WHERE key IN (
                 return values.TryGetValue(key, out var value) ? value : string.Empty;
             }
 
-            var boundShopId = Normalize(Read(BoundShopIdKey));
-            var boundShopCode = OutboxShopBinding.NormalizeCode(Read(BoundShopCodeKey));
-            var hasBoundShopId = boundShopId.Length > 0;
-            var hasBoundShopCode = boundShopCode.Length > 0;
+            var snapshot = new CatalogSaleSafetySnapshot(
+                Normalize(Read(BoundShopIdKey)),
+                OutboxShopBinding.NormalizeCode(Read(BoundShopCodeKey)),
+                Normalize(Read(OutboxShopBinding.OfficialShopIdKey)),
+                OutboxShopBinding.NormalizeCode(Read(OutboxShopBinding.OfficialShopCodeKey)),
+                Read(RepairRequiredKey),
+                Read(SaleSafeAtKey),
+                Read(CompletenessStatusKey),
+                Normalize(Read(ExactnessShopIdKey)),
+                OutboxShopBinding.NormalizeCode(Read(ExactnessShopCodeKey)));
+            var decision = CatalogSaleSafetyPolicy.Evaluate(snapshot, allowLegacyUnbound);
 
-            // Databases that have never been linked retain their legacy/local sale
-            // behavior. Official-catalog readiness remains false for that same state.
-            if (!hasBoundShopId && !hasBoundShopCode)
-            {
-                return allowLegacyUnbound
-                    ? CatalogSaleSafetyEvaluation.Safe(
-                        isCatalogBound: false,
-                        "catalog_sale_safe_legacy_unbound")
-                    : CatalogSaleSafetyEvaluation.Blocked(
-                        isCatalogBound: false,
-                        "catalog_sale_blocked_not_bound");
-            }
-
-            if (!hasBoundShopId || !hasBoundShopCode)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_binding_partial");
-            }
-
-            var officialShopId = Normalize(Read(OutboxShopBinding.OfficialShopIdKey));
-            var officialShopCode = OutboxShopBinding.NormalizeCode(
-                Read(OutboxShopBinding.OfficialShopCodeKey));
-            if (officialShopId.Length == 0 || officialShopCode.Length == 0)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_official_shop_partial");
-            }
-
-            if (!string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
-                boundShopId,
-                boundShopCode,
-                officialShopId,
-                officialShopCode)))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_shop_mismatch");
-            }
-
-            var rawRepairRequired = Read(RepairRequiredKey);
-            if (!TryParseOptionalBinaryFlag(rawRepairRequired, out var repairRequired))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_repair_state_invalid");
-            }
-
-            if (repairRequired)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_repair_required");
-            }
-
-            if (string.IsNullOrWhiteSpace(Read(SaleSafeAtKey)))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_not_sale_safe");
-            }
-
-            var rawExactnessStatus = Read(CompletenessStatusKey);
-            if (string.IsNullOrWhiteSpace(rawExactnessStatus))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_missing");
-            }
-
-            if (!Enum.TryParse(rawExactnessStatus, true, out CatalogCompletenessStatus exactnessStatus) ||
-                exactnessStatus != CatalogCompletenessStatus.Verified)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_not_verified");
-            }
-
-            var exactnessShopId = Normalize(Read(ExactnessShopIdKey));
-            var exactnessShopCode = OutboxShopBinding.NormalizeCode(Read(ExactnessShopCodeKey));
-            if (exactnessShopId.Length == 0 || exactnessShopCode.Length == 0)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_binding_partial");
-            }
-
-            if (!string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
-                exactnessShopId,
-                exactnessShopCode,
-                officialShopId,
-                officialShopCode)))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_shop_mismatch");
-            }
-
-            return CatalogSaleSafetyEvaluation.Safe(
-                isCatalogBound: true,
-                "catalog_sale_safe");
+            return decision.IsSaleSafe
+                ? CatalogSaleSafetyEvaluation.Safe(decision.IsCatalogBound, decision.ReasonCode)
+                : CatalogSaleSafetyEvaluation.Blocked(decision.IsCatalogBound, decision.ReasonCode);
         }
 
         private sealed class CatalogSaleSafetySettingRow

@@ -80,6 +80,13 @@ namespace Win7POS.Wpf.Import
                     "Supplier Excel denial boundary created database or backup side effects.");
             }
 
+            var cancellationPass = await VerifyAnalyzeCancellationAsync(dataDir).ConfigureAwait(true);
+            if (!cancellationPass)
+            {
+                throw new InvalidOperationException(
+                    "Supplier Excel Analyze cancellation did not release the file or leave the wizard reusable.");
+            }
+
             var filePath = ValueAfter(args, "--file");
             if (string.IsNullOrWhiteSpace(filePath))
             {
@@ -113,6 +120,7 @@ namespace Win7POS.Wpf.Import
             var barcode = BuildBarcode(source, format);
             var proof = ReadProof(barcode);
             var ok = result.CatalogImportOutboxId > 0 &&
+                cancellationPass &&
                 File.Exists(result.BackupPath) &&
                 proof.ProductRows == 1 &&
                 proof.ImportPriceHistoryRows > 0 &&
@@ -126,6 +134,7 @@ namespace Win7POS.Wpf.Import
             report.AppendLine("dataDir=" + dataDir);
             report.AppendLine("backupCreated=" + File.Exists(result.BackupPath).ToString(CultureInfo.InvariantCulture));
             report.AppendLine("denialBoundaryPass=" + denialBoundaryPass.ToString(CultureInfo.InvariantCulture));
+            report.AppendLine("cancellationPass=" + cancellationPass.ToString(CultureInfo.InvariantCulture));
             report.AppendLine("authorizationLeasePass=" + authorizationLeasePass.ToString(CultureInfo.InvariantCulture));
             report.AppendLine("outboxId=" + result.CatalogImportOutboxId.ToString(CultureInfo.InvariantCulture));
             report.AppendLine("outboxStatus=" + result.CatalogImportOutboxStatus);
@@ -137,6 +146,95 @@ namespace Win7POS.Wpf.Import
             WriteReport(ValueAfter(args, "--report"), ok ? "PASS" : "FAIL", report.ToString());
 
             return ok ? 0 : 1;
+        }
+
+        private static async Task<bool> VerifyAnalyzeCancellationAsync(string dataDir)
+        {
+            var largePath = Path.Combine(dataDir, "supplier-cancellation-large.xls");
+            var movedPath = largePath + ".released";
+            var nextPath = Path.Combine(dataDir, "supplier-cancellation-next.xlsx");
+            var html = new StringBuilder(8 * 1024 * 1024);
+            html.Append("<html><table><tr><th>barcode</th><th>productName</th><th>purchasePrice</th><th>retailPrice</th></tr>");
+            for (var row = 0; row < 50000; row++)
+            {
+                html.Append("<tr><td>")
+                    .Append((10000000 + row).ToString(CultureInfo.InvariantCulture))
+                    .Append("</td><td>Cancellation Product ")
+                    .Append(row.ToString(CultureInfo.InvariantCulture))
+                    .Append("</td><td>100</td><td>180</td></tr>");
+            }
+            html.Append("</table></html>");
+            File.WriteAllText(largePath, html.ToString(), new UTF8Encoding(false));
+            CreateSupplierFixture(nextPath, "xlsx", "CancellationNext");
+
+            try
+            {
+                var fileDialog = new SequencedFileDialogService(largePath, nextPath);
+                var viewModel = new SupplierExcelImportViewModel(
+                    new SupplierExcelImportWorkflowService(() => true),
+                    fileDialog,
+                    new SmokeCompletionDialogService());
+                var requestedClose = false;
+                viewModel.RequestClose += _ => requestedClose = true;
+
+                viewModel.BrowseCommand.Execute(null);
+                viewModel.AnalyzeCommand.Execute(null);
+                if (!await WaitUntilAsync(() => viewModel.IsBusy, TimeSpan.FromSeconds(5)).ConfigureAwait(true))
+                    throw new InvalidOperationException("Analyze never entered the busy state.");
+                viewModel.CancelCommand.Execute(null);
+                if (!await WaitUntilAsync(() => !viewModel.IsBusy, TimeSpan.FromSeconds(15)).ConfigureAwait(true))
+                    throw new InvalidOperationException("Analyze did not leave the busy state after cancellation.");
+                if (requestedClose || viewModel.Analysis != null || viewModel.StepIndex != 0)
+                    throw new InvalidOperationException("Cancellation closed the wizard or retained a partial analysis.");
+
+                File.Move(largePath, movedPath);
+                File.Delete(movedPath);
+
+                viewModel.BrowseCommand.Execute(null);
+                viewModel.AnalyzeCommand.Execute(null);
+                if (!await WaitUntilAsync(
+                        () => !viewModel.IsBusy && viewModel.Analysis != null,
+                        TimeSpan.FromSeconds(15)).ConfigureAwait(true))
+                    throw new InvalidOperationException("Wizard did not analyze the next workbook after cancellation.");
+                if (viewModel.StepIndex != 1 ||
+                    viewModel.Analysis.EditableRows.Count != 1 ||
+                    File.Exists(largePath) ||
+                    File.Exists(movedPath))
+                {
+                    throw new InvalidOperationException("Reusable wizard state or cancellation file-release proof is invalid.");
+                }
+                return true;
+            }
+            finally
+            {
+                TryDelete(largePath);
+                TryDelete(movedPath);
+                TryDelete(nextPath);
+            }
+        }
+
+        private static async Task<bool> WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (predicate())
+                    return true;
+                await Task.Delay(10).ConfigureAwait(true);
+            }
+            return predicate();
+        }
+
+        private static void TryDelete(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch
+            {
+            }
         }
 
         private static async Task<bool> VerifyDeniedApplyHasNoSideEffectsAsync()
@@ -279,7 +377,7 @@ namespace Win7POS.Wpf.Import
             };
         }
 
-        private static void CreateSupplierFixture(string path, string format, string source)
+        internal static void CreateSupplierFixture(string path, string format, string source)
         {
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrWhiteSpace(dir))
@@ -369,6 +467,25 @@ namespace Win7POS.Wpf.Import
             public string SelectSupplierExcelFile()
             {
                 return _path;
+            }
+        }
+
+        private sealed class SequencedFileDialogService : ISupplierExcelFileDialogService
+        {
+            private readonly string[] _paths;
+            private int _index;
+
+            public SequencedFileDialogService(params string[] paths)
+            {
+                _paths = paths ?? Array.Empty<string>();
+            }
+
+            public string SelectSupplierExcelFile()
+            {
+                if (_paths.Length == 0)
+                    return string.Empty;
+                var index = Math.Min(_index++, _paths.Length - 1);
+                return _paths[index];
             }
         }
 

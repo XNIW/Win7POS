@@ -23,6 +23,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly Func<bool> _hasBackupPermission;
         private readonly Func<bool> _hasCatalogImportPermission;
         private readonly Func<bool> _hasMaintenancePermission;
+        private readonly FileLogger _logger = new FileLogger("DbMaintenanceViewModel");
 
         private string _outputLog = string.Empty;
         private bool _isBusy;
@@ -55,8 +56,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string OutputLog
         {
             get => _outputLog;
-            set { _outputLog = value ?? string.Empty; OnPropertyChanged(); }
+            set
+            {
+                _outputLog = value ?? string.Empty;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasOutputLog));
+            }
         }
+
+        public bool HasOutputLog => !string.IsNullOrWhiteSpace(OutputLog);
 
         public bool IsBusy
         {
@@ -93,7 +101,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Append(PosLocalization.F("dbMaintenance.backupFailed", ex.Message));
+                AppendFailure("Database backup failed", "dbMaintenance.backupFailed", ex);
             }
             finally
             {
@@ -141,7 +149,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Append(PosLocalization.F("dbMaintenance.restoreFailed", ex.Message));
+                AppendFailure(
+                    "Database restore failed",
+                    "dbMaintenance.restoreFailed",
+                    ex,
+                    GetSafeRestoreFailureDetail(ex));
             }
             finally
             {
@@ -159,7 +171,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Append(PosLocalization.F("dbMaintenance.integrityCheckFailed", ex.Message));
+                AppendFailure("Database integrity check failed", "dbMaintenance.integrityCheckFailed", ex);
             }
             finally
             {
@@ -185,7 +197,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Append(PosLocalization.F("dbMaintenance.restoreReviewFailed", ex.Message));
+                AppendFailure("Restore review completion failed", "dbMaintenance.restoreReviewFailed", ex);
             }
             finally
             {
@@ -211,7 +223,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Append(PosLocalization.F("dbMaintenance.vacuumFailed", ex.Message));
+                AppendFailure("Database VACUUM failed", "dbMaintenance.vacuumFailed", ex);
             }
             finally
             {
@@ -240,7 +252,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Append(PosLocalization.F("dbMaintenance.openFolderFailed", ex.Message));
+                AppendFailure("Open data folder failed", "dbMaintenance.openFolderFailed", ex);
             }
         }
 
@@ -271,8 +283,45 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Append(PosLocalization.F("supplierExcelImport.failed", ex.Message));
+                AppendFailure("Supplier Excel import dialog failed", "supplierExcelImport.failed", ex);
             }
+        }
+
+        private void AppendFailure(string logContext, string displayKey, Exception ex, string safeDetail = null)
+        {
+            _logger.LogError(ex, logContext);
+            Append(PosLocalization.F(
+                displayKey,
+                string.IsNullOrWhiteSpace(safeDetail)
+                    ? PosLocalization.T("dbMaintenance.operationFailedFriendly")
+                    : safeDetail));
+        }
+
+        private static string GetSafeRestoreFailureDetail(Exception ex)
+        {
+            if (!(ex is InvalidOperationException))
+            {
+                return null;
+            }
+
+            var safeKeys = new[]
+            {
+                "dbMaintenance.restoreTrustedShopRequired",
+                "dbMaintenance.restoreBlockedUnresolvedSales",
+                "dbMaintenance.restoreBlockedUnresolvedCatalogImports",
+                "dbMaintenance.restoreBlockedUnresolvedArticleMutations",
+                "dbMaintenance.restoreBlockedUnresolvedProductImages"
+            };
+            foreach (var key in safeKeys)
+            {
+                var safeMessage = PosLocalization.T(key);
+                if (string.Equals(ex.Message, safeMessage, StringComparison.Ordinal))
+                {
+                    return safeMessage;
+                }
+            }
+
+            return null;
         }
 
         private void Append(string line)

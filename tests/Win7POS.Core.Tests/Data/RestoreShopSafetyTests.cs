@@ -63,6 +63,76 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
     }
 
     [TestMethod]
+    public async Task CandidateAndLiveValidation_RejectUnresolvedArticleMutations()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var binding = await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        await new ProductRepository(db.Factory).CreateLocalArticleAsync(
+            new LocalArticleCreateRequest
+            {
+                Barcode = "RESTORE-ARTICLE-001",
+                PrimaryName = "Restore article",
+                RetailPrice = 100,
+                PurchasePrice = 50,
+                InitialStock = 1
+            },
+            ProductWriteOrigin.LocalUserSave);
+
+        var safety = new RestoreShopSafetyRepository(db.Factory);
+        var candidate = await safety.ValidateCandidateAsync(
+            "shop-a",
+            "SHOP-A");
+        var live = await safety.ValidateLivePreSwapAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+
+        Assert.IsFalse(candidate.IsValid);
+        Assert.AreEqual(
+            "restore_candidate_outbox_unresolved",
+            candidate.Code);
+        Assert.IsFalse(live.IsValid);
+        Assert.AreEqual(
+            "restore_live_article_outbox_unresolved",
+            live.Code);
+    }
+
+    [TestMethod]
+    public async Task CandidateLiveAndReview_RejectUnresolvedCustomerOrderInbox()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var binding = await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        await InsertUnresolvedCustomerOrderAsync(db.Factory, "shop-a");
+        var settings = new SettingsRepository(db.Factory);
+        await settings.SetBoolAsync(
+            RestoreShopSafetyRepository.RestoreNeedsReviewKey,
+            true);
+
+        var safety = new RestoreShopSafetyRepository(db.Factory);
+        var candidate = await safety.ValidateCandidateAsync("shop-a", "SHOP-A");
+        var live = await safety.ValidateLivePreSwapAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+        var review = await safety.CompleteReviewAsync();
+
+        Assert.IsFalse(candidate.IsValid);
+        Assert.AreEqual("restore_candidate_outbox_unresolved", candidate.Code);
+        Assert.IsFalse(live.IsValid);
+        Assert.AreEqual(
+            "restore_live_customer_order_inbox_unresolved",
+            live.Code);
+        Assert.IsFalse(review.IsValid);
+        Assert.AreEqual("restore_review_outbox_unresolved", review.Code);
+        Assert.IsTrue(await settings.GetBoolAsync(
+            RestoreShopSafetyRepository.RestoreNeedsReviewKey));
+    }
+
+    [TestMethod]
     public async Task LivePreSwapValidation_RejectsOutboxCommittedAfterPreliminaryCheck()
     {
         using var db = TestDb.Create();
@@ -111,12 +181,19 @@ VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-le
     public async Task AtomicInstaller_UsesValidatedCopyAfterSourceMutation()
     {
         using var files = RestoreFiles.Create();
-        File.WriteAllText(files.Source, "validated");
+        WriteProbeDatabase(files.Source, "validated");
+        SqliteConnectionFactory.ClearAllPools();
         File.Copy(files.Source, files.Validated, true);
-        File.WriteAllText(files.Source, "mutated-after-validation");
-        File.WriteAllText(files.Live, "live-before-restore");
+        using (var source = new SqliteConnection("Data Source=" + files.Source))
+        {
+            source.Open();
+            source.Execute(
+                "UPDATE restore_probe SET value='mutated-after-validation' WHERE id=1;");
+        }
+        WriteProbeDatabase(files.Live, "live-before-restore");
         File.WriteAllText(files.Live + "-wal", "stale-wal");
         File.WriteAllText(files.Live + "-shm", "stale-shm");
+        SqliteConnectionFactory.ClearAllPools();
         File.Copy(files.Live, files.Rollback, true);
 
         await new AtomicRestoreInstaller().InstallAsync(
@@ -125,7 +202,7 @@ VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-le
             files.Rollback,
             () => Task.CompletedTask);
 
-        Assert.AreEqual("validated", File.ReadAllText(files.Live));
+        Assert.AreEqual("validated", ReadProbeValue(files.Live));
         Assert.IsFalse(File.Exists(files.Live + "-wal"));
         Assert.IsFalse(File.Exists(files.Live + "-shm"));
         Assert.IsFalse(File.Exists(files.Live + ".restore-in-progress"));
@@ -178,6 +255,41 @@ VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-le
         var complete = await new RestoreShopSafetyRepository(db.Factory).CompleteReviewAsync();
         Assert.IsTrue(complete.IsValid);
         Assert.IsFalse(await settings.GetBoolAsync(RestoreShopSafetyRepository.RestoreNeedsReviewKey));
+    }
+
+    [TestMethod]
+    public async Task CompleteReview_RejectsBlockedArticleMutation()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var settings = new SettingsRepository(db.Factory);
+        await settings.SetBoolAsync(
+            RestoreShopSafetyRepository.RestoreNeedsReviewKey,
+            true);
+        await settings.SetStringAsync(
+            RestoreShopSafetyRepository.RestoreCompletedAtKey,
+            "2026-07-28T01:00:00Z");
+        await new ProductRepository(db.Factory).CreateLocalArticleAsync(
+            new LocalArticleCreateRequest
+            {
+                Barcode = "RESTORE-BLOCKED-001",
+                PrimaryName = "Blocked restore article",
+                RetailPrice = 100,
+                PurchasePrice = 50,
+                InitialStock = 1,
+                CategoryName = "Local category without remote identity"
+            },
+            ProductWriteOrigin.LocalUserSave);
+
+        var result = await new RestoreShopSafetyRepository(db.Factory)
+            .CompleteReviewAsync();
+
+        Assert.IsFalse(result.IsValid);
+        Assert.AreEqual("restore_review_outbox_unresolved", result.Code);
+        Assert.IsTrue(await settings.GetBoolAsync(
+            RestoreShopSafetyRepository.RestoreNeedsReviewKey));
     }
 
     [TestMethod]
@@ -240,6 +352,41 @@ WHERE key = 'pos.catalog.exactness.code';"));
             ShopName = shopCode,
             Source = "test"
         });
+    }
+
+    private static async Task InsertUnresolvedCustomerOrderAsync(
+        SqliteConnectionFactory factory,
+        string shopId)
+    {
+        using var connection = factory.Open();
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await connection.ExecuteAsync(@"
+INSERT INTO customer_order_inbox(
+  handoff_id, event_idempotency_key, order_id, shop_id, order_code,
+  event_type, correlation_id, status_version, current_status_version,
+  order_status, fulfillment_mode, currency_code, total_clp, payload_json,
+  payload_hash, lease_token, lease_expires_at, remote_attempt_count, state,
+  ack_outcome, ack_idempotency_key, ack_expected_status_version,
+  received_at, updated_at)
+VALUES(
+  @handoffId, @eventIdempotencyKey, @orderId, @shopId, 'MC-RESTORE',
+  'customer_order.accepted.v1', @correlationId, 2, 2,
+  'accepted', 'pickup', 'CLP', 1000, '{}',
+  @payloadHash, @leaseToken, @leaseExpiresAt, 1, 'ack_pending',
+  'accepted', @ackIdempotencyKey, 2, @nowMs, @nowMs);",
+            new
+            {
+                ackIdempotencyKey = Guid.NewGuid().ToString("D"),
+                correlationId = Guid.NewGuid().ToString("D"),
+                eventIdempotencyKey = Guid.NewGuid().ToString("D"),
+                handoffId = Guid.NewGuid().ToString("D"),
+                leaseExpiresAt = nowMs + 300000,
+                leaseToken = Guid.NewGuid().ToString("D"),
+                nowMs,
+                orderId = Guid.NewGuid().ToString("D"),
+                payloadHash = "sha256:" + new string('a', 64),
+                shopId
+            });
     }
 
     private static void WriteProbeDatabase(string path, string value)

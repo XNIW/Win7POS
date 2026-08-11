@@ -37,6 +37,15 @@ namespace Win7POS.Data.Online
             SqliteTransaction tx,
             CatalogImportOutboxEntry entry)
         {
+            return await EnqueueAsync(conn, tx, entry, null).ConfigureAwait(false);
+        }
+
+        internal static async Task<long> EnqueueAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogImportOutboxEntry entry,
+            Action commandStarting)
+        {
             if (conn == null) throw new ArgumentNullException(nameof(conn));
             if (tx == null) throw new ArgumentNullException(nameof(tx));
             if (entry == null) throw new ArgumentNullException(nameof(entry));
@@ -46,7 +55,10 @@ namespace Win7POS.Data.Online
             if (string.IsNullOrWhiteSpace(entry.PayloadHash)) throw new ArgumentException("payload hash is required.");
 
             var nowMs = entry.CreatedAt > 0 ? entry.CreatedAt : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var origin = await OutboxShopBinding.ResolveRequiredAsync(conn, tx).ConfigureAwait(false);
+            var origin = await OutboxShopBinding
+                .ResolveRequiredAsync(conn, tx, commandStarting)
+                .ConfigureAwait(false);
+            commandStarting?.Invoke();
             await conn.ExecuteAsync(@"
 INSERT OR IGNORE INTO catalog_import_outbox(
   client_import_id, idempotency_key, schema_version, operation_type,
@@ -70,6 +82,7 @@ VALUES(
                 },
                 tx).ConfigureAwait(false);
 
+            commandStarting?.Invoke();
             var existing = await conn.QuerySingleAsync<CatalogImportExistingRow>(@"
 SELECT
   id AS Id,
@@ -925,7 +938,7 @@ WHERE barcode = @barcode
                 throw new InvalidOperationException("catalog_import_remote_price_owner_missing_or_ambiguous");
             }
 
-            if (!await ProductRepository.StoreRemotePriceOwnershipAsync(
+            if (!await RemotePriceHistoryRepository.StoreRemotePriceOwnershipAsync(
                     conn,
                     tx,
                     normalizedRemotePriceId,

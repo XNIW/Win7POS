@@ -50,7 +50,18 @@ public sealed class LegacyMigrationFixtureTests
         "idx_suppliers_remote_supplier_id",
         "idx_suppliers_active_name",
         "idx_users_remote_staff_id",
-        "idx_users_remote_shop_staff"
+        "idx_users_remote_shop_staff",
+        "idx_catalog_authoritative_stage_page_identity",
+        "idx_catalog_authoritative_stage_reconcile",
+        "idx_catalog_authoritative_stage_cleanup",
+        "idx_article_mutation_state_next",
+        "idx_article_mutation_client_sequence",
+        "idx_article_mutation_remote_product",
+        "idx_article_mutation_local_product",
+        "idx_article_mutation_attempt_mutation",
+        "idx_article_remote_shadow_local",
+        "idx_products_client_product_id",
+        "idx_price_history_article_mutation"
     };
 
     [TestMethod]
@@ -61,6 +72,7 @@ public sealed class LegacyMigrationFixtureTests
     [DataRow("legacy_pre_catalog_exactness.sql")]
     [DataRow("legacy_current_main_unversioned.sql")]
     [DataRow("legacy_post_pr7_unversioned.sql")]
+    [DataRow("legacy_post_sync2_unversioned.sql")]
     public async Task SanitizedLegacyFixture_UpgradesToLatestWithoutDataLossAndReopensAsNoOp(
         string fixtureFileName)
     {
@@ -112,6 +124,8 @@ public sealed class LegacyMigrationFixtureTests
             AssertPrePr7MainAppliedOnlyReceiptSnapshot(database.LivePath);
         if (string.Equals(fixtureFileName, "legacy_post_pr7_unversioned.sql", StringComparison.Ordinal))
             AssertPostPr7MainWasBootstrappedWithoutReapplying(database.LivePath);
+        if (string.Equals(fixtureFileName, "legacy_post_sync2_unversioned.sql", StringComparison.Ordinal))
+            AssertPostSync2MainWasBootstrappedWithoutReapplying(database.LivePath);
 
         var ledgerBefore = ReadLedgerTimestamps(database.LivePath);
         var blockedOutboxBefore = ReadBlockedOutboxTimestamps(database.LivePath);
@@ -159,27 +173,68 @@ ORDER BY migration_id;").ToArray();
             new[]
             {
                 "0007-receipt-shop-snapshot",
-                "0008-online-sync-generation"
+                "0008-online-sync-generation",
+                "0009-catalog-authoritative-id-stage",
+                "0010-article-mutation-outbox",
+                "0011-product-image-outbox",
+                "0012-customer-order-inbox"
             },
             appliedIds,
-            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0008.");
+            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0012.");
     }
 
     private static void AssertPostPr7MainWasBootstrappedWithoutReapplying(string databasePath)
     {
         using var connection = Open(databasePath);
-        var rowsWithApplicationVersion = connection.ExecuteScalar<long>(@"
-SELECT COUNT(1)
-FROM schema_migrations
-WHERE app_version IS NOT NULL;");
-        Assert.AreEqual(1L, rowsWithApplicationVersion,
-            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008.");
-        Assert.AreEqual(
-            "0008-online-sync-generation",
-            connection.ExecuteScalar<string>(@"
+        var appliedIds = connection.Query<string>(@"
 SELECT migration_id
 FROM schema_migrations
-WHERE app_version IS NOT NULL;"));
+WHERE app_version IS NOT NULL
+ORDER BY migration_id;").ToArray();
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "0008-online-sync-generation",
+                "0009-catalog-authoritative-id-stage",
+                "0010-article-mutation-outbox",
+                "0011-product-image-outbox",
+                "0012-customer-order-inbox"
+            },
+            appliedIds,
+            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0012.");
+        Assert.AreEqual(
+            "{\"shopName\":\"Negozio QA Ñ\",\"address\":\"Via Unicode 7\"}",
+            connection.ExecuteScalar<string>(@"
+SELECT receipt_shop_snapshot
+FROM sales
+WHERE code = 'POST-PR7-SNAPSHOT';"),
+            "The immutable Unicode receipt snapshot must survive ledger bootstrap unchanged.");
+    }
+
+    private static void AssertPostSync2MainWasBootstrappedWithoutReapplying(string databasePath)
+    {
+        using var connection = Open(databasePath);
+        var appliedIds = connection.Query<string>(@"
+SELECT migration_id
+FROM schema_migrations
+WHERE app_version IS NOT NULL
+ORDER BY migration_id;").ToArray();
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "0009-catalog-authoritative-id-stage",
+                "0010-article-mutation-outbox",
+                "0011-product-image-outbox",
+                "0012-customer-order-inbox"
+            },
+            appliedIds,
+            "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009-0012.");
+        Assert.AreEqual(
+            8L,
+            connection.ExecuteScalar<long>(@"
+SELECT COUNT(1)
+FROM schema_migrations
+WHERE app_version IS NULL;"));
         Assert.AreEqual(
             "{\"shopName\":\"Negozio QA Ñ\",\"address\":\"Via Unicode 7\"}",
             connection.ExecuteScalar<string>(@"

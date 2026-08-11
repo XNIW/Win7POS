@@ -81,6 +81,12 @@ namespace Win7POS.Core.Pos
         private readonly ISalesStore _salesStore;
         private readonly List<PosLine> _lines = new List<PosLine>();
 
+        public PosSession(IProductLookup productLookup)
+        {
+            _productLookup = productLookup ??
+                throw new ArgumentNullException(nameof(productLookup));
+        }
+
         public PosSession(IProductLookup productLookup, ISalesStore salesStore)
         {
             _productLookup = productLookup ?? throw new ArgumentNullException(nameof(productLookup));
@@ -356,6 +362,11 @@ namespace Win7POS.Core.Pos
 
         public async Task<SaleCompleted> PayCashAsync()
         {
+            if (_salesStore == null)
+            {
+                throw new InvalidOperationException(
+                    "Legacy sale persistence is not configured.");
+            }
             if (_lines.Count == 0) throw new PosException(PosErrorCode.EmptyCart);
 
             var total = Total;

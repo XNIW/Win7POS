@@ -93,11 +93,11 @@ try {
     $uniquePackages = @($packages | Sort-Object -Unique)
     if ($licensePolicy.schemaVersion -ne 1 -or
         ($allowed -join "|") -ne ($expectedAllowed -join "|") -or
-        $packages.Count -ne 99 -or $uniquePackages.Count -ne 99 -or
+        $packages.Count -ne 51 -or $uniquePackages.Count -ne 51 -or
         @($packages | Where-Object { $_ -notmatch '^[^@]+@\d+\.\d+\.' }).Count -ne 0) {
-        Fail "License policy must contain 99 unique exact package/version mappings and only reviewed expressions"
+        Fail "License policy must contain 51 unique exact package/version mappings and only reviewed expressions"
     }
-    else { Pass "License policy contains 99 exact mappings with a closed reviewed allowlist" }
+    else { Pass "License policy contains 51 exact mappings with a closed reviewed allowlist" }
 }
 catch { Fail "License policy is invalid JSON" }
 
@@ -108,20 +108,31 @@ $ignoreLines = @($ignoreText -split '\r?\n' | Where-Object {
 $invalidIgnoreLines = @($ignoreLines | Where-Object {
         $_ -notmatch '^[0-9a-f]{40}:[^:*?]+:[a-z0-9-]+:[0-9]+$'
     })
-if ($ignoreLines.Count -ne 8 -or $invalidIgnoreLines.Count -ne 0) {
-    Fail "Gitleaks history exceptions must be eight exact commit/path/rule/line fingerprints"
+$perf2bFalsePositive = "18a6e065d445445b201d5203807a06455311a862:tests/Win7POS.Core.Tests/Data/ProductQueryPlanTests.cs:generic-api-key:376"
+$f4OutboxFalsePositive = "044d95541a183cd58360d7ffefe4a69d9eb3d4d9:tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs:generic-api-key:971"
+$f4ReserveOutboxFalsePositive = "044d95541a183cd58360d7ffefe4a69d9eb3d4d9:tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs:generic-api-key:1012"
+if ($ignoreLines.Count -ne 11 -or
+    $invalidIgnoreLines.Count -ne 0 -or
+    $ignoreLines -cnotcontains $perf2bFalsePositive -or
+    $ignoreLines -cnotcontains $f4OutboxFalsePositive -or
+    $ignoreLines -cnotcontains $f4ReserveOutboxFalsePositive) {
+    Fail "Gitleaks history exceptions must be eleven reviewed exact commit/path/rule/line fingerprints"
 }
-else { Pass "Gitleaks history exceptions are exact and contain no wildcard" }
+else { Pass "Gitleaks history exceptions are eleven reviewed exact fingerprints with no wildcard" }
 
 $securityWorkflow = Read-RequiredText ".github\workflows\security-supply-chain.yml"
 $releaseWorkflow = Read-RequiredText ".github\workflows\release-pack.yml"
 $protectedWorkflow = Read-RequiredText ".github\workflows\protected-release.yml"
 $runbook = Read-RequiredText "docs\RELEASE_SUPPLY_CHAIN.md"
 $nugetGate = Read-RequiredText "scripts\invoke-nuget-supply-chain-gates.ps1"
+$gitleaksScan = Read-RequiredText "scripts\invoke-gitleaks-scans.ps1"
 $signerScript = Read-RequiredText "scripts\win7pos\windows\invoke-protected-release-signing.ps1"
 $signingFixture = Read-RequiredText "scripts\win7pos\windows\test-release-signing-negative.ps1"
 
 Require-Pattern "NuGet audits ignore runner-global sources and use only the approved HTTPS feed" $nugetGate '(?s)\$NuGetAuditSource\s*=\s*"https://api\.nuget\.org/v3/index\.json".*Invoke-DotNetReport.*"--source",\s*\$NuGetAuditSource.*Invoke-DotNetReport.*"--source",\s*\$NuGetAuditSource'
+Require-Pattern "Zero-finding Gitleaks reports remain a non-empty JSON array" `
+    $gitleaksScan `
+    'ConvertTo-Json\s+-InputObject\s+@\(\$findings\)'
 
 foreach ($required in @(
         @{ Label = "Security workflow performs vulnerable/deprecated/license gates"; Pattern = 'invoke-nuget-supply-chain-gates\.ps1' },

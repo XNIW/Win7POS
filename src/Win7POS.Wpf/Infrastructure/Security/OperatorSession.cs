@@ -1,11 +1,14 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
+using Win7POS.Core.Pos;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
 using Sec = Win7POS.Core.Security.SecurityEventCodes;
 
@@ -16,9 +19,12 @@ namespace Win7POS.Wpf.Infrastructure.Security
         private readonly UserRepository _userRepo;
         private readonly SecurityRepository _securityRepo;
         private readonly PosOfflineAuthorizationLeaseGuard _authorizationLeaseGuard;
+        private Action<string, int> _authorizationUseTestHook;
         private UserAccount _currentUser;
+        private bool _currentUserCanUsePosAuthorization;
+        private long _operatorAuthorityVersion;
 
-        public OperatorSession(UserRepository userRepo, SecurityRepository securityRepo)
+        internal OperatorSession(UserRepository userRepo, SecurityRepository securityRepo)
             : this(userRepo, securityRepo, new PosOfflineAuthorizationLeaseGuard())
         {
         }
@@ -70,8 +76,11 @@ namespace Win7POS.Wpf.Infrastructure.Security
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(pin))
                 return LoginResult.Failed;
 
+            var operatorAuthorityVersionAtLoginStart =
+                Interlocked.Read(ref _operatorAuthorityVersion);
             PosTrustedDeviceSession trustedSession = null;
             PosOfflineAuthorizationLeaseEvaluation initialEvaluation = null;
+            PosOfflineAuthorizationLeaseEvaluation committedEvaluation = null;
             if (requireAuthorizationLease)
             {
                 initialEvaluation = await _authorizationLeaseGuard.PreflightAsync()
@@ -81,7 +90,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 SetAuthorizationDecision(authorization);
                 if (!authorization.Allowed)
                 {
-                    LogAuthorizationDenied(authorization.Code);
+                    LogAuthorizationDenied(authorization.Code, null);
                     return LoginResult.AuthorizationExpired;
                 }
 
@@ -126,7 +135,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
             {
                 var finalEvaluation = await _authorizationLeaseGuard
                     .PreflightAsync().ConfigureAwait(true);
-                var committedEvaluation = await _authorizationLeaseGuard
+                committedEvaluation = await _authorizationLeaseGuard
                     .CommitAuthenticationAsync(initialEvaluation, finalEvaluation)
                     .ConfigureAwait(true);
                 SetAuthorizationDecision(committedEvaluation.Decision);
@@ -138,12 +147,55 @@ namespace Win7POS.Wpf.Infrastructure.Security
                     LogAuthorizationDenied(
                         committedEvaluation.Decision.Allowed
                             ? "sync_generation_changed"
-                            : committedEvaluation.Decision.Code);
+                            : committedEvaluation.Decision.Code,
+                        null);
                     return LoginResult.AuthorizationExpired;
                 }
             }
 
-            _currentUser = result.User;
+            var operatorAuthorityChanged = false;
+            if (requireAuthorizationLease)
+            {
+                _authorizationUseTestHook?.Invoke(
+                    "before_operator_authority_bind",
+                    0);
+                operatorAuthorityChanged =
+                    committedEvaluation?.Token != null &&
+                    PosOnlineSyncRevocationLatch.TryChangeOperatorAuthority(
+                        committedEvaluation.Token.AuthorizationEpoch,
+                        committedEvaluation.Token.GenerationFingerprint,
+                        () =>
+                        {
+                            _currentUser = result.User;
+                            _currentUserCanUsePosAuthorization = true;
+                            SetAuthorizationDecision(
+                                committedEvaluation.Decision);
+                            Interlocked.Increment(
+                                ref _operatorAuthorityVersion);
+                        });
+            }
+            else
+            {
+                PosOnlineSyncRevocationLatch.ChangeOperatorAuthority(
+                    () =>
+                    {
+                        _currentUser = result.User;
+                        _currentUserCanUsePosAuthorization = false;
+                        Interlocked.Increment(
+                            ref _operatorAuthorityVersion);
+                    },
+                    invalidateAuthorization:
+                        requireLocalRecoveryUser);
+                operatorAuthorityChanged = true;
+            }
+            if (!operatorAuthorityChanged)
+            {
+                const string code = "sync_generation_inactive";
+                HandleAuthorizationUseDenied(
+                    code,
+                    operatorAuthorityVersionAtLoginStart);
+                return LoginResult.AuthorizationExpired;
+            }
             _ = _userRepo.SetLastLoginAsync(result.User.Id);
             _ = _securityRepo.LogEventAsync(
                 Sec.LoginSuccess,
@@ -178,19 +230,219 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
         public bool EnsureAuthorizationValid()
         {
-            var decision = EvaluateAuthorizationLease();
-            if (decision.Allowed)
+            var expectedOperatorAuthorityVersion =
+                Interlocked.Read(ref _operatorAuthorityVersion);
+            var hadOperatorAuthority = _currentUser != null;
+            var decision = _authorizationLeaseGuard.Evaluate(
+                out _);
+            if (decision.Allowed &&
+                _currentUserCanUsePosAuthorization &&
+                Interlocked.Read(ref _operatorAuthorityVersion) ==
+                    expectedOperatorAuthorityVersion)
             {
+                SetAuthorizationDecision(decision);
                 return true;
             }
-
-            LogAuthorizationDenied(decision.Code);
-            if (_currentUser != null)
+            if (decision.Allowed)
             {
-                LogoutForced();
+                decision = PosOfflineAuthorizationLeaseDecision.Deny(
+                    "sync_generation_inactive");
+            }
+
+            _authorizationUseTestHook?.Invoke(
+                "after_authorization_evaluation_denied",
+                0);
+            if (hadOperatorAuthority)
+            {
+                HandleAuthorizationUseDenied(
+                    decision.Code,
+                    expectedOperatorAuthorityVersion);
+            }
+            else
+            {
+                if (Interlocked.Read(ref _operatorAuthorityVersion) ==
+                    expectedOperatorAuthorityVersion)
+                {
+                    SetAuthorizationDecision(decision);
+                }
+                LogAuthorizationDenied(decision.Code, null);
             }
 
             return false;
+        }
+
+        internal bool TryGetAuthorizationBoundUser(
+            out UserAccount authorizedUser)
+        {
+            authorizedUser = null;
+            if (!PosOnlineSyncRevocationLatch
+                    .TryCaptureAuthorizationEpoch(
+                        out var expectedAuthorizationEpoch))
+            {
+                LogAuthorizationDenied(
+                    "sync_generation_inactive",
+                    null);
+                return false;
+            }
+            var expectedOperatorAuthorityVersion =
+                Interlocked.Read(ref _operatorAuthorityVersion);
+            if (!EnsureAuthorizationValid())
+                return false;
+
+            _authorizationUseTestHook?.Invoke(
+                "after_authorization_valid_before_operator_capture",
+                0);
+            UserAccount capturedUser = null;
+            var captured =
+                PosOnlineSyncRevocationLatch
+                    .TryReadOperatorAuthorityIf(
+                        expectedAuthorizationEpoch,
+                        () =>
+                            Interlocked.Read(
+                                ref _operatorAuthorityVersion) ==
+                                expectedOperatorAuthorityVersion &&
+                            _currentUserCanUsePosAuthorization &&
+                            _currentUser != null &&
+                            _currentUser.IsActive,
+                        () => capturedUser = _currentUser);
+            if (!captured)
+            {
+                LogAuthorizationDenied(
+                    "sync_generation_inactive",
+                    null);
+                return false;
+            }
+
+            authorizedUser = capturedUser;
+            return true;
+        }
+
+        internal void HandleAuthorizationUseDenied(
+            string code,
+            long expectedOperatorAuthorityVersion)
+        {
+            var normalizedCode = string.IsNullOrWhiteSpace(code)
+                ? "authorization_lease_denied"
+                : code.Trim();
+            UserAccount deniedUser = null;
+            var invalidated =
+                PosOnlineSyncRevocationLatch
+                    .TryChangeOperatorAuthorityIf(
+                        () => Interlocked.Read(
+                            ref _operatorAuthorityVersion) ==
+                            expectedOperatorAuthorityVersion,
+                        () =>
+                        {
+                            deniedUser = _currentUser;
+                            _currentUser = null;
+                            _currentUserCanUsePosAuthorization = false;
+                            SetAuthorizationDecision(
+                                PosOfflineAuthorizationLeaseDecision.Deny(
+                                    normalizedCode));
+                            Interlocked.Increment(
+                                ref _operatorAuthorityVersion);
+                        },
+                        invalidateAuthorization: true);
+            if (!invalidated)
+            {
+                LogAuthorizationDenied(normalizedCode, null);
+                return;
+            }
+
+            LogAuthorizationDenied(
+                normalizedCode,
+                deniedUser?.Id);
+            if (deniedUser != null)
+            {
+                _ = _securityRepo.LogEventAsync(
+                    Sec.ForcedLogout,
+                    "userId=" + deniedUser.Id);
+                _ = _securityRepo.LogEventAsync(
+                    Sec.Logout,
+                    "userId=" + deniedUser.Id);
+                RaiseSessionChanged();
+            }
+        }
+
+        internal async Task<IPosAuthorizationUseLease> BeginAuthorizationUseAsync(
+            string permissionCode,
+            string operationText)
+        {
+            var operatorAuthorityVersion =
+                Interlocked.Read(ref _operatorAuthorityVersion);
+            _authorizationUseTestHook?.Invoke(
+                "before_authorization_use_gate",
+                0);
+            var latchLease = await PosOnlineSyncRevocationLatch
+                .EnterAuthorizationUseAsync().ConfigureAwait(false);
+            try
+            {
+                var decision = _authorizationLeaseGuard
+                    .EvaluateAuthorizationUse(
+                        out var trustedSession,
+                        out var commitExpiryGuard);
+                SetAuthorizationDecision(decision);
+                if (!decision.Allowed ||
+                    trustedSession == null ||
+                    commitExpiryGuard == null ||
+                    !PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                        trustedSession,
+                        out var generation) ||
+                    !PosOnlineSyncRevocationLatch.TryCaptureAuthorizationEpoch(
+                        out var authorizationEpoch) ||
+                    PosOnlineSyncRevocationLatch.IsRevoked(generation))
+                {
+                    var code = decision.Allowed
+                        ? "sync_generation_inactive"
+                        : decision.Code;
+                    throw new PosAuthorizationLeaseException(
+                        code,
+                        PosLocalization.T(
+                            "access.login.authorizationExpired"));
+                }
+
+                var user = _currentUser;
+                if (!_currentUserCanUsePosAuthorization)
+                {
+                    throw new PosAuthorizationLeaseException(
+                        "sync_generation_inactive",
+                        PosLocalization.T(
+                            "access.login.authorizationExpired"));
+                }
+                if (user == null ||
+                    !user.IsActive ||
+                    !HasPermission(user, permissionCode))
+                {
+                    throw new InvalidOperationException(
+                        "Permesso negato: " +
+                        (operationText ?? permissionCode));
+                }
+
+                var lease = new AuthorizationUseLease(
+                    this,
+                    latchLease,
+                    user.Id,
+                    permissionCode,
+                    operationText,
+                    authorizationEpoch,
+                    generation,
+                    commitExpiryGuard,
+                    operatorAuthorityVersion);
+                lease.CommitGuard.DemandStillValid();
+                return lease;
+            }
+            catch (PosAuthorizationLeaseException ex)
+            {
+                ex.BindOperatorAuthorityVersion(
+                    operatorAuthorityVersion);
+                latchLease.Dispose();
+                throw;
+            }
+            catch
+            {
+                latchLease.Dispose();
+                throw;
+            }
         }
 
         public void Logout()
@@ -205,12 +457,26 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
         private void LogoutInternal(bool forced)
         {
-            if (_currentUser != null)
+            UserAccount loggedOutUser = null;
+            PosOnlineSyncRevocationLatch.ChangeOperatorAuthority(
+                () =>
+                {
+                    loggedOutUser = _currentUser;
+                    _currentUser = null;
+                    _currentUserCanUsePosAuthorization = false;
+                    Interlocked.Increment(
+                        ref _operatorAuthorityVersion);
+                },
+                invalidateAuthorization: true);
+            if (loggedOutUser != null)
             {
                 if (forced)
-                    _ = _securityRepo.LogEventAsync(Sec.ForcedLogout, "userId=" + _currentUser.Id);
-                _ = _securityRepo.LogEventAsync(Sec.Logout, "userId=" + _currentUser.Id);
-                _currentUser = null;
+                    _ = _securityRepo.LogEventAsync(
+                        Sec.ForcedLogout,
+                        "userId=" + loggedOutUser.Id);
+                _ = _securityRepo.LogEventAsync(
+                    Sec.Logout,
+                    "userId=" + loggedOutUser.Id);
                 RaiseSessionChanged();
             }
         }
@@ -227,18 +493,34 @@ namespace Win7POS.Wpf.Infrastructure.Security
             _ = _securityRepo.LogEventAsync(eventType ?? "", details ?? "", userId);
         }
 
-        public void SetUserForTesting(UserAccount user)
+        internal void SetUserForTesting(UserAccount user)
         {
-            _currentUser = user;
+            PosOnlineSyncRevocationLatch.ChangeOperatorAuthority(
+                () =>
+                {
+                    _currentUser = user;
+                    _currentUserCanUsePosAuthorization = true;
+                    Interlocked.Increment(
+                        ref _operatorAuthorityVersion);
+                },
+                invalidateAuthorization: true);
             RaiseSessionChanged();
         }
 
-        private void LogAuthorizationDenied(string code)
+        internal void SetAuthorizationUseTestHookForTesting(
+            Action<string, int> hook)
+        {
+            _authorizationUseTestHook = hook;
+        }
+
+        private void LogAuthorizationDenied(
+            string code,
+            int? userId)
         {
             _ = _securityRepo.LogEventAsync(
                 Sec.PosAuthorizationLeaseDenied,
                 "code=" + SafeCode(code),
-                _currentUser?.Id);
+                userId);
         }
 
         private static string SafeCode(string value)
@@ -270,6 +552,345 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 expectedGeneration.Fingerprint,
                 currentGeneration.Fingerprint,
                 StringComparison.Ordinal);
+        }
+
+        private void DemandAuthorizationUseStillValid(
+            int expectedOperatorId,
+            string permissionCode,
+            string operationText,
+            long expectedAuthorizationEpoch,
+            OnlineSyncGeneration expectedGeneration,
+            PosAuthorizationCommitExpiryGuard commitExpiryGuard,
+            long expectedOperatorAuthorityVersion,
+            TimeSpan minimumRemaining)
+        {
+            DemandCommitExpiryStillValid(
+                commitExpiryGuard,
+                minimumRemaining);
+            if (expectedGeneration == null ||
+                !PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(
+                    expectedAuthorizationEpoch) ||
+                PosOnlineSyncRevocationLatch.IsRevokedFingerprint(
+                    expectedGeneration.Fingerprint))
+            {
+                throw new PosAuthorizationLeaseException(
+                    "sync_generation_inactive",
+                    PosLocalization.T(
+                        "access.login.authorizationExpired"));
+            }
+
+            var decision = _authorizationLeaseGuard.Evaluate(
+                out var trustedSession);
+            if (!decision.Allowed)
+            {
+                throw new PosAuthorizationLeaseException(
+                    decision.Code,
+                    PosLocalization.T(
+                        "access.login.authorizationExpired"));
+            }
+            if (trustedSession == null ||
+                !PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                    trustedSession,
+                    out var currentGeneration) ||
+                !HasSameAuthorizationBinding(
+                    expectedGeneration,
+                    currentGeneration) ||
+                !PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(
+                    expectedAuthorizationEpoch) ||
+                PosOnlineSyncRevocationLatch.IsRevokedFingerprint(
+                    expectedGeneration.Fingerprint))
+            {
+                throw new PosAuthorizationLeaseException(
+                    "sync_generation_inactive",
+                    PosLocalization.T(
+                        "access.login.authorizationExpired"));
+            }
+
+            DemandOperatorAuthorityStillCurrent(
+                expectedOperatorId,
+                permissionCode,
+                operationText,
+                expectedOperatorAuthorityVersion);
+        }
+
+        private static bool HasSameAuthorizationBinding(
+            OnlineSyncGeneration expected,
+            OnlineSyncGeneration current)
+        {
+            return expected != null &&
+                current != null &&
+                string.Equals(
+                    expected.Fingerprint,
+                    current.Fingerprint,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    expected.GenerationId,
+                    current.GenerationId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    expected.ShopId,
+                    current.ShopId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    expected.ShopCode,
+                    current.ShopCode,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    expected.ShopDeviceId,
+                    current.ShopDeviceId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    expected.StaffId,
+                    current.StaffId,
+                    StringComparison.Ordinal) &&
+                expected.StaffCredentialVersion ==
+                    current.StaffCredentialVersion;
+        }
+
+        private static bool HasPermission(
+            UserAccount user,
+            string permissionCode)
+        {
+            if (user == null ||
+                !user.IsActive ||
+                string.IsNullOrWhiteSpace(permissionCode))
+            {
+                return false;
+            }
+            if (user.IsAdmin)
+                return true;
+            if (user.PermissionCodes == null)
+                return false;
+            foreach (var code in user.PermissionCodes)
+            {
+                if (string.Equals(
+                    code,
+                    permissionCode,
+                    StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void CommitAuthorizationUseStillValid(
+            int expectedOperatorId,
+            string permissionCode,
+            string operationText,
+            long expectedAuthorizationEpoch,
+            OnlineSyncGeneration expectedGeneration,
+            PosAuthorizationCommitExpiryGuard commitExpiryGuard,
+            long expectedOperatorAuthorityVersion,
+            TimeSpan minimumRemaining,
+            int demandCount,
+            Action commit)
+        {
+            // Preserve the global lock order: the lease guard owns its _sync
+            // while consulting the latch, so no lease/store evaluation may run
+            // while the latch Gate is held.
+            DemandAuthorizationUseStillValid(
+                expectedOperatorId,
+                permissionCode,
+                operationText,
+                expectedAuthorizationEpoch,
+                expectedGeneration,
+                commitExpiryGuard,
+                expectedOperatorAuthorityVersion,
+                minimumRemaining);
+            var committed = PosOnlineSyncRevocationLatch
+                .CommitIfAuthorizationCurrent(
+                    expectedAuthorizationEpoch,
+                    expectedGeneration?.Fingerprint,
+                    () =>
+                    {
+                        _authorizationUseTestHook?.Invoke(
+                            "inside_commit_gate",
+                            demandCount);
+                        DemandCommitExpiryStillValid(
+                            commitExpiryGuard,
+                            minimumRemaining);
+                        DemandOperatorAuthorityStillCurrent(
+                            expectedOperatorId,
+                            permissionCode,
+                            operationText,
+                            expectedOperatorAuthorityVersion);
+                    },
+                    commit);
+            if (!committed)
+            {
+                throw new PosAuthorizationLeaseException(
+                    "sync_generation_inactive",
+                    PosLocalization.T(
+                        "access.login.authorizationExpired"));
+            }
+            _authorizationUseTestHook?.Invoke(
+                "after_commit_before_return",
+                demandCount);
+        }
+
+        private void DemandOperatorAuthorityStillCurrent(
+            int expectedOperatorId,
+            string permissionCode,
+            string operationText,
+            long expectedOperatorAuthorityVersion)
+        {
+            var user = _currentUser;
+            if (Interlocked.Read(ref _operatorAuthorityVersion) !=
+                    expectedOperatorAuthorityVersion ||
+                !_currentUserCanUsePosAuthorization ||
+                user == null ||
+                !user.IsActive ||
+                user.Id != expectedOperatorId ||
+                !HasPermission(user, permissionCode))
+            {
+                throw new InvalidOperationException(
+                    "Permesso negato: " +
+                    (operationText ?? permissionCode));
+            }
+        }
+
+        private static void DemandCommitExpiryStillValid(
+            PosAuthorizationCommitExpiryGuard commitExpiryGuard,
+            TimeSpan minimumRemaining)
+        {
+            var decision = commitExpiryGuard?.Evaluate(minimumRemaining) ??
+                PosOfflineAuthorizationLeaseDecision.Deny(
+                    "trusted_time_continuity_lost");
+            if (!decision.Allowed)
+            {
+                throw new PosAuthorizationLeaseException(
+                    decision.Code,
+                    PosLocalization.T(
+                        "access.login.authorizationExpired"));
+            }
+        }
+
+        private sealed class AuthorizationUseLease : IPosAuthorizationUseLease
+        {
+            private readonly OperatorSession _owner;
+            private readonly string _operationText;
+            private readonly string _permissionCode;
+            private readonly OnlineSyncGeneration _generation;
+            private readonly PosAuthorizationCommitExpiryGuard
+                _commitExpiryGuard;
+            private IDisposable _latchLease;
+            private int _demandCount;
+
+            public AuthorizationUseLease(
+                OperatorSession owner,
+                IDisposable latchLease,
+                int operatorId,
+                string permissionCode,
+                string operationText,
+                long authorizationEpoch,
+                OnlineSyncGeneration generation,
+                PosAuthorizationCommitExpiryGuard commitExpiryGuard,
+                long operatorAuthorityVersion)
+            {
+                _owner = owner ??
+                    throw new ArgumentNullException(nameof(owner));
+                _latchLease = latchLease ??
+                    throw new ArgumentNullException(nameof(latchLease));
+                OperatorId = operatorId;
+                _permissionCode = permissionCode ?? string.Empty;
+                _operationText = operationText;
+                AuthorizationEpoch = authorizationEpoch;
+                OperatorAuthorityVersion = operatorAuthorityVersion;
+                _generation = generation ??
+                    throw new ArgumentNullException(nameof(generation));
+                _commitExpiryGuard = commitExpiryGuard ??
+                    throw new ArgumentNullException(
+                        nameof(commitExpiryGuard));
+                CommitGuard = new SaleAuthorizationCommitGuard(
+                    AuthorizationEpoch,
+                    _generation.Fingerprint,
+                    _generation.GenerationId,
+                    OperatorId,
+                    _generation.ShopCode,
+                    _generation.ShopDeviceId,
+                    _generation.ShopId,
+                    _generation.StaffCredentialVersion,
+                    _generation.StaffId,
+                    DemandStillValid,
+                    CommitIfStillValid);
+            }
+
+            private long AuthorizationEpoch { get; }
+            private long OperatorAuthorityVersion { get; }
+            public SaleAuthorizationCommitGuard CommitGuard { get; }
+            private int OperatorId { get; }
+
+            private void DemandStillValid()
+            {
+                if (_latchLease == null)
+                {
+                    throw new ObjectDisposedException(
+                        nameof(AuthorizationUseLease));
+                }
+                var demandCount = Interlocked.Increment(ref _demandCount);
+                _owner._authorizationUseTestHook?.Invoke(
+                    "before_demand",
+                    demandCount);
+                try
+                {
+                    _owner.DemandAuthorizationUseStillValid(
+                        OperatorId,
+                        _permissionCode,
+                        _operationText,
+                        AuthorizationEpoch,
+                        _generation,
+                        _commitExpiryGuard,
+                        OperatorAuthorityVersion,
+                        TimeSpan.Zero);
+                }
+                catch (PosAuthorizationLeaseException ex)
+                {
+                    ex.BindOperatorAuthorityVersion(
+                        OperatorAuthorityVersion);
+                    throw;
+                }
+            }
+
+            private void CommitIfStillValid(
+                TimeSpan minimumRemaining,
+                Action commit)
+            {
+                if (_latchLease == null)
+                {
+                    throw new ObjectDisposedException(
+                        nameof(AuthorizationUseLease));
+                }
+                var demandCount = Interlocked.Increment(ref _demandCount);
+                _owner._authorizationUseTestHook?.Invoke(
+                    "before_demand",
+                    demandCount);
+                try
+                {
+                    _owner.CommitAuthorizationUseStillValid(
+                        OperatorId,
+                        _permissionCode,
+                        _operationText,
+                        AuthorizationEpoch,
+                        _generation,
+                        _commitExpiryGuard,
+                        OperatorAuthorityVersion,
+                        minimumRemaining,
+                        demandCount,
+                        commit);
+                }
+                catch (PosAuthorizationLeaseException ex)
+                {
+                    ex.BindOperatorAuthorityVersion(
+                        OperatorAuthorityVersion);
+                    throw;
+                }
+            }
+
+            public void Dispose()
+            {
+                Interlocked.Exchange(ref _latchLease, null)?.Dispose();
+            }
         }
 
         private void RaiseSessionChanged()
