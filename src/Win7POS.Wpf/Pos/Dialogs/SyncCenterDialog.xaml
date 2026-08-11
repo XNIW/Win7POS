@@ -145,6 +145,27 @@
                     </StackPanel>
                 </Border>
 
+                <Border Style="{StaticResource DialogPanelStyle}" Margin="0,0,0,12" Padding="16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconProducts}" Fill="{StaticResource PrimaryBrush}" Width="19" Height="19" Stretch="Uniform" Margin="0,0,8,0"/>
+                            <TextBlock Text="{loc:Loc sync.center.productImages}" Style="{StaticResource TypeSubtitleStyle}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="ProductImageQueueText"
+                                   Text="{Binding ProductImageQueueText}"
+                                   Style="{StaticResource TypeBodyStyle}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,12,0,0"
+                                   AutomationProperties.Name="{loc:Loc sync.center.productImages}"
+                                   AutomationProperties.LiveSetting="Polite"/>
+                        <TextBlock x:Name="ProductImageDrainText"
+                                   Text="{Binding ProductImageDrainText}"
+                                   Style="{StaticResource TypeCaptionStyle}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+
                 <TextBlock x:Name="OperationStatusText"
                            Style="{StaticResource TypeBodyStyle}"
                            TextWrapping="Wrap"

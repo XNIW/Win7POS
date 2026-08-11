@@ -150,7 +150,63 @@ public sealed class ProductImageOperationOutboxRepositoryTests
 
         Assert.AreEqual(1, drain.Unresolved);
         Assert.AreEqual(0, drain.RemainingDue);
-        Assert.AreEqual(5100L, drain.NextRetryAt);
+        Assert.AreEqual(1, drain.WaitingDependencies);
+        Assert.IsNull(drain.NextRetryAt);
+        Assert.AreEqual(5100L, drain.NextWakeAt);
+    }
+
+    [TestMethod]
+    public async Task DependencyWakeupPrecedesUnrelatedFutureRetry()
+    {
+        using var db = TestDb.Create();
+        var waitingProduct = await InsertProductAsync(db.Factory, "IMG-WAKE-WAITING", null);
+        var retryProduct = await InsertProductAsync(
+            db.Factory,
+            "IMG-WAKE-RETRY",
+            "20000000-0000-4000-8000-000000000154");
+        var repository = new ProductImageOperationOutboxRepository(db.Factory);
+        await repository.EnqueueReplaceAsync(Replace(waitingProduct));
+        await repository.EnqueueReplaceAsync(Replace(retryProduct), Seal);
+        using (var connection = db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE product_image_operation_outbox
+SET state = 'retry_wait', next_attempt_at = 600000
+WHERE local_product_id = @retryProduct;", new { retryProduct });
+        }
+
+        var drain = await repository.GetDrainStateAsync(100);
+
+        Assert.AreEqual(1, drain.WaitingDependencies);
+        Assert.AreEqual(600000L, drain.NextRetryAt);
+        Assert.AreEqual(5100L, drain.NextWakeAt);
+    }
+
+    [TestMethod]
+    public async Task RetryBehindWaitingDependencyIsNotAdvertisedAsEligible()
+    {
+        using var db = TestDb.Create();
+        var productId = await InsertProductAsync(db.Factory, "IMG-WAKE-FIFO", null);
+        var repository = new ProductImageOperationOutboxRepository(db.Factory);
+        await repository.EnqueueReplaceAsync(Replace(productId));
+        await repository.EnqueueReplaceAsync(Replace(productId));
+        using (var connection = db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE product_image_operation_outbox
+SET state = 'retry_wait',
+    remote_product_id = @remoteProductId,
+    next_attempt_at = 600000
+WHERE local_product_id = @productId
+  AND id = (SELECT MAX(id) FROM product_image_operation_outbox WHERE local_product_id = @productId);",
+                new { productId, remoteProductId = RemoteProductId });
+        }
+
+        var drain = await repository.GetDrainStateAsync(100);
+
+        Assert.AreEqual(1, drain.WaitingDependencies);
+        Assert.IsNull(drain.NextRetryAt);
+        Assert.AreEqual(5100L, drain.NextWakeAt);
     }
 
     [TestMethod]
@@ -173,6 +229,59 @@ public sealed class ProductImageOperationOutboxRepositoryTests
         Assert.AreEqual(0, drain.RemainingDue);
         Assert.IsFalse(drain.HasImmediateMore);
         Assert.AreEqual(1000L, drain.NextRetryAt);
+        Assert.AreEqual(1000L, drain.NextWakeAt);
+    }
+
+    [TestMethod]
+    public async Task DrainStateExposesEveryUserVisibleQueueState()
+    {
+        using var db = TestDb.Create();
+        var repository = new ProductImageOperationOutboxRepository(db.Factory);
+        var pendingProduct = await InsertProductAsync(db.Factory, "IMG-STATUS-PENDING", RemoteProductId);
+        var retryProduct = await InsertProductAsync(
+            db.Factory,
+            "IMG-STATUS-RETRY",
+            "20000000-0000-4000-8000-000000000151");
+        var progressProduct = await InsertProductAsync(
+            db.Factory,
+            "IMG-STATUS-PROGRESS",
+            "20000000-0000-4000-8000-000000000152");
+        var blockedProduct = await InsertProductAsync(
+            db.Factory,
+            "IMG-STATUS-BLOCKED",
+            "20000000-0000-4000-8000-000000000153");
+        await repository.EnqueueReplaceAsync(Replace(pendingProduct), Seal);
+        await repository.EnqueueReplaceAsync(Replace(retryProduct), Seal);
+        await repository.EnqueueReplaceAsync(Replace(progressProduct), Seal);
+        await repository.EnqueueReplaceAsync(Replace(blockedProduct), Seal);
+        using (var connection = db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE product_image_operation_outbox
+SET state = CASE local_product_id
+    WHEN @retryProduct THEN 'retry_wait'
+    WHEN @progressProduct THEN 'in_progress'
+    WHEN @blockedProduct THEN 'failed_blocked'
+    ELSE state
+END,
+next_attempt_at = CASE
+    WHEN local_product_id = @pendingProduct THEN 0
+    WHEN local_product_id = @retryProduct THEN 1000
+    ELSE next_attempt_at
+END;",
+                new { pendingProduct, retryProduct, progressProduct, blockedProduct });
+        }
+
+        var drain = await repository.GetDrainStateAsync(100);
+
+        Assert.AreEqual(1, drain.Pending);
+        Assert.AreEqual(1, drain.Retry);
+        Assert.AreEqual(1, drain.InProgress);
+        Assert.AreEqual(1, drain.Blocked);
+        Assert.AreEqual(3, drain.Unresolved);
+        Assert.AreEqual(1, drain.RemainingDue);
+        Assert.AreEqual(1000L, drain.NextRetryAt);
+        Assert.AreEqual(1000L, drain.NextWakeAt);
     }
 
     [TestMethod]

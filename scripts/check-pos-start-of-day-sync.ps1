@@ -351,13 +351,16 @@ if ($dialog -notmatch "ContentRendered" -or $dialog -notmatch "RunPreflightAsync
 }
 
 $authIndex = Index-OrFail $statusReader 'failed_auth_denied' "status auth denied priority missing"
-$blockedIndex = Index-OrFail $statusReader 'outbox.Blocked > 0 || catalogOutbox.Blocked > 0 || restoreNeedsReview' "status blocked priority missing"
-$retryIndex = Index-OrFail $statusReader 'if (outbox.Retry > 0 || catalogOutbox.Retry > 0)' "status retry priority missing"
-$pendingIndex = Index-OrFail $statusReader 'if (outbox.PendingOrRetry > 0 || catalogOutbox.PendingOrRetry > 0)' "status pending priority missing"
+$blockedIndex = Index-OrFail $statusReader 'if (outbox.Blocked > 0' "status blocked priority missing"
+$retryIndex = Index-OrFail $statusReader 'if (outbox.Retry > 0' "status retry priority missing"
+$pendingIndex = Index-OrFail $statusReader 'if (outbox.PendingOrRetry > 0' "status pending priority missing"
 $catalogIndex = Index-OrFail $statusReader 'if (CatalogRequiresAttention' "status catalog attention priority missing"
-$syncIndex = Index-OrFail $statusReader 'if (salesSyncInProgress)' "status sync-in-progress priority missing"
+$syncIndex = Index-OrFail $statusReader 'if (salesSyncInProgress || productImageDrain.InProgress > 0)' "status sync-in-progress priority missing"
 $readyIndex = Index-OrFail $statusReader 'if (catalogSaleSafety.IsSaleSafe && !string.IsNullOrWhiteSpace(catalogSaleSafeAt))' "status catalog-ready priority missing"
-if ($authIndex -gt $blockedIndex -or $blockedIndex -gt $retryIndex -or $retryIndex -gt $pendingIndex -or $pendingIndex -gt $catalogIndex -or $catalogIndex -gt $syncIndex -or $syncIndex -gt $readyIndex) {
+if ($statusReader -notmatch 'productImageDrain\.Blocked\s*>\s*0' -or
+    $statusReader -notmatch 'productImageDrain\.Retry\s*>\s*0' -or
+    $statusReader -notmatch 'productImageDrain\.Pending\s*>\s*0' -or
+    $authIndex -gt $blockedIndex -or $blockedIndex -gt $retryIndex -or $retryIndex -gt $pendingIndex -or $pendingIndex -gt $catalogIndex -or $catalogIndex -gt $syncIndex -or $syncIndex -gt $readyIndex) {
     Fail "status priority must be auth -> blocked -> retry -> pending -> catalog attention -> sync in progress -> catalog ready"
 } else {
     Pass "status priority preserves critical sales/catalog states"

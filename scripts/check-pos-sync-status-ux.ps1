@@ -55,6 +55,7 @@ $required = @(
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
+    "src/Win7POS.Data/Online/ProductImageOperationOutboxRepository.cs",
     "src/Win7POS.Wpf/Pos/PosViewModel.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml",
     "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml.cs",
@@ -82,6 +83,7 @@ $catalogSaleSafetyPolicy = Read-Text "src/Win7POS.Core/Online/CatalogSaleSafetyP
 $sales = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $salesOutbox = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $catalogOutbox = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
+$productImageOutbox = Read-Text "src/Win7POS.Data/Online/ProductImageOperationOutboxRepository.cs"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $shopDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml"
 $shopDialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml.cs"
@@ -115,6 +117,15 @@ if ($uxCopy -notmatch "Bloccate" -or
 if ($reader -notmatch "CatalogImportOutboxRepository" -or $reader -notmatch "GetSummaryAsync" -or $reader -notmatch "pendingCatalogImports" -or $reader -notmatch "catalogOutbox\.Blocked") { Fail "sync status must surface catalog import outbox pending/retry/blocked" } else { Pass "sync status surfaces catalog import outbox" }
 if ($reader -notmatch "DetailedPendingOutboxText" -or $reader -notmatch "salesOutbox\.Blocked" -or $reader -notmatch "catalogOutbox\.Blocked") { Fail "sync status must separate sales and catalog import retry/blocked counts" } else { Pass "sync status separates sales/catalog import retry and blocked counts" }
 if ($reader -notmatch "BlockedOutboxText" -or $reader -notmatch "RetryOutboxText" -or $reader -notmatch "salesOutbox\.Retry" -or $reader -notmatch "catalogOutbox\.Retry") { Fail "sync status headline must separate sales and catalog retry/blocked counts" } else { Pass "sync status headline separates sales/catalog retry and blocked counts" }
+if ($reader -notmatch "ProductImageOperationOutboxRepository" -or
+    $reader -notmatch "ProductImageBlocked" -or
+    $reader -notmatch "productImageDrain\.Blocked" -or
+    $productImageOutbox -notmatch "ProductImageOutboxStatusCounts" -or
+    $productImageOutbox -notmatch "failed_blocked") {
+    Fail "global sync status must surface product image pending/retry/blocked/in-progress counts"
+} else {
+    Pass "global sync status surfaces product image queue state"
+}
 if ($catalogOutbox -notmatch "InProgress" -or $catalogOutbox -notmatch "PendingOrRetry => Pending \+ Retry \+ InProgress") { Fail "catalog import summary must include in_progress as pending work" } else { Pass "catalog import summary includes in_progress" }
 if ($uxCopy -notmatch "Sync in corso" -or $reader -notmatch "IsSyncing" -or $salesSync -notmatch "pos\.sales_sync\.in_progress") { Fail "syncing status must be visible while background sync runs" } else { Pass "syncing status visible" }
 if ($salesSync -notmatch "Interlocked\.CompareExchange" -or $salesSync -notmatch "Sales sync skipped: already running") { Fail "sales sync service must guard concurrent runs" } else { Pass "sales sync concurrency guard present" }
@@ -164,6 +175,26 @@ if ($syncCenterCode -notmatch "_fullRepairRunning" -or
 if ($syncCenterViewModel -notmatch "BuildSafeDiagnostics" -or
     $syncCenterViewModel -match "DeviceToken|SessionToken|ShopCode|StaffDisplayName" -or
     $syncCenterViewModel -notmatch "cursor_fingerprint") { Fail "Sync Center diagnostics must expose only redacted safe codes and counts" } else { Pass "Sync Center diagnostics are redacted" }
+if ($syncCenterViewModel -notmatch "ProductImageQueueText" -or
+    $syncCenterViewModel -notmatch 'product_images\.blocked=' -or
+    $syncCenterViewModel -notmatch 'product_images\.next_wake_at=' -or
+    $syncCenter -notmatch "ProductImageQueueText" -or
+    $syncCenter -notmatch "sync\.center\.productImages" -or
+    $localization -notmatch "sync\.productImages" -or
+    $localization -notmatch "sync\.center\.productImages") {
+    Fail "Sync Center must show localized product image state and safe diagnostics"
+} else {
+    Pass "Sync Center shows localized product image state and safe diagnostics"
+}
+if ($syncCenterCode -notmatch "DispatcherTimer" -or
+    $syncCenterCode -notmatch "TimeSpan\.FromSeconds\(10\)" -or
+    $syncCenterCode -notmatch "_refreshRunning" -or
+    $syncCenterCode -notmatch "_refreshTimer\.Stop\(\)" -or
+    $syncCenterCode -notmatch "_closed") {
+    Fail "Sync Center must refresh background queue state single-flight and stop on close"
+} else {
+    Pass "Sync Center refreshes background queue state and stops on close"
+}
 if ($reader -notmatch "ObservedRevisionKey" -or
     $reader -notmatch "CommittedRevisionKey" -or
     $reader -notmatch "CatalogRevisionMatchCode" -or
@@ -200,7 +231,7 @@ if ($shopViewModel -notmatch "INotifyPropertyChanged,\s*IDisposable" -or
 } else {
     Pass "shop settings releases localization and data context on close"
 }
-foreach ($key in @("sync.catalogCompleteness", "sync.catalogLocalCounts", "sync.catalogSyncMode", "sync.catalogRepairRequired", "sync.catalogNotSaleSafe", "sync.center.observedRevision", "sync.center.committedRevision", "sync.center.revisionStatus", "sync.center.revision.match", "sync.center.revision.mismatch", "sync.center.revision.unknown", "sync.center.attention", "sync.center.title", "sync.center.syncNow", "sync.center.retryCheckpoint", "sync.center.fullRepair", "sync.center.copyDiagnostics", "sync.center.repairConfirm")) {
+foreach ($key in @("sync.catalogCompleteness", "sync.catalogLocalCounts", "sync.catalogSyncMode", "sync.catalogRepairRequired", "sync.catalogNotSaleSafe", "sync.productImages", "sync.productImageStatus", "sync.center.productImages", "sync.center.drainStateNoRetry", "sync.center.waitingForCatalog", "sync.center.observedRevision", "sync.center.committedRevision", "sync.center.revisionStatus", "sync.center.revision.match", "sync.center.revision.mismatch", "sync.center.revision.unknown", "sync.center.attention", "sync.center.title", "sync.center.syncNow", "sync.center.retryCheckpoint", "sync.center.fullRepair", "sync.center.copyDiagnostics", "sync.center.repairConfirm")) {
     if ($localization -notmatch [regex]::Escape($key)) { Fail "catalog exactness localization missing key: $key" }
 }
 

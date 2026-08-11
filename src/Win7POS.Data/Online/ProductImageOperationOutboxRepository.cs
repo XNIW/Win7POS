@@ -111,10 +111,16 @@ namespace Win7POS.Data.Online
 
     public sealed class ProductImageOutboxDrainState
     {
+        public int Blocked { get; set; }
         public bool HasImmediateMore { get; set; }
+        public int InProgress { get; set; }
         public long? NextRetryAt { get; set; }
+        public long? NextWakeAt { get; set; }
+        public int Pending { get; set; }
         public int RemainingDue { get; set; }
+        public int Retry { get; set; }
         public int Unresolved { get; set; }
+        public int WaitingDependencies { get; set; }
     }
 
     /// <summary>
@@ -743,49 +749,85 @@ WHERE operation_id = @operationId
         {
             using (var connection = _factory.Open())
             {
-                var unresolved = await connection.ExecuteScalarAsync<int>(@"
-SELECT COUNT(1)
-FROM product_image_operation_outbox
-WHERE state NOT IN ('completed', 'failed_blocked');").ConfigureAwait(false);
-                var due = await connection.ExecuteScalarAsync<int>(@"
-SELECT COUNT(1)
-FROM product_image_operation_outbox candidate
-WHERE candidate.state IN (
-    'pending_intent', 'pending_upload', 'pending_finalize',
-    'pending_remove', 'retry_wait', 'cleanup_pending')
-  AND candidate.next_attempt_at <= @now
-  AND candidate.remote_product_id IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1
-    FROM product_image_operation_outbox earlier
-    WHERE earlier.local_product_id = candidate.local_product_id
-      AND earlier.id < candidate.id
-                          AND earlier.state NOT IN ('completed', 'failed_blocked'));",
+                var counts = await connection.QuerySingleAsync<ProductImageOutboxStatusCounts>(@"
+SELECT
+    COALESCE(SUM(CASE WHEN state NOT IN ('completed', 'failed_blocked') THEN 1 ELSE 0 END), 0) AS Unresolved,
+    COALESCE(SUM(CASE WHEN state IN (
+        'waiting_dependency', 'pending_intent', 'pending_upload',
+        'pending_finalize', 'pending_remove', 'cleanup_pending'
+    ) THEN 1 ELSE 0 END), 0) AS Pending,
+    COALESCE(SUM(CASE WHEN state = 'retry_wait' THEN 1 ELSE 0 END), 0) AS Retry,
+    COALESCE(SUM(CASE WHEN state = 'failed_blocked' THEN 1 ELSE 0 END), 0) AS Blocked,
+    COALESCE(SUM(CASE WHEN state = 'in_progress' THEN 1 ELSE 0 END), 0) AS InProgress,
+    COALESCE(SUM(CASE WHEN state = 'waiting_dependency' THEN 1 ELSE 0 END), 0) AS WaitingDependencies,
+    COALESCE(SUM(CASE
+        WHEN candidate.state IN (
+            'pending_intent', 'pending_upload', 'pending_finalize',
+            'pending_remove', 'retry_wait', 'cleanup_pending')
+          AND candidate.next_attempt_at <= @now
+          AND candidate.remote_product_id IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM product_image_operation_outbox earlier
+              WHERE earlier.local_product_id = candidate.local_product_id
+                AND earlier.id < candidate.id
+                AND earlier.state NOT IN ('completed', 'failed_blocked'))
+        THEN 1 ELSE 0 END), 0) AS RemainingDue,
+    MIN(CASE
+        WHEN candidate.state = 'retry_wait'
+          AND candidate.next_attempt_at > @now
+          AND candidate.remote_product_id IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM product_image_operation_outbox earlier
+              WHERE earlier.local_product_id = candidate.local_product_id
+                AND earlier.id < candidate.id
+                AND earlier.state NOT IN ('completed', 'failed_blocked'))
+        THEN candidate.next_attempt_at END) AS NextRetryAt
+FROM product_image_operation_outbox candidate;",
                     new { now = nowUnixMilliseconds }).ConfigureAwait(false);
-                var next = await connection.ExecuteScalarAsync<long?>(@"
-SELECT MIN(next_attempt_at)
-FROM product_image_operation_outbox
-WHERE state = 'retry_wait'
-  AND next_attempt_at > @now;",
-                    new { now = nowUnixMilliseconds }).ConfigureAwait(false);
-                var waitingDependencies = await connection.ExecuteScalarAsync<int>(@"
-SELECT COUNT(1)
-FROM product_image_operation_outbox
-WHERE state = 'waiting_dependency';").ConfigureAwait(false);
-                if (!next.HasValue && due == 0 && waitingDependencies > 0)
-                {
-                    // Catalog reconciliation commits independently from this lane.
-                    // A bounded poll is the durable lost-signal fallback.
-                    next = checked(nowUnixMilliseconds + 5000L);
-                }
+                // Catalog reconciliation commits independently from this lane.
+                // A bounded poll is the durable lost-signal fallback, but it is a
+                // scheduler wakeup rather than a user-visible retry.
+                var dependencyWakeAt = counts.WaitingDependencies > 0
+                    ? checked(nowUnixMilliseconds + 5000L)
+                    : (long?)null;
+                var nextWakeAt = Earlier(counts.NextRetryAt, dependencyWakeAt);
                 return new ProductImageOutboxDrainState
                 {
-                    Unresolved = unresolved,
-                    RemainingDue = due,
-                    HasImmediateMore = due > 0,
-                    NextRetryAt = next
+                    Blocked = counts.Blocked,
+                    Unresolved = counts.Unresolved,
+                    InProgress = counts.InProgress,
+                    Pending = counts.Pending,
+                    RemainingDue = counts.RemainingDue,
+                    Retry = counts.Retry,
+                    HasImmediateMore = counts.RemainingDue > 0,
+                    NextRetryAt = counts.NextRetryAt,
+                    NextWakeAt = nextWakeAt,
+                    WaitingDependencies = counts.WaitingDependencies
                 };
             }
+        }
+
+        private static long? Earlier(long? first, long? second)
+        {
+            if (!first.HasValue)
+                return second;
+            if (!second.HasValue)
+                return first;
+            return Math.Min(first.Value, second.Value);
+        }
+
+        private sealed class ProductImageOutboxStatusCounts
+        {
+            public int Blocked { get; set; }
+            public int InProgress { get; set; }
+            public long? NextRetryAt { get; set; }
+            public int Pending { get; set; }
+            public int RemainingDue { get; set; }
+            public int Retry { get; set; }
+            public int Unresolved { get; set; }
+            public int WaitingDependencies { get; set; }
         }
 
         public async Task<long> CountUnresolvedAsync()

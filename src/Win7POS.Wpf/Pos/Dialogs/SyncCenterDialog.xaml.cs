@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Online;
@@ -19,11 +20,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly SqliteConnectionFactory _factory;
         private readonly Func<CatalogSyncTrigger, bool, CancellationToken, Task<CatalogSyncRunResult>> _runSyncAsync;
         private readonly Func<Window, Task<bool>> _authorizeFullRepairAsync;
+        private readonly DispatcherTimer _refreshTimer;
         private readonly SyncCenterViewModel _viewModel;
         private CancellationTokenSource _operationCts;
         private PosSyncStatusSnapshot _snapshot;
         private bool _operationRunning;
         private bool _fullRepairRunning;
+        private bool _refreshRunning;
+        private bool _closed;
 
         public SyncCenterDialog(
             SqliteConnectionFactory factory,
@@ -34,6 +38,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _runSyncAsync = runSyncAsync ?? throw new ArgumentNullException(nameof(runSyncAsync));
             _authorizeFullRepairAsync = authorizeFullRepairAsync ?? throw new ArgumentNullException(nameof(authorizeFullRepairAsync));
             _viewModel = new SyncCenterViewModel();
+            _refreshTimer = new DispatcherTimer(
+                DispatcherPriority.Background,
+                Dispatcher)
+            {
+                Interval = TimeSpan.FromSeconds(10)
+            };
+            _refreshTimer.Tick += OnRefreshTimerTick;
             InitializeComponent();
             DataContext = _viewModel;
         }
@@ -44,6 +55,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             base.OnContentRendered(e);
             await RefreshAsync().ConfigureAwait(true);
+            if (!_closed)
+            {
+                _refreshTimer.Start();
+            }
         }
 
         protected override void OnClosing(CancelEventArgs e)
@@ -65,10 +80,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         protected override void OnClosed(EventArgs e)
         {
+            _closed = true;
+            _refreshTimer.Stop();
+            _refreshTimer.Tick -= OnRefreshTimerTick;
             _operationCts?.Cancel();
             _operationCts?.Dispose();
             _operationCts = null;
             base.OnClosed(e);
+        }
+
+        private async void OnRefreshTimerTick(object sender, EventArgs e)
+        {
+            await RefreshAsync().ConfigureAwait(true);
         }
 
         private async void OnSyncNowClick(object sender, RoutedEventArgs e)
@@ -163,17 +186,34 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task RefreshAsync()
         {
+            if (_closed || _refreshRunning)
+            {
+                return;
+            }
+
+            _refreshRunning = true;
             try
             {
-                _snapshot = await new PosSyncStatusReader(_factory)
+                var snapshot = await new PosSyncStatusReader(_factory)
                     .ReadAsync(markArticleCompletionsViewed: true)
                     .ConfigureAwait(true);
-                RenderSnapshot(_snapshot);
+                if (!_closed)
+                {
+                    _snapshot = snapshot;
+                    RenderSnapshot(_snapshot);
+                }
             }
             catch (Exception)
             {
-                HeaderStatusText.Text = PosLocalization.T("shell.syncUnavailable");
-                HeaderStatusBadge.Background = FindBrush("StatusErrorBrush", Colors.DarkRed);
+                if (!_closed)
+                {
+                    HeaderStatusText.Text = PosLocalization.T("shell.syncUnavailable");
+                    HeaderStatusBadge.Background = FindBrush("StatusErrorBrush", Colors.DarkRed);
+                }
+            }
+            finally
+            {
+                _refreshRunning = false;
             }
         }
 
