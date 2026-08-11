@@ -1,6 +1,28 @@
 # Win7POS physical Windows 7 and hardware acceptance — 2026-08-09
 
-## Disposition
+## Final stability closeout disposition — 2026-08-11
+
+- Classification: `STABLE_MAIN_COMPLETE_WITH_OWNER_ACCEPTED_EXTERNAL_DEFERRALS`.
+- Production certification: `NOT_QUALIFIED`.
+- Final source SHA: recorded after this documentation PR merges in the Admin
+  TASK-150 final evidence and in the closeout report; no later Win7POS commit is
+  permitted before the final installer build.
+- Build/launch host: ASUS Windows 11, not Windows 7 SP1.
+- Automatically discovered hardware: one active monitor; Epson TM-T60 and Canon
+  printer queues; no scanner, Xprinter, connected cash drawer, customer display,
+  second monitor, or production Authenticode certificate.
+- Canonical rows 1–25: each is terminal
+  `DONE_OWNER_ACCEPTED_DEFERRED` for the exact final candidate. Historical PASS
+  observations for rows 15 and 17–25 remain valid only for the builds and
+  hardware sessions originally recorded; they are not promoted to final-SHA
+  PASS.
+- Effect: software main and unsigned release-candidate packaging may close, but
+  Windows 7/peripheral/TLS/signing production qualification and a production tag
+  are not authorized.
+- Authoritative row-by-row terminal matrix:
+  `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`.
+
+## Historical disposition — 2026-08-09
 
 - Classification: `BLOCKED_EXTERNAL`.
 - Production certification: `NOT_QUALIFIED`.
