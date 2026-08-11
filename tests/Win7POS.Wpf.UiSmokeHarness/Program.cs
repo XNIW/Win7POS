@@ -2546,10 +2546,11 @@ WHERE id = @id;",
             public async Task<string> CaptureSettingsAuditAsync(string outputDirectory)
             {
                 Directory.CreateDirectory(outputDirectory);
-                if (!File.Exists(Path.Combine(outputDirectory, "pos.db")))
+                var options = PosDbOptions.Default();
+                if (!File.Exists(options.DbPath))
                     await QaFixture.SeedAsync().ConfigureAwait(true);
                 else
-                    DbInitializer.EnsureCreated(PosDbOptions.Default());
+                    DbInitializer.EnsureCreated(options);
 
                 await CaptureDialogAsync(
                     new SettingsHubDialog(),

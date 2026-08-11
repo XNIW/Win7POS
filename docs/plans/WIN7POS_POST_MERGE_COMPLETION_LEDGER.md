@@ -110,3 +110,25 @@ The authoritative external-certification backlog remains `OPEN` at the
 historical 10/25 snapshot. This closeout's derived disposition is
 `BLOCKED_EXTERNAL`: authenticated staging reconciliation, production signing and
 physical Windows 7 remain unverified.
+
+## 2026-08-09 physical/final-release acceptance attempt
+
+- Acceptance code SHA:
+  `b6a92b0d8f6d26ceee4f78a29f39d5862e8ef3ef`; delivery branch
+  `codex/win7-physical-hardware-final-release-20260809`.
+- Repository-local status: required gates `47/47`, dialog standards `34/34`,
+  solution/WPF net48-x86 build 0 warning/error, clean x86 release candidate and
+  focused diff review complete. Exact modified MSTest and post-remediation
+  benchmark execution are delegated to clean CI because local Windows
+  Application Control blocks freshly generated test/benchmark binaries with
+  `0x800711C7`; the policy was not disabled or bypassed.
+- Evidence-backed fixes: isolated UI evidence/data roots (`6709096`), bounded
+  protected-product lookup, SQLite-compatible barcode cache, transitive
+  fallback guard, and exact CI performance counters (`b6a92b0`).
+- External certification remains `BLOCKED_EXTERNAL`: no new physical or
+  authenticated-staging row was closed, production endpoint is unverified, the
+  installer is unsigned, RFC3161/protected tag are absent, and installer
+  lifecycle smoke has not run on Win7.
+- Authoritative external backlog remains 10/25 historical PASS and 15
+  open/partial. Detailed report:
+  `docs/QA/WIN7POS_PHYSICAL_WIN7_HARDWARE_ACCEPTANCE_2026-08-09.md`.

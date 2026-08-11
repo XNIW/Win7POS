@@ -1107,3 +1107,34 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   mutazioni/replay/mismatch/conflitto completo, fail-fast senza retry cieco,
   evidenze redatte, cleanup manifest e prompt Mac generato. Nessuna chiamata
   staging e nessuna azione hardware sono state ancora eseguite in questa fase.
+
+## 2026-08-09 - Physical Win7/hardware acceptance and final release
+
+- Protetta integralmente la modifica locale preesistente nel checkout primario:
+  file SHA-256 `82869ACF...987B6`, patch esterna SHA-256
+  `47172902...38280`; nessun reset/checkout/stash/apply sul primario.
+- Baseline `origin/main=26e1fd1`; worktree/branch dedicati creati. PR #88
+  Storefront v1 è rimasta separata e non è stata integrata.
+- Build-host acceptance: SDK 10.0.301, restore locked, required gates `47/47`,
+  dialog `34/34`, solution e WPF net48/x86 senza warning/errori, CLI/backup/
+  restore e smoke WPF sintetici PASS. La run UI canonica conserva 47 screenshot.
+- Corretto il percorso evidence UI (`6709096`) e un N+1 catalogo dimostrato:
+  ~19,763 righe da mediana 19.656 s a 2.067 s (-89,5%), con 123 command di
+  contesto e 140/378 command/statement remote-price deterministici.
+- Il focused security diff scan locale, sigillato senza attribuire successo al
+  launcher MCP rifiutato, ha prodotto un finding P3/low sul lookup transitive e
+  due difetti di correttezza. Tutti sono stati corretti in `b6a92b0` con test e
+  gate; Gitleaks worktree 0 finding.
+- L'host WDAC ha bloccato i nuovi assembly MSTest e l'EXE benchmark con
+  `0x800711C7`; la policy non è stata disabilitata o aggirata. Build e gate
+  locali passano; test/performance esatto-head devono essere certificati dalla
+  CI pulita.
+- Creato RC pulito `1.0.0-dev.b6a92b0d8f6d`, installer SHA-256
+  `FC51AFE79ECE5045361D18BC8FD6D09099ABADE735EAA634BB7127B57A06A758`,
+  `NotSigned`. Nessun certificato code-signing reale disponibile.
+- Nessun dispositivo Win7 fisico, scanner, Xprinter, drawer, customer display,
+  account/shop QA autenticato o production endpoint era disponibile. Nessun
+  impulso drawer e nessuna mutazione staging/production. Backlog esterno
+  invariato: 10/25 PASS storici, 15 open/partial, 0 nuove chiusure.
+- Classificazione: `BLOCKED_EXTERNAL`. Report:
+  `docs/QA/WIN7POS_PHYSICAL_WIN7_HARDWARE_ACCEPTANCE_2026-08-09.md`.
