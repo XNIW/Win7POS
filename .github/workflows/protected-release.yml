@@ -200,7 +200,7 @@ jobs:
           Copy-Item -Path "dist/*" -Destination $stage -Recurse -Force
 
       - name: Upload immutable unsigned input
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Win7POS-Protected-Unsigned-${{ github.run_id }}
           path: artifacts/protected-release-input
@@ -209,7 +209,7 @@ jobs:
 
       - name: Upload unsigned security evidence
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Win7POS-Protected-Security-${{ github.run_id }}
           path: artifacts/protected-release
@@ -705,7 +705,7 @@ jobs:
           Copy-Item -Path "dist/*" -Destination $stage -Recurse -Force
 
       - name: Upload signed candidate for attestation
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Win7POS-Protected-Signed-${{ github.run_id }}
           path: artifacts/protected-release-signed
@@ -943,7 +943,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Attested protected-release closed-world validation failed." }
 
       - name: Upload attested protected release
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Win7POS-${{ github.ref_name }}-Protected-Release
           path: dist
