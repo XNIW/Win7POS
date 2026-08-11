@@ -82,10 +82,10 @@ foreach ($group in @($licensePolicy.licenseGroups)) {
     }
 }
 $requiredNewMappings = @(
-    "Microsoft.TestPlatform.ObjectModel@18.3.0",
-    "System.Collections.Immutable@8.0.0",
-    "System.Diagnostics.DiagnosticSource@6.0.0",
-    "System.Reflection.Metadata@8.0.0"
+    "ClosedXML.Parser@2.0.0",
+    "DocumentFormat.OpenXml.Framework@3.1.1",
+    "Microsoft.Bcl.HashCode@1.1.1",
+    "Microsoft.TestPlatform.ObjectModel@18.8.1"
 )
 $incorrectNewMappings = @($requiredNewMappings | Where-Object {
     -not $licenseExpressionByPackage.ContainsKey($_) -or
@@ -95,7 +95,7 @@ if ($incorrectNewMappings.Count -ne 0) {
     throw "Required exact MIT license mapping regression: $($incorrectNewMappings -join ', ')."
 }
 $passed++
-Write-Host "PASS: four new transitive package versions map exactly to MIT"
+Write-Host "PASS: four upgraded transitive package versions map exactly to MIT"
 
 $vulnerableProblems = New-Report "vulnerable"
 $vulnerableProblems["problems"] = @([ordered]@{ level = "warning"; message = "Synthetic incomplete vulnerability audit." })
