@@ -326,6 +326,62 @@ FROM customer_order_inbox;"));
     }
 
     [TestMethod]
+    public async Task AckDrain_DoesNotClaimInboxRowsFromAnotherShop()
+    {
+        using var db = TestDb.Create();
+        var activeGeneration = Generation();
+        await ActivateAsync(db, activeGeneration);
+        using (var connection = db.Factory.Open())
+        {
+            await InsertAckPendingAsync(connection, Id());
+        }
+
+        var claimed = await new CustomerOrderInboxRepository(db.Factory)
+            .ClaimNextAckAsync(
+                activeGeneration,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+        Assert.IsNull(claimed);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            CustomerOrderInboxStates.AckPending,
+            await verify.ExecuteScalarAsync<string>(
+                "SELECT state FROM customer_order_inbox;"));
+    }
+
+    [TestMethod]
+    public void AckValidation_RejectsNotCreatedWithFiscalSaleReference()
+    {
+        var saleId = Id();
+        var expected = new CustomerOrderInboxItem
+        {
+            AckExpectedStatusVersion = 2,
+            AckOutcome = "completed",
+            AckPosSaleId = saleId,
+            HandoffId = Id(),
+            OrderId = Id()
+        };
+        var response = new PosCustomerOrderAckResponse
+        {
+            Code = "success",
+            FiscalStatus = "not_created",
+            HandoffId = expected.HandoffId,
+            Ok = true,
+            OrderId = expected.OrderId,
+            OrderStatus = "completed",
+            OrderStatusVersion = 3,
+            Outcome = expected.AckOutcome,
+            PosSaleId = saleId,
+            SchemaVersion = PosOnlineContract.CustomerOrderAckSchemaVersion,
+            ServerTime = DateTimeOffset.UtcNow.ToString("O")
+        };
+
+        Assert.AreEqual(
+            "customer_order_fiscal_reference_mismatch",
+            PosCustomerOrderHandoffCodec.ValidateAckResponse(response, expected));
+    }
+
+    [TestMethod]
     public async Task PreparedThenCompleted_LinksOnlyAlreadyAckedSameShopSale()
     {
         using var db = TestDb.Create();
@@ -709,6 +765,40 @@ WHERE id = @inboxId;",
             };
         }
         return AckResponse(request, order, false);
+    }
+
+    private static async Task InsertAckPendingAsync(
+        SqliteConnection connection,
+        string shopId)
+    {
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await connection.ExecuteAsync(@"
+INSERT INTO customer_order_inbox(
+  handoff_id, event_idempotency_key, order_id, shop_id, order_code,
+  event_type, correlation_id, status_version, current_status_version,
+  order_status, fulfillment_mode, currency_code, total_clp, payload_json,
+  payload_hash, lease_token, lease_expires_at, remote_attempt_count, state,
+  ack_outcome, ack_idempotency_key, ack_expected_status_version,
+  received_at, updated_at)
+VALUES(
+  @handoffId, @eventIdempotencyKey, @orderId, @shopId, 'MC-CROSS-SHOP',
+  'customer_order.accepted.v1', @correlationId, 2, 2,
+  'accepted', 'pickup', 'CLP', 1000, '{}',
+  @payloadHash, @leaseToken, @leaseExpiresAt, 1, 'ack_pending',
+  'accepted', @ackIdempotencyKey, 2, @nowMs, @nowMs);",
+            new
+            {
+                ackIdempotencyKey = Id(),
+                correlationId = Id(),
+                eventIdempotencyKey = Id(),
+                handoffId = Id(),
+                leaseExpiresAt = nowMs + 300000,
+                leaseToken = Id(),
+                nowMs,
+                orderId = Id(),
+                payloadHash = "sha256:" + new string('a', 64),
+                shopId
+            });
     }
 
     private static string Id()

@@ -191,7 +191,11 @@ SELECT
      'in_progress',
      'retry_wait',
      'failed_blocked',
-     'cleanup_pending'));",
+     'cleanup_pending'))
+  +
+  (SELECT COUNT(1)
+   FROM customer_order_inbox
+   WHERE state <> 'acked');",
                         transaction: tx).ConfigureAwait(false);
                     if (unresolved > 0)
                     {
@@ -295,7 +299,11 @@ SELECT
      'in_progress',
      'retry_wait',
      'failed_blocked',
-     'cleanup_pending'));"
+     'cleanup_pending'))
+  +
+  (SELECT COUNT(1)
+   FROM customer_order_inbox
+   WHERE state <> 'acked');"
                 ).ConfigureAwait(false);
                 return count > 0;
             }

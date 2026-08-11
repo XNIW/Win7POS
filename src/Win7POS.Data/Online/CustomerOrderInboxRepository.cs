@@ -356,6 +356,12 @@ WHERE shop_id = @shopId
             long nowMs)
         {
             if (generation == null) throw new ArgumentNullException(nameof(generation));
+            var generationShopId = NormalizeUuid(generation.ShopId);
+            if (!IsUuid(generationShopId))
+            {
+                throw new InvalidOperationException(
+                    "Customer-order acknowledgement requires a trusted shop id.");
+            }
             using (var connection = await _factory.OpenAsync().ConfigureAwait(false))
             using (var transaction = connection.BeginTransaction(deferred: false))
             {
@@ -387,6 +393,7 @@ SELECT
   ack_attempt_count AS AckAttemptCount
 FROM customer_order_inbox
 WHERE ack_outcome IS NOT NULL
+  AND shop_id = @generationShopId
   AND ack_attempt_count < @maximumAttempts
   AND (
     (state IN ('ack_pending', 'retry_wait') AND ack_next_retry_at <= @nowMs)
@@ -397,6 +404,7 @@ ORDER BY ack_next_retry_at, id
 LIMIT 1;",
                     new
                     {
+                        generationShopId,
                         maximumAttempts = MaximumAckAttempts,
                         nowMs,
                         staleBefore
@@ -1026,6 +1034,12 @@ WHERE id IN (
                     CustomerOrderInboxRepository.NormalizeUuid(response.PosSaleId),
                     expected.AckPosSaleId,
                     StringComparison.Ordinal)))
+            {
+                return "customer_order_fiscal_reference_mismatch";
+            }
+            if (response.FiscalStatus == "not_created" &&
+                (!string.IsNullOrWhiteSpace(response.PosSaleId) ||
+                 !string.IsNullOrWhiteSpace(expected.AckPosSaleId)))
             {
                 return "customer_order_fiscal_reference_mismatch";
             }

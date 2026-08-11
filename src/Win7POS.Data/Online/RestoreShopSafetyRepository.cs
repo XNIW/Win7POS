@@ -67,7 +67,11 @@ SELECT
   +
   (SELECT COUNT(1)
    FROM product_image_operation_outbox
-   WHERE state <> 'completed');"
+   WHERE state <> 'completed')
+  +
+  (SELECT COUNT(1)
+   FROM customer_order_inbox
+   WHERE state <> 'acked');"
                 ).ConfigureAwait(false);
                 return unresolvedOutbox == 0
                     ? RestoreSafetyResult.Success()
@@ -160,10 +164,22 @@ SELECT COUNT(1)
 FROM product_image_operation_outbox
 WHERE state <> 'completed';",
                         transaction: tx).ConfigureAwait(false);
-                return unresolvedProductImages == 0
+                if (unresolvedProductImages > 0)
+                {
+                    return RestoreSafetyResult.Failure(
+                        "restore_live_product_image_outbox_unresolved");
+                }
+
+                var unresolvedCustomerOrders =
+                    await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM customer_order_inbox
+WHERE state <> 'acked';",
+                        transaction: tx).ConfigureAwait(false);
+                return unresolvedCustomerOrders == 0
                     ? RestoreSafetyResult.Success()
                     : RestoreSafetyResult.Failure(
-                        "restore_live_product_image_outbox_unresolved");
+                        "restore_live_customer_order_inbox_unresolved");
             }
         }
 
@@ -218,7 +234,10 @@ SELECT
      'failed_blocked'))
   +
   (SELECT COUNT(1) FROM product_image_operation_outbox
-   WHERE state <> 'completed');",
+   WHERE state <> 'completed')
+  +
+  (SELECT COUNT(1) FROM customer_order_inbox
+   WHERE state <> 'acked');",
                     transaction: tx).ConfigureAwait(false);
                 if (unresolved > 0)
                 {
