@@ -798,6 +798,21 @@ public sealed class OnlineSyncSupervisorTests
     }
 
     [TestMethod]
+    public void SchedulePolicy_CustomerOrdersKeepsPollingAfterSuccessfulEmptyClaim()
+    {
+        var decision = OnlineSyncLaneSchedulePolicy.Evaluate(
+            OnlineSyncLane.CustomerOrders,
+            new OnlineSyncLaneOutcome(success: true),
+            3,
+            DateTimeOffset.Parse("2026-08-11T12:00:00Z"),
+            0.5);
+
+        Assert.IsTrue(decision.ShouldSchedule);
+        Assert.AreEqual(TimeSpan.FromSeconds(30), decision.Delay);
+        Assert.AreEqual(0, decision.FailureCount);
+    }
+
+    [TestMethod]
     public async Task AwaitedCatalogHint_IsOrchestratedByCaller_WhileBackgroundHintFansOut()
     {
         var catalogRan = NewSignal();

@@ -997,6 +997,98 @@ ON product_image_remote_shadow(local_product_id);
             conn.Execute(ProductImageSchemaSql, transaction: tx);
         }
 
+        internal static string CustomerOrderInboxTableSql => @"
+CREATE TABLE IF NOT EXISTS customer_order_inbox (
+  id                              INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  handoff_id                      TEXT NOT NULL UNIQUE,
+  event_idempotency_key           TEXT NOT NULL UNIQUE,
+  order_id                        TEXT NOT NULL,
+  shop_id                         TEXT NOT NULL,
+  order_code                      TEXT NOT NULL,
+  event_type                      TEXT NOT NULL,
+  correlation_id                  TEXT NOT NULL,
+  status_version                  INTEGER NOT NULL,
+  current_status_version          INTEGER NOT NULL,
+  order_status                    TEXT NOT NULL,
+  fulfillment_mode                TEXT NOT NULL,
+  currency_code                   TEXT NOT NULL,
+  total_clp                       INTEGER NOT NULL,
+  payload_json                    TEXT NOT NULL,
+  payload_hash                    TEXT NOT NULL,
+  lease_token                     TEXT NOT NULL,
+  lease_expires_at                INTEGER NOT NULL,
+  remote_attempt_count            INTEGER NOT NULL,
+  state                           TEXT NOT NULL,
+  accepted_acked_at               INTEGER NULL,
+  ack_outcome                     TEXT NULL,
+  ack_idempotency_key             TEXT NULL,
+  ack_pos_sale_id                 TEXT NULL,
+  ack_expected_status_version     INTEGER NULL,
+  ack_attempt_count               INTEGER NOT NULL DEFAULT 0,
+  ack_next_retry_at               INTEGER NOT NULL DEFAULT 0,
+  ack_last_attempt_at             INTEGER NULL,
+  ack_last_error_code             TEXT NULL,
+  ack_server_status               TEXT NULL,
+  ack_server_status_version       INTEGER NULL,
+  ack_claim_generation_id         TEXT NULL,
+  ack_claim_generation_fingerprint TEXT NULL,
+  ack_claim_token                 TEXT NULL,
+  received_at                     INTEGER NOT NULL,
+  updated_at                      INTEGER NOT NULL,
+  acked_at                        INTEGER NULL,
+  CHECK(status_version >= 1),
+  CHECK(current_status_version >= status_version),
+  CHECK(total_clp >= 0),
+  CHECK(remote_attempt_count >= 1),
+  CHECK(ack_attempt_count >= 0),
+  CHECK(state IN (
+    'received',
+    'ack_pending',
+    'ack_in_progress',
+    'retry_wait',
+    'acked',
+    'failed_blocked')),
+  CHECK(ack_outcome IS NULL OR ack_outcome IN (
+    'accepted', 'rejected', 'prepared', 'completed')),
+  CHECK(
+    length(payload_hash) = 71 AND
+    substr(payload_hash, 1, 7) = 'sha256:' AND
+    substr(payload_hash, 8) NOT GLOB '*[^0-9a-f]*'),
+  CHECK(
+    (ack_outcome IS NULL AND ack_idempotency_key IS NULL AND
+      ack_expected_status_version IS NULL)
+    OR
+    (ack_outcome IS NOT NULL AND ack_idempotency_key IS NOT NULL AND
+      ack_expected_status_version >= 1)),
+  CHECK(ack_pos_sale_id IS NULL OR ack_outcome = 'completed')
+);
+";
+
+        internal static string CustomerOrderInboxIndexSql => @"
+CREATE INDEX IF NOT EXISTS idx_customer_order_inbox_state_next
+ON customer_order_inbox(state, ack_next_retry_at, id);
+CREATE INDEX IF NOT EXISTS idx_customer_order_inbox_order
+ON customer_order_inbox(shop_id, order_id, status_version, id);
+CREATE INDEX IF NOT EXISTS idx_customer_order_inbox_received
+ON customer_order_inbox(received_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_order_inbox_ack_idempotency
+ON customer_order_inbox(ack_idempotency_key)
+WHERE ack_idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_order_inbox_fiscal_sale
+ON customer_order_inbox(ack_pos_sale_id)
+WHERE ack_pos_sale_id IS NOT NULL;
+";
+
+        internal static string CustomerOrderInboxSchemaSql =>
+            CustomerOrderInboxTableSql + "\n" + CustomerOrderInboxIndexSql;
+
+        internal static void EnsureCustomerOrderInboxSchema(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            conn.Execute(CustomerOrderInboxSchemaSql, transaction: tx);
+        }
+
         internal static string DependentSchemaSql => @"
 CREATE TABLE IF NOT EXISTS local_stock_movements (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -1511,6 +1603,12 @@ ALTER TABLE sales ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending';
             PostArticleMutationLedgerlessKnownSchemaSql + "\n" +
             ProductImageAlterSql + "\n" +
             ProductImageSchemaSql;
+
+        // Frozen whitelist for the privacy-bounded customer-order inbox. Older
+        // whitelists remain immutable because migration 0012 owns this table.
+        internal static string PostCustomerOrderInboxLedgerlessKnownSchemaSql =>
+            PostProductImageLedgerlessKnownSchemaSql + "\n" +
+            CustomerOrderInboxSchemaSql;
 
         internal static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
         {

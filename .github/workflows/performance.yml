@@ -154,13 +154,13 @@ jobs:
           $relinkStageCommandCounts = @($measuredLines | ForEach-Object {
             [long]([regex]::Match($_, "relink_stage_sql_commands=([0-9]+)").Groups[1].Value)
           } | Select-Object -Unique)
-          if ($statementCounts.Count -ne 1 -or $statementCounts[0] -ne 358) {
+          if ($statementCounts.Count -ne 1 -or $statementCounts[0] -ne 378) {
             throw "net48/x86 set-based statement count invalid: values=$($statementCounts -join ','). Evidence: $evidencePath"
           }
           if ($commandCounts.Count -ne 1 -or $commandCounts[0] -ne 140) {
             throw "net48/x86 SQL command count is not deterministic: values=$($commandCounts -join ','). Evidence: $evidencePath"
           }
-          if ($contextCommandCounts.Count -ne 1 -or $contextCommandCounts[0] -ne 103) {
+          if ($contextCommandCounts.Count -ne 1 -or $contextCommandCounts[0] -ne 123) {
             throw "net48/x86 bounded context command count invalid: values=$($contextCommandCounts -join ','). Evidence: $evidencePath"
           }
           if ($relinkStageCommandCounts.Count -ne 1 -or $relinkStageCommandCounts[0] -ne 20) {
@@ -261,9 +261,9 @@ jobs:
               $x86Text -notmatch "apply_transactions=1") {
             throw "100,000-row net48 full refresh did not retain one preflight and one apply transaction. Evidence: $net48Evidence"
           }
-          if ($x86Text -notmatch "context_sql_commands=503" -or
-              $x86Text -notmatch "remote_price_apply_sql_commands=700" -or
-              $x86Text -notmatch "remote_price_apply_sql_statements=1800") {
+          if ($x86Text -notmatch "context_sql_commands=603(?:\s|$)" -or
+              $x86Text -notmatch "remote_price_apply_sql_commands=700(?:\s|$)" -or
+              $x86Text -notmatch "remote_price_apply_sql_statements=1900(?:\s|$)") {
             throw "100,000-row net48 bounded SQL command evidence is invalid. Evidence: $net48Evidence"
           }
           $gen2Collections = [long]([regex]::Match($x86Text, "gc2=([0-9]+)").Groups[1].Value)

@@ -11,7 +11,8 @@ namespace Win7POS.Core.Online
         CatalogImportOutbox = 2,
         CatalogDelta = 3,
         ArticleMutationOutbox = 4,
-        ProductImageOutbox = 5
+        ProductImageOutbox = 5,
+        CustomerOrders = 6
     }
 
     public enum OnlineSyncLaneTrigger
@@ -309,7 +310,8 @@ namespace Win7POS.Core.Online
             if ((lane == OnlineSyncLane.SalesOutbox ||
                  lane == OnlineSyncLane.CatalogImportOutbox ||
                  lane == OnlineSyncLane.ArticleMutationOutbox ||
-                 lane == OnlineSyncLane.ProductImageOutbox) &&
+                 lane == OnlineSyncLane.ProductImageOutbox ||
+                 lane == OnlineSyncLane.CustomerOrders) &&
                 outcome.HasImmediateMore)
             {
                 return new OnlineSyncLaneScheduleDecision(
@@ -349,6 +351,17 @@ namespace Win7POS.Core.Online
                     return new OnlineSyncLaneScheduleDecision(
                         true,
                         TimeSpan.FromSeconds(seconds),
+                        0);
+                }
+
+                if (lane == OnlineSyncLane.CustomerOrders)
+                {
+                    // Orders can arrive after an empty claim and this pull-only
+                    // lane has no local commit signal. A slow jittered poll keeps
+                    // delivery live without turning the lane into a tight loop.
+                    return new OnlineSyncLaneScheduleDecision(
+                        true,
+                        TimeSpan.FromSeconds(25d + (10d * jitter)),
                         0);
                 }
 

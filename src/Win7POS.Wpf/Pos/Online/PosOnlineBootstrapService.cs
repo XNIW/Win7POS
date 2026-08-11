@@ -470,6 +470,33 @@ namespace Win7POS.Wpf.Pos.Online
                             trustedSessionPersisted: true,
                             catalogStarted: false);
                     }
+
+                    var customerOrderDrain = await _syncHost
+                        .TriggerAsync(
+                            OnlineSyncLane.CustomerOrders,
+                            OnlineSyncLaneTrigger.StartOfDay,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (customerOrderDrain.AuthenticationDenied)
+                    {
+                        _logger.LogWarning(
+                            "Bootstrap stopped after customer-order sync authorization denial: category=online.bootstrap.customer_order code=auth_denied");
+                        return PosOnlineBootstrapResult.Failure(
+                            "auth_denied",
+                            PosLocalization.T("onlineFirstLogin.authorizationFailed"),
+                            true,
+                            result.ClientRequestId,
+                            result.ServerRequestId,
+                            result.CfRay,
+                            failureStage: "session_creation",
+                            rootCode: "auth_denied",
+                            httpStatus: result.HttpStatus,
+                            deviceApprovalState: "approved",
+                            requestReachedServer: result.RequestReachedServer,
+                            firstLoginSucceeded: true,
+                            trustedSessionPersisted: true,
+                            catalogStarted: false);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -477,7 +504,7 @@ namespace Win7POS.Wpf.Pos.Online
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning("Bootstrap sales sync skipped.", ex);
+                    _logger.LogWarning("Bootstrap outbox sync skipped.", ex);
                 }
 
                 try

@@ -188,6 +188,36 @@ public sealed class PosShopTransitionGuardTests
     }
 
     [TestMethod]
+    public async Task Evaluate_BlocksDifferentShopWhenCustomerOrderInboxIsUnresolved()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        await InsertUnresolvedCustomerOrderAsync(db.Factory, "shop-a");
+
+        var decision = await new PosShopTransitionGuard(db.Factory)
+            .EvaluateAsync("shop-a", "SHOP-A", "shop-b", "SHOP-B");
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.IsTrue(decision.HasUnresolvedOutbox);
+        Assert.AreEqual("shop_switch_blocked_unresolved_outbox", decision.Code);
+    }
+
+    [TestMethod]
+    public async Task ApplyAuthorizedTransition_RechecksCustomerOrderInboxInsideTransaction()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var guard = new PosShopTransitionGuard(db.Factory);
+        var decision = await guard.EvaluateAsync(
+            "shop-a", "SHOP-A", "shop-b", "SHOP-B");
+        Assert.IsTrue(decision.Allowed);
+        await InsertUnresolvedCustomerOrderAsync(db.Factory, "shop-a");
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => guard.ApplyAuthorizedTransitionAsync(decision));
+    }
+
+    [TestMethod]
     public async Task OfflineAuthorization_RequiresRequestedShopToMatchCoherentCurrentIdentity()
     {
         using var db = TestDb.Create();
@@ -280,6 +310,41 @@ VALUES(
   'legacy-client-import', 'legacy-client-import:pos-catalog-import-v1',
   'pos-catalog-import-v1', 'catalog_import', '', '', 'supplier_excel', '{}', 'legacy-hash',
   'pending', 0, 0, 1, 1);");
+    }
+
+    private static async Task InsertUnresolvedCustomerOrderAsync(
+        SqliteConnectionFactory factory,
+        string shopId)
+    {
+        using var connection = factory.Open();
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await connection.ExecuteAsync(@"
+INSERT INTO customer_order_inbox(
+  handoff_id, event_idempotency_key, order_id, shop_id, order_code,
+  event_type, correlation_id, status_version, current_status_version,
+  order_status, fulfillment_mode, currency_code, total_clp, payload_json,
+  payload_hash, lease_token, lease_expires_at, remote_attempt_count, state,
+  ack_outcome, ack_idempotency_key, ack_expected_status_version,
+  received_at, updated_at)
+VALUES(
+  @handoffId, @eventIdempotencyKey, @orderId, @shopId, 'MC-SHOP-GUARD',
+  'customer_order.accepted.v1', @correlationId, 2, 2,
+  'accepted', 'pickup', 'CLP', 1000, '{}',
+  @payloadHash, @leaseToken, @leaseExpiresAt, 1, 'ack_pending',
+  'accepted', @ackIdempotencyKey, 2, @nowMs, @nowMs);",
+            new
+            {
+                ackIdempotencyKey = Guid.NewGuid().ToString("D"),
+                correlationId = Guid.NewGuid().ToString("D"),
+                eventIdempotencyKey = Guid.NewGuid().ToString("D"),
+                handoffId = Guid.NewGuid().ToString("D"),
+                leaseExpiresAt = nowMs + 300000,
+                leaseToken = Guid.NewGuid().ToString("D"),
+                nowMs,
+                orderId = Guid.NewGuid().ToString("D"),
+                payloadHash = "sha256:" + new string('b', 64),
+                shopId
+            });
     }
 
     private static async Task SeedShopACacheAsync(SqliteConnectionFactory factory)

@@ -78,6 +78,7 @@ $dbMaintenance = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml
 $dbMaintenanceViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs"
 $customerDisplay = Read-Text "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayWindow.xaml"
 $monitorIdentify = Read-Text "src/Win7POS.Wpf/Pos/CustomerDisplay/MonitorIdentifyWindow.xaml"
+$uiSmokeHarness = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 
 Test-ContainsAll "MainWindow remains a maximize-only workstation shell" ($mainWindow + $mainWindowCode) @(
     'WindowState="Maximized"',
@@ -675,6 +676,20 @@ Test-ContainsAll "Customer display window titles are localized" ($customerDispla
     'Title="{loc:Loc customerDisplay.settings.title}"',
     'Title="{loc:Loc customerDisplay.settings.identify}"'
 )
+
+Test-ContainsAll "Settings audit reuses the active QA database when evidence is stored separately" $uiSmokeHarness @(
+    'public async Task<string> CaptureSettingsAuditAsync(string outputDirectory)',
+    'var options = PosDbOptions.Default();',
+    'if (!File.Exists(options.DbPath))',
+    'DbInitializer.EnsureCreated(options);'
+)
+
+if ($uiSmokeHarness.IndexOf('File.Exists(Path.Combine(outputDirectory, "pos.db"))', [StringComparison]::Ordinal) -ge 0) {
+    Fail "Settings audit still treats the evidence output directory as the active QA data directory"
+}
+else {
+    Pass "Settings audit does not reseed solely because evidence uses a separate output directory"
+}
 
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red
