@@ -166,10 +166,12 @@ pwsh -File scripts/check-win7pos-restore-guard.ps1
 
 ## Backup e restore del database SQLite
 
-- **Backup:** menu **Database** → **Backup database**. Il file viene salvato in `C:\ProgramData\Win7POS\backups` con nome tipo `pos_backup_yyyyMMdd_HHmmss.db`.
-- **Restore:** menu **Database** → **Manutenzione database** (o percorso equivalente per il restore). Copiare il file `.db` di backup nella cartella desiderata e, dall’app, selezionare il restore da quel file. Prima di sovrascrivere `pos.db`, l'app verifica che non esistano vendite outbox `pending`, `retry` o `failed_blocked`; se esistono, il restore viene sospeso e va prima sincronizzata o revisionata l'outbox. Quando il restore è consentito, esegue `PRAGMA wal_checkpoint(FULL)`, crea automaticamente un pre-backup `pos_pre_restore_yyyyMMdd_HHmmss.db` in `C:\ProgramData\Win7POS\backups`; se il pre-backup fallisce, il restore non procede. Dopo restore esegue `PRAGMA integrity_check` e marca lo stato sync come da rivedere, bloccando lo start-of-day finche non viene revisionato.
+- **Backup:** menu **Database** → **Backup database**. L'app crea uno snapshot SQLite verificato con nome univoco `pos_backup_yyyyMMdd_HHmmss_fff_<id>.db`; il file finale viene pubblicato solo dopo `integrity_check` e `foreign_key_check`.
+- **Restore:** menu **Database** → **Manutenzione database** (o percorso equivalente). L'app legge il sorgente tramite snapshot SQLite read-only, includendo i frame WAL committed senza copiare sidecar, quindi migra e valida una candidate sigillata. Sotto il fence delle connessioni riconvalida shop, epoch e outbox, crea un pre-backup verificato e installa la stessa candidate con replace atomico e recovery durevole. Il database live torna sempre alla policy `DELETE`/`FULL`, senza `-wal`/`-shm`, e resta da revisionare prima dello start-of-day.
 
-**Manuale (senza UI):** copiare `C:\ProgramData\Win7POS\pos.db` in un luogo sicuro per il backup. Per il restore, chiudere l’applicazione, sostituire `pos.db` con il file di backup e riavviare.
+**Manuale (senza UI):** non copiare o sostituire direttamente `pos.db`, soprattutto se esistono sidecar WAL. Usare sempre i comandi Backup/Restore dell'app; un sorgente WAL incompleto o con sidecar incoerenti viene rifiutato in modo fail-closed.
+
+Selftest CLI per sviluppatori: `--backup-restore-selftest`, `--backup-restore-failure-selftest` e `--backup-restore-perf-selftest --sizes-mib 32,128,512 --iterations 5` (opzionale `--keepdb`; i fixture restano sempre isolati in temp).
 
 ## Smoke hardware Windows 7
 

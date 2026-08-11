@@ -266,9 +266,7 @@ FROM (
 
             var totalCount = await conn.ExecuteScalarAsync<int>(@"
 SELECT COUNT(1)
-FROM products p
-LEFT JOIN product_meta m ON m.barcode = p.barcode
-" + where, parameters, tx).ConfigureAwait(false);
+" + BuildProductPageCountFromClause(filter) + "\n" + where, parameters, tx).ConfigureAwait(false);
 
             var rankExpression = q.Length == 0
                 ? string.Empty
@@ -344,6 +342,16 @@ AND (
     AND (" + tuplePredicate + @")
   )
 )";
+        }
+
+        internal static string BuildProductPageCountFromClause(ProductPageFilter filter)
+        {
+            if (filter == null) throw new ArgumentNullException(nameof(filter));
+            if (!filter.CategoryId.HasValue && !filter.SupplierId.HasValue)
+                return "FROM products p";
+
+            return @"FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode";
         }
 
         private static string BuildProductPageOrdering(
@@ -438,6 +446,7 @@ ORDER BY timestamp DESC, id DESC";
             const string sql = @"
 SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPrice,
   COALESCE(p.is_active, 1) AS IsActive,
+  CASE WHEN m.barcode IS NULL THEN 0 ELSE 1 END AS HasMeta,
   COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
   m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,
@@ -477,6 +486,7 @@ ORDER BY p.barcode ASC";
                 var rows = await conn.QueryAsync<ProductDetailsRow>(@"
 SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPrice,
   COALESCE(p.is_active, 1) AS IsActive,
+  CASE WHEN m.barcode IS NULL THEN 0 ELSE 1 END AS HasMeta,
   COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
   m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,

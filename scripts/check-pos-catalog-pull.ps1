@@ -715,6 +715,19 @@ if ($client -notmatch 'DataMember\(Name = "catalogVersion"') { Fail "catalog ver
 if ($client -notmatch 'DataMember\(Name = "hasMore"') { Fail "hasMore wire field missing" } else { Pass "hasMore wire field present" }
 if ($client -notmatch 'DataMember\(Name = "tombstones"') { Fail "tombstones wire field missing" } else { Pass "tombstones wire field present" }
 if ($remoteCatalogProductWriter -notmatch "remote_product_id") { Fail "remote product id column missing in remote product writer" } else { Pass "remote product id used in remote product writer" }
+if ($batchRepository -notmatch "LoadPageProtectedProductsAsync" -or
+    $batchRepository -notmatch "protectedProductIdsByRemoteId" -or
+    $batchRepository -notmatch "protectedProductIdsByBarcode" -or
+    $batchRepository -notmatch "NormalizeSqliteNoCaseBarcodeKey\(\s*protectedProduct\.Barcode\s*\)" -or
+    $batchRepository -notmatch "NormalizeSqliteNoCaseBarcodeKey\(normalizedBarcode\)" -or
+    $batchRepository -match "protectedProductIdsByBarcode[\s\S]{0,200}StringComparer\.OrdinalIgnoreCase" -or
+    $batchRepository -notmatch "protectedProductLookupCompleted:\s*true" -or
+    $remoteCatalogProductWriter -notmatch "if\s*\(\s*!protectedProductLookupCompleted\s*\)" -or
+    $batchRepository -match "foreach\s*\([^)]*pageProducts[^)]*\)[\s\S]{0,5000}FindProtectedProductIdAsync") {
+    Fail "pending article mutations must use SQLite-compatible barcode keys and one page-bounded protected-product lookup across fallback writers"
+} else {
+    Pass "pending article mutations use SQLite-compatible barcode keys and one page-bounded lookup across fallback writers"
+}
 if ($remotePriceHistoryRepository -notmatch "remote_catalog_pending_prices" -or $remotePriceHistoryRepository -notmatch "QueuePendingRemotePriceAsync" -or $remotePriceHistoryRepository -notmatch "ApplyPendingRemotePricesAsync") { Fail "pending remote price replay missing" } else { Pass "pending remote price replay present" }
 if ($remotePriceHistoryRepository -notmatch "PendingRemotePriceReplayBatchSize" -or $remotePriceHistoryRepository -notmatch "while\s*\(true\)" -or $remotePriceHistoryRepository -notmatch "canonical" -or $remotePriceHistoryRepository -notmatch "GROUP BY remote_product_id") { Fail "pending remote price replay must drain all resolvable batches against a canonical remote product per remote_product_id" } else { Pass "pending remote price replay drains all resolvable batches against canonical remote product" }
 if ($remotePriceHistoryRepository -notmatch "remote_price_id" -or $initializer -notmatch "remote_price_id" -or $batchMapper -notmatch "RemotePriceId\s*=\s*Normalize\(row\.PriceId\)" -or $batchRepository -notmatch "price\.RemotePriceId") { Fail "remote priceId idempotency missing" } else { Pass "remote priceId idempotency present" }

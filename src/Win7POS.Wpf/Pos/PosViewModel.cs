@@ -116,6 +116,8 @@ namespace Win7POS.Wpf.Pos
 
         public int ItemsCount => CartItems.Sum(x => x.Quantity);
 
+        public bool IsCartEmpty => CartItems.Count == 0;
+
         public string TotalDisplay => MoneyClp.Format(Total);
 
         /// <summary>Importo totale sconti (Subtotal - Total).</summary>
@@ -2152,6 +2154,7 @@ namespace Win7POS.Wpf.Pos
             if (!string.IsNullOrWhiteSpace(snapshot.Status))
                 SetStatus(snapshot.Status, PosNoticeSeverity.Info, suppressToast: true);
             OnPropertyChanged(nameof(ItemsCount));
+            OnPropertyChanged(nameof(IsCartEmpty));
 
             PosCartLineRow selected = null;
             if (!string.IsNullOrWhiteSpace(preferBarcode))

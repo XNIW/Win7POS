@@ -131,8 +131,14 @@ namespace Win7POS.Wpf.Pos.Online
                 return _factory;
             }
 
-            _logInfo?.Invoke("DbInitializer start");
             var options = PosDbOptions.Default();
+            _logInfo?.Invoke("Atomic restore recovery start");
+            new AtomicRestoreInstaller()
+                .RecoverInterruptedInstallAsync(options.DbPath)
+                .GetAwaiter()
+                .GetResult();
+            _logInfo?.Invoke("Atomic restore recovery done");
+            _logInfo?.Invoke("DbInitializer start");
             DbInitializer.EnsureCreated(options);
             _logInfo?.Invoke("DbInitializer done");
 

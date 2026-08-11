@@ -256,6 +256,34 @@ namespace Win7POS.Data.Repositories
                             group => group.Key,
                             group => NormalizeBarcode(group.First().Barcode),
                             StringComparer.Ordinal);
+                    var protectedProducts = await runContext
+                        .LoadPageProtectedProductsAsync(tx)
+                        .ConfigureAwait(false);
+                    var protectedProductIdsByRemoteId = new Dictionary<string, long>(
+                        StringComparer.Ordinal);
+                    var protectedProductIdsByBarcode = new Dictionary<string, long>(
+                        StringComparer.Ordinal);
+                    foreach (var protectedProduct in protectedProducts.OrderBy(row => row.ProductId))
+                    {
+                        if (!string.IsNullOrWhiteSpace(protectedProduct.RemoteProductId) &&
+                            !protectedProductIdsByRemoteId.ContainsKey(protectedProduct.RemoteProductId))
+                        {
+                            protectedProductIdsByRemoteId.Add(
+                                protectedProduct.RemoteProductId,
+                                protectedProduct.ProductId);
+                        }
+                        if (!string.IsNullOrWhiteSpace(protectedProduct.Barcode))
+                        {
+                            var protectedBarcodeKey = NormalizeSqliteNoCaseBarcodeKey(
+                                protectedProduct.Barcode);
+                            if (!protectedProductIdsByBarcode.ContainsKey(protectedBarcodeKey))
+                            {
+                                protectedProductIdsByBarcode.Add(
+                                    protectedBarcodeKey,
+                                    protectedProduct.ProductId);
+                            }
+                        }
+                    }
                     var preparedProductCommands = runContext.ProductCommands;
                     var preparedReferenceCommand = runContext.ReferenceCommand;
                     var pageProducts = batch.Products ?? Array.Empty<RemoteCatalogProductWrite>();
@@ -349,12 +377,17 @@ namespace Win7POS.Data.Repositories
                             throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
                         }
 
-                        var protectedProductId =
-                            await RemoteCatalogProductWriter.FindProtectedProductIdAsync(
-                                conn,
-                                tx,
+                        long protectedId;
+                        long? protectedProductId =
+                            protectedProductIdsByRemoteId.TryGetValue(
                                 normalizedRemoteProductId,
-                                normalizedBarcode).ConfigureAwait(false);
+                                out protectedId)
+                                ? protectedId
+                                : protectedProductIdsByBarcode.TryGetValue(
+                                    NormalizeSqliteNoCaseBarcodeKey(normalizedBarcode),
+                                    out protectedId)
+                                    ? protectedId
+                                    : (long?)null;
                         if (protectedProductId.HasValue)
                         {
                             await RemoteCatalogProductWriter.UpsertRemoteShadowAsync(
@@ -455,9 +488,10 @@ namespace Win7POS.Data.Repositories
                                 normalizedRemoteProductId,
                                 preparedProductCommands,
                                 productBatchContext,
-                                product.RemoteUpdatedAt,
-                                product.RemoteCategoryId,
-                                product.RemoteSupplierId).ConfigureAwait(false);
+                                remoteUpdatedAt: product.RemoteUpdatedAt,
+                                remoteCategoryId: product.RemoteCategoryId,
+                                remoteSupplierId: product.RemoteSupplierId,
+                                protectedProductLookupCompleted: true).ConfigureAwait(false);
                             await preparedReferenceCommand.UpsertAsync(
                                 normalizedRemoteProductId,
                                 product.RemoteCategoryId,
@@ -1878,6 +1912,23 @@ FROM json_each(@supplierIdsJson);";
             return (value ?? string.Empty).Trim();
         }
 
+        internal static string NormalizeSqliteNoCaseBarcodeKey(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value ?? string.Empty;
+
+            char[] normalized = null;
+            for (var index = 0; index < value.Length; index++)
+            {
+                var character = value[index];
+                if (character < 'A' || character > 'Z') continue;
+
+                if (normalized == null) normalized = value.ToCharArray();
+                normalized[index] = (char)(character + ('a' - 'A'));
+            }
+
+            return normalized == null ? value : new string(normalized);
+        }
+
         internal sealed class RemoteProductReferencePreparedCommand : IDisposable
         {
             private readonly SqliteCommand _command;
@@ -2428,6 +2479,33 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
             return rows;
         }
 
+        internal async Task<IReadOnlyList<RemoteCatalogProtectedProductRow>> LoadPageProtectedProductsAsync(
+            SqliteTransaction transaction)
+        {
+            var rows = (await Connection.QueryAsync<RemoteCatalogProtectedProductRow>(@"
+SELECT DISTINCT
+       p.id AS ProductId,
+       COALESCE(p.remote_product_id, '') AS RemoteProductId,
+       p.barcode AS Barcode
+FROM article_mutation_outbox mutation
+JOIN products p ON p.id = mutation.local_product_id
+JOIN temp_catalog_page_product_identities incoming
+  ON (incoming.remote_product_id <> ''
+      AND p.remote_product_id = incoming.remote_product_id)
+  OR (incoming.barcode <> ''
+      AND p.barcode = incoming.barcode COLLATE NOCASE)
+WHERE mutation.state <> 'completed'
+ORDER BY p.id;",
+                transaction: transaction).ConfigureAwait(false)).ToArray();
+            Diagnostics.ProtectedProductQueryCount = checked(
+                Diagnostics.ProtectedProductQueryCount + 1L);
+            Diagnostics.ProtectedProductRowsLoaded = checked(
+                Diagnostics.ProtectedProductRowsLoaded + rows.Length);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 1L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
+            return rows;
+        }
+
         internal async Task<bool> PageRequiresLegacyProductRebindAsync(
             SqliteTransaction transaction)
         {
@@ -2888,6 +2966,8 @@ FROM staged;
         public long PreparedCommandCount { get; internal set; }
         public long ProductIdentityQueryCount { get; internal set; }
         public long ProductIdentityRowsLoaded { get; internal set; }
+        public long ProtectedProductQueryCount { get; internal set; }
+        public long ProtectedProductRowsLoaded { get; internal set; }
         public long ReferenceMapRefreshQueryCount { get; internal set; }
         public long RelinkStageSqlCommandCount { get; internal set; }
         public RemotePriceApplyDiagnostics RemotePriceApply { get; } =
@@ -3125,6 +3205,13 @@ FROM staged;
     internal sealed class RemoteCatalogPendingStockIdentityRow
     {
         public string Barcode { get; set; } = string.Empty;
+        public string RemoteProductId { get; set; } = string.Empty;
+    }
+
+    internal sealed class RemoteCatalogProtectedProductRow
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public long ProductId { get; set; }
         public string RemoteProductId { get; set; } = string.Empty;
     }
 

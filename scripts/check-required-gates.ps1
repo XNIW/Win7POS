@@ -32,6 +32,7 @@ $sourceGates = @(
     "check-product-dialog-free-text.ps1",
     "check-product-keyset-paging.ps1",
     "check-win7pos-ui-ux-guard.ps1",
+    "check-win7pos-hardcoded-strings.ps1",
     "check-pos-customer-display-safety.ps1",
     "check-pos-shop-data-readonly.ps1",
     "check-pos-sync-status-ux.ps1",

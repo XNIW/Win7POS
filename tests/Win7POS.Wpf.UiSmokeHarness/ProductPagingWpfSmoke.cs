@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
@@ -21,39 +20,37 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Seed(factory);
 
             var dispatcherThread = Thread.CurrentThread.ManagedThreadId;
-            var pulseCount = 0;
-            var wrongThreadPulse = false;
-            var timer = new DispatcherTimer(DispatcherPriority.Send)
-            {
-                Interval = TimeSpan.FromMilliseconds(5)
-            };
-            timer.Tick += (_, __) =>
-            {
-                pulseCount++;
-                wrongThreadPulse |= Thread.CurrentThread.ManagedThreadId != dispatcherThread;
-            };
-
             var service = ProductsWorkflowService.CreateDefault();
-            timer.Start();
-            var stopwatch = Stopwatch.StartNew();
-            var page = await service.LoadDetailsPageAsync(
+            var pageTask = service.LoadDetailsPageAsync(
                 string.Empty,
                 targetPage: 1,
-                pageSize: 200).ConfigureAwait(true);
-            stopwatch.Stop();
-            timer.Stop();
+                pageSize: 200);
+            var probeCount = 0;
+            var wrongThreadProbe = false;
+            var pagingWasInFlightDuringProbe = false;
+            var dispatcherProbe = Dispatcher.CurrentDispatcher.InvokeAsync(
+                () =>
+                {
+                    probeCount++;
+                    wrongThreadProbe |= Thread.CurrentThread.ManagedThreadId != dispatcherThread;
+                    pagingWasInFlightDuringProbe |= !pageTask.IsCompleted;
+                },
+                DispatcherPriority.Send);
+
+            var page = await pageTask.ConfigureAwait(true);
+            await dispatcherProbe.Task.ConfigureAwait(true);
 
             if (page.Items.Count != 200 || page.TotalCount != RowCount)
                 return "FAIL product paging result mismatch.";
-            if (pulseCount <= 0)
-                return "FAIL WPF dispatcher did not pulse while product paging was in flight.";
-            if (wrongThreadPulse)
-                return "FAIL dispatcher pulse ran on an unexpected thread.";
+            if (probeCount != 1)
+                return "FAIL WPF dispatcher probe did not execute exactly once.";
+            if (wrongThreadProbe)
+                return "FAIL dispatcher probe ran on an unexpected thread.";
 
             return "PASS product paging dispatcher remained responsive; " +
                    "rows=" + RowCount.ToString() +
-                   " pulses=" + pulseCount.ToString() +
-                   " elapsed_ms=" + stopwatch.ElapsedMilliseconds.ToString() + ".";
+                   " probes=" + probeCount.ToString() +
+                   " paging_in_flight_during_probe=" + pagingWasInFlightDuringProbe.ToString() + ".";
         }
 
         private static void Seed(SqliteConnectionFactory factory)

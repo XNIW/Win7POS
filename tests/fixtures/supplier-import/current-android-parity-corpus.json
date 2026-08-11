@@ -1,0 +1,1624 @@
+{
+  "schemaVersion": "win7pos-current-android-import-parity-v1",
+  "win7BaselineMain": "8170c5030444fa459aabfe08874f3322cdc2fba3",
+  "canonicalAndroidMain": "4b2b4a93dd5d4db7d1cfb83e897aa5cbac40366e",
+  "cases": [
+    {
+      "id": "chinese_spanish_compound_header",
+      "rows": [
+        [
+          "条码 / Código de barras",
+          "品名 (Nombre del producto)",
+          "进价\nPrecio de compra",
+          "零售价 / Precio de venta",
+          "数量 / Cantidad"
+        ],
+        [
+          "00123456",
+          "Producto Uno",
+          "1.234,56",
+          "2000",
+          "2"
+        ],
+        [
+          "1234567890123",
+          "Producto Dos",
+          "1,234.56",
+          "2100",
+          "3"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 1,
+        "hasHeader": true,
+        "headerRows": [
+          0
+        ],
+        "headerMode": "legacy-fast-path",
+        "mergedHeaders": [
+          "条码 / Código de barras",
+          "品名 (Nombre del producto)",
+          "进价\nPrecio de compra",
+          "零售价 / Precio de venta",
+          "数量 / Cantidad"
+        ],
+        "columns": [
+          "0:barcode:alias:high:source",
+          "1:productName:alias:high:source",
+          "2:purchasePrice:alias:high:source",
+          "3:retailPrice:alias:high:source",
+          "4:quantity:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "purchasePrice": 2,
+          "retailPrice": 3,
+          "quantity": 4
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:alias-match"
+          ],
+          "productName": [
+            "1:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "2:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "3:1.000:alias-match"
+          ],
+          "quantity": [
+            "4:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          2,
+          3
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "2|00123456||Producto Uno||1.234,56|2000|2||",
+          "3|1234567890123||Producto Dos||1,234.56|2100|3||"
+        ],
+        "previewFingerprint": "282f3e3b036c530800c12aee572f91f7b2797400927327e7b8d20aeb1cf46544"
+      }
+    },
+    {
+      "id": "chinese_english_compound_header",
+      "rows": [
+        [
+          "条形码 / Barcode",
+          "商品名称 (Product name)",
+          "新进价 / Purchase Price",
+          "新零售价 / Retail Price",
+          "库存数量 / Quantity"
+        ],
+        [
+          "12345678",
+          "English One",
+          "100",
+          "180",
+          "2"
+        ],
+        [
+          "23456789",
+          "English Two",
+          "110",
+          "190",
+          "3"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 1,
+        "hasHeader": true,
+        "headerRows": [
+          0
+        ],
+        "headerMode": "legacy-fast-path",
+        "mergedHeaders": [
+          "条形码 / Barcode",
+          "商品名称 (Product name)",
+          "新进价 / Purchase Price",
+          "新零售价 / Retail Price",
+          "库存数量 / Quantity"
+        ],
+        "columns": [
+          "0:barcode:alias:high:source",
+          "1:productName:alias:high:source",
+          "2:purchasePrice:alias:high:source",
+          "3:retailPrice:alias:high:source",
+          "4:quantity:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "purchasePrice": 2,
+          "retailPrice": 3,
+          "quantity": 4
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:alias-match"
+          ],
+          "productName": [
+            "1:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "2:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "3:1.000:alias-match"
+          ],
+          "quantity": [
+            "4:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          2,
+          3
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "2|12345678||English One||100|180|2||",
+          "3|23456789||English Two||110|190|3||"
+        ],
+        "previewFingerprint": "9140890c66f11b0253c7eb3a11b0c3806ed12a1686af089f4706b5bb0f59f3cc"
+      }
+    },
+    {
+      "id": "two_row_header",
+      "rows": [
+        [
+          "REF.CAJAS",
+          "COD.BARRA",
+          "",
+          "CANTID",
+          "PRE/U",
+          "IMPORTE",
+          ""
+        ],
+        [
+          "",
+          "",
+          "ARTICULO",
+          "",
+          "",
+          "",
+          "Precio venta"
+        ],
+        [
+          "A101",
+          "6120000101614",
+          "Vaso Uno",
+          "12",
+          "900",
+          "10800",
+          "1500"
+        ],
+        [
+          "A102",
+          "6120000101621",
+          "Vaso Dos",
+          "8",
+          "1100",
+          "8800",
+          "1700"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 2,
+        "hasHeader": true,
+        "headerRows": [
+          0,
+          1
+        ],
+        "headerMode": "combined-lookback",
+        "mergedHeaders": [
+          "REF.CAJAS",
+          "COD.BARRA",
+          "ARTICULO",
+          "CANTID",
+          "PRE/U",
+          "IMPORTE",
+          "Precio venta"
+        ],
+        "columns": [
+          "0:itemNumber:alias:high:source",
+          "1:barcode:alias:high:source",
+          "2:productName:alias:high:source",
+          "3:quantity:alias:high:source",
+          "4:purchasePrice:alias:high:source",
+          "5:totalPrice:alias:high:source",
+          "6:retailPrice:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 1,
+          "productName": 2,
+          "itemNumber": 0,
+          "purchasePrice": 4,
+          "retailPrice": 6,
+          "quantity": 3,
+          "totalPrice": 5
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "1:1.000:alias-match"
+          ],
+          "productName": [
+            "2:1.000:alias-match"
+          ],
+          "itemNumber": [
+            "0:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "4:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "6:1.000:alias-match"
+          ],
+          "quantity": [
+            "3:1.000:alias-match"
+          ],
+          "totalPrice": [
+            "5:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          3,
+          4
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "3|6120000101614|A101|Vaso Uno||900|1500|12||",
+          "4|6120000101621|A102|Vaso Dos||1100|1700|8||"
+        ],
+        "previewFingerprint": "72bf4bbdb57967d5235b1eddf486be8f54cb32affd14135171aad96f3365c22d"
+      }
+    },
+    {
+      "id": "metadata_then_two_row_header",
+      "rows": [
+        [
+          "SHOPPING HOGAR SPA"
+        ],
+        [
+          "PEDIDO",
+          "13076",
+          "FECHA",
+          "2026-04-01"
+        ],
+        [
+          "REF.CAJAS",
+          "COD.BARRA",
+          "",
+          "CANTID",
+          "PRE/U",
+          "IMPORTE",
+          ""
+        ],
+        [
+          "",
+          "",
+          "ARTICULO",
+          "",
+          "",
+          "",
+          "Precio venta"
+        ],
+        [
+          "B101",
+          "6120000116830",
+          "Plato Uno",
+          "12",
+          "900",
+          "10800",
+          "1500"
+        ],
+        [
+          "B102",
+          "6120000116922",
+          "Plato Dos",
+          "8",
+          "1100",
+          "8800",
+          "1700"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 4,
+        "hasHeader": true,
+        "headerRows": [
+          2,
+          3
+        ],
+        "headerMode": "combined-lookback",
+        "mergedHeaders": [
+          "REF.CAJAS",
+          "COD.BARRA",
+          "ARTICULO",
+          "CANTID",
+          "PRE/U",
+          "IMPORTE",
+          "Precio venta"
+        ],
+        "columns": [
+          "0:itemNumber:alias:high:source",
+          "1:barcode:alias:high:source",
+          "2:productName:alias:high:source",
+          "3:quantity:alias:high:source",
+          "4:purchasePrice:alias:high:source",
+          "5:totalPrice:alias:high:source",
+          "6:retailPrice:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 1,
+          "productName": 2,
+          "itemNumber": 0,
+          "purchasePrice": 4,
+          "retailPrice": 6,
+          "quantity": 3,
+          "totalPrice": 5
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "1:1.000:alias-match"
+          ],
+          "productName": [
+            "2:1.000:alias-match"
+          ],
+          "itemNumber": [
+            "0:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "4:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "6:1.000:alias-match"
+          ],
+          "quantity": [
+            "3:1.000:alias-match"
+          ],
+          "totalPrice": [
+            "5:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          5,
+          6
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "5|6120000116830|B101|Plato Uno||900|1500|12||",
+          "6|6120000116922|B102|Plato Dos||1100|1700|8||"
+        ],
+        "previewFingerprint": "ec8b20d9282908742147a03d5c6ffdffd5ac3cc3e1af3cb99e9c286aa1d48317"
+      }
+    },
+    {
+      "id": "headerless_clear_dataset",
+      "rows": [
+        [
+          "20034",
+          "6871128200344",
+          "Dream Item One",
+          "12",
+          "270",
+          "3240"
+        ],
+        [
+          "20089",
+          "6871128200894",
+          "Dream Item Two",
+          "24",
+          "480",
+          "11520"
+        ],
+        [
+          "20110",
+          "6871128201105",
+          "Dream Item Three",
+          "8",
+          "500",
+          "4000"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 0,
+        "hasHeader": false,
+        "headerRows": [],
+        "headerMode": "generated-no-header",
+        "mergedHeaders": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "columns": [
+          "0:itemNumber:pattern:high:generated",
+          "1:barcode:pattern:high:generated",
+          "2:productName:pattern:high:generated",
+          "3:quantity:pattern:high:generated",
+          "4:purchasePrice:pattern:high:generated",
+          "5:totalPrice:pattern:high:generated"
+        ],
+        "selectedCandidates": {
+          "barcode": 1,
+          "productName": 2,
+          "itemNumber": 0,
+          "purchasePrice": 4,
+          "quantity": 3,
+          "totalPrice": 5
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "1:1.000:digits=1.00+len=1.00",
+            "0:0.450:digits=0.00+len=1.00",
+            "4:0.450:digits=0.00+len=1.00"
+          ],
+          "productName": [
+            "2:1.000:text=1.00+long=1.00",
+            "0:0.000:text=0.00+long=0.00",
+            "3:0.000:text=0.00+long=0.00"
+          ],
+          "itemNumber": [
+            "0:0.800:short=1.00+alphaNum=0.00"
+          ],
+          "purchasePrice": [
+            "4:1.000:pair=1.00"
+          ],
+          "quantity": [
+            "3:0.933:small=1.00+rank=0.00+seq=0.00",
+            "4:0.633:small=0.00+rank=0.33+seq=0.00",
+            "5:0.583:small=0.00+rank=0.67+seq=0.00"
+          ],
+          "totalPrice": [
+            "5:1.000:pair=1.00"
+          ]
+        },
+        "sourceRowNumbers": [
+          1,
+          2,
+          3
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [
+          "missing-retail-price:1",
+          "missing-retail-price:2",
+          "missing-retail-price:3"
+        ],
+        "editableRows": [
+          "1|6871128200344|20034|Dream Item One||270|200|12||",
+          "2|6871128200894|20089|Dream Item Two||480|200|24||",
+          "3|6871128201105|20110|Dream Item Three||500|200|8||"
+        ],
+        "previewFingerprint": "77ed7da5c20c4cdc09e0f99b909eb3bd2bc2c31c16ab1d9e898c013123175a6b"
+      }
+    },
+    {
+      "id": "headerless_ambiguous_numeric_columns",
+      "rows": [
+        [
+          "6871128200344",
+          "Ambiguous One",
+          "10",
+          "100",
+          "101",
+          "180"
+        ],
+        [
+          "6871128200894",
+          "Ambiguous Two",
+          "12",
+          "110",
+          "111",
+          "190"
+        ],
+        [
+          "6871128201105",
+          "Ambiguous Three",
+          "8",
+          "120",
+          "121",
+          "200"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 0,
+        "hasHeader": false,
+        "headerRows": [],
+        "headerMode": "generated-no-header",
+        "mergedHeaders": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "columns": [
+          "0:barcode:pattern:high:generated",
+          "1:productName:pattern:high:generated",
+          "2:quantity:pattern:medium:generated",
+          "3:retailPrice:pattern:high:generated",
+          "4:discountedPrice:pattern:high:generated",
+          "5:rowNumber:pattern:high:generated",
+          "6:purchasePrice:generated:low:generated"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "retailPrice": 3,
+          "quantity": 2,
+          "rowNumber": 5,
+          "discountedPrice": 4
+        },
+        "rejectedAmbiguousCandidates": [
+          "itemNumber",
+          "purchasePrice"
+        ],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:digits=1.00+len=1.00",
+            "3:0.450:digits=0.00+len=1.00",
+            "4:0.450:digits=0.00+len=1.00"
+          ],
+          "productName": [
+            "1:1.000:text=1.00+long=1.00",
+            "2:0.000:text=0.00+long=0.00",
+            "3:0.000:text=0.00+long=0.00"
+          ],
+          "itemNumber": [
+            "3:0.350:short=0.00+alphaNum=0.00",
+            "4:0.350:short=0.00+alphaNum=0.00",
+            "5:0.350:short=0.00+alphaNum=0.00"
+          ],
+          "purchasePrice": [
+            "5:0.883:price=1.00+rank=1.00",
+            "4:0.817:price=1.00+rank=0.67",
+            "3:0.750:price=1.00+rank=0.33"
+          ],
+          "retailPrice": [
+            "3:1.000:legacy-supplemental",
+            "4:1.000:legacy-supplemental",
+            "5:1.000:legacy-supplemental"
+          ],
+          "quantity": [
+            "2:0.933:small=1.00+rank=0.00+seq=0.00",
+            "3:0.883:small=1.00+rank=0.33+seq=0.00",
+            "4:0.833:small=1.00+rank=0.67+seq=0.00"
+          ],
+          "rowNumber": [
+            "5:1.000:legacy-supplemental"
+          ],
+          "discountedPrice": [
+            "4:1.000:legacy-supplemental",
+            "5:1.000:legacy-supplemental"
+          ]
+        },
+        "sourceRowNumbers": [
+          1,
+          2,
+          3
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "1|6871128200344||Ambiguous One|||100|10||",
+          "2|6871128200894||Ambiguous Two|||110|12||",
+          "3|6871128201105||Ambiguous Three|||120|8||"
+        ],
+        "previewFingerprint": "d63ae1784d49f1cd93f7713660f29be1eefda75937e9c8b6b7814cd137648574"
+      }
+    },
+    {
+      "id": "quantity_vs_sequential_row_number",
+      "rows": [
+        [
+          "1",
+          "6871128200344",
+          "Quantity One",
+          "12",
+          "900",
+          "1500"
+        ],
+        [
+          "2",
+          "6871128200894",
+          "Quantity Two",
+          "12",
+          "1100",
+          "1700"
+        ],
+        [
+          "3",
+          "6871128201105",
+          "Quantity Three",
+          "8",
+          "1500",
+          "2200"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 0,
+        "hasHeader": false,
+        "headerRows": [],
+        "headerMode": "generated-no-header",
+        "mergedHeaders": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "columns": [
+          "0:retailPrice:pattern:high:generated",
+          "1:barcode:pattern:high:generated",
+          "2:productName:pattern:high:generated",
+          "3:quantity:pattern:high:generated",
+          "4:purchasePrice:pattern:high:generated",
+          "5:itemNumber:pattern:high:generated"
+        ],
+        "selectedCandidates": {
+          "barcode": 1,
+          "productName": 2,
+          "itemNumber": 5,
+          "purchasePrice": 4,
+          "retailPrice": 0,
+          "quantity": 3
+        },
+        "rejectedAmbiguousCandidates": [
+          "totalPrice"
+        ],
+        "candidateTrace": {
+          "barcode": [
+            "1:1.000:digits=1.00+len=1.00",
+            "0:0.450:digits=0.00+len=1.00",
+            "5:0.450:digits=0.00+len=1.00"
+          ],
+          "productName": [
+            "2:1.000:text=1.00+long=1.00",
+            "0:0.000:text=0.00+long=0.00",
+            "3:0.000:text=0.00+long=0.00"
+          ],
+          "itemNumber": [
+            "5:0.800:short=1.00+alphaNum=0.00",
+            "4:0.650:short=0.67+alphaNum=0.00",
+            "0:0.350:short=0.00+alphaNum=0.00"
+          ],
+          "purchasePrice": [
+            "4:0.750:price=1.00+rank=0.67",
+            "0:0.483:price=0.00+rank=0.00"
+          ],
+          "retailPrice": [
+            "0:1.000:legacy-supplemental"
+          ],
+          "quantity": [
+            "3:0.917:small=1.00+rank=0.33+seq=0.00",
+            "0:0.683:small=1.00+rank=0.00+seq=1.00",
+            "4:0.583:small=0.00+rank=0.67+seq=0.00"
+          ],
+          "totalPrice": [
+            "0:0.000:mul=0.00"
+          ]
+        },
+        "sourceRowNumbers": [
+          1,
+          2,
+          3
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "1|6871128200344|1500|Quantity One||900|1|12||",
+          "2|6871128200894|1700|Quantity Two||1100|2|12||",
+          "3|6871128201105|2200|Quantity Three||1500|3|8||"
+        ],
+        "previewFingerprint": "e417c83f6b62adcc8a1a139e0fca3dab420c29390212ee52bd093fab2c95e392"
+      }
+    },
+    {
+      "id": "purchase_vs_total_multiplication",
+      "rows": [
+        [
+          "6871128200344",
+          "Pair One",
+          "12",
+          "900",
+          "10800",
+          "1500"
+        ],
+        [
+          "6871128200894",
+          "Pair Two",
+          "8",
+          "1100",
+          "8800",
+          "1700"
+        ],
+        [
+          "6871128201105",
+          "Pair Three",
+          "5",
+          "1500",
+          "7500",
+          "2200"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 0,
+        "hasHeader": false,
+        "headerRows": [],
+        "headerMode": "generated-no-header",
+        "mergedHeaders": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "columns": [
+          "0:barcode:pattern:high:generated",
+          "1:productName:pattern:high:generated",
+          "2:quantity:pattern:high:generated",
+          "3:purchasePrice:pattern:high:generated",
+          "4:totalPrice:pattern:high:generated",
+          "5:itemNumber:pattern:high:generated"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "itemNumber": 5,
+          "purchasePrice": 3,
+          "quantity": 2,
+          "totalPrice": 4
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:digits=1.00+len=1.00",
+            "5:0.450:digits=0.00+len=1.00",
+            "2:0.400:digits=0.00+len=0.67"
+          ],
+          "productName": [
+            "1:1.000:text=1.00+long=1.00",
+            "2:0.000:text=0.00+long=0.00",
+            "3:0.000:text=0.00+long=0.00"
+          ],
+          "itemNumber": [
+            "5:0.800:short=1.00+alphaNum=0.00"
+          ],
+          "purchasePrice": [
+            "3:1.000:pair=1.00"
+          ],
+          "quantity": [
+            "2:0.933:small=1.00+rank=0.00+seq=0.00",
+            "3:0.633:small=0.00+rank=0.33+seq=0.00",
+            "5:0.583:small=0.00+rank=0.67+seq=0.00"
+          ],
+          "totalPrice": [
+            "4:1.000:pair=1.00"
+          ]
+        },
+        "sourceRowNumbers": [
+          1,
+          2,
+          3
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [
+          "missing-retail-price:1",
+          "missing-retail-price:2",
+          "missing-retail-price:3"
+        ],
+        "editableRows": [
+          "1|6871128200344|1500|Pair One||900|200|12||",
+          "2|6871128200894|1700|Pair Two||1100|200|8||",
+          "3|6871128201105|2200|Pair Three||1500|200|5||"
+        ],
+        "previewFingerprint": "b3c0a56c347e33ccf9f3ef7399498cc2aaf767eee05f9aad1ae1547cf23ef3d3"
+      }
+    },
+    {
+      "id": "almost_equal_barcode_candidates",
+      "rows": [
+        [
+          "6871128200344",
+          "7871128200343",
+          "Barcode One",
+          "2",
+          "100",
+          "180"
+        ],
+        [
+          "6871128200894",
+          "7871128200893",
+          "Barcode Two",
+          "3",
+          "110",
+          "190"
+        ],
+        [
+          "6871128201105",
+          "7871128201104",
+          "Barcode Three",
+          "4",
+          "120",
+          "200"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 0,
+        "hasHeader": false,
+        "headerRows": [],
+        "headerMode": "generated-no-header",
+        "mergedHeaders": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "columns": [
+          "0:retailPrice:pattern:high:generated",
+          "1:discountedPrice:pattern:high:generated",
+          "2:productName:pattern:high:generated",
+          "3:quantity:pattern:medium:generated",
+          "4:rowNumber:pattern:high:generated",
+          "5:purchasePrice:pattern:high:generated",
+          "6:barcode:generated:low:generated"
+        ],
+        "selectedCandidates": {
+          "productName": 2,
+          "purchasePrice": 5,
+          "retailPrice": 0,
+          "quantity": 3,
+          "rowNumber": 4,
+          "discountedPrice": 1
+        },
+        "rejectedAmbiguousCandidates": [
+          "barcode",
+          "itemNumber",
+          "totalPrice"
+        ],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:digits=1.00+len=1.00",
+            "1:1.000:digits=1.00+len=1.00",
+            "3:0.450:digits=0.00+len=1.00"
+          ],
+          "productName": [
+            "2:1.000:text=1.00+long=1.00",
+            "0:0.000:text=0.00+long=0.00",
+            "1:0.000:text=0.00+long=0.00"
+          ],
+          "itemNumber": [
+            "4:0.350:short=0.00+alphaNum=0.00",
+            "5:0.350:short=0.00+alphaNum=0.00",
+            "0:0.150:short=0.00+alphaNum=0.00"
+          ],
+          "purchasePrice": [
+            "5:0.883:price=1.00+rank=1.00",
+            "4:0.783:price=1.00+rank=0.50",
+            "0:0.733:price=1.00+rank=0.50"
+          ],
+          "retailPrice": [
+            "0:1.000:legacy-supplemental",
+            "1:1.000:legacy-supplemental",
+            "4:1.000:legacy-supplemental"
+          ],
+          "quantity": [
+            "3:0.933:small=1.00+rank=0.00+seq=0.00",
+            "4:0.858:small=1.00+rank=0.50+seq=0.00",
+            "5:0.783:small=1.00+rank=1.00+seq=0.00"
+          ],
+          "totalPrice": [
+            "0:0.000:mul=0.00",
+            "1:0.000:mul=0.00",
+            "4:0.000:mul=0.00"
+          ],
+          "rowNumber": [
+            "4:1.000:legacy-supplemental"
+          ],
+          "discountedPrice": [
+            "1:1.000:legacy-supplemental",
+            "4:1.000:legacy-supplemental"
+          ]
+        },
+        "sourceRowNumbers": [
+          1,
+          2,
+          3
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [
+          "missing-barcode:1",
+          "missing-barcode:2",
+          "missing-barcode:3"
+        ],
+        "editableRows": [
+          "1|||Barcode One||180|6871128200344|2||",
+          "2|||Barcode Two||190|6871128200894|3||",
+          "3|||Barcode Three||200|6871128201105|4||"
+        ],
+        "previewFingerprint": "063a5fabf609d2e5eea25cd5e328f3f950b65f3f62d9a508ee6bcfa931961f36"
+      }
+    },
+    {
+      "id": "single_row_insufficient_evidence",
+      "rows": [
+        [
+          "6871128200344",
+          "7871128200343",
+          "Single Alpha",
+          "Single Beta",
+          "2",
+          "100",
+          "180"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 0,
+        "hasHeader": false,
+        "headerRows": [],
+        "headerMode": "generated-no-header",
+        "mergedHeaders": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "columns": [
+          "0:retailPrice:pattern:high:generated",
+          "1:discountedPrice:pattern:high:generated",
+          "2:secondProductName:pattern:high:generated",
+          "3:supplier:pattern:high:generated",
+          "4:discount:pattern:high:generated",
+          "5:rowNumber:pattern:high:generated",
+          "6:purchasePrice:pattern:high:generated",
+          "7:barcode:generated:low:generated",
+          "8:productName:generated:low:generated"
+        ],
+        "selectedCandidates": {
+          "purchasePrice": 6,
+          "retailPrice": 0,
+          "supplier": 3,
+          "secondProductName": 2,
+          "rowNumber": 5,
+          "discount": 4,
+          "discountedPrice": 1
+        },
+        "rejectedAmbiguousCandidates": [
+          "barcode",
+          "productName",
+          "itemNumber",
+          "quantity"
+        ],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:digits=1.00+len=1.00",
+            "1:1.000:digits=1.00+len=1.00",
+            "4:0.450:digits=0.00+len=1.00"
+          ],
+          "productName": [
+            "2:1.000:text=1.00+long=1.00",
+            "3:1.000:text=1.00+long=1.00",
+            "0:0.000:text=0.00+long=0.00"
+          ],
+          "itemNumber": [
+            "4:0.350:short=0.00+alphaNum=0.00",
+            "5:0.350:short=0.00+alphaNum=0.00",
+            "6:0.350:short=0.00+alphaNum=0.00"
+          ],
+          "purchasePrice": [
+            "6:0.850:price=1.00+rank=1.00",
+            "5:0.750:price=1.00+rank=0.50",
+            "0:0.700:price=1.00+rank=0.50"
+          ],
+          "retailPrice": [
+            "0:1.000:legacy-supplemental",
+            "1:1.000:legacy-supplemental",
+            "4:1.000:legacy-supplemental"
+          ],
+          "quantity": [
+            "4:1.000:small=1.00+rank=0.00+seq=0.00",
+            "5:0.925:small=1.00+rank=0.50+seq=0.00",
+            "6:0.850:small=1.00+rank=1.00+seq=0.00"
+          ],
+          "supplier": [
+            "3:1.000:legacy-supplemental",
+            "1:0.000:legacy-supplemental",
+            "4:0.000:legacy-supplemental"
+          ],
+          "secondProductName": [
+            "2:1.000:legacy-supplemental",
+            "3:1.000:legacy-supplemental",
+            "1:0.000:legacy-supplemental"
+          ],
+          "rowNumber": [
+            "5:1.000:legacy-supplemental"
+          ],
+          "discount": [
+            "4:1.000:legacy-supplemental",
+            "1:0.000:legacy-supplemental",
+            "5:0.000:legacy-supplemental"
+          ],
+          "discountedPrice": [
+            "1:1.000:legacy-supplemental",
+            "5:1.000:legacy-supplemental"
+          ]
+        },
+        "sourceRowNumbers": [
+          1
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [
+          "missing-barcode:1"
+        ],
+        "editableRows": [
+          "1|||Single Alpha|Single Alpha|180|6871128200344||Single Beta|"
+        ],
+        "previewFingerprint": "84b39ac1e8d44a24e0ad47d582c991f9c89b028ab1c017746de324f6daa135af"
+      }
+    },
+    {
+      "id": "duplicate_barcode_last_wins",
+      "rows": [
+        [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice",
+          "quantity"
+        ],
+        [
+          "990000000001",
+          "First",
+          "100",
+          "180",
+          "2"
+        ],
+        [
+          "990000000001",
+          "Last",
+          "110",
+          "190",
+          "3"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 1,
+        "hasHeader": true,
+        "headerRows": [
+          0
+        ],
+        "headerMode": "legacy-fast-path",
+        "mergedHeaders": [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice",
+          "quantity"
+        ],
+        "columns": [
+          "0:barcode:alias:high:source",
+          "1:productName:alias:high:source",
+          "2:purchasePrice:alias:high:source",
+          "3:retailPrice:alias:high:source",
+          "4:quantity:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "purchasePrice": 2,
+          "retailPrice": 3,
+          "quantity": 4
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:alias-match"
+          ],
+          "productName": [
+            "1:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "2:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "3:1.000:alias-match"
+          ],
+          "quantity": [
+            "4:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          2,
+          3
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [
+          "duplicate-last-wins:2,3"
+        ],
+        "editableRows": [
+          "3|990000000001||Last||110|190|3||"
+        ],
+        "previewFingerprint": "4d1670b6bcf48bdfe3eb8fdb711b6323e05c0ff532fe1cae1b854dbdee9621dc"
+      }
+    },
+    {
+      "id": "summary_footer_rows",
+      "rows": [
+        [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice",
+          "quantity",
+          "totalPrice"
+        ],
+        [
+          "990000000002",
+          "Normal",
+          "100",
+          "180",
+          "2",
+          "200"
+        ],
+        [
+          "",
+          "TOTAL",
+          "100",
+          "180",
+          "2",
+          "200"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 1,
+        "hasHeader": true,
+        "headerRows": [
+          0
+        ],
+        "headerMode": "legacy-fast-path",
+        "mergedHeaders": [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice",
+          "quantity",
+          "totalPrice"
+        ],
+        "columns": [
+          "0:barcode:alias:high:source",
+          "1:productName:alias:high:source",
+          "2:purchasePrice:alias:high:source",
+          "3:retailPrice:alias:high:source",
+          "4:quantity:alias:high:source",
+          "5:totalPrice:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "purchasePrice": 2,
+          "retailPrice": 3,
+          "quantity": 4,
+          "totalPrice": 5
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:alias-match"
+          ],
+          "productName": [
+            "1:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "2:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "3:1.000:alias-match"
+          ],
+          "quantity": [
+            "4:1.000:alias-match"
+          ],
+          "totalPrice": [
+            "5:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          2
+        ],
+        "droppedSummaryRows": 1,
+        "warnings": [],
+        "editableRows": [
+          "2|990000000002||Normal||100|180|2||"
+        ],
+        "previewFingerprint": "46751857e6cf9a30ff497d06bf462152ea2e36a01c79543d23f30b3a842bbc24"
+      }
+    },
+    {
+      "id": "leading_zero_barcode",
+      "rows": [
+        [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice"
+        ],
+        [
+          "00123456",
+          "Leading Zero",
+          "100",
+          "180"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 1,
+        "hasHeader": true,
+        "headerRows": [
+          0
+        ],
+        "headerMode": "legacy-fast-path",
+        "mergedHeaders": [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice"
+        ],
+        "columns": [
+          "0:barcode:alias:high:source",
+          "1:productName:alias:high:source",
+          "2:purchasePrice:alias:high:source",
+          "3:retailPrice:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "purchasePrice": 2,
+          "retailPrice": 3
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:alias-match"
+          ],
+          "productName": [
+            "1:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "2:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "3:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          2
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "2|00123456||Leading Zero||100|180|||"
+        ],
+        "previewFingerprint": "0309cddb07498115dec6d624237af2923e4447fa74c64d375612661069543a6c"
+      }
+    },
+    {
+      "id": "locale_numeric_formats",
+      "rows": [
+        [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice"
+        ],
+        [
+          "990000000003",
+          "EU Grouped",
+          "1.234,56",
+          "2.000"
+        ],
+        [
+          "990000000004",
+          "US Grouped",
+          "1,234.56",
+          "2,000"
+        ],
+        [
+          "990000000005",
+          "Comma Decimal",
+          "1234,56",
+          "2000"
+        ],
+        [
+          "990000000006",
+          "Integer",
+          "1234",
+          "2000"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 1,
+        "hasHeader": true,
+        "headerRows": [
+          0
+        ],
+        "headerMode": "legacy-fast-path",
+        "mergedHeaders": [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice"
+        ],
+        "columns": [
+          "0:barcode:alias:high:source",
+          "1:productName:alias:high:source",
+          "2:purchasePrice:alias:high:source",
+          "3:retailPrice:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "purchasePrice": 2,
+          "retailPrice": 3
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:alias-match"
+          ],
+          "productName": [
+            "1:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "2:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "3:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "2|990000000003||EU Grouped||1.234,56|2.000|||",
+          "3|990000000004||US Grouped||1,234.56|2,000|||",
+          "4|990000000005||Comma Decimal||1234,56|2000|||",
+          "5|990000000006||Integer||1234|2000|||"
+        ],
+        "previewFingerprint": "af51ce9e001fb1c848c13521131fd340567b0f956022b59279e1af462e1da900"
+      }
+    },
+    {
+      "id": "real_quantity_plus_quantity",
+      "rows": [
+        [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice",
+          "quantity",
+          "realQuantity"
+        ],
+        [
+          "990000000007",
+          "Counted",
+          "100",
+          "180",
+          "5",
+          "9"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 1,
+        "hasHeader": true,
+        "headerRows": [
+          0
+        ],
+        "headerMode": "legacy-fast-path",
+        "mergedHeaders": [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice",
+          "quantity",
+          "realQuantity"
+        ],
+        "columns": [
+          "0:barcode:alias:high:source",
+          "1:productName:alias:high:source",
+          "2:purchasePrice:alias:high:source",
+          "3:retailPrice:alias:high:source",
+          "4:quantity:alias:high:source",
+          "5:realQuantity:alias:high:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "purchasePrice": 2,
+          "retailPrice": 3,
+          "quantity": 4,
+          "realQuantity": 5
+        },
+        "rejectedAmbiguousCandidates": [],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:alias-match"
+          ],
+          "productName": [
+            "1:1.000:alias-match"
+          ],
+          "purchasePrice": [
+            "2:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "3:1.000:alias-match"
+          ],
+          "quantity": [
+            "4:1.000:alias-match"
+          ],
+          "realQuantity": [
+            "5:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          2
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "2|990000000007||Counted||100|180|9||"
+        ],
+        "previewFingerprint": "053d4439a04f7fd648c86166bb2f6f4f782ca7fc45f5db38e988247e20f19ea8"
+      }
+    },
+    {
+      "id": "receiving_only_keys_excluded",
+      "rows": [
+        [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice",
+          "quantity",
+          "discount",
+          "discountedPrice",
+          "oldPurchasePrice",
+          "oldRetailPrice",
+          "complete"
+        ],
+        [
+          "990000000008",
+          "Receiving",
+          "100",
+          "180",
+          "5",
+          "10",
+          "90",
+          "80",
+          "160",
+          "true"
+        ]
+      ],
+      "expected": {
+        "dataRowIndex": 1,
+        "hasHeader": true,
+        "headerRows": [
+          0
+        ],
+        "headerMode": "legacy-fast-path",
+        "mergedHeaders": [
+          "barcode",
+          "productName",
+          "purchasePrice",
+          "retailPrice",
+          "quantity",
+          "discount",
+          "discountedPrice",
+          "oldPurchasePrice",
+          "oldRetailPrice",
+          "complete"
+        ],
+        "columns": [
+          "0:barcode:alias:high:source",
+          "1:productName:alias:high:source",
+          "2:purchasePrice:alias:high:source",
+          "3:retailPrice:alias:high:source",
+          "4:quantity:alias:high:source",
+          "5:discount:alias:high:source",
+          "6:discountedPrice:alias:high:source",
+          "7:oldPurchasePrice:alias:high:source",
+          "8:oldRetailPrice:alias:high:source",
+          "9::unknown:low:source"
+        ],
+        "selectedCandidates": {
+          "barcode": 0,
+          "productName": 1,
+          "purchasePrice": 2,
+          "retailPrice": 3,
+          "quantity": 4,
+          "discount": 5,
+          "discountedPrice": 6,
+          "oldPurchasePrice": 7,
+          "oldRetailPrice": 8
+        },
+        "rejectedAmbiguousCandidates": [
+          "itemNumber",
+          "totalPrice"
+        ],
+        "candidateTrace": {
+          "barcode": [
+            "0:1.000:alias-match"
+          ],
+          "productName": [
+            "1:1.000:alias-match"
+          ],
+          "itemNumber": [
+            "9:0.200:short=0.00+alphaNum=0.00"
+          ],
+          "purchasePrice": [
+            "2:1.000:alias-match"
+          ],
+          "retailPrice": [
+            "3:1.000:alias-match"
+          ],
+          "quantity": [
+            "4:1.000:alias-match"
+          ],
+          "totalPrice": [
+            "9:0.000:mul=0.00"
+          ],
+          "discount": [
+            "5:1.000:alias-match"
+          ],
+          "discountedPrice": [
+            "6:1.000:alias-match"
+          ],
+          "oldPurchasePrice": [
+            "7:1.000:alias-match"
+          ],
+          "oldRetailPrice": [
+            "8:1.000:alias-match"
+          ]
+        },
+        "sourceRowNumbers": [
+          2
+        ],
+        "droppedSummaryRows": 0,
+        "warnings": [],
+        "editableRows": [
+          "2|990000000008||Receiving||100|180|5||"
+        ],
+        "previewFingerprint": "29843fab3222e4ef0066fab1195ffdd68a32de23697e6a4f5592bc8a2e292a06"
+      }
+    }
+  ]
+}

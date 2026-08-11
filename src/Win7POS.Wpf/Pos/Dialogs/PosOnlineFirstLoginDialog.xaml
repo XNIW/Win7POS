@@ -44,10 +44,12 @@
                     <ColumnDefinition Width="*" MinWidth="260"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock x:Name="ServerStatusText" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="#2E7D32" Text="{loc:Loc onlineFirstLogin.serverConfigured}"/>
+                <TextBlock x:Name="ServerStatusText" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="#2E7D32" Text="{loc:Loc onlineFirstLogin.serverConfigured}"
+                           AutomationProperties.AutomationId="PosAccess.ServerStatus" AutomationProperties.LiveSetting="Polite"/>
 
                 <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,0,0,12">
-                    <Border x:Name="NetworkStatusBadge" Padding="9,5" CornerRadius="8" Background="#E8F2ED" BorderBrush="#BFD9C9" BorderThickness="1" HorizontalAlignment="Left">
+                    <Border x:Name="NetworkStatusBadge" Padding="9,5" CornerRadius="8" Background="#E8F2ED" BorderBrush="#BFD9C9" BorderThickness="1" HorizontalAlignment="Left"
+                            AutomationProperties.AutomationId="PosAccess.NetworkStatus" AutomationProperties.Name="{Binding ElementName=NetworkStatusText, Path=Text}" AutomationProperties.LiveSetting="Polite">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Grid Width="18" Height="16" Margin="0,0,7,0" VerticalAlignment="Center">
                                 <Path x:Name="NetworkWifiArcLarge" Stroke="#2E7D32" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 2,7 C 6,3 12,3 16,7"/>
@@ -65,13 +67,16 @@
                 </StackPanel>
 
                 <TextBlock x:Name="ShopCodeLabel" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc access.login.shopCode}" Foreground="#666"/>
-                <TextBox x:Name="ShopCodeBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+                <TextBox x:Name="ShopCodeBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"
+                         AutomationProperties.AutomationId="PosAccess.ShopCode" AutomationProperties.LabeledBy="{Binding ElementName=ShopCodeLabel}"/>
 
                 <TextBlock x:Name="StaffCodeLabel" Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc access.login.staffCode}" Foreground="#666"/>
-                <TextBox x:Name="StaffCodeBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+                <TextBox x:Name="StaffCodeBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"
+                         AutomationProperties.AutomationId="PosAccess.StaffCode" AutomationProperties.LabeledBy="{Binding ElementName=StaffCodeLabel}"/>
 
                 <TextBlock x:Name="CredentialLabel" Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc access.login.credential}" Foreground="#666"/>
-                <PasswordBox x:Name="CredentialBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+                <PasswordBox x:Name="CredentialBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"
+                             AutomationProperties.AutomationId="PosAccess.Credential" AutomationProperties.LabeledBy="{Binding ElementName=CredentialLabel}"/>
 
                 <TextBlock x:Name="DeviceNameLabel" Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc access.login.deviceName}" Foreground="#666"/>
                 <TextBlock x:Name="DeviceNameText" Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10" Padding="0,6" Foreground="#555" TextWrapping="Wrap"/>
@@ -89,15 +94,17 @@
                             <ColumnDefinition Width="*" MinWidth="260"/>
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,8" Text="{loc:Loc onlineFirstLogin.adminWebUrl}" Foreground="#666"/>
-                        <TextBox x:Name="BaseUrlBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" MinHeight="34" Padding="8,6" TextChanged="OnBaseUrlChanged"/>
+                        <TextBlock x:Name="BaseUrlLabel" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,8" Text="{loc:Loc onlineFirstLogin.adminWebUrl}" Foreground="#666"/>
+                        <TextBox x:Name="BaseUrlBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" MinHeight="34" Padding="8,6" TextChanged="OnBaseUrlChanged"
+                                 AutomationProperties.AutomationId="PosAccess.BaseUrl" AutomationProperties.LabeledBy="{Binding ElementName=BaseUrlLabel}"/>
 
                         <TextBlock Grid.Row="1" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="{loc:Loc onlineFirstLogin.urlHint}"/>
                     </Grid>
                 </Expander>
 
                 <Border x:Name="StatusBanner" Grid.Row="8" Grid.ColumnSpan="2" Margin="0,10,0,0" Padding="10,8" CornerRadius="8" Background="#F5EDF9" BorderBrush="#DAC9E8" BorderThickness="1" Visibility="Collapsed">
-                    <TextBlock x:Name="StatusText" Foreground="#5E3F86" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="StatusText" Foreground="#5E3F86" TextWrapping="Wrap"
+                               AutomationProperties.AutomationId="PosAccess.Status" AutomationProperties.LiveSetting="Assertive"/>
                 </Border>
 
                 <StackPanel x:Name="ProgressPanel" Grid.Row="9" Grid.ColumnSpan="2" Margin="0,10,0,0" Visibility="Collapsed">
@@ -152,7 +159,8 @@
                                 <TextBlock x:Name="StepFinalizeText" Grid.Row="4" Grid.Column="1" Margin="2,1,0,0" Foreground="#514A5E" Text="{loc:Loc onlineFirstLogin.stepFinalizeLocalDb}"/>
                             </Grid>
 
-                            <ProgressBar x:Name="SetupProgressBar" Height="12" IsIndeterminate="True" Minimum="0" Maximum="100"/>
+                            <ProgressBar x:Name="SetupProgressBar" Height="12" IsIndeterminate="True" Minimum="0" Maximum="100"
+                                         AutomationProperties.AutomationId="PosAccess.SetupProgress" AutomationProperties.Name="{loc:Loc onlineFirstLogin.setupTitle}"/>
                             <Border Margin="0,8,0,0" Padding="8,6" CornerRadius="8" Background="#FAF8FC" BorderBrush="#ECE4F2" BorderThickness="1">
                                 <TextBlock x:Name="SetupCountsText" FontSize="11" Foreground="#6D617C" TextWrapping="Wrap"/>
                             </Border>
@@ -173,31 +181,34 @@
         </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button x:Name="CopyDiagnosticsButton" MinWidth="128" Height="42" Margin="0,0,10,0" Click="OnCopyDiagnosticsClick" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed" AutomationProperties.Name="{loc:Loc onlineFirstLogin.copyDiagnostics}">
+            <Button x:Name="CopyDiagnosticsButton" MinWidth="128" Height="42" Margin="0,0,10,0" Click="OnCopyDiagnosticsClick" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed" AutomationProperties.AutomationId="PosAccess.CopyDiagnostics" AutomationProperties.Name="{loc:Loc onlineFirstLogin.copyDiagnostics}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc onlineFirstLogin.copyDiagnostics}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button x:Name="RetryDownloadButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnRetryDownloadClick" Style="{StaticResource DialogActionButtonStyle}" Visibility="Collapsed">
+            <Button x:Name="RetryDownloadButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnRetryDownloadClick" Style="{StaticResource DialogActionButtonStyle}" Visibility="Collapsed"
+                    AutomationProperties.AutomationId="PosAccess.Retry" AutomationProperties.Name="{loc:Loc onlineFirstLogin.retryDownload}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc onlineFirstLogin.retryDownload}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button x:Name="RecoveryButton" MinWidth="120" Height="42" Margin="0,0,10,0" Click="OnRecoveryClick" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed" AutomationProperties.Name="{loc:Loc access.login.localRecovery}">
+            <Button x:Name="RecoveryButton" MinWidth="120" Height="42" Margin="0,0,10,0" Click="OnRecoveryClick" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed" AutomationProperties.AutomationId="PosAccess.LocalRecovery" AutomationProperties.Name="{loc:Loc access.login.localRecovery}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconDatabase}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock x:Name="RecoveryButtonText" Text="{loc:Loc access.login.localRecovery}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button x:Name="ConnectButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
+            <Button x:Name="ConnectButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"
+                    AutomationProperties.AutomationId="PosAccess.SignIn" AutomationProperties.Name="{loc:Loc access.login.signIn}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock x:Name="ConnectButtonText" Text="{loc:Loc access.login.signIn}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button x:Name="CancelButton" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">
+            <Button x:Name="CancelButton" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"
+                    AutomationProperties.AutomationId="PosAccess.Cancel" AutomationProperties.Name="{loc:Loc common.cancel}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>

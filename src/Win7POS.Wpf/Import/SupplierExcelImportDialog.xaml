@@ -19,7 +19,29 @@
         MinHeight="560"
         ResizeMode="CanResize"
         ShowInTaskbar="False">
-    <Grid Margin="0" Background="#F1EDF7">
+    <chrome:DialogShellWindow.Resources>
+        <Style TargetType="DataGrid" BasedOn="{StaticResource ModernDataGridStyle}">
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+        </Style>
+        <Style x:Key="SupplierImportStepBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource SurfaceBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Margin" Value="4,0"/>
+        </Style>
+        <Style x:Key="SupplierImportStepTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+    </chrome:DialogShellWindow.Resources>
+    <Grid Margin="0" Background="#F1EDF7" FocusManager.FocusedElement="{Binding ElementName=BrowseButton}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -29,8 +51,9 @@
 
         <TextBlock Grid.Row="0" Text="{loc:Loc supplierExcelImport.title}" Style="{StaticResource DialogTitleStyle}"/>
 
-        <Border Grid.Row="1" Margin="0,10,0,12" Padding="12" CornerRadius="8"
-                Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1">
+        <Border Grid.Row="1" Margin="0,10,0,12" Padding="8" CornerRadius="8"
+                Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1"
+                AutomationProperties.AutomationId="SupplierImport.StepIndicator">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -38,17 +61,98 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{loc:Loc supplierExcelImport.stepChooseFile}" FontWeight="SemiBold"/>
-                <TextBlock Grid.Column="1" Text="{loc:Loc supplierExcelImport.stepAnalyzeColumns}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="2" Text="{loc:Loc supplierExcelImport.stepFixRows}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="3" Text="{loc:Loc supplierExcelImport.stepVerifySync}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                <Border Grid.Column="0">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource SupplierImportStepBorderStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStep1}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
+                                    <Setter Property="BorderThickness" Value="2"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.stepChooseFile}" Style="{StaticResource SupplierImportStepTextStyle}"/>
+                        <TextBlock Margin="0,2,0,0"
+                                   Text="{loc:Loc supplierExcelImport.stepCurrent}"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   FontSize="11"
+                                   TextAlignment="Center"
+                                   Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource SupplierImportStepBorderStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStep2}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
+                                    <Setter Property="BorderThickness" Value="2"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.stepAnalyzeColumns}" Style="{StaticResource SupplierImportStepTextStyle}"/>
+                        <TextBlock Margin="0,2,0,0"
+                                   Text="{loc:Loc supplierExcelImport.stepCurrent}"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   FontSize="11"
+                                   TextAlignment="Center"
+                                   Visibility="{Binding IsStep2, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource SupplierImportStepBorderStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStep3}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
+                                    <Setter Property="BorderThickness" Value="2"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.stepFixRows}" Style="{StaticResource SupplierImportStepTextStyle}"/>
+                        <TextBlock Margin="0,2,0,0"
+                                   Text="{loc:Loc supplierExcelImport.stepCurrent}"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   FontSize="11"
+                                   TextAlignment="Center"
+                                   Visibility="{Binding IsStep3, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="3">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource SupplierImportStepBorderStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStep4}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
+                                    <Setter Property="BorderThickness" Value="2"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.stepVerifySync}" Style="{StaticResource SupplierImportStepTextStyle}"/>
+                        <TextBlock Margin="0,2,0,0"
+                                   Text="{loc:Loc supplierExcelImport.stepCurrent}"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   FontSize="11"
+                                   TextAlignment="Center"
+                                   Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 
-        <ScrollViewer Grid.Row="2"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      CanContentScroll="False">
+        <Grid Grid.Row="2">
         <Grid>
             <Grid Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}">
                 <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
@@ -64,10 +168,13 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Button MinWidth="180"
+                            <Button x:Name="BrowseButton"
+                                    MinWidth="180"
                                     Height="42"
                                     Command="{Binding BrowseCommand}"
-                                    Style="{StaticResource DialogActionButtonStyle}">
+                                    Style="{StaticResource DialogActionButtonStyle}"
+                                    AutomationProperties.AutomationId="SupplierImport.Browse"
+                                    AutomationProperties.Name="{loc:Loc supplierExcelImport.chooseExcelButton}">
                                 <StackPanel Style="{StaticResource IconButtonContent}">
                                     <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
                                     <TextBlock Text="{loc:Loc supplierExcelImport.chooseExcelButton}" Margin="8,0,0,0"/>
@@ -87,7 +194,7 @@
                             <TextBlock Margin="0,16,0,0" Foreground="#5E3F86">
                                 <Run Text="{loc:Loc supplierExcelImport.sheetDetected}"/>
                                 <Run Text=" "/>
-                                <Run Text="{Binding SelectedSheetName}"/>
+                                <Run Text="{Binding SelectedSheetName, Mode=OneWay}"/>
                             </TextBlock>
                             <TextBlock Margin="0,6,0,0"
                                        Foreground="#5E3F86"
@@ -113,11 +220,11 @@
                 <Border Grid.Row="0" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
                     <StackPanel>
                         <WrapPanel>
-                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.sheet}"/><Run Text=" "/><Run Text="{Binding SelectedSheetName}"/></TextBlock>
-                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabNew}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding NewProductsCount}"/></TextBlock>
-                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabUpdates}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding UpdatedProductsCount}"/></TextBlock>
-	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.warnings}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding WarningsCount}"/></TextBlock>
-	                            <TextBlock><Run Text="{loc:Loc supplierExcelImport.errors}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding ErrorsCount}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.sheet}"/><Run Text=" "/><Run Text="{Binding SelectedSheetName, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabNew}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding NewProductsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabUpdates}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding UpdatedProductsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.warnings}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding WarningsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock><Run Text="{loc:Loc supplierExcelImport.errors}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding ErrorsCount, Mode=OneWay}"/></TextBlock>
 	                        </WrapPanel>
 	                        <WrapPanel Margin="0,8,0,0">
 	                            <TextBlock Margin="0,0,16,0" Text="{Binding HeaderSummary}"/>
@@ -131,11 +238,15 @@
                 </Border>
 
                 <DataGrid Grid.Row="1"
+                          x:Name="ColumnMappingGrid"
                           ItemsSource="{Binding Columns}"
                           AutoGenerateColumns="False"
+                          IsReadOnly="False"
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
-                          GridLinesVisibility="All">
+                          GridLinesVisibility="Horizontal"
+                          AutomationProperties.AutomationId="SupplierImport.ColumnMappingGrid"
+                          AutomationProperties.Name="{loc:Loc supplierExcelImport.stepAnalyzeColumns}">
                     <DataGrid.Columns>
                         <DataGridCheckBoxColumn Header="{loc:Loc supplierExcelImport.columnEnabled}" Binding="{Binding IsEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
                         <DataGridTextColumn Header="{loc:Loc supplierExcelImport.columnOriginalName}" Binding="{Binding DisplayName}" IsReadOnly="True" Width="2*"/>
@@ -167,10 +278,21 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <GroupBox Header="{loc:Loc supplierExcelImport.warnings}" Margin="0,0,6,0">
-                        <DataGrid ItemsSource="{Binding Warnings}" AutoGenerateColumns="True" IsReadOnly="True"/>
+                        <DataGrid ItemsSource="{Binding Warnings}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.issueRows}" Binding="{Binding RowsDisplay}" Width="85"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.issueMessage}" Binding="{Binding Message}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </GroupBox>
                     <GroupBox Grid.Column="1" Header="{loc:Loc supplierExcelImport.errors}" Margin="6,0,0,0">
-                        <DataGrid ItemsSource="{Binding Errors}" AutoGenerateColumns="True" IsReadOnly="True"/>
+                        <DataGrid ItemsSource="{Binding Errors}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.issueRows}" Binding="{Binding RowsDisplay}" Width="70"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode}" Width="120"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.issueMessage}" Binding="{Binding Message}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </GroupBox>
                 </Grid>
             </Grid>
@@ -181,7 +303,12 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                <ScrollViewer Grid.Row="0"
+                              MaxHeight="160"
+                              Margin="0,0,0,10"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
                     <Border Padding="10"
                             Background="#FFF8E1"
                             BorderBrush="#F0C36D"
@@ -226,6 +353,7 @@
                                    Foreground="#7A4A00"/>
                     </Border>
                 </StackPanel>
+                </ScrollViewer>
 
                 <Border Grid.Row="1" Margin="0,0,0,10" Padding="10" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
                     <WrapPanel VerticalAlignment="Center">
@@ -245,11 +373,15 @@
                 </Border>
 
                 <DataGrid Grid.Row="2"
+                          x:Name="EditableRowsGrid"
                           ItemsSource="{Binding EditableRows}"
                           AutoGenerateColumns="False"
+                          IsReadOnly="False"
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
-	                          GridLinesVisibility="All">
+	                      GridLinesVisibility="Horizontal"
+                          AutomationProperties.AutomationId="SupplierImport.EditableRowsGrid"
+                          AutomationProperties.Name="{loc:Loc supplierExcelImport.stepFixRows}">
                     <DataGrid.Columns>
                         <DataGridCheckBoxColumn Header="{loc:Loc supplierExcelImport.fieldSkip}" Binding="{Binding IsSkipped, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="58"/>
                         <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
@@ -290,26 +422,31 @@
                                        TextWrapping="Wrap"
                                        Foreground="#6B5B73"/>
                             <WrapPanel Margin="0,10,0,0">
-                                <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc common.total}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncTotalRowsCount}"/></TextBlock>
-                                <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabNew}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncNewProductsCount}"/></TextBlock>
-                                <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabUpdates}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncUpdatedProductsCount}"/></TextBlock>
-                                <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabNoChanges}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncNoChangeRowsCount}"/></TextBlock>
-                                <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabSkipped}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncSkippedRowsCount}"/></TextBlock>
-                                <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.warnings}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncWarningsCount}"/></TextBlock>
-                                <TextBlock><Run Text="{loc:Loc supplierExcelImport.errors}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncErrorsCount}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc common.total}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncTotalRowsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabNew}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncNewProductsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabUpdates}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncUpdatedProductsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabNoChanges}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncNoChangeRowsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.tabSkipped}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncSkippedRowsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock Margin="0,0,16,0"><Run Text="{loc:Loc supplierExcelImport.warnings}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncWarningsCount, Mode=OneWay}"/></TextBlock>
+	                            <TextBlock><Run Text="{loc:Loc supplierExcelImport.errors}"/><Run Text=":"/><Run Text=" "/><Run Text="{Binding SyncErrorsCount, Mode=OneWay}"/></TextBlock>
                             </WrapPanel>
                             <DockPanel Margin="0,10,0,0">
                                 <TextBlock Text="{loc:Loc supplierExcelImport.search}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <TextBox MinWidth="260"
                                          Height="32"
                                          Text="{Binding SyncSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                         Style="{StaticResource ModernTextBoxStyle}"/>
+                                         Style="{StaticResource ModernTextBoxStyle}"
+                                         AutomationProperties.AutomationId="SupplierImport.ReviewSearch"
+                                         AutomationProperties.Name="{loc:Loc supplierExcelImport.search}"/>
                             </DockPanel>
                         </StackPanel>
                     </Border>
                 </StackPanel>
 
-                <TabControl Grid.Row="1">
+                <TabControl Grid.Row="1"
+                            x:Name="ReviewTabs"
+                            AutomationProperties.AutomationId="SupplierImport.ReviewTabs"
+                            AutomationProperties.Name="{loc:Loc supplierExcelImport.stepVerifySync}">
                     <TabItem Header="{loc:Loc supplierExcelImport.tabNew}">
                         <DataGrid ItemsSource="{Binding SyncNewProductsView}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
                             <DataGrid.Columns>
@@ -364,60 +501,123 @@
                         </DataGrid>
                     </TabItem>
                     <TabItem Header="{loc:Loc supplierExcelImport.warnings}">
-                        <DataGrid ItemsSource="{Binding SyncWarningsView}" AutoGenerateColumns="True" IsReadOnly="True" CanUserAddRows="False"/>
+                        <DataGrid ItemsSource="{Binding SyncWarningsView}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.issueMessage}" Binding="{Binding Message}" Width="3*"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.issueRows}" Binding="{Binding RowsDisplay}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </TabItem>
                     <TabItem Header="{loc:Loc supplierExcelImport.errors}">
-                        <DataGrid ItemsSource="{Binding SyncErrorsView}" AutoGenerateColumns="True" IsReadOnly="True" CanUserAddRows="False"/>
+                        <DataGrid ItemsSource="{Binding SyncErrorsView}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.issueMessage}" Binding="{Binding Message}" Width="3*"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.issueRows}" Binding="{Binding RowsDisplay}" Width="*"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode}" Width="130"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </TabItem>
                 </TabControl>
             </Grid>
         </Grid>
-        </ScrollViewer>
+            <Border Background="#E6FCFBFE"
+                    BorderBrush="{StaticResource SurfaceBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource RadiusMedium}"
+                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"
+                    AutomationProperties.AutomationId="SupplierImport.BusyState"
+                    AutomationProperties.LiveSetting="Polite">
+                <StackPanel Width="360" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ProgressBar Height="6" IsIndeterminate="True"/>
+                    <TextBlock Margin="0,14,0,0"
+                               Text="{Binding Status}"
+                               FontWeight="SemiBold"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Margin="0,6,0,0"
+                               Text="{loc:Loc supplierExcelImport.busyHelp}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </Grid>
 
         <Grid Grid.Row="3" Margin="{StaticResource DialogFooterMargin}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#5E3F86"/>
+            <TextBlock Text="{Binding Status}"
+                       VerticalAlignment="Center"
+                       TextWrapping="Wrap"
+                       Foreground="#5E3F86"
+                       AutomationProperties.AutomationId="SupplierImport.Status"
+                       AutomationProperties.LiveSetting="Polite"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button MinWidth="100" Height="42" Margin="0,0,8,0"
-                        Command="{Binding BackCommand}" Style="{StaticResource DialogCancelButtonStyle}">
+                <Button x:Name="BackButton" MinWidth="100" Height="42" Margin="0,0,8,0"
+                        Command="{Binding BackCommand}"
+                        Style="{StaticResource DialogCancelButtonStyle}"
+                        AutomationProperties.AutomationId="SupplierImport.Back"
+                        AutomationProperties.Name="{loc:Loc supplierExcelImport.back}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconPrev}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc supplierExcelImport.back}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <Button MinWidth="100" Height="42" Margin="0,0,8,0"
-                        Command="{Binding AnalyzeCommand}" Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogCancelButtonStyle}">
+                <Button x:Name="AnalyzeButton" MinWidth="100" Height="42" Margin="0,0,8,0"
+                        Command="{Binding AnalyzeCommand}"
+                        Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}"
+                        IsDefault="True"
+                        Style="{StaticResource DialogActionButtonStyle}"
+                        AutomationProperties.AutomationId="SupplierImport.Analyze"
+                        AutomationProperties.Name="{loc:Loc supplierExcelImport.analyze}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc supplierExcelImport.analyze}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <Button MinWidth="100" Height="42" Margin="0,0,8,0"
-                        Command="{Binding NextCommand}" Visibility="{Binding IsStep2, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}">
+                <Button x:Name="NextButton" MinWidth="100" Height="42" Margin="0,0,8,0"
+                        Command="{Binding NextCommand}"
+                        Visibility="{Binding IsStep2, Converter={StaticResource BoolToVis}}"
+                        IsDefault="True"
+                        Style="{StaticResource DialogActionButtonStyle}"
+                        AutomationProperties.AutomationId="SupplierImport.Next"
+                        AutomationProperties.Name="{loc:Loc supplierExcelImport.next}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <TextBlock Text="{loc:Loc supplierExcelImport.next}" Margin="0,0,8,0"/>
                         <Path Data="{StaticResource IconNext}" Style="{StaticResource ButtonIconPathStyle}"/>
                     </StackPanel>
                 </Button>
-                <Button MinWidth="150" Height="42" Margin="0,0,8,0"
-                        Command="{Binding SyncPreviewCommand}" Visibility="{Binding IsStep3, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}">
+                <Button x:Name="SyncPreviewButton" MinWidth="150" Height="42" Margin="0,0,8,0"
+                        Command="{Binding SyncPreviewCommand}"
+                        Visibility="{Binding IsStep3, Converter={StaticResource BoolToVis}}"
+                        IsDefault="True"
+                        Style="{StaticResource DialogActionButtonStyle}"
+                        AutomationProperties.AutomationId="SupplierImport.SyncPreview"
+                        AutomationProperties.Name="{loc:Loc supplierExcelImport.continueSyncDb}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc supplierExcelImport.continueSyncDb}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <Button MinWidth="150" Height="42" Margin="0,0,8,0"
-                        Command="{Binding ApplyCommand}" Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}">
+                <Button x:Name="ApplyButton" MinWidth="150" Height="42" Margin="0,0,8,0"
+                        Command="{Binding ApplyCommand}"
+                        Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}"
+                        IsDefault="True"
+                        Style="{StaticResource DialogActionButtonStyle}"
+                        AutomationProperties.AutomationId="SupplierImport.Apply"
+                        AutomationProperties.Name="{loc:Loc supplierExcelImport.confirmApply}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc supplierExcelImport.confirmApply}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <Button MinWidth="100" Height="42" IsCancel="True"
-                        Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}">
+                <Button x:Name="CancelButton" MinWidth="100" Height="42" IsCancel="True"
+                        Command="{Binding CancelCommand}"
+                        Style="{StaticResource DialogCancelButtonStyle}"
+                        AutomationProperties.AutomationId="SupplierImport.Cancel"
+                        AutomationProperties.Name="{loc:Loc common.cancel}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>

@@ -43,27 +43,33 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Barcode -->
-                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc products.barcode}"/>
+                    <TextBlock x:Name="ProductBarcodeLabel" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc products.barcode}"/>
                     <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
                              Text="{Binding Barcode, UpdateSourceTrigger=PropertyChanged}"
                              MaxLength="256"
                              Style="{StaticResource ModernTextBoxStyle}"
-                             IsReadOnly="{Binding IsBarcodeReadOnly}"/>
+                             IsReadOnly="{Binding IsBarcodeReadOnly}"
+                             AutomationProperties.AutomationId="ProductEditor.Barcode"
+                             AutomationProperties.LabeledBy="{Binding ElementName=ProductBarcodeLabel}"/>
 
                     <!-- Nome -->
-                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.name}"/>
+                    <TextBlock x:Name="ProductNameLabel" Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.name}"/>
                     <TextBox Grid.Row="1" Grid.Column="1" Margin="8,10,0,0"
                              Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"
                              MaxLength="512"
-                             Style="{StaticResource ModernTextBoxStyle}"/>
+                             Style="{StaticResource ModernTextBoxStyle}"
+                             AutomationProperties.AutomationId="ProductEditor.Name"
+                             AutomationProperties.LabeledBy="{Binding ElementName=ProductNameLabel}"/>
 
                     <!-- Prezzo vendita -->
-                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.salePriceClp}"/>
+                    <TextBlock x:Name="ProductSalePriceLabel" Grid.Row="2" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.salePriceClp}"/>
                     <TextBox x:Name="PriceBox" Grid.Row="2" Grid.Column="1" Margin="8,10,0,0"
                              Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource ModernTextBoxStyle}"
                              KeyDown="PriceBox_KeyDown"
-                             GotKeyboardFocus="PriceBox_GotKeyboardFocus"/>
+                             GotKeyboardFocus="PriceBox_GotKeyboardFocus"
+                             AutomationProperties.AutomationId="ProductEditor.SalePrice"
+                             AutomationProperties.LabeledBy="{Binding ElementName=ProductSalePriceLabel}"/>
 
                     <!-- Prezzo acquisto -->
                     <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.purchasePrice}"/>
@@ -184,14 +190,16 @@
         </Border>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <Button MinWidth="100" Margin="0,0,10,0" IsCancel="True"
-                    Style="{StaticResource DialogCancelButtonStyle}" Command="{Binding CancelCommand}">
+                    Style="{StaticResource DialogCancelButtonStyle}" Command="{Binding CancelCommand}"
+                    AutomationProperties.AutomationId="ProductEditor.Cancel" AutomationProperties.Name="{loc:Loc common.cancel}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
             <Button MinWidth="100" IsDefault="True"
-                    Style="{StaticResource DialogActionButtonStyle}" Command="{Binding ConfirmCommand}">
+                    Style="{StaticResource DialogActionButtonStyle}" Command="{Binding ConfirmCommand}"
+                    AutomationProperties.AutomationId="ProductEditor.Save" AutomationProperties.Name="{loc:Loc common.save}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.save}" Margin="8,0,0,0"/>
