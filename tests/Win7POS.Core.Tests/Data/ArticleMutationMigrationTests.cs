@@ -29,6 +29,7 @@ public sealed class ArticleMutationMigrationTests
                 transaction);
             DbInitializer.EnsureArticleMutationSchema(connection, transaction);
             DbInitializer.EnsureProductImageSchema(connection, transaction);
+            DbInitializer.EnsureCustomerOrderInboxSchema(connection, transaction);
             transaction.Commit();
         }
 
@@ -70,7 +71,7 @@ public sealed class ArticleMutationMigrationTests
             SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(detector),
             "Fresh schema does not satisfy the current migration invariant.");
         Assert.AreEqual(
-            "0011-product-image-outbox",
+            "0012-customer-order-inbox",
             SchemaMigrationRegistry.Latest.MigrationId);
     }
 

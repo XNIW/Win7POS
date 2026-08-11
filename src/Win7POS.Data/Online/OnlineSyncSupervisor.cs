@@ -36,6 +36,7 @@ namespace Win7POS.Data.Online
         public OnlineSyncLaneOutcome Sales { get; internal set; }
         public OnlineSyncLaneOutcome ArticleMutations { get; internal set; }
         public OnlineSyncLaneOutcome ProductImages { get; internal set; }
+        public OnlineSyncLaneOutcome CustomerOrders { get; internal set; }
 
         public bool AuthenticationDenied =>
             Heartbeat?.AuthenticationDenied == true ||
@@ -43,6 +44,7 @@ namespace Win7POS.Data.Online
             CatalogImport?.AuthenticationDenied == true ||
             ArticleMutations?.AuthenticationDenied == true ||
             ProductImages?.AuthenticationDenied == true ||
+            CustomerOrders?.AuthenticationDenied == true ||
             CatalogDelta?.AuthenticationDenied == true;
     }
 
@@ -104,6 +106,7 @@ namespace Win7POS.Data.Online
             Signal(OnlineSyncLane.CatalogImportOutbox, OnlineSyncLaneTrigger.StartOfDay);
             Signal(OnlineSyncLane.ArticleMutationOutbox, OnlineSyncLaneTrigger.StartOfDay);
             Signal(OnlineSyncLane.ProductImageOutbox, OnlineSyncLaneTrigger.StartOfDay);
+            Signal(OnlineSyncLane.CustomerOrders, OnlineSyncLaneTrigger.StartOfDay);
         }
 
         public void Signal(OnlineSyncLane lane, OnlineSyncLaneTrigger trigger)
@@ -163,6 +166,10 @@ namespace Win7POS.Data.Online
                 OnlineSyncLane.ProductImageOutbox,
                 OnlineSyncLaneTrigger.StartOfDay,
                 waiterCancellationToken);
+            var customerOrders = TriggerAsync(
+                OnlineSyncLane.CustomerOrders,
+                OnlineSyncLaneTrigger.StartOfDay,
+                waiterCancellationToken);
             Task<OnlineSyncLaneOutcome> catalog = catalogRequired
                 ? TriggerAsync(
                     OnlineSyncLane.CatalogDelta,
@@ -176,6 +183,7 @@ namespace Win7POS.Data.Online
                 catalogImport,
                 articleMutations,
                 productImages,
+                customerOrders,
                 catalog).ConfigureAwait(false);
             return new OnlineSyncStartOfDayResult
             {
@@ -184,7 +192,8 @@ namespace Win7POS.Data.Online
                 CatalogImport = catalogImport.Result,
                 CatalogDelta = catalog.Result,
                 ArticleMutations = articleMutations.Result,
-                ProductImages = productImages.Result
+                ProductImages = productImages.Result,
+                CustomerOrders = customerOrders.Result
             };
         }
 
