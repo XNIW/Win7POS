@@ -21,9 +21,13 @@ dated reports under `docs/reports/`.
 | ASUS-W7POS-012 | Done | Shop-scoped sync, offline authorization lease, reversal line binding/economics and runtime matrix | `1b947f3776e8af71450418cfae66e407da92682b` | `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; software/runtime harness chiusi dalla final integration TASK-139 e dai workflow esatti; test su Windows 7/periferiche restano evidence esterna opzionale e non bloccante. |
 | ASUS-W7POS-013 | Done | Non-blocking catalog display-text recovery, authoritative exactness and final article-sync acceptance | Final software main `2eeb58b`; closeout docs PR | `docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`; final staging PASS, `USER_CONFIRMED_CLOSURE`, P0/P1/P2/P3=0/0/0/0, cleanup `READY_FOR_MAC_FINAL_CLEANUP`. |
 | ASUS-W7POS-014 | Closed historical | Catalog SQLite batch apply and controlled performance evidence | `bb4178b` | `docs/reports/2026-07-14_ASUS-W7POS-014_CATALOG_BATCH_PERFORMANCE.md`; staging portion historically `BLOCKED_EXTERNAL`. |
-| ASUS-W7POS-015 | Execution | Trusted POS product image Phase B and staging acceptance | Branch `codex/asus-product-image-phase-b-final-20260731` | `docs/plans/ASUS-W7POS-015_PRODUCT_IMAGE_PHASE_B.md`; coordinated with Admin `TASK-150`; physical Windows 7 `NOT_RUN`. |
+| ASUS-W7POS-015 | Done — owner-accepted external defer | Trusted POS product image Phase B and staging acceptance | Final closeout main; exact SHA in Admin TASK-150 final evidence | Repository integration and software gates complete; fresh staging acceptance is recorded canonically by Admin `TASK-150`; all exact-final Windows 7/peripheral rows are terminal `DONE_OWNER_ACCEPTED_DEFERRED`, so production remains not qualified. |
 
-## External Hardware Pending
+## External Hardware — terminal owner decision
+
+The final closeout records unavailable Windows 7 and peripheral assets as
+`DONE_OWNER_ACCEPTED_DEFERRED`. This is not an open software task and does not
+constitute physical or production certification.
 
 - Windows 7 SP1 physical machine smoke.
 - Real Xprinter/spooler test.

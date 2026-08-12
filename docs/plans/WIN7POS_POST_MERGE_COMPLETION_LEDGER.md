@@ -1,5 +1,36 @@
 # Win7POS post-merge completion ledger
 
+## Final stability closeout — 2026-08-11
+
+- Repository closeout classification:
+  `STABLE_MAIN_COMPLETE_WITH_OWNER_ACCEPTED_EXTERNAL_DEFERRALS`.
+- Storefront release train Admin `#67` then Win7POS `#88`: merged normally with
+  production/storefront defaults OFF and independently green CI.
+- Grouped NuGet PR `#86`: `DONE_MERGED` at
+  `7ad851cfe2e768770341a594ac68106a4629f4f0`; single-package PRs `#18` and
+  `#19`: `DONE_SUPERSEDED_CLOSED` by that tested group.
+- GitHub Actions PRs `#14`, `#15`, and `#16`: `DONE_MERGED` serially at
+  `97331fd2bfcc2563740d6d17433cc9db4f248d54`,
+  `9781ec39608d64c59a386b257446f6f8b2cdd350`, and
+  `e6597209e682b6b93a523687189029935f4ad1b5`; each branch was updated from
+  then-current `main` and passed fresh CI, Supply Chain, and CodeQL.
+- Concurrent owner PR `#95` (product-image sync reliability): `DONE_MERGED` at
+  `3f12f7d15d46706528145515c289e427370e0473`, with independently green CI,
+  Supply Chain, and CodeQL; the final documentation PR revalidates the combined
+  exact main.
+- Canonical 25-row physical matrix: `25/25` terminal
+  `DONE_OWNER_ACCEPTED_DEFERRED` for the exact final candidate because a Windows
+  7 target and required peripherals were unavailable. Historical PASS evidence
+  is retained but is not relabelled as final-SHA PASS.
+- TASK-150 fresh staging acceptance and cleanup are canonical in the Admin
+  repository; that evidence records the exact final Win7POS SHA after this PR
+  merges.
+- Release disposition: `RELEASE_CANDIDATE_UNSIGNED`; no production tag, no
+  production deployment, and no production qualification.
+- This section supersedes older `OPEN`, `PARTIAL`, `BLOCKED_EXTERNAL`, and
+  `PENDING` status language only for the bounded final-stability closeout. Older
+  sections remain immutable historical evidence for their original executions.
+
 ## Source and status rules
 
 - Previous software baseline: `f3e779bd537d62ed0f3ddb5333149e9213e2c13f`;
