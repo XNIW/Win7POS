@@ -176,6 +176,10 @@ Require ($stagingAcceptance -match 'DataProtectionScope\.CurrentUser' -and
          $stagingAcceptance -match 'AllowAutoRedirect\s*=\s*false' -and
          $stagingAcceptance -match 'RestartAfterOfflineQueue' -and
          $stagingAcceptance -match 'VerifyExpiredCapabilitiesAsync' -and
+         $stagingAcceptance -match 'intent_response_loss_setup_failed' -and
+         $stagingAcceptance -match 'finalized_intent_replay_not_expired' -and
+         $stagingAcceptance -match
+             'intentReplay\.FailureKind\s*==[\s\S]{0,120}ExpiredCapability' -and
          $stagingAcceptance -match 'result_issue' -and
          $stagingAcceptance -match 'CountForbiddenPersistenceMarkers' -and
          $stagingAcceptance -match 'UseTrustedProfileForAcceptance' -and
