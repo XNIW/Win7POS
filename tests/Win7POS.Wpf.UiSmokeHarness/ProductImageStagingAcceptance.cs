@@ -669,7 +669,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var intentReplay = await transport.IntentAsync(
                     IntentRequest(row, envelope),
                     CancellationToken.None).ConfigureAwait(true);
-                Require(intentReplay.IsSuccess, "intent_replay_failed");
+                Require(!intentReplay.IsSuccess &&
+                        intentReplay.FailureKind ==
+                            PosProductImageFailureKind.ExpiredCapability,
+                    "finalized_intent_replay_not_expired");
                 var finalizeReplay = await transport.FinalizeAsync(
                     FinalizeRequest(row, envelope),
                     CancellationToken.None).ConfigureAwait(true);
