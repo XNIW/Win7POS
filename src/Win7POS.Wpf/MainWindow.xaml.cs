@@ -2179,10 +2179,12 @@ namespace Win7POS.Wpf
         {
             try
             {
+                var posViewModel = GetPosViewModel();
                 var dialog = new SettingsHubDialog(
                     IsRecoveryMode,
                     App.IsSafeStart ||
-                    CurrentAccessMode == PosAuthenticatedAccessMode.LocalRecovery)
+                    CurrentAccessMode == PosAuthenticatedAccessMode.LocalRecovery,
+                    posViewModel?.CartViewMode ?? CartViewMode.Rows)
                 {
                     Owner = DialogOwnerHelper.GetSafeOwner()
                 };
@@ -2196,6 +2198,13 @@ namespace Win7POS.Wpf
                 dialog.SyncCenterRequested += (_, __) => ShowSyncCenterDialog();
                 dialog.CustomerDisplayRequested += async (_, __) => await ShowCustomerDisplaySettingsAsync().ConfigureAwait(true);
                 dialog.LanguageChangedRequested += async (_, code) => await SaveLanguagePreferenceAsync(code).ConfigureAwait(true);
+                dialog.CartViewModeChangedRequested += async (_, mode) =>
+                {
+                    var currentPosViewModel = GetPosViewModel();
+                    if (currentPosViewModel != null)
+                        await currentPosViewModel.SetCartViewModeAsync(mode).ConfigureAwait(true);
+                    PosViewControl?.RestoreScannerFocus();
+                };
 
                 dialog.ShowDialog();
             }

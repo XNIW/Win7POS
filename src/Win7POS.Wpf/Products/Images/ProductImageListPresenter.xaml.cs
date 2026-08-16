@@ -16,6 +16,20 @@ namespace Win7POS.Wpf.Products.Images
                 typeof(ProductImageListPresenter),
                 new PropertyMetadata(null, OnProductChanged));
 
+        public static readonly DependencyProperty ThumbnailWidthProperty =
+            DependencyProperty.Register(
+                nameof(ThumbnailWidth),
+                typeof(double),
+                typeof(ProductImageListPresenter),
+                new PropertyMetadata(52d));
+
+        public static readonly DependencyProperty ThumbnailHeightProperty =
+            DependencyProperty.Register(
+                nameof(ThumbnailHeight),
+                typeof(double),
+                typeof(ProductImageListPresenter),
+                new PropertyMetadata(52d));
+
         private readonly ProductImageDisplayViewModel _display =
             new ProductImageDisplayViewModel();
         private CancellationTokenSource _lifetime;
@@ -32,6 +46,18 @@ namespace Win7POS.Wpf.Products.Images
         {
             get => (ProductDetailsRow)GetValue(ProductProperty);
             set => SetValue(ProductProperty, value);
+        }
+
+        public double ThumbnailWidth
+        {
+            get => (double)GetValue(ThumbnailWidthProperty);
+            set => SetValue(ThumbnailWidthProperty, value);
+        }
+
+        public double ThumbnailHeight
+        {
+            get => (double)GetValue(ThumbnailHeightProperty);
+            set => SetValue(ThumbnailHeightProperty, value);
         }
 
         private static void OnProductChanged(
@@ -54,7 +80,12 @@ namespace Win7POS.Wpf.Products.Images
         private void Restart()
         {
             Cancel();
-            if (!IsLoaded || Product == null) return;
+            if (Product == null)
+            {
+                _display.SetNoImage();
+                return;
+            }
+            if (!IsLoaded) return;
             _lifetime = new CancellationTokenSource();
             _ = LoadAsync(
                 Product,

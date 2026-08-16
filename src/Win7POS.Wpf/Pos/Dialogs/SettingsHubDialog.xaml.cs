@@ -15,10 +15,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public event EventHandler SyncCenterRequested;
         public event EventHandler CustomerDisplayRequested;
         public event EventHandler<string> LanguageChangedRequested;
+        public event EventHandler<CartViewMode> CartViewModeChangedRequested;
 
-        public SettingsHubDialog(bool recoveryMode = false, bool syncDisabled = false)
+        private CartViewMode _cartViewMode;
+
+        public SettingsHubDialog(
+            bool recoveryMode = false,
+            bool syncDisabled = false,
+            CartViewMode cartViewMode = CartViewMode.Rows)
         {
             InitializeComponent();
+            _cartViewMode = cartViewMode == CartViewMode.Grid
+                ? CartViewMode.Grid
+                : CartViewMode.Rows;
             if (syncDisabled)
             {
                 SyncCenterButton.Visibility = Visibility.Collapsed;
@@ -30,6 +39,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 PrinterSettingsButton.Visibility = Visibility.Collapsed;
                 UsersRolesButton.Visibility = Visibility.Collapsed;
                 CustomerDisplayButton.Visibility = Visibility.Collapsed;
+                CartViewButton.Visibility = Visibility.Collapsed;
                 OnlineAccessButton.Visibility = Visibility.Visible;
                 StoreSettingsGrid.Columns = 1;
                 WorkstationSettingsGrid.Columns = 1;
@@ -88,6 +98,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var selected = LanguageSettingsDialog.ShowDialog(this);
             if (!string.IsNullOrWhiteSpace(selected))
                 LanguageChangedRequested?.Invoke(this, selected);
+        }
+
+        private void OnCartViewClick(object sender, RoutedEventArgs e)
+        {
+            var selected = CartViewSettingsDialog.ShowDialog(this, _cartViewMode);
+            if (!selected.HasValue) return;
+            _cartViewMode = selected.Value;
+            CartViewModeChangedRequested?.Invoke(this, selected.Value);
         }
 
         private void OnCloseClick(object sender, RoutedEventArgs e)

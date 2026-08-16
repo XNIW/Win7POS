@@ -129,6 +129,23 @@ namespace Win7POS.Wpf.Pos
 
         public string DbPath => _options.DbPath;
 
+        public async Task<string> GetCartViewModeAsync()
+        {
+            return await _settings.GetStringAsync(AppSettingKeys.PosCartViewMode)
+                .ConfigureAwait(false);
+        }
+
+        public Task SetCartViewModeAsync(string value)
+        {
+            return _settings.SetStringAsync(AppSettingKeys.PosCartViewMode, value);
+        }
+
+        public Task<IReadOnlyList<ProductDetailsRow>> GetCartProductDetailsAsync(
+            IEnumerable<string> barcodes)
+        {
+            return _products.ListDetailsByBarcodesAsync(barcodes);
+        }
+
         public async Task<bool?> GetUseReceipt42Async()
         {
             await _gate.WaitAsync().ConfigureAwait(false);
