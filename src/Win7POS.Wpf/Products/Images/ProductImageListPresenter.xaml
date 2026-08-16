@@ -1,12 +1,13 @@
 <UserControl x:Class="Win7POS.Wpf.Products.Images.ProductImageListPresenter"
+             x:Name="Root"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:images="clr-namespace:Win7POS.Wpf.Products.Images"
              Focusable="False"
              IsTabStop="False">
     <images:ProductImagePresenter x:Name="Presenter"
-                                  Width="52"
-                                  Height="52"
+                                  Width="{Binding ThumbnailWidth, ElementName=Root}"
+                                  Height="{Binding ThumbnailHeight, ElementName=Root}"
                                   HorizontalAlignment="Center"
                                   VerticalAlignment="Center"/>
 </UserControl>

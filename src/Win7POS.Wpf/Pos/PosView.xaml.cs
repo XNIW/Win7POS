@@ -163,23 +163,28 @@ namespace Win7POS.Wpf.Pos
 
         private void MoveSelection(int delta)
         {
-            if (CartListBox == null || CartListBox.Items.Count == 0) return;
+            var vm = DataContext as PosViewModel;
+            var activeList = vm?.IsCartGridView == true
+                ? CartGridListBox
+                : CartListBox;
+            if (activeList == null || activeList.Items.Count == 0) return;
 
-            var count = CartListBox.Items.Count;
-            var index = CartListBox.SelectedIndex;
+            var count = activeList.Items.Count;
+            var index = activeList.SelectedIndex;
 
             if (index < 0)
                 index = delta >= 0 ? -1 : 0;
 
             index = (index + delta + count) % count;
-            CartListBox.SelectedIndex = index;
-            CartListBox.ScrollIntoView(CartListBox.SelectedItem);
+            activeList.SelectedIndex = index;
+            activeList.ScrollIntoView(activeList.SelectedItem);
         }
 
         private void CartListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (CartListBox?.SelectedItem != null)
-                CartListBox.ScrollIntoView(CartListBox.SelectedItem);
+            var list = sender as ListBox;
+            if (list?.SelectedItem != null)
+                list.ScrollIntoView(list.SelectedItem);
             FocusBarcode();
         }
 

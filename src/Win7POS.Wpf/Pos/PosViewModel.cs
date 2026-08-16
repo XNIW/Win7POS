@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -34,6 +35,15 @@ namespace Win7POS.Wpf.Pos
         private readonly IOperatorSession _operatorSession;
         private readonly IOverrideAuthService _overrideAuthService;
         private readonly Win7POS.Data.Repositories.UserRepository _userRepo;
+        private const int CartProductImageCacheCapacity = 512;
+        private readonly Dictionary<string, ProductDetailsRow> _cartProductImageCache =
+            new Dictionary<string, ProductDetailsRow>(StringComparer.OrdinalIgnoreCase);
+        private readonly Queue<string> _cartProductImageCacheOrder = new Queue<string>();
+        private readonly HashSet<string> _cartProductImageLookups =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly CancellationTokenSource _cartProductImageLifetime =
+            new CancellationTokenSource();
+        private int _cartProductImageLoadVersion;
 
         private string _barcodeInput = string.Empty;
         private long _subtotal;
@@ -54,6 +64,7 @@ namespace Win7POS.Wpf.Pos
         private bool _isLoadingSettings;
         private PosPrinterSettings _printerSettings = new PosPrinterSettings();
         private string _lastPrintFailureMessage = string.Empty;
+        private CartViewMode _cartViewMode = CartViewMode.Rows;
 
         private PosCartLineRow _selectedCartItem;
         private RecentSaleRow _selectedRecentSale;
@@ -117,6 +128,12 @@ namespace Win7POS.Wpf.Pos
         public int ItemsCount => CartItems.Sum(x => x.Quantity);
 
         public bool IsCartEmpty => CartItems.Count == 0;
+
+        public CartViewMode CartViewMode => _cartViewMode;
+
+        public bool IsCartRowsView => _cartViewMode == CartViewMode.Rows;
+
+        public bool IsCartGridView => _cartViewMode == CartViewMode.Grid;
 
         public string TotalDisplay => MoneyClp.Format(Total);
 
@@ -261,6 +278,30 @@ namespace Win7POS.Wpf.Pos
                 ? PosLocalization.Current.Format("pos.cart.quantityReady", PendingInputQuantity.Value)
                 : string.Empty;
 
+        public async Task SetCartViewModeAsync(CartViewMode mode)
+        {
+            var normalized = mode == CartViewMode.Grid
+                ? CartViewMode.Grid
+                : CartViewMode.Rows;
+            ApplyCartViewMode(normalized);
+            try
+            {
+                await _service.SetCartViewModeAsync(
+                    CartViewModeSetting.Serialize(normalized)).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS cart view preference save failed");
+                SetStatus(
+                    PosLocalization.Current.Text("settings.cartView.saveError"),
+                    PosNoticeSeverity.Error);
+            }
+            finally
+            {
+                RequestFocusBarcode();
+            }
+        }
+
         private bool IsCashDrawerConfigured =>
             _printerSettings.CashDrawerEnabled &&
             string.Equals(_printerSettings.CashDrawerMode, "printer_kick", StringComparison.OrdinalIgnoreCase);
@@ -379,9 +420,11 @@ namespace Win7POS.Wpf.Pos
             if (_disposed) return;
             if (string.IsNullOrEmpty(barcode))
             {
+                ClearCartProductImageCache();
                 _ = RefreshCartFromDatabaseAsync(PosLocalization.Current.Text("pos.status.cartSyncedDb"));
                 return;
             }
+            InvalidateCartProductImage(barcode);
             _ = SyncCartLineFromCatalogAsync(barcode);
         }
 
@@ -427,6 +470,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 await _service.InitializeAsync().ConfigureAwait(true);
+                await LoadCartViewModeAsync().ConfigureAwait(true);
                 _isLoadingSettings = true;
                 try
                 {
@@ -455,6 +499,37 @@ namespace Win7POS.Wpf.Pos
             {
                 IsBusy = false;
             }
+        }
+
+        private async Task LoadCartViewModeAsync()
+        {
+            try
+            {
+                var stored = await _service.GetCartViewModeAsync().ConfigureAwait(true);
+                ApplyCartViewMode(CartViewModeSetting.Parse(stored));
+            }
+            catch (Exception ex)
+            {
+                ApplyCartViewMode(CartViewMode.Rows);
+                _logger.LogError(ex, "POS cart view preference load failed; rows fallback applied");
+            }
+        }
+
+        private void ApplyCartViewMode(CartViewMode mode)
+        {
+            var normalized = mode == CartViewMode.Grid
+                ? CartViewMode.Grid
+                : CartViewMode.Rows;
+            if (_cartViewMode != normalized)
+            {
+                _cartViewMode = normalized;
+                OnPropertyChanged(nameof(CartViewMode));
+                OnPropertyChanged(nameof(IsCartRowsView));
+                OnPropertyChanged(nameof(IsCartGridView));
+            }
+
+            if (normalized == CartViewMode.Grid)
+                StartCartProductImageHydration();
         }
 
         private async Task SaveUseReceipt42Async(bool value)
@@ -2125,23 +2200,60 @@ namespace Win7POS.Wpf.Pos
         private void ApplySnapshot(PosWorkflowSnapshot snapshot, string preferBarcode = null, int? preferIndex = null)
         {
             _paymentReceiptDraftLines = CreatePaymentReceiptLines(snapshot.Lines);
-            CartItems.Clear();
+            var existingByLineKey = CartItems
+                .Where(row => !string.IsNullOrWhiteSpace(row.LineKey))
+                .GroupBy(row => row.LineKey, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => new Queue<PosCartLineRow>(group),
+                    StringComparer.Ordinal);
+            var desiredRows = new List<PosCartLineRow>();
             foreach (var item in snapshot.Lines)
             {
                 if (IsDiscountLine(item.Barcode ?? ""))
                     continue;
-                CartItems.Add(new PosCartLineRow
+
+                PosCartLineRow row = null;
+                Queue<PosCartLineRow> matches;
+                if (!string.IsNullOrWhiteSpace(item.LineKey) &&
+                    existingByLineKey.TryGetValue(item.LineKey, out matches) &&
+                    matches.Count > 0)
                 {
-                    LineKey = item.LineKey ?? string.Empty,
-                    Barcode = item.Barcode,
-                    Name = item.Name,
-                    Quantity = item.Quantity,
-                    UnitPrice = item.UnitPrice,
-                    LineTotal = item.LineTotal,
-                    StockQty = item.StockQty,
-                    DiscountAmountMinor = item.DiscountAmountMinor,
-                    DiscountPercent = item.DiscountPercent
-                });
+                    row = matches.Dequeue();
+                }
+                if (row == null)
+                    row = new PosCartLineRow();
+
+                row.UpdateFrom(item);
+                ProductDetailsRow cachedProduct;
+                if (IsCartImageEligibleBarcode(row.Barcode) &&
+                    _cartProductImageCache.TryGetValue(row.Barcode, out cachedProduct))
+                {
+                    row.ProductImage = cachedProduct;
+                }
+                else if (!IsCartImageEligibleBarcode(row.Barcode))
+                {
+                    row.ProductImage = null;
+                }
+                desiredRows.Add(row);
+            }
+
+            var desiredSet = new HashSet<PosCartLineRow>(desiredRows);
+            for (var index = CartItems.Count - 1; index >= 0; index--)
+            {
+                if (!desiredSet.Contains(CartItems[index]))
+                    CartItems.RemoveAt(index);
+            }
+            for (var index = 0; index < desiredRows.Count; index++)
+            {
+                var desired = desiredRows[index];
+                if (index < CartItems.Count && ReferenceEquals(CartItems[index], desired))
+                    continue;
+                var currentIndex = CartItems.IndexOf(desired);
+                if (currentIndex >= 0)
+                    CartItems.Move(currentIndex, index);
+                else
+                    CartItems.Insert(index, desired);
             }
 
             Subtotal = snapshot.Subtotal;
@@ -2173,6 +2285,139 @@ namespace Win7POS.Wpf.Pos
             (OpenChangeQuantityCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenChangeQuantityForLineCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+
+            if (IsCartGridView)
+                StartCartProductImageHydration();
+        }
+
+        public static bool IsCartImageEligibleBarcode(string barcode)
+        {
+            var normalized = (barcode ?? string.Empty).Trim();
+            return normalized.Length > 0 &&
+                   !normalized.StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase) &&
+                   !DiscountKeys.IsDiscount(normalized);
+        }
+
+        private void StartCartProductImageHydration()
+        {
+            if (_disposed || !IsCartGridView) return;
+            _ = HydrateCartProductImagesAsync();
+        }
+
+        private async Task HydrateCartProductImagesAsync()
+        {
+            var cancellationToken = _cartProductImageLifetime.Token;
+            var missing = CartItems
+                .Where(row => IsCartImageEligibleBarcode(row.Barcode))
+                .Select(row => row.Barcode.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(barcode => !_cartProductImageCache.ContainsKey(barcode) &&
+                                  !_cartProductImageLookups.Contains(barcode))
+                .ToArray();
+            if (missing.Length == 0) return;
+
+            foreach (var barcode in missing)
+                _cartProductImageLookups.Add(barcode);
+            var loadVersion = _cartProductImageLoadVersion;
+            try
+            {
+                var products = await _service.GetCartProductDetailsAsync(missing)
+                    .ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (loadVersion != _cartProductImageLoadVersion) return;
+
+                var found = (products ?? Array.Empty<ProductDetailsRow>())
+                    .Where(product => product != null &&
+                                      !string.IsNullOrWhiteSpace(product.Barcode))
+                    .GroupBy(product => product.Barcode, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => group.First(),
+                        StringComparer.OrdinalIgnoreCase);
+                foreach (var barcode in missing)
+                {
+                    ProductDetailsRow product;
+                    if (!found.TryGetValue(barcode, out product))
+                        product = new ProductDetailsRow { Barcode = barcode };
+                    CacheCartProductImage(barcode, product);
+                }
+
+                foreach (var row in CartItems)
+                {
+                    ProductDetailsRow product;
+                    if (IsCartImageEligibleBarcode(row.Barcode) &&
+                        _cartProductImageCache.TryGetValue(row.Barcode, out product))
+                    {
+                        row.ProductImage = product;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS cart product image metadata batch load failed");
+            }
+            finally
+            {
+                foreach (var barcode in missing)
+                    _cartProductImageLookups.Remove(barcode);
+                if (!_disposed && IsCartGridView &&
+                    loadVersion != _cartProductImageLoadVersion)
+                {
+                    StartCartProductImageHydration();
+                }
+            }
+        }
+
+        private void CacheCartProductImage(string barcode, ProductDetailsRow product)
+        {
+            if (_cartProductImageCache.ContainsKey(barcode))
+            {
+                _cartProductImageCache[barcode] = product;
+                return;
+            }
+            while (_cartProductImageCache.Count >= CartProductImageCacheCapacity &&
+                   _cartProductImageCacheOrder.Count > 0)
+            {
+                _cartProductImageCache.Remove(_cartProductImageCacheOrder.Dequeue());
+            }
+            _cartProductImageCache[barcode] = product;
+            _cartProductImageCacheOrder.Enqueue(barcode);
+        }
+
+        private void InvalidateCartProductImage(string barcode)
+        {
+            var normalized = (barcode ?? string.Empty).Trim();
+            if (normalized.Length == 0) return;
+            _cartProductImageLoadVersion++;
+            _cartProductImageCache.Remove(normalized);
+            var retainedKeys = _cartProductImageCacheOrder
+                .Where(key => !string.Equals(
+                    key,
+                    normalized,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            _cartProductImageCacheOrder.Clear();
+            foreach (var retainedKey in retainedKeys)
+                _cartProductImageCacheOrder.Enqueue(retainedKey);
+            foreach (var row in CartItems.Where(row => string.Equals(
+                row.Barcode,
+                normalized,
+                StringComparison.OrdinalIgnoreCase)))
+            {
+                row.ProductImage = null;
+            }
+        }
+
+        private void ClearCartProductImageCache()
+        {
+            _cartProductImageLoadVersion++;
+            _cartProductImageCache.Clear();
+            _cartProductImageCacheOrder.Clear();
+            foreach (var row in CartItems)
+                row.ProductImage = null;
         }
 
         internal static IReadOnlyList<PaymentReceiptDraftLine> CreatePaymentReceiptLines(
@@ -2310,6 +2555,11 @@ namespace Win7POS.Wpf.Pos
         {
             if (_disposed) return;
             _disposed = true;
+            _cartProductImageLifetime.Cancel();
+            _cartProductImageLifetime.Dispose();
+            _cartProductImageCache.Clear();
+            _cartProductImageCacheOrder.Clear();
+            _cartProductImageLookups.Clear();
             CatalogEvents.CatalogChanged -= OnCatalogChanged;
             PosLocalization.Current.LanguageChanged -= _languageChangedHandler;
             _statusToastTimer.Stop();
@@ -2323,6 +2573,8 @@ namespace Win7POS.Wpf.Pos
 
         public sealed class PosCartLineRow : INotifyPropertyChanged
         {
+            private ProductDetailsRow _productImage;
+
             public string LineKey { get; set; } = string.Empty;
             public string Barcode { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
@@ -2332,6 +2584,17 @@ namespace Win7POS.Wpf.Pos
             public int StockQty { get; set; }
             public long DiscountAmountMinor { get; set; }
             public int DiscountPercent { get; set; }
+
+            public ProductDetailsRow ProductImage
+            {
+                get => _productImage;
+                set
+                {
+                    if (ReferenceEquals(_productImage, value)) return;
+                    _productImage = value;
+                    OnPropertyChanged();
+                }
+            }
 
             public bool HasDiscount => (DiscountAmountMinor > 0 || DiscountPercent > 0) && !IsDiscountLine;
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
@@ -2351,6 +2614,39 @@ namespace Win7POS.Wpf.Pos
             public bool IsDiscountLine => DiscountKeys.IsDiscount(Barcode ?? "");
             /// <summary>True se la riga è modificabile (no sconto, no manual).</summary>
             public bool IsEditable => !IsDiscountLine && (string.IsNullOrEmpty(Barcode) || !Barcode.StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase));
+
+            public void UpdateFrom(PosCartLine source)
+            {
+                if (source == null) throw new ArgumentNullException(nameof(source));
+                var nextBarcode = source.Barcode ?? string.Empty;
+                if (!string.Equals(Barcode, nextBarcode, StringComparison.OrdinalIgnoreCase))
+                    ProductImage = null;
+                LineKey = source.LineKey ?? string.Empty;
+                Barcode = nextBarcode;
+                Name = source.Name ?? string.Empty;
+                Quantity = source.Quantity;
+                UnitPrice = source.UnitPrice;
+                LineTotal = source.LineTotal;
+                StockQty = source.StockQty;
+                DiscountAmountMinor = source.DiscountAmountMinor;
+                DiscountPercent = source.DiscountPercent;
+
+                foreach (var propertyName in new[]
+                {
+                    nameof(LineKey), nameof(Barcode), nameof(Name), nameof(Quantity),
+                    nameof(UnitPrice), nameof(LineTotal), nameof(StockQty),
+                    nameof(DiscountAmountMinor), nameof(DiscountPercent),
+                    nameof(HasDiscount), nameof(UnitPriceDisplay), nameof(LineTotalDisplay),
+                    nameof(OriginalUnitPriceDisplay), nameof(OriginalLineTotalDisplay),
+                    nameof(DiscountedUnitPriceDisplay), nameof(DiscountedLineTotalDisplay),
+                    nameof(DiscountPercentDisplay), nameof(DiscountAmountDisplay),
+                    nameof(DisplayName), nameof(StockDisplay), nameof(IsDiscountLine),
+                    nameof(IsEditable)
+                })
+                {
+                    OnPropertyChanged(propertyName);
+                }
+            }
 
             public event PropertyChangedEventHandler PropertyChanged;
 

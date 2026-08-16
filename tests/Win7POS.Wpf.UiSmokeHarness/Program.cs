@@ -254,6 +254,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--printer-selection-binding") ||
                                HasArg(args, "--printer-presentation") ||
                                HasArg(args, "--pos-footer-layout") ||
+                               HasArg(args, "--cart-view-smoke") ||
                                HasArg(args, "--receipt-rendering-alignment") ||
                                HasArg(args, "--fiscal-direct-print") ||
                                physicalPrinterQa ||
@@ -684,6 +685,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     {
                         var result = launcher.RunPosFooterLayoutCheck();
                         File.WriteAllText(Path.Combine(dataDir, "pos-footer-layout.txt"), result);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (HasArg(args, "--cart-view-smoke"))
+                    {
+                        var result = await launcher.RunCartViewSmokeAsync().ConfigureAwait(true);
+                        File.WriteAllText(Path.Combine(dataDir, "cart-view-smoke.txt"), result);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
                         return;
                     }
@@ -1550,6 +1559,308 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     desktopPass && compactPass ? "PASS" : "FAIL",
                     desktopPass,
                     compactPass);
+            }
+
+            public async Task<string> RunCartViewSmokeAsync()
+            {
+                DbInitializer.EnsureCreated(PosDbOptions.Default());
+                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+                var settings = new SettingsRepository(factory);
+                var previous = await settings.GetStringAsync(AppSettingKeys.PosCartViewMode)
+                    .ConfigureAwait(true);
+                try
+                {
+                    using (var connection = factory.Open())
+                    {
+                        await connection.ExecuteAsync(
+                            "DELETE FROM app_settings WHERE key = @key",
+                            new { key = AppSettingKeys.PosCartViewMode }).ConfigureAwait(true);
+                    }
+
+                    var service = new PosWorkflowService();
+                    var defaultRaw = await service.GetCartViewModeAsync().ConfigureAwait(true);
+                    var defaultPass = CartViewModeSetting.Parse(defaultRaw) == CartViewMode.Rows;
+
+                    await settings.SetStringAsync(AppSettingKeys.PosCartViewMode, "rows")
+                        .ConfigureAwait(true);
+                    var rowsPass = CartViewModeSetting.Parse(
+                        await service.GetCartViewModeAsync().ConfigureAwait(true)) == CartViewMode.Rows;
+                    await settings.SetStringAsync(AppSettingKeys.PosCartViewMode, "grid")
+                        .ConfigureAwait(true);
+                    var gridPass = CartViewModeSetting.Parse(
+                        await service.GetCartViewModeAsync().ConfigureAwait(true)) == CartViewMode.Grid;
+                    await settings.SetStringAsync(AppSettingKeys.PosCartViewMode, "invalid")
+                        .ConfigureAwait(true);
+                    var invalidPass = CartViewModeSetting.Parse(
+                        await service.GetCartViewModeAsync().ConfigureAwait(true)) == CartViewMode.Rows;
+
+                    var viewModel = new PosViewModel(
+                        service,
+                        new FileLogger("CartViewSmoke"),
+                        new HarnessAllowAllPermissionService());
+                    try
+                    {
+                        var snapshot = new PosWorkflowSnapshot
+                        {
+                            Subtotal = 3750,
+                            Total = 3500,
+                            Lines = new List<PosCartLine>
+                            {
+                                new PosCartLine
+                                {
+                                    LineKey = "cart-grid-product",
+                                    Barcode = "QA-CART-GRID",
+                                    Name = "Grid product",
+                                    Quantity = 2,
+                                    UnitPrice = 1500,
+                                    LineTotal = 3000,
+                                    StockQty = 8,
+                                    DiscountAmountMinor = 250,
+                                    DiscountPercent = 8
+                                },
+                                new PosCartLine
+                                {
+                                    LineKey = "cart-grid-manual",
+                                    Barcode = "MANUAL:QA",
+                                    Name = "Manual product",
+                                    Quantity = 1,
+                                    UnitPrice = 500,
+                                    LineTotal = 500
+                                },
+                                new PosCartLine
+                                {
+                                    LineKey = "cart-grid-discount",
+                                    Barcode = DiscountKeys.BuildCartPct(5),
+                                    Name = "Discount",
+                                    Quantity = 1,
+                                    UnitPrice = -250,
+                                    LineTotal = -250
+                                }
+                            }
+                        };
+                        viewModel.ApplyDiscountSnapshot(snapshot);
+                        var collection = viewModel.CartItems;
+                        var productRow = collection[0];
+                        var manualRow = collection[1];
+                        var addBarcodeCommand = viewModel.AddBarcodeCommand;
+                        var quantityBefore = productRow.Quantity;
+                        var totalBefore = productRow.LineTotal;
+
+                        await viewModel.SetCartViewModeAsync(CartViewMode.Grid)
+                            .ConfigureAwait(true);
+                        var gridSwitchPass = ReferenceEquals(collection, viewModel.CartItems) &&
+                                             ReferenceEquals(productRow, collection[0]) &&
+                                             productRow.Quantity == quantityBefore &&
+                                             productRow.LineTotal == totalBefore &&
+                                             ReferenceEquals(addBarcodeCommand, viewModel.AddBarcodeCommand) &&
+                                             viewModel.IsCartGridView &&
+                                             !viewModel.IsCartRowsView;
+                        var specialLinePass = collection.Count == 2 &&
+                                              !PosViewModel.IsCartImageEligibleBarcode(manualRow.Barcode) &&
+                                              !PosViewModel.IsCartImageEligibleBarcode(
+                                                  DiscountKeys.BuildCartPct(5));
+
+                        await Task.Delay(50).ConfigureAwait(true);
+                        if (productRow.ProductImage == null)
+                        {
+                            productRow.ProductImage = new ProductDetailsRow
+                            {
+                                Barcode = productRow.Barcode
+                            };
+                        }
+                        var imageBeforeQuantityRefresh = productRow.ProductImage;
+                        var quantitySnapshot = new PosWorkflowSnapshot
+                        {
+                            Subtotal = 5250,
+                            Total = 5000,
+                            Lines = new List<PosCartLine>
+                            {
+                                new PosCartLine
+                                {
+                                    LineKey = "cart-grid-product",
+                                    Barcode = "QA-CART-GRID",
+                                    Name = "Grid product",
+                                    Quantity = 3,
+                                    UnitPrice = 1500,
+                                    LineTotal = 4500,
+                                    StockQty = 8,
+                                    DiscountAmountMinor = 250,
+                                    DiscountPercent = 5
+                                },
+                                new PosCartLine
+                                {
+                                    LineKey = "cart-grid-manual",
+                                    Barcode = "MANUAL:QA",
+                                    Name = "Manual product",
+                                    Quantity = 1,
+                                    UnitPrice = 500,
+                                    LineTotal = 500
+                                }
+                            }
+                        };
+                        viewModel.ApplyDiscountSnapshot(quantitySnapshot);
+                        var quantityRefreshPass = ReferenceEquals(productRow, collection[0]) &&
+                                                  ReferenceEquals(
+                                                      imageBeforeQuantityRefresh,
+                                                      productRow.ProductImage) &&
+                                                  productRow.Quantity == 3 &&
+                                                  productRow.LineTotal == 4500;
+                        quantityBefore = productRow.Quantity;
+                        totalBefore = productRow.LineTotal;
+
+                        var view = new PosView();
+                        var generatedViewModel = view.DataContext as PosViewModel;
+                        generatedViewModel?.Dispose();
+                        view.DataContext = viewModel;
+                        view.Width = 1280;
+                        view.Height = 720;
+                        view.Measure(new Size(1280, 720));
+                        view.Arrange(new Rect(0, 0, 1280, 720));
+                        view.UpdateLayout();
+                        var gridList = view.FindName("CartGridListBox") as ListBox;
+                        var rowsList = view.FindName("CartListBox") as ListBox;
+                        viewModel.SelectedCartItem = productRow;
+                        view.UpdateLayout();
+                        var gridCommands = gridList == null
+                            ? new List<ICommand>()
+                            : FindVisualDescendants<Button>(gridList)
+                                .Select(button => button.Command)
+                                .Where(command => command != null)
+                                .ToList();
+                        var gridUiPass = gridList != null && rowsList != null &&
+                                         gridList.Visibility == Visibility.Visible &&
+                                         rowsList.Visibility == Visibility.Collapsed &&
+                                         ReferenceEquals(gridList.SelectedItem, productRow) &&
+                                         gridCommands.Contains(viewModel.IncreaseQtyForLineCommand) &&
+                                         gridCommands.Contains(viewModel.DecreaseQtyForLineCommand) &&
+                                         gridCommands.Contains(viewModel.RemoveLineForLineCommand) &&
+                                         gridCommands.Contains(viewModel.OpenChangeQuantityForLineCommand);
+
+                        await viewModel.SetCartViewModeAsync(CartViewMode.Rows)
+                            .ConfigureAwait(true);
+                        view.UpdateLayout();
+                        var rowsSwitchPass = ReferenceEquals(collection, viewModel.CartItems) &&
+                                             ReferenceEquals(productRow, collection[0]) &&
+                                             productRow.Quantity == quantityBefore &&
+                                             productRow.LineTotal == totalBefore &&
+                                             ReferenceEquals(addBarcodeCommand, viewModel.AddBarcodeCommand) &&
+                                             viewModel.IsCartRowsView &&
+                                             rowsList.Visibility == Visibility.Visible &&
+                                             gridList.Visibility == Visibility.Collapsed &&
+                                             CartViewModeSetting.Parse(
+                                                 await new PosWorkflowService().GetCartViewModeAsync()
+                                                     .ConfigureAwait(true)) == CartViewMode.Rows;
+                        view.DataContext = null;
+
+                        var performance = new[]
+                        {
+                            MeasureCartSurface(CartViewMode.Rows, 20),
+                            MeasureCartSurface(CartViewMode.Grid, 20),
+                            MeasureCartSurface(CartViewMode.Rows, 100),
+                            MeasureCartSurface(CartViewMode.Grid, 100),
+                            MeasureCartSurface(CartViewMode.Rows, 300),
+                            MeasureCartSurface(CartViewMode.Grid, 300)
+                        };
+                        var performancePass = performance.All(sample => sample.Passed);
+                        var screenshotSize = new Size(1366, 768);
+                        await CaptureHostedElementAsync(
+                            new PosView
+                            {
+                                DataContext = new PosLayoutPreviewDataContext(
+                                    populated: true,
+                                    cartViewMode: CartViewMode.Rows),
+                                Width = screenshotSize.Width,
+                                Height = screenshotSize.Height
+                            },
+                            screenshotSize,
+                            Path.Combine(Path.GetDirectoryName(PosDbOptions.Default().DbPath), "cart-rows-populated.png"),
+                            rendered => VerifyPosRenderedSurface(
+                                (PosView)rendered,
+                                screenshotSize,
+                                expectEmpty: false,
+                                cartViewMode: CartViewMode.Rows)).ConfigureAwait(true);
+                        await CaptureHostedElementAsync(
+                            new PosView
+                            {
+                                DataContext = new PosLayoutPreviewDataContext(
+                                    populated: true,
+                                    cartViewMode: CartViewMode.Grid),
+                                Width = screenshotSize.Width,
+                                Height = screenshotSize.Height
+                            },
+                            screenshotSize,
+                            Path.Combine(Path.GetDirectoryName(PosDbOptions.Default().DbPath), "cart-grid-populated.png"),
+                            rendered => VerifyPosRenderedSurface(
+                                (PosView)rendered,
+                                screenshotSize,
+                                expectEmpty: false,
+                                cartViewMode: CartViewMode.Grid)).ConfigureAwait(true);
+                        var passed = defaultPass && rowsPass && gridPass && invalidPass &&
+                                     gridSwitchPass && rowsSwitchPass && specialLinePass &&
+                                     quantityRefreshPass && gridUiPass && performancePass;
+                        return string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0}: defaultRows={1}; storedRows={2}; storedGrid={3}; invalidRows={4}; gridSwitchInvariant={5}; rowsSwitchInvariant={6}; specialLines={7}; quantityImageReuse={8}; gridUiCommands={9}; performance={10}",
+                            passed ? "PASS" : "FAIL",
+                            defaultPass,
+                            rowsPass,
+                            gridPass,
+                            invalidPass,
+                            gridSwitchPass,
+                            rowsSwitchPass,
+                            specialLinePass,
+                            quantityRefreshPass,
+                            gridUiPass,
+                            string.Join(",", performance.Select(sample => sample.Description)));
+                    }
+                    finally
+                    {
+                        viewModel.Dispose();
+                    }
+                }
+                finally
+                {
+                    if (previous == null)
+                    {
+                        using (var connection = factory.Open())
+                        {
+                            await connection.ExecuteAsync(
+                                "DELETE FROM app_settings WHERE key = @key",
+                                new { key = AppSettingKeys.PosCartViewMode }).ConfigureAwait(true);
+                        }
+                    }
+                    else
+                    {
+                        await settings.SetStringAsync(AppSettingKeys.PosCartViewMode, previous)
+                            .ConfigureAwait(true);
+                    }
+                }
+            }
+
+            private static CartSurfacePerformanceSample MeasureCartSurface(
+                CartViewMode mode,
+                int itemCount)
+            {
+                var process = Process.GetCurrentProcess();
+                process.Refresh();
+                var workingSetBefore = process.WorkingSet64;
+                var stopwatch = Stopwatch.StartNew();
+                var view = new PosView();
+                var generatedViewModel = view.DataContext as PosViewModel;
+                generatedViewModel?.Dispose();
+                view.DataContext = new CartPerformanceDataContext(mode, itemCount);
+                view.Measure(new Size(1280, 720));
+                view.Arrange(new Rect(0, 0, 1280, 720));
+                view.UpdateLayout();
+                stopwatch.Stop();
+                process.Refresh();
+                var workingSetDelta = Math.Max(0, process.WorkingSet64 - workingSetBefore);
+                view.DataContext = null;
+                return new CartSurfacePerformanceSample(
+                    mode,
+                    itemCount,
+                    stopwatch.ElapsedMilliseconds,
+                    workingSetDelta);
             }
 
             public string RunReceiptRenderingAlignmentCheck()
@@ -2653,6 +2964,7 @@ WHERE id = @id;",
                     "pos-empty-1600x900.png",
                     "pos-empty-1920x1080.png",
                     "pos-cart-1366x768.png",
+                    "pos-cart-grid-1366x768.png",
                     "payment-receipt-preview.png",
                     "products-default.png",
                     "products-filtered-empty.png",
@@ -2835,12 +3147,31 @@ WHERE id = @id;",
                         (PosView)rendered,
                         populatedSize,
                         expectEmpty: false)).ConfigureAwait(true);
+
+                var populatedGrid = new PosView
+                {
+                    DataContext = new PosLayoutPreviewDataContext(
+                        populated: true,
+                        cartViewMode: CartViewMode.Grid),
+                    Width = populatedSize.Width,
+                    Height = populatedSize.Height
+                };
+                await CaptureHostedElementAsync(
+                    populatedGrid,
+                    populatedSize,
+                    Path.Combine(outputDirectory, "pos-cart-grid-1366x768.png"),
+                    rendered => VerifyPosRenderedSurface(
+                        (PosView)rendered,
+                        populatedSize,
+                        expectEmpty: false,
+                        cartViewMode: CartViewMode.Grid)).ConfigureAwait(true);
             }
 
             private static void VerifyPosRenderedSurface(
                 PosView view,
                 Size viewport,
-                bool expectEmpty)
+                bool expectEmpty,
+                CartViewMode cartViewMode = CartViewMode.Rows)
             {
                 if (Math.Abs(view.ActualWidth - viewport.Width) > 1 ||
                     Math.Abs(view.ActualHeight - viewport.Height) > 1)
@@ -2855,7 +3186,9 @@ WHERE id = @id;",
                     "PosToolActionsPanel",
                     "FooterPayButton",
                     "BarcodeBox",
-                    "CartListBox"
+                    cartViewMode == CartViewMode.Grid
+                        ? "CartGridListBox"
+                        : "CartListBox"
                 })
                 {
                     var element = view.FindName(name) as FrameworkElement;
@@ -3729,9 +4062,13 @@ WHERE id = @id;",
             private sealed class PosLayoutPreviewDataContext
             {
                 private readonly IReadOnlyList<object> _cartItems;
+                private readonly CartViewMode _cartViewMode;
 
-                public PosLayoutPreviewDataContext(bool populated = false)
+                public PosLayoutPreviewDataContext(
+                    bool populated = false,
+                    CartViewMode cartViewMode = CartViewMode.Rows)
                 {
+                    _cartViewMode = cartViewMode;
                     _cartItems = populated
                         ? new object[]
                         {
@@ -3768,6 +4105,8 @@ WHERE id = @id;",
                 public bool CanDismissStatusToast => true;
                 public bool HasDiscount => _cartItems.Count > 0;
                 public bool IsCartEmpty => _cartItems.Count == 0;
+                public bool IsCartRowsView => _cartViewMode == CartViewMode.Rows;
+                public bool IsCartGridView => _cartViewMode == CartViewMode.Grid;
                 public int ItemsCount => _cartItems.Count;
                 public string FinalTotalDisplay => _cartItems.Count == 0 ? "0" : "13.457";
                 public string OriginalTotalDisplay => _cartItems.Count == 0 ? "0" : "14.691";
@@ -3776,6 +4115,76 @@ WHERE id = @id;",
                 public string BarcodeInput { get; set; } = string.Empty;
                 public object SelectedCartItem { get; set; }
                 public IEnumerable<object> CartItems => _cartItems;
+            }
+
+            private sealed class CartPerformanceDataContext
+            {
+                private readonly IReadOnlyList<PosViewModel.PosCartLineRow> _cartItems;
+
+                public CartPerformanceDataContext(CartViewMode mode, int itemCount)
+                {
+                    CartViewMode = mode;
+                    _cartItems = Enumerable.Range(0, itemCount)
+                        .Select(index => new PosViewModel.PosCartLineRow
+                        {
+                            LineKey = "performance-" + index.ToString(CultureInfo.InvariantCulture),
+                            Barcode = "PERF-" + index.ToString("D4", CultureInfo.InvariantCulture),
+                            Name = "Performance product " + index.ToString(CultureInfo.InvariantCulture),
+                            Quantity = (index % 4) + 1,
+                            UnitPrice = 1000 + index,
+                            LineTotal = (1000 + index) * ((index % 4) + 1),
+                            StockQty = 20 + index
+                        })
+                        .ToList();
+                    SelectedCartItem = _cartItems.FirstOrDefault();
+                }
+
+                public CartViewMode CartViewMode { get; }
+                public bool IsCartRowsView => CartViewMode == CartViewMode.Rows;
+                public bool IsCartGridView => CartViewMode == CartViewMode.Grid;
+                public bool IsBusy => false;
+                public bool IsStatusToastVisible => false;
+                public bool IsStatusToastDetailsVisible => false;
+                public bool CanDismissStatusToast => true;
+                public bool HasDiscount => false;
+                public bool IsCartEmpty => _cartItems.Count == 0;
+                public int ItemsCount => _cartItems.Sum(item => item.Quantity);
+                public string FinalTotalDisplay => "0";
+                public string OriginalTotalDisplay => "0";
+                public string DiscountAmountDisplay => string.Empty;
+                public string PendingInputQuantityDisplay => string.Empty;
+                public string BarcodeInput { get; set; } = string.Empty;
+                public PosViewModel.PosCartLineRow SelectedCartItem { get; set; }
+                public IEnumerable<PosViewModel.PosCartLineRow> CartItems => _cartItems;
+            }
+
+            private sealed class CartSurfacePerformanceSample
+            {
+                public CartSurfacePerformanceSample(
+                    CartViewMode mode,
+                    int itemCount,
+                    long elapsedMilliseconds,
+                    long workingSetDelta)
+                {
+                    Mode = mode;
+                    ItemCount = itemCount;
+                    ElapsedMilliseconds = elapsedMilliseconds;
+                    WorkingSetDelta = workingSetDelta;
+                }
+
+                public CartViewMode Mode { get; }
+                public int ItemCount { get; }
+                public long ElapsedMilliseconds { get; }
+                public long WorkingSetDelta { get; }
+                public bool Passed => ElapsedMilliseconds < 10000 &&
+                                      WorkingSetDelta < 384L * 1024L * 1024L;
+                public string Description => string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}-{1}:{2}ms/{3}KB",
+                    Mode,
+                    ItemCount,
+                    ElapsedMilliseconds,
+                    WorkingSetDelta / 1024L);
             }
 
             private static IEnumerable<T> FindVisualDescendants<T>(DependencyObject root)

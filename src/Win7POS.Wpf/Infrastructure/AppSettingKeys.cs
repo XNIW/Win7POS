@@ -4,6 +4,7 @@ namespace Win7POS.Wpf.Infrastructure
     public static class AppSettingKeys
     {
         public const string UiLanguage = "ui.language";
+        public const string PosCartViewMode = "pos.cart.view_mode";
 
         public const string PosPrinterReceiptEnabled = "pos.printer.receipt.enabled";
         public const string PosPrinterReceiptName = "pos.printer.receipt.name";

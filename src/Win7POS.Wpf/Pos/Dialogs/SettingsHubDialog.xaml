@@ -96,6 +96,18 @@
                             <Path Grid.Column="2" Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}" Width="16" Height="16"/>
                         </Grid>
                     </Button>
+
+                    <Button x:Name="CartViewButton" Style="{StaticResource CompactSettingsCardButtonStyle}" Click="OnCartViewClick">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="34"/><ColumnDefinition Width="*"/><ColumnDefinition Width="22"/></Grid.ColumnDefinitions>
+                            <Path Grid.Column="0" Data="{StaticResource IconRegister}" Style="{StaticResource ButtonIconPathStyle}" Width="22" Height="22"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{loc:Loc settings.cartView.title}" FontWeight="SemiBold"/>
+                                <TextBlock Text="{loc:Loc settings.cartView.cardHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                            </StackPanel>
+                            <Path Grid.Column="2" Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}" Width="16" Height="16"/>
+                        </Grid>
+                    </Button>
                 </UniformGrid>
 
                 <TextBlock Text="{loc:Loc settings.groupAdministration}" Style="{StaticResource SettingsSectionHeaderTextStyle}"/>
