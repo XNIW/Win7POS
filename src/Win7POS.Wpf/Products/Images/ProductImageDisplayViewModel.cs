@@ -28,6 +28,12 @@ namespace Win7POS.Wpf.Products.Images
         public bool IsLoaded =>
             _state == ProductImageDisplayState.Loaded &&
             _image != null;
+        public bool ShowsPlaceholder =>
+            _state == ProductImageDisplayState.NoImage ||
+            _state == ProductImageDisplayState.Unavailable ||
+            _state == ProductImageDisplayState.Corrupt ||
+            _state == ProductImageDisplayState.Error ||
+            _state == ProductImageDisplayState.FeatureDisabled;
         public bool ShowsStatus => !IsLoaded;
         public string StatusText => string.IsNullOrWhiteSpace(_statusOverride)
             ? GetStatusText(_state)
@@ -98,6 +104,7 @@ namespace Win7POS.Wpf.Products.Images
             OnPropertyChanged(nameof(Image));
             OnPropertyChanged(nameof(IsLoading));
             OnPropertyChanged(nameof(IsLoaded));
+            OnPropertyChanged(nameof(ShowsPlaceholder));
             OnPropertyChanged(nameof(ShowsStatus));
             OnPropertyChanged(nameof(StatusText));
             OnPropertyChanged(nameof(AccessibleName));

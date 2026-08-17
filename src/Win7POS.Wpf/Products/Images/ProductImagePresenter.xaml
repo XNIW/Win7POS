@@ -17,6 +17,15 @@
                         VerticalAlignment="Center"
                         Margin="6"
                         Visibility="{Binding ShowsStatus, Converter={StaticResource BoolToVis}}">
+                <Path Data="{StaticResource IconProducts}"
+                      Width="28"
+                      Height="28"
+                      Margin="0,0,0,6"
+                      Stretch="Uniform"
+                      Fill="{StaticResource TextSecondaryBrush}"
+                      Opacity="0.55"
+                      Focusable="False"
+                      Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BoolToVis}}"/>
                 <ProgressBar Width="44"
                              Height="4"
                              Margin="0,0,0,6"
