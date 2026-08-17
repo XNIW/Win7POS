@@ -76,11 +76,11 @@
       },
       "System.IO.Packaging": {
         "type": "Direct",
-        "requested": "[8.0.1, )",
-        "resolved": "8.0.1",
-        "contentHash": "KYkIOAvPexQOLDxPO2g0BVoWInnQhPpkFzRqvNrNrMhVT6kqhVr0zEb6KCHlptLFukxnZrjuMVAnxK7pOGUYrw==",
+        "requested": "[10.0.11, )",
+        "resolved": "10.0.11",
+        "contentHash": "y74NfbISp+FLjGdsaTi23Oe3xxPPwCeEMWdUlkujE23lQH5Un6gU4tWmQZ6kI1CFW7IsB1Ii045Ay7lMeoMHqA==",
         "dependencies": {
-          "System.Memory": "4.5.5"
+          "System.Memory": "4.6.3"
         }
       },
       "System.Text.Encoding.CodePages": {
