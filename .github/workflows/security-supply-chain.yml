@@ -165,7 +165,7 @@ jobs:
         run: dotnet restore Win7POS.slnx --locked-mode
 
       - name: Initialize CodeQL C#
-        uses: github/codeql-action/init@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4.37.2
+        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           languages: csharp
           build-mode: manual
@@ -175,7 +175,7 @@ jobs:
         run: dotnet build Win7POS.slnx -c Release --no-restore
 
       - name: Analyze and emit SARIF
-        uses: github/codeql-action/analyze@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4.37.2
+        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           category: /language:csharp
           output: artifacts/security/codeql
