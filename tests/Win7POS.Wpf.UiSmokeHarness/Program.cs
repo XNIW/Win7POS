@@ -1705,6 +1705,37 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                                       productRow.ProductImage) &&
                                                   productRow.Quantity == 3 &&
                                                   productRow.LineTotal == 4500;
+                        var quantityProductLine = quantitySnapshot.Lines[0];
+                        for (var increment = 0; increment < 20; increment++)
+                        {
+                            quantityProductLine.Quantity++;
+                            quantityProductLine.LineTotal =
+                                quantityProductLine.Quantity * quantityProductLine.UnitPrice;
+                            viewModel.ApplyDiscountSnapshot(quantitySnapshot);
+                            quantityRefreshPass = quantityRefreshPass &&
+                                                  ReferenceEquals(productRow, collection[0]) &&
+                                                  ReferenceEquals(
+                                                      imageBeforeQuantityRefresh,
+                                                      productRow.ProductImage);
+                        }
+                        quantityProductLine.Quantity--;
+                        quantityProductLine.LineTotal =
+                            quantityProductLine.Quantity * quantityProductLine.UnitPrice;
+                        viewModel.ApplyDiscountSnapshot(quantitySnapshot);
+                        quantityRefreshPass = quantityRefreshPass &&
+                                              ReferenceEquals(
+                                                  imageBeforeQuantityRefresh,
+                                                  productRow.ProductImage);
+                        quantityProductLine.Quantity = 7;
+                        quantityProductLine.LineTotal =
+                            quantityProductLine.Quantity * quantityProductLine.UnitPrice;
+                        viewModel.ApplyDiscountSnapshot(quantitySnapshot);
+                        quantityRefreshPass = quantityRefreshPass &&
+                                              ReferenceEquals(productRow, collection[0]) &&
+                                              ReferenceEquals(
+                                                  imageBeforeQuantityRefresh,
+                                                  productRow.ProductImage) &&
+                                              productRow.Quantity == 7;
                         quantityBefore = productRow.Quantity;
                         totalBefore = productRow.LineTotal;
 
@@ -1800,7 +1831,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                      quantityRefreshPass && gridUiPass && performancePass;
                         return string.Format(
                             CultureInfo.InvariantCulture,
-                            "{0}: defaultRows={1}; storedRows={2}; storedGrid={3}; invalidRows={4}; gridSwitchInvariant={5}; rowsSwitchInvariant={6}; specialLines={7}; quantityImageReuse={8}; gridUiCommands={9}; performance={10}",
+                            "{0}: defaultRows={1}; storedRows={2}; storedGrid={3}; invalidRows={4}; gridSwitchInvariant={5}; rowsSwitchInvariant={6}; specialLines={7}; quantityImageReuse={8}; quantityUpdates=23; gridUiCommands={9}; performance={10}",
                             passed ? "PASS" : "FAIL",
                             defaultPass,
                             rowsPass,

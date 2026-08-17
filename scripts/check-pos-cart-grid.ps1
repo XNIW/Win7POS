@@ -24,6 +24,8 @@ $service = Read-Required "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $viewModel = Read-Required "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $view = Read-Required "src/Win7POS.Wpf/Pos/PosView.xaml"
 $presenter = Read-Required "src/Win7POS.Wpf/Products/Images/ProductImageListPresenter.xaml.cs"
+$presenterView = Read-Required "src/Win7POS.Wpf/Products/Images/ProductImagePresenter.xaml"
+$displayViewModel = Read-Required "src/Win7POS.Wpf/Products/Images/ProductImageDisplayViewModel.cs"
 $settingsHub = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
 $settingsHubCode = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml.cs"
 $dialog = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/CartViewSettingsDialog.xaml"
@@ -41,8 +43,19 @@ Require ($viewModel -match 'UpdateFrom\(item\)' -and $viewModel -notmatch 'CartI
 Require ($view -match 'x:Name="CartListBox"' -and $view -match 'x:Name="CartGridListBox"') "rows and grid surfaces are present"
 Require ($view -match '<WrapPanel[^>]+ItemWidth="184"') "grid wraps responsively"
 Require ($view -match 'Product="\{Binding ProductImage\}"') "grid uses the shared product image presenter"
+Require ($view -match 'ThumbnailWidth="156"' -and $view -match 'ThumbnailHeight="94"') "grid keeps uniform thumbnail bounds"
 Require ($view -match 'IncreaseQtyForLineCommand' -and $view -match 'DecreaseQtyForLineCommand' -and $view -match 'RemoveLineForLineCommand' -and $view -match 'OpenChangeQuantityForLineCommand') "grid reuses cart commands"
 Require ($presenter -match 'ProductImageVariant\.Thumb' -and $presenter -match 'ProductImageDecodeProfile\.ListThumbnail') "grid loads only list thumbnails"
+Require ($displayViewModel -match 'ShowsPlaceholder' -and
+         $displayViewModel -match 'ProductImageDisplayState\.NoImage' -and
+         $displayViewModel -match 'ProductImageDisplayState\.Unavailable' -and
+         $displayViewModel -match 'ProductImageDisplayState\.Corrupt' -and
+         $displayViewModel -match 'ProductImageDisplayState\.Error') "missing and failed image states use the placeholder"
+Require ($presenterView -match 'Data="\{StaticResource IconProducts\}"' -and
+         $presenterView -match 'Visibility="\{Binding ShowsPlaceholder' -and
+         $presenterView -match 'Stretch="Uniform"') "placeholder is a lightweight shared vector"
+Require ($presenterView -notmatch '(?i)Source="\s*https?://' -and
+         $presenterView -notmatch '(?i)Source="[^"{]*\.(png|jpe?g|bmp|gif)') "placeholder performs no bitmap or network I/O"
 Require ($settingsHub -match 'settings\.cartView\.title' -and $settingsHubCode -match 'CartViewSettingsDialog\.ShowDialog') "workstation settings exposes cart view"
 Require ($dialog -match 'WindowStartupLocation="CenterOwner"' -and $dialog -match 'DialogActionButtonStyle' -and $dialog -match 'DialogCancelButtonStyle' -and $dialog -match 'DialogFooterMargin') "cart view dialog follows shared dialog resources"
 Require ($dialogCode -match 'ownerWindow \?\? DialogOwnerHelper\.GetSafeOwner\(\)') "cart view dialog uses safe nested ownership"

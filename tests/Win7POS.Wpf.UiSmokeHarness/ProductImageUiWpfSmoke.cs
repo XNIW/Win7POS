@@ -53,10 +53,37 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (grid == null || !grid.EnableRowVirtualization ||
                     !grid.EnableColumnVirtualization || grid.RowHeight != 60 ||
                     display == null ||
-                    display.State != ProductImageDisplayState.NoImage)
+                    display.State != ProductImageDisplayState.NoImage ||
+                    !display.ShowsPlaceholder)
                 {
                     return "FAIL product_image_list_contract";
                 }
+                display.SetLoading();
+                if (!display.IsLoading || display.ShowsPlaceholder)
+                    return "FAIL product_image_loading_state";
+                display.SetUnavailable();
+                if (!display.ShowsPlaceholder)
+                    return "FAIL product_image_unavailable_placeholder";
+                display.SetCorrupt();
+                if (!display.ShowsPlaceholder)
+                    return "FAIL product_image_corrupt_placeholder";
+                display.Apply(null);
+                if (display.State != ProductImageDisplayState.Error ||
+                    !display.ShowsPlaceholder)
+                {
+                    return "FAIL product_image_error_placeholder";
+                }
+                display.SetLoaded(new DrawingImage());
+                if (!display.IsLoaded || display.ShowsPlaceholder)
+                    return "FAIL product_image_loaded_state";
+                display.SetNoImage();
+                listWindow.UpdateLayout();
+                var placeholder = Descendants<System.Windows.Shapes.Path>(presenter)
+                    .FirstOrDefault(item => item.Visibility == Visibility.Visible &&
+                                            Math.Abs(item.Width - 28d) < 0.1d &&
+                                            Math.Abs(item.Height - 28d) < 0.1d);
+                if (placeholder == null)
+                    return "FAIL product_image_placeholder_visual";
                 Capture(
                     listWindow,
                     Path.Combine(
@@ -136,7 +163,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
 
                 return "PASS list_virtualization=true row_height=60 " +
-                    "list_no_image=true editor_commands=3 accessibility=true " +
+                    "list_no_image=true placeholder_states=6 placeholder_vector=true " +
+                    "editor_commands=3 accessibility=true " +
                     "languages=it,en,es,zh-CN viewport=1024x768";
             }
             finally
