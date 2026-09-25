@@ -32,6 +32,19 @@ The workflow generated and checksummed that report, but its upload path list
 omitted it. The patch adds that existing file to the ReleasePack upload list.
 No checksum, provenance or signature validation is weakened.
 
+The generalized verifier below downloads dist, Setup and ReleasePack via `gh`,
+verifies the exact run SHA and each GitHub archive digest, compares dist with
+the embedded ZIP and both Setup copies, then invokes the existing canonical
+integrity verifier. It records Authenticode separately and never installs:
+
+```powershell
+pwsh -NoProfile -File scripts/win7pos/windows/test-downloaded-release-pack.ps1 -RunId <successful-run-id> -ExpectedCommitSha <40-character-sha> -OutputDirectory C:\QA\download-verification
+```
+
+This fills the post-download reproducibility gap exposed by P109-P01; it does
+not replace any existing release validator. PowerShell 7.4+ is required only
+on the build/QA host to preserve native ZIP byte output, not on Windows 7.
+
 All 39 downloaded payload paths independently match the canonical normalized
 manifest. `VERSION.txt` uses the validator's documented BuildTimestampUtc-only
 normalization; comparing its raw hash to that normalized hash is invalid.
@@ -113,6 +126,11 @@ A preliminary probe with a Background-priority dispatcher observation stalled
 on the occluded desktop and was terminated with its partial evidence preserved.
 The corrected probe uses the same Send priority as the existing scan benchmark;
 it completed three cycles in 88 seconds. This probe is not the qualification run.
+An initial long run was also stopped after the observer's strong references
+were found capable of retaining dispatcher operations. Its samples are kept
+as invalid qualification evidence. The final observer uses weak references,
+prunes completed/aborted operations and counts distinct live operations, so
+the instrumentation cannot retain their closures.
 
 ## Installer and operator execution card
 

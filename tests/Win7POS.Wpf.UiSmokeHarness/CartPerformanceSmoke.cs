@@ -158,9 +158,14 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
             csv.WriteLine("products,cycle,phase,elapsed_s,private_bytes,managed_bytes,handles,gdi,user,threads,gc0,gc1,gc2,dispatcher_ms,pending_dispatcher,cache_entries,image_lookups,scan_ms,render_ms");
             var elapsed = Stopwatch.StartNew();
             var dispatcher = Dispatcher.CurrentDispatcher;
-            var pending = new HashSet<DispatcherOperation>();
-            DispatcherHookEventHandler posted = (s, e) => { lock (pending) pending.Add(e.Operation); };
-            DispatcherHookEventHandler finished = (s, e) => { lock (pending) pending.Remove(e.Operation); };
+            // Hooks can race for synchronous Send operations. Never retain the
+            // operations (and their closures) just to observe queue occupancy.
+            var pending = new List<WeakReference>();
+            DispatcherHookEventHandler posted = (s, e) => { lock (pending) pending.Add(new WeakReference(e.Operation)); };
+            DispatcherHookEventHandler finished = (s, e) =>
+            {
+                lock (pending) pending.RemoveAll(reference => !reference.IsAlive || ReferenceEquals(reference.Target, e.Operation));
+            };
             dispatcher.Hooks.OperationPosted += posted;
             dispatcher.Hooks.OperationCompleted += finished;
             dispatcher.Hooks.OperationAborted += finished;
@@ -181,7 +186,12 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
                 await dispatcher.InvokeAsync(() => { }, DispatcherPriority.Send);
                 var probeMs = probe.Elapsed.TotalMilliseconds;
                 int pendingCount;
-                lock (pending) pendingCount = pending.Count;
+                lock (pending)
+                {
+                    pending.RemoveAll(reference => !(reference.Target is DispatcherOperation operation) ||
+                        operation.Status == DispatcherOperationStatus.Completed || operation.Status == DispatcherOperationStatus.Aborted);
+                    pendingCount = pending.Select(reference => reference.Target).Where(operation => operation != null).Distinct().Count();
+                }
                 process.Refresh();
                 csv.WriteLine(string.Format(CultureInfo.InvariantCulture,
                     "{0},{1},{2},{3:F3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13:F3},{14},{15},{16},{17:F3},{18:F3}",
