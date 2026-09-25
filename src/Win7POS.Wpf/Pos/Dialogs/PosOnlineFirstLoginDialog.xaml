@@ -12,7 +12,6 @@
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="560"
-        MinHeight="650"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
     <Grid Background="#F1EDF7">
