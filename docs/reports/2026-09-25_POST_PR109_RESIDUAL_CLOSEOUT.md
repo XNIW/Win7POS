@@ -59,13 +59,43 @@ the existing local checkout is preserved. Its current handoff explicitly
 withdraws the old readiness. TASK-148 is user-confirmed closed. TASK-150 is
 paused and preserves its prior evidence; neither is reactivated here.
 
-The article wrapper still checks literal historical runtime `9fb54f50`,
-deployment `5ad3652d` and version `57af0535`. A current generic readiness
-schema/issuer for a new POS run was not found in the authoritative Admin
-handoff. Removing those checks or authoring an unapproved READY document
-would not establish staging authority. A replacement must be agreed and
-tested with the Admin owner before the client can consume it. No fresh
-article runner was invoked with the known-invalid prerequisite.
+### P109-Q01 — Article runner bound to a closed historical execution
+
+The previous wrapper checked literal runtime `9fb54f50`, deployment `5ad3652d`
+and version `57af0535` in a superseded Markdown handoff. It could not accept
+a genuinely new run. The replacement consumes a typed JSON readiness from
+`docs/HANDOFFS/WIN7POS_ARTICLE_ACCEPTANCE_READY.json` in the **exact fetched
+Admin main commit**, never an arbitrary local file. The file does not exist
+in current Admin main and no READY document was issued in this task.
+
+`-ReadinessRunId` selects the new ID previously reserved by the maintainer;
+existing evidence directories are rejected so an execution identity cannot
+be reused. The namespace remains compatible with the current harness, but
+timestamp/random identity must be fresh. Validation runs both before build
+and before any data-directory move or harness launch. The canonical gate
+executes synthetic positive/negative contract tests without staging requests.
+
+The Admin maintainer must review and publish a new handoff through its normal
+reviewed Git procedure after authorized live checks. The consumer contract is:
+
+| Fields | Required evidence and checks |
+| --- | --- |
+| `schemaVersion`, `state` | `win7pos-article-readiness-v1`, `READY`; unknown/missing/duplicate fields fail |
+| `runId`, `clientCommitSha` | Exact reserved fresh ID and exact final client commit; prior IDs cannot be reused |
+| `environment`, `stagingHost` | `staging`, exactly the validated vault profile host |
+| `profileBindingSha256` | Full SHA256 of UTF-8 `win7pos-qa-scope-v1`, NUL, host, NUL, shop code, NUL, random device identity; generated inside vault validation, no credential included or exposed |
+| `scope`, `scopeManifestSha256` | `qa-articles-zero-sales` and hash of the privately approved manifest; raw identities stay private |
+| `adminRuntimeCommitSha`, `workerDeploymentId`, `workerVersionId` | Full source SHA and nonempty GUIDs from authorized actual deployment inspection, independently of Admin main |
+| `issuedAtUtc`, `expiresAtUtc`, `deploymentVerifiedAtUtc` | Explicit UTC ISO strings; validity <=2h, deployment inspection within 15m before issuance; no expired or future readiness |
+| `qaScopeClean`, `salesAllowed`, `activeQaRuns` | Typed true, false, zero; scoped preflight verified by maintainer |
+| `http503`, `exceededCpu`, `exceededMemory` | Typed integer zeros from fresh server readiness probes |
+| `contractDigests` | Exact SHA256 of the current request/response/firstLogin fixtures under `tests/fixtures/POS-ARTICLE-MUTATION-V1` |
+
+The JSON is a maintainer attestation, not a credential or a substitute for
+server authorization. The wrapper explicitly records that deployment identity
+comes from this attestation, not an independent live probe. A current issuer
+and authorized staging readiness remain external prerequisites; no Admin
+runtime code, source task activation or deployment was changed.
 
 Admin's current master-plan receipt reports selective staging source
 `c55f88a36ac89684f25fd503ca7a3bc085c08660` and Worker version

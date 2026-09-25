@@ -191,6 +191,16 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
                     pending.RemoveAll(reference => !(reference.Target is DispatcherOperation operation) ||
                         operation.Status == DispatcherOperationStatus.Completed || operation.Status == DispatcherOperationStatus.Aborted);
                     pendingCount = pending.Select(reference => reference.Target).Where(operation => operation != null).Distinct().Count();
+                    if (phase == "after_idle")
+                    {
+                        var groups = pending.Select(reference => reference.Target as DispatcherOperation)
+                            .Where(operation => operation != null).Distinct()
+                            .GroupBy(operation => operation.Priority + ":" + operation.Status + ":" +
+                                ((typeof(DispatcherOperation).GetField("_method", BindingFlags.Instance | BindingFlags.NonPublic)
+                                    ?.GetValue(operation) as Delegate)?.Method.ToString() ?? "unknown"))
+                            .Select(group => cycle + "," + group.Count() + "," + group.Key);
+                        File.AppendAllLines(Path.Combine(dataDir, "dispatcher-operations.txt"), groups);
+                    }
                 }
                 process.Refresh();
                 csv.WriteLine(string.Format(CultureInfo.InvariantCulture,

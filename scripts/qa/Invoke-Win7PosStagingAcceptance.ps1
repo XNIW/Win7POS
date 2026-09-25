@@ -2,12 +2,14 @@
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-z0-9][a-z0-9-]{0,63}$')][string]$Profile,
     [string]$DataDirectory = 'C:\POSData\Win7POSFinalArticleSyncAcceptance',
+    [ValidatePattern('^ASUSART_POST_PR68_[0-9]{8}T[0-9]{9}Z_[A-F0-9]{8}$')][string]$ReadinessRunId = '',
     [ValidateRange(15, 60)][int]$TimeoutMinutes = 15
 )
 
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'Win7PosQaCredentialVault.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Win7PosAcceptanceProcessRunner.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Win7PosArticleReadiness.psm1') -Force
 
 $runnerExit = @{
     ProfileMissingOrInvalid = 2
@@ -22,9 +24,11 @@ $runId = 'ASUSART_POST_PR68_' +
     [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') +
     '_' +
     [Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant()
+if ($ReadinessRunId) { $runId = $ReadinessRunId }
 $evidenceDirectory = Join-Path 'C:\Dev\_codex-evidence' (
     'win7pos-final-post-pr68-' + $runId)
-New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+if (Test-Path -LiteralPath $evidenceDirectory) { throw 'acceptance_run_identity_already_used' }
+New-Item -ItemType Directory -Path $evidenceDirectory | Out-Null
 
 function Complete-Win7PosAcceptanceRunner {
     param(
@@ -267,43 +271,46 @@ try {
     $handoffBase64 = (& gh api (
         'repos/XNIW/merchandise-control-admin-web/contents/' +
         'docs/HANDOFFS/' +
-        'WIN7POS_FINAL_ARTICLE_SYNC_CPU_REMEDIATION_READY.md' +
-        '?ref=main') --jq '.content').Trim()
+        'WIN7POS_ARTICLE_ACCEPTANCE_READY.json' +
+        '?ref=' + $adminMainSha) --jq '.content')
+    if ($LASTEXITCODE -ne 0) {
+        Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_admin_readiness_missing' -Passed $false
+    }
     try {
         $handoffText = [Text.Encoding]::UTF8.GetString(
             [Convert]::FromBase64String(
-                ($handoffBase64 -replace '\s', '')))
+                (($handoffBase64 -join '') -replace '\s', '')))
+        $fixtureRoot = Join-Path $repoRoot 'tests/fixtures/POS-ARTICLE-MUTATION-V1'
+        $contractDigests = @{}
+        foreach ($entry in @{
+            request='article-mutation-v1.request.json'
+            response='article-mutation-v1.response.json'
+            firstLogin='first-login-offline-authorization-v1.response.json'
+        }.GetEnumerator()) {
+            $contractDigests[$entry.Key] = (Get-FileHash -LiteralPath (Join-Path $fixtureRoot $entry.Value) -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        $ready = Assert-Win7PosArticleReadiness -Json $handoffText -RunId $runId `
+            -ClientCommitSha $headSha -StagingHost $profileState.BaseUrlHost `
+            -ProfileBindingSha256 $profileState.ProfileBindingSha256 -ContractDigests $contractDigests
     }
     catch {
         Complete-Win7PosAcceptanceRunner `
             -ExitCode $runnerExit.LaunchFailure `
-            -Code 'acceptance_admin_handoff_invalid' `
-            -Passed $false
-    }
-    $adminHandoffReady =
-        $handoffText -match
-            'READY_FOR_ASUS_FINAL_ARTICLE_SYNC_ACCEPTANCE' -and
-        $handoffText -match
-            '9fb54f50999b8587bc37f5e2040743df20df8f08' -and
-        $handoffText -match '5ad3652d' -and
-        $handoffText -match '57af0535' -and
-        $handoffText -match '503[^0-9]+0' -and
-        $handoffText -match 'exceededCpu[^0-9]+0' -and
-        $handoffText -match 'exceededMemory[^0-9]+0'
-    if (-not $adminHandoffReady) {
-        Complete-Win7PosAcceptanceRunner `
-            -ExitCode $runnerExit.LaunchFailure `
-            -Code 'acceptance_admin_handoff_not_ready' `
+            -Code 'acceptance_admin_readiness_invalid' `
             -Passed $false
     }
     @(
         'repository=XNIW/merchandise-control-admin-web'
         'main=' + $adminMainSha
         'handoffState=READY_FOR_ASUS_FINAL_ARTICLE_SYNC_ACCEPTANCE'
-        'runtimeSource=9fb54f50999b8587bc37f5e2040743df20df8f08'
-        'workerDeployment=5ad3652d'
-        'workerVersion=57af0535'
-        'serverAcceptance=PASS'
+        'readinessSchema=' + $ready.schemaVersion
+        'readinessRunId=' + $ready.runId
+        'runtimeSource=' + $ready.adminRuntimeCommitSha
+        'workerDeployment=' + $ready.workerDeploymentId
+        'workerVersion=' + $ready.workerVersionId
+        'expiresAtUtc=' + $ready.expiresAtUtc
+        'deploymentEvidence=maintainer_attested_not_independent_live_probe'
         'http503=0'
         'exceededCpu=0'
         'exceededMemory=0'
@@ -462,6 +469,16 @@ try {
             -ExitCode $runnerExit.LaunchFailure `
             -Code 'acceptance_harness_not_built' `
             -Passed $false
+    }
+
+    # Build/test time must not turn an expired readiness into a new live run.
+    try {
+        $null = Assert-Win7PosArticleReadiness -Json $handoffText -RunId $runId `
+            -ClientCommitSha $headSha -StagingHost $profileState.BaseUrlHost `
+            -ProfileBindingSha256 $profileState.ProfileBindingSha256 -ContractDigests $contractDigests
+    } catch {
+        Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_admin_readiness_expired_before_launch' -Passed $false
     }
 
     if (Test-Path -LiteralPath $fullDataDirectory) {
