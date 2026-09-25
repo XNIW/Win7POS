@@ -39,7 +39,7 @@ namespace Win7POS.Wpf.Pos
         public bool SyncReviewRequired { get; set; }
     }
 
-    public sealed class PosWorkflowService
+    public sealed class PosWorkflowService : IHeldCartWorkflow
     {
         private const string KeyPrinterName = AppSettingKeys.PosPrinterReceiptName;
         private const string KeyPrinterCopies = AppSettingKeys.PosPrinterReceiptCopies;
@@ -98,6 +98,10 @@ namespace Win7POS.Wpf.Pos
 
         private SaleCompleted _lastCompletedSale;
         private PendingSaleAttempt _pendingSaleAttempt;
+        private readonly Func<DateTimeOffset> _utcNow;
+        private string _recoveredHoldId;
+        private string _recoveredHoldSaleCode;
+        private long _snapshotRevision;
 
         private void InvalidatePendingSaleAttemptIfCartChanged()
         {
@@ -108,8 +112,33 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public PosWorkflowService()
+        private async Task ReconcilePendingSaleBeforeCartChangeNoLockAsync(bool abandonUncommitted = true)
         {
+            if (_pendingSaleAttempt == null) return;
+            // A reported error can occur after COMMIT. Never carry already sold items
+            // into a changed cart, nor discard the attempt identity before checking it.
+            var persisted = await _sales.GetByCodeAsync(_pendingSaleAttempt.Code).ConfigureAwait(false);
+            if (persisted == null)
+            {
+                if (abandonUncommitted) _pendingSaleAttempt = null;
+                return;
+            }
+            var lines = await _sales.GetLinesBySaleIdAsync(persisted.Id).ConfigureAwait(false);
+            if (!_pendingSaleAttempt.MatchesContent(persisted, lines))
+                throw new InvalidOperationException(PosLocalization.T("pos.status.saleReconciliationRequired"));
+            _lastCompletedSale = new SaleCompleted(persisted, lines);
+            _session.Clear();
+            _recoveredHoldId = null;
+            _recoveredHoldSaleCode = null;
+            _pendingSaleAttempt = null;
+            _logger.LogInfo("Pending sale reconciled before cart change; persisted sale=" + persisted.Id.ToString(CultureInfo.InvariantCulture));
+        }
+
+        public PosWorkflowService() : this(() => DateTimeOffset.UtcNow) { }
+
+        public PosWorkflowService(Func<DateTimeOffset> utcNow)
+        {
+            _utcNow = utcNow ?? throw new ArgumentNullException(nameof(utcNow));
             _options = PosDbOptions.Default();
             // EnsureCreated spostato in InitializeAsync() per non bloccare il thread UI al primo render
 
@@ -177,7 +206,7 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
+                return await Task.Run(ReadPrinterSettingsNoLockAsync).ConfigureAwait(false);
             }
             finally
             {
@@ -188,6 +217,7 @@ namespace Win7POS.Wpf.Pos
         public async Task SetPrinterSettingsAsync(PosPrinterSettings settings)
         {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
+            settings = settings.Copy();
             if (App.IsSafeStart &&
                 (settings.ReceiptEnabled ||
                  settings.AutoPrint ||
@@ -222,22 +252,24 @@ namespace Win7POS.Wpf.Pos
                 if (cashDrawerActive && !WindowsSpoolerReceiptPrinter.IsCashDrawerCommandValid(rawCashDrawerCommand))
                     throw new InvalidOperationException(PosLocalization.T("printer.testInvalidCommand"));
 
-                await _settings.SetStringAsync(KeyPrinterName, settings.PrinterName ?? string.Empty).ConfigureAwait(false);
-                await _settings.SetIntAsync(KeyPrinterCopies, copies).ConfigureAwait(false);
-                await _settings.SetBoolAsync(KeyReceiptEnabled, settings.ReceiptEnabled).ConfigureAwait(false);
-                await _settings.SetBoolAsync(KeyAutoPrint, settings.AutoPrint).ConfigureAwait(false);
-                await _settings.SetBoolAsync(KeyAllowWindowsDefault, settings.AllowWindowsDefault).ConfigureAwait(false);
-                await _settings.SetBoolAsync(KeyAllowVirtualPrinters, settings.AllowVirtualPrinters).ConfigureAwait(false);
-                await _settings.SetStringAsync(KeyCashDrawerCommand, cashDrawerCommand).ConfigureAwait(false);
-                await _settings.SetBoolAsync(KeyCashDrawerEnabled, settings.CashDrawerEnabled).ConfigureAwait(false);
-                await _settings.SetStringAsync(KeyCashDrawerMode, cashDrawerMode).ConfigureAwait(false);
-                await _settings.SetStringAsync(KeyCashDrawerPrinterName, settings.CashDrawerPrinterName ?? string.Empty).ConfigureAwait(false);
-                await _settings.SetBoolAsync(KeyCashDrawerOpenOnCashSale, settings.CashDrawerOpenOnCashSale).ConfigureAwait(false);
-
-                await _settings.SetStringAsync(LegacyKeyPrinterName, settings.PrinterName ?? string.Empty).ConfigureAwait(false);
-                await _settings.SetIntAsync(LegacyKeyPrinterCopies, copies).ConfigureAwait(false);
-                await _settings.SetBoolAsync(LegacyKeyAutoPrint, settings.AutoPrint).ConfigureAwait(false);
-                await _settings.SetStringAsync(LegacyKeyCashDrawerCommand, cashDrawerCommand).ConfigureAwait(false);
+                await _settings.SetStringsAsync(new Dictionary<string, string>
+                {
+                    [KeyPrinterName] = settings.PrinterName ?? string.Empty,
+                    [KeyPrinterCopies] = copies.ToString(CultureInfo.InvariantCulture),
+                    [KeyReceiptEnabled] = settings.ReceiptEnabled ? "1" : "0",
+                    [KeyAutoPrint] = settings.AutoPrint ? "1" : "0",
+                    [KeyAllowWindowsDefault] = settings.AllowWindowsDefault ? "1" : "0",
+                    [KeyAllowVirtualPrinters] = settings.AllowVirtualPrinters ? "1" : "0",
+                    [KeyCashDrawerCommand] = cashDrawerCommand,
+                    [KeyCashDrawerEnabled] = settings.CashDrawerEnabled ? "1" : "0",
+                    [KeyCashDrawerMode] = cashDrawerMode,
+                    [KeyCashDrawerPrinterName] = settings.CashDrawerPrinterName ?? string.Empty,
+                    [KeyCashDrawerOpenOnCashSale] = settings.CashDrawerOpenOnCashSale ? "1" : "0",
+                    [LegacyKeyPrinterName] = settings.PrinterName ?? string.Empty,
+                    [LegacyKeyPrinterCopies] = copies.ToString(CultureInfo.InvariantCulture),
+                    [LegacyKeyAutoPrint] = settings.AutoPrint ? "1" : "0",
+                    [LegacyKeyCashDrawerCommand] = cashDrawerCommand,
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -703,13 +735,16 @@ namespace Win7POS.Wpf.Pos
                 CancellationToken.None);
         }
 
-        public async Task<string> ExportDailyCsvAsync(DateTime date)
+        public Task<string> ExportDailyCsvAsync(DateTime date) => ExportDailyCsvAsync(date, CancellationToken.None);
+
+        public async Task<string> ExportDailyCsvAsync(DateTime date, CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync().ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 AppPaths.EnsureCreated();
-                var content = await GetDailyCsvContentAsync(date).ConfigureAwait(false);
+                var content = await GetDailyCsvContentNoLockAsync(date, true).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 var fileName = "daily_" + date.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".csv";
                 var path = Path.Combine(AppPaths.ExportsDirectory, fileName);
                 await Task.Run(() => File.WriteAllText(path, content, Encoding.UTF8)).ConfigureAwait(false);
@@ -727,8 +762,7 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var rows = await _sales.GetSalesForDateAsync(date, includeFiscalPrinted).ConfigureAwait(false);
-                return BuildSalesCsvContent(rows);
+                return await GetDailyCsvContentNoLockAsync(date, includeFiscalPrinted).ConfigureAwait(false);
             }
             finally
             {
@@ -737,6 +771,13 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Restituisce il contenuto CSV per un periodo (per Salva con nome).</summary>
+        private Task<string> GetDailyCsvContentNoLockAsync(DateTime date, bool includeFiscalPrinted)
+        {
+            // Caller owns _gate. SQLite's async methods may run synchronously.
+            return Task.Run(async () => BuildSalesCsvContent(
+                await _sales.GetSalesForDateAsync(date, includeFiscalPrinted).ConfigureAwait(false)));
+        }
+
         public async Task<string> GetPeriodCsvContentAsync(DateTime fromDate, DateTime toDate, bool includeFiscalPrinted = true)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -977,11 +1018,16 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var code = (barcode ?? string.Empty).Trim();
-                _logger.LogInfo("POS add barcode: " + code);
-                await _session.AddByBarcodeAsync(code).ConfigureAwait(false);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.itemAdded"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    var code = (barcode ?? string.Empty).Trim();
+                    _logger.LogInfo("POS add barcode: " + code);
+                    await _session.AddByBarcodeAsync(code).ConfigureAwait(false);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.itemAdded"));
+                }).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -999,10 +1045,15 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                _logger.LogInfo("POS add manual price: " + unitPriceMinor);
-                await _session.AddManualPriceAsync(unitPriceMinor).ConfigureAwait(false);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.manualItemAdded"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    _logger.LogInfo("POS add manual price: " + unitPriceMinor);
+                    await _session.AddManualPriceAsync(unitPriceMinor).ConfigureAwait(false);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.manualItemAdded"));
+                }).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1121,6 +1172,7 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                await ReconcilePendingSaleBeforeCartChangeNoLockAsync().ConfigureAwait(false);
                 _session.SetLineUnitPrice(code, unitPriceMinor);
                 InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.priceUpdated"));
@@ -1141,24 +1193,28 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
-                if (line == null)
-                    return await BuildSnapshotAsync(string.Empty).ConfigureAwait(false);
-
-                var product = await _products.GetByBarcodeAsync(code).ConfigureAwait(false);
-
-                if (product == null)
+                return await Task.Run(async () =>
                 {
-                    _session.SetQuantity(code, 0);
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync().ConfigureAwait(false);
+                    var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
+                    if (line == null)
+                        return await BuildSnapshotAsync(string.Empty).ConfigureAwait(false);
+
+                    var product = await _products.GetByBarcodeAsync(code).ConfigureAwait(false);
+
+                    if (product == null)
+                    {
+                        _session.SetQuantity(code, 0);
+                        InvalidatePendingSaleAttemptIfCartChanged();
+                        return await BuildSnapshotAsync(PosLocalization.T("pos.status.productRemovedFromCartMissing")).ConfigureAwait(false);
+                    }
+
+                    _session.SetLineUnitPrice(code, product.UnitPrice);
+                    _session.SetLineName(code, product.Name ?? string.Empty);
                     InvalidatePendingSaleAttemptIfCartChanged();
-                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.productRemovedFromCartMissing")).ConfigureAwait(false);
-                }
 
-                _session.SetLineUnitPrice(code, product.UnitPrice);
-                _session.SetLineName(code, product.Name ?? string.Empty);
-                InvalidatePendingSaleAttemptIfCartChanged();
-
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.catalogSynced")).ConfigureAwait(false);
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.catalogSynced")).ConfigureAwait(false);
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -1203,7 +1259,8 @@ namespace Win7POS.Wpf.Pos
                 var effectiveCreated = (createdAtMs.HasValue && createdAtMs.Value != 0) ? createdAtMs.Value : (long?)null;
                 var sale = new Sale
                 {
-                    Code = !string.IsNullOrWhiteSpace(saleCode) ? saleCode : SaleCodeGenerator.NewCode("V"),
+                    Code = _recoveredHoldSaleCode ?? (!string.IsNullOrWhiteSpace(saleCode) ? saleCode : SaleCodeGenerator.NewCode("V")),
+                    HeldCartId = _recoveredHoldId,
                     CreatedAt = effectiveCreated ?? UnixTime.NowMs(),
                     Total = total,
                     PaidCash = payment.CashAmountMinor,
@@ -1300,6 +1357,8 @@ namespace Win7POS.Wpf.Pos
                 var completed = new SaleCompleted(sale, saleLines);
                 _lastCompletedSale = completed;
                 _session.Clear();
+                _recoveredHoldId = null;
+                _recoveredHoldSaleCode = null;
                 var snapshot = await BuildSnapshotAsync(PosLocalization.T("pos.status.saleCompleted"));
 
                 return new PosSaleResult
@@ -1604,11 +1663,16 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
-                if (line == null) return await BuildSnapshotAsync(string.Empty);
-                _session.SetQuantity(line.Barcode, line.Quantity + 1);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityPlus", 1));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
+                    if (line == null) return await BuildSnapshotAsync(string.Empty);
+                    _session.SetQuantity(line.Barcode, line.Quantity + 1);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityPlus", 1));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -1621,13 +1685,18 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
-                if (line == null) return await BuildSnapshotAsync(string.Empty);
-                var next = line.Quantity - 1;
-                if (next < 1) next = 1;
-                _session.SetQuantity(line.Barcode, next);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityMinus", 1));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
+                    if (line == null) return await BuildSnapshotAsync(string.Empty);
+                    var next = line.Quantity - 1;
+                    if (next < 1) next = 1;
+                    _session.SetQuantity(line.Barcode, next);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityMinus", 1));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -1641,13 +1710,18 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var code = (barcode ?? string.Empty).Trim();
-                if (code.Length == 0) return await BuildSnapshotAsync(string.Empty);
-                var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
-                if (line == null) return await BuildSnapshotAsync(string.Empty);
-                _session.SetQuantity(code, qty <= 0 ? 0 : qty);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    var code = (barcode ?? string.Empty).Trim();
+                    if (code.Length == 0) return await BuildSnapshotAsync(string.Empty);
+                    var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
+                    if (line == null) return await BuildSnapshotAsync(string.Empty);
+                    _session.SetQuantity(code, qty <= 0 ? 0 : qty);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
+                }).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1660,24 +1734,23 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        /// <summary>Imposta la quantità della riga identificata da LineKey (indice nella lista). Funziona anche per righe manuali.
-        /// Nota: LineKey = index è una patch veloce; la riga è ancora aggiornata tramite barcode interno (_session.SetQuantity(line.Barcode, qty)).
-        /// In futuro preferire una chiave riga stabile (es. id univoco) per evitare fragilità con barcode duplicati o riordini.</summary>
+        /// <summary>Updates only the original line identity, even after removals or a cart replacement.</summary>
         public async Task<PosWorkflowSnapshot> SetQtyByLineAsync(string lineKey, int qty)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                if (string.IsNullOrEmpty(lineKey) || !int.TryParse(lineKey, out var index))
-                    return await BuildSnapshotAsync(string.Empty);
-                if (index < 0 || index >= _session.Lines.Count)
-                    return await BuildSnapshotAsync(string.Empty);
-                var line = _session.Lines[index];
-                if (DiscountKeys.IsDiscount(line.Barcode ?? ""))
-                    return await BuildSnapshotAsync(string.Empty);
-                _session.SetQuantity(line.Barcode ?? "", qty <= 0 ? 0 : qty);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    var line = _session.Lines.FirstOrDefault(x => string.Equals(x.LineKey, lineKey, StringComparison.Ordinal));
+                    if (line == null || DiscountKeys.IsDiscount(line.Barcode ?? ""))
+                        return await BuildSnapshotAsync(string.Empty);
+                    _session.SetQuantity(line.Barcode ?? "", qty <= 0 ? 0 : qty);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
+                }).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1695,9 +1768,14 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                _session.RemoveLine(barcode);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.lineRemoved"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    _session.RemoveLine(barcode);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.lineRemoved"));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -1710,9 +1788,14 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                _session.ApplyCartDiscountPercent(percent);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.cartDiscountRemoved") : PosLocalization.T("pos.status.cartDiscountApplied"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    _session.ApplyCartDiscountPercent(percent);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.cartDiscountRemoved") : PosLocalization.T("pos.status.cartDiscountApplied"));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -1725,9 +1808,14 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                _session.ApplyLineDiscountPercent(barcode, percent);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.discountRemoved") : PosLocalization.T("pos.status.discountUpdated"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    _session.ApplyLineDiscountPercent(barcode, percent);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.discountRemoved") : PosLocalization.T("pos.status.discountUpdated"));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -1740,9 +1828,14 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                _session.ApplyLineDiscountAmount(barcode, amountMinor);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.amountDiscountApplied"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    _session.ApplyLineDiscountAmount(barcode, amountMinor);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.amountDiscountApplied"));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -1756,9 +1849,14 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                _session.ApplyLineDiscountByFinalUnitPrice(barcode, finalUnitPriceMinor);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.discountUpdated"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    _session.ApplyLineDiscountByFinalUnitPrice(barcode, finalUnitPriceMinor);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.discountUpdated"));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -1771,9 +1869,14 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                _session.ClearCartDiscount();
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartDiscountRemoved"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    _session.ClearCartDiscount();
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartDiscountRemoved"));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -2151,19 +2254,25 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var toRemove = new List<string>();
-                foreach (var x in _session.Lines)
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
                 {
-                    if (DiscountKeys.IsDiscount(x.Barcode ?? "")) continue;
-                    if ((x.Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase)) continue;
-                    var product = await _products.GetByBarcodeAsync(x.Barcode ?? "").ConfigureAwait(false);
-                    if (product == null) toRemove.Add(x.Barcode ?? "");
-                }
-                foreach (var b in toRemove)
-                    _session.RemoveLine(b);
-                InvalidatePendingSaleAttemptIfCartChanged();
-                var status = toRemove.Count > 0 ? "Prodotto rimosso dal carrello: non più presente nel database." : string.Empty;
-                return await BuildSnapshotAsync(status).ConfigureAwait(false);
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(false).ConfigureAwait(false);
+                    var details = await ReadCartDetailsAsync().ConfigureAwait(false);
+                    var toRemove = new List<string>();
+                    foreach (var x in _session.Lines)
+                    {
+                        if (DiscountKeys.IsDiscount(x.Barcode ?? "")) continue;
+                        if ((x.Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (!details.TryGetValue(x.Barcode, out var product) || !product.IsActive)
+                            toRemove.Add(x.Barcode ?? "");
+                    }
+                    foreach (var b in toRemove)
+                        _session.RemoveLine(b);
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    var status = toRemove.Count > 0 ? "Prodotto rimosso dal carrello: non più presente nel database." : string.Empty;
+                    return await BuildSnapshotAsync(status, details).ConfigureAwait(false);
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -2176,9 +2285,16 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                _session.Clear();
-                InvalidatePendingSaleAttemptIfCartChanged();
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartCleared"));
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
+                {
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    _session.Clear();
+                    _recoveredHoldId = null;
+                    _recoveredHoldSaleCode = null;
+                    InvalidatePendingSaleAttemptIfCartChanged();
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartCleared"));
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -2191,26 +2307,34 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                if (_session.Lines.Count == 0)
-                    return new SuspendCartResult { Success = false, Message = PosLocalization.T("pos.status.cartEmpty") };
-
-                var lines = _session.Lines.Select(x => new Data.Repositories.HeldCartLineRow
+                return await Task.Run(async () =>
                 {
-                    Barcode = x.Barcode ?? string.Empty,
-                    Name = x.Name ?? string.Empty,
-                    UnitPrice = x.UnitPrice,
-                    Qty = x.Quantity
-                }).ToList();
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    if (_session.Lines.Count == 0)
+                        return new SuspendCartResult { Success = false, Message = PosLocalization.T("pos.status.cartEmpty") };
 
-                var createdAtMs = UnixTime.NowMs();
-                var holdId = "H-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
-                var total = _session.Total;
+                    var lines = _session.Lines.Select(x => new Data.Repositories.HeldCartLineRow
+                    {
+                        ProductId = x.ProductId,
+                        Barcode = x.Barcode ?? string.Empty,
+                        Name = x.Name ?? string.Empty,
+                        UnitPrice = x.UnitPrice,
+                        Qty = x.Quantity
+                    }).ToList();
 
-                await _heldCarts.CreateHoldAsync(holdId, createdAtMs, total, lines).ConfigureAwait(false);
-                _session.Clear();
-                InvalidatePendingSaleAttemptIfCartChanged();
+                    var now = _utcNow();
+                    var createdAtMs = now.ToUnixTimeMilliseconds();
+                    var holdId = _recoveredHoldId ?? HeldCartRepository.NewHoldId(now);
+                    var total = _session.Total;
 
-                return new SuspendCartResult { Success = true, HoldId = holdId, Message = PosLocalization.T("pos.status.cartSuspended") };
+                    await _heldCarts.CreateHoldAsync(holdId, createdAtMs, total, lines, _recoveredHoldId != null).ConfigureAwait(false);
+                    _session.Clear();
+                    _recoveredHoldId = null;
+                    _recoveredHoldSaleCode = null;
+                    InvalidatePendingSaleAttemptIfCartChanged();
+
+                    return new SuspendCartResult { Success = true, HoldId = holdId, Message = PosLocalization.T("pos.status.cartSuspended") };
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -2218,9 +2342,15 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        private async Task<T> RunHeldReadAsync<T>(Func<Task<T>> read)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try { return await Task.Run(read).ConfigureAwait(false); }
+            finally { _gate.Release(); }
+        }
         public async Task<IReadOnlyList<HeldCartItem>> GetHeldCartsAsync()
         {
-            var rows = await _heldCarts.ListHoldsAsync().ConfigureAwait(false);
+            var rows = await RunHeldReadAsync(() => _heldCarts.ListHoldsAsync()).ConfigureAwait(false);
             return rows.Select(x => new HeldCartItem
             {
                 HoldId = x.HoldId,
@@ -2234,7 +2364,7 @@ namespace Win7POS.Wpf.Pos
         public async Task<IReadOnlyList<HoldLineDisplay>> PeekHeldCartLinesAsync(string holdId)
         {
             if (string.IsNullOrEmpty(holdId)) return Array.Empty<HoldLineDisplay>();
-            var lines = await _heldCarts.LoadHoldLinesAsync(holdId).ConfigureAwait(false);
+            var lines = await RunHeldReadAsync(() => _heldCarts.LoadHoldLinesAsync(holdId)).ConfigureAwait(false);
             return lines.Select(x => new HoldLineDisplay
             {
                 Barcode = x.Barcode ?? string.Empty,
@@ -2246,7 +2376,14 @@ namespace Win7POS.Wpf.Pos
 
         public async Task DeleteHeldCartAsync(string holdId)
         {
-            await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (string.Equals(_recoveredHoldId, holdId, StringComparison.Ordinal))
+                    throw new InvalidOperationException(PosLocalization.T("heldCarts.activeCart"));
+                await Task.Run(() => _heldCarts.DeleteHoldAsync(holdId)).ConfigureAwait(false);
+            }
+            finally { _gate.Release(); }
         }
 
         public async Task<PosWorkflowSnapshot> RecoverHeldCartAsync(string holdId)
@@ -2254,24 +2391,50 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var lines = await _heldCarts.LoadHoldLinesAsync(holdId).ConfigureAwait(false);
-                if (lines.Count == 0)
-                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.heldCartEmpty"));
-
-                var restored = lines.Select(x => new RestoredLine
+                // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                return await Task.Run(async () =>
                 {
-                    ProductId = null,
-                    Barcode = x.Barcode,
-                    Name = x.Name,
-                    UnitPrice = x.UnitPrice,
-                    Quantity = x.Qty
-                }).ToList();
+                    await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
+                    if (_session.Lines.Count != 0)
+                    {
+                        if (string.Equals(_recoveredHoldId, holdId, StringComparison.Ordinal))
+                            return await BuildSnapshotAsync(string.Empty).ConfigureAwait(false);
+                        throw new InvalidOperationException(PosLocalization.T("heldCarts.activeCart"));
+                    }
+                    var lines = await _heldCarts.LoadHoldLinesAsync(holdId).ConfigureAwait(false);
+                    if (lines.Count == 0)
+                        return await BuildSnapshotAsync(PosLocalization.T("pos.status.heldCartEmpty"));
 
-                _session.ReplaceWithLines(restored);
-                _pendingSaleAttempt = null;
-                await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
+                    var products = await _products.GetByBarcodesAsync(lines
+                        .Where(x => !DiscountKeys.IsReservedPrefix(x.Barcode)).Select(x => x.Barcode)).ConfigureAwait(false);
+                    foreach (var line in lines.Where(x => !DiscountKeys.IsReservedPrefix(x.Barcode)))
+                    {
+                        if (!products.TryGetValue(line.Barcode, out var product) ||
+                            (line.ProductId.HasValue && product.Id != line.ProductId.Value))
+                            throw new InvalidOperationException(PosLocalization.T("heldCarts.productUnavailable"));
+                        line.ProductId = product.Id;
+                    }
+                    var restored = lines.Select(x => new RestoredLine
+                    {
+                        ProductId = x.ProductId,
+                        Barcode = x.Barcode,
+                        Name = x.Name,
+                        UnitPrice = x.UnitPrice,
+                        Quantity = x.Qty
+                    }).ToList();
 
-                return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartRecovered"));
+                    var code = await _heldCarts.ClaimAsync(holdId).ConfigureAwait(false);
+                    try
+                    {
+                        _session.ReplaceWithLines(restored);
+                        var snapshot = await BuildSnapshotAsync(PosLocalization.T("pos.status.cartRecovered"));
+                        _recoveredHoldId = holdId;
+                        _recoveredHoldSaleCode = code;
+                        _pendingSaleAttempt = null;
+                        return snapshot;
+                    }
+                    catch { _session.Clear(); throw; }
+                }).ConfigureAwait(false);
             }
             finally
             {
@@ -2314,11 +2477,22 @@ namespace Win7POS.Wpf.Pos
             _logger.LogInfo("POS demo seed inserted: " + demo.Length);
         }
 
-        private async Task<PosWorkflowSnapshot> BuildSnapshotAsync(string status)
+        private async Task<Dictionary<string, ProductDetailsRow>> ReadCartDetailsAsync()
         {
+            var rows = await _products.ListDetailsByBarcodesAsync(_session.Lines
+                .Where(x => !DiscountKeys.IsEconomicAdjustment(x.Barcode) &&
+                    !x.Barcode.StartsWith(DiscountKeys.ManualPrefix, StringComparison.Ordinal))
+                .Select(x => x.Barcode)).ConfigureAwait(false);
+            return rows.ToDictionary(x => x.Barcode, StringComparer.Ordinal);
+        }
+
+        private async Task<PosWorkflowSnapshot> BuildSnapshotAsync(string status, Dictionary<string, ProductDetailsRow> detailsByBarcode = null)
+        {
+            detailsByBarcode = detailsByBarcode ?? await ReadCartDetailsAsync().ConfigureAwait(false);
+            var discountByBarcode = _session.Lines.Where(x => DiscountKeys.IsLineDiscount(x.Barcode))
+                .GroupBy(x => DiscountKeys.LineDiscountTarget(x.Barcode), StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
             var lines = new List<PosCartLine>();
-            var index = 0;
-            // LineKey = index: patch veloce; in futuro usare chiave riga stabile (id univoco)
             foreach (var x in _session.Lines)
             {
                 var stockQty = 0;
@@ -2326,22 +2500,20 @@ namespace Win7POS.Wpf.Pos
                 int discountPercent = 0;
                 if (!DiscountKeys.IsDiscount(x.Barcode ?? "") && !(x.Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var details = await _products.GetDetailsByBarcodeAsync(x.Barcode ?? "").ConfigureAwait(false);
-                    if (details != null) stockQty = details.StockQty;
+                    if (detailsByBarcode.TryGetValue(x.Barcode, out var details)) stockQty = details.StockQty;
                 }
                 if (!DiscountKeys.IsDiscount(x.Barcode ?? ""))
                 {
-                    var discLine = _session.Lines.FirstOrDefault(d => DiscountKeys.IsLineDiscountFor(d.Barcode ?? "", x.Barcode ?? ""));
-                    if (discLine != null)
+                    if (discountByBarcode.TryGetValue(x.Barcode, out var discLine))
                     {
                         discountAmountMinor = discLine.LineTotal < 0 ? -discLine.LineTotal : 0;
                         var (_, pct) = DiscountKeys.ParseLinePct(discLine.Barcode ?? "");
-                        discountPercent = pct ?? (x.LineTotal > 0 ? (int)Math.Round(discountAmountMinor * 100.0 / x.LineTotal, MidpointRounding.AwayFromZero) : 0);
+                        discountPercent = pct ?? (x.LineTotal > 0 ? (int)Math.Round(discountAmountMinor * 100m / x.LineTotal, MidpointRounding.AwayFromZero) : 0);
                     }
                 }
                 lines.Add(new PosCartLine
                 {
-                    LineKey = index.ToString(),
+                    LineKey = x.LineKey,
                     Barcode = x.Barcode ?? "",
                     Name = x.Name ?? "",
                     Quantity = x.Quantity,
@@ -2351,18 +2523,18 @@ namespace Win7POS.Wpf.Pos
                     DiscountAmountMinor = discountAmountMinor,
                     DiscountPercent = discountPercent
                 });
-                index++;
             }
 
             long subtotalBeforeDiscounts = 0;
             foreach (var x in _session.Lines)
             {
                 if (!DiscountKeys.IsDiscount(x.Barcode ?? ""))
-                    subtotalBeforeDiscounts += x.LineTotal;
+                    subtotalBeforeDiscounts = checked(subtotalBeforeDiscounts + x.LineTotal);
             }
 
             return new PosWorkflowSnapshot
             {
+                Revision = checked(++_snapshotRevision),
                 Lines = lines,
                 Subtotal = subtotalBeforeDiscounts,
                 Total = _session.Total,
@@ -2395,38 +2567,48 @@ namespace Win7POS.Wpf.Pos
 
         private async Task<PosPrinterSettings> ReadPrinterSettingsNoLockAsync()
         {
-            var printerName = await _settings.GetStringAsync(KeyPrinterName).ConfigureAwait(false);
+            var values = await _settings.GetStringsAsync(new[] { KeyPrinterName, LegacyKeyPrinterName, KeyPrinterCopies, LegacyKeyPrinterCopies, KeyReceiptEnabled, KeyAutoPrint, LegacyKeyAutoPrint, KeyAllowWindowsDefault, KeyAllowVirtualPrinters, KeyCashDrawerCommand, LegacyKeyCashDrawerCommand, KeyCashDrawerEnabled, KeyCashDrawerMode, KeyCashDrawerPrinterName, KeyCashDrawerOpenOnCashSale }).ConfigureAwait(false);
+            string ReadString(string key) => values.TryGetValue(key, out var value) ? value : null;
+            int? ReadInt(string key) => int.TryParse(ReadString(key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? (int?)value : null;
+            bool? ReadBool(string key)
+            {
+                var raw = ReadString(key);
+                if (raw == "1" || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || string.Equals(raw, "yes", StringComparison.OrdinalIgnoreCase)) return true;
+                if (raw == "0" || string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || string.Equals(raw, "no", StringComparison.OrdinalIgnoreCase)) return false;
+                return null;
+            }
+            var printerName = ReadString(KeyPrinterName);
             if (printerName == null)
-                printerName = await _settings.GetStringAsync(LegacyKeyPrinterName).ConfigureAwait(false);
+                printerName = ReadString(LegacyKeyPrinterName);
             printerName = printerName ?? string.Empty;
 
-            var copies = await _settings.GetIntAsync(KeyPrinterCopies).ConfigureAwait(false);
+            var copies = ReadInt(KeyPrinterCopies);
             if (!copies.HasValue)
-                copies = await _settings.GetIntAsync(LegacyKeyPrinterCopies).ConfigureAwait(false);
+                copies = ReadInt(LegacyKeyPrinterCopies);
             var persistedCopies = copies ?? ReceiptPrintOptions.MinimumCopies;
             var copyCount = ReceiptPrintOptions.IsValidCopyCount(persistedCopies)
                 ? persistedCopies
                 : ReceiptPrintOptions.MinimumCopies;
 
-            var receiptEnabled = await _settings.GetBoolAsync(KeyReceiptEnabled).ConfigureAwait(false);
-            var autoPrint = await _settings.GetBoolAsync(KeyAutoPrint).ConfigureAwait(false);
+            var receiptEnabled = ReadBool(KeyReceiptEnabled);
+            var autoPrint = ReadBool(KeyAutoPrint);
             if (!autoPrint.HasValue)
-                autoPrint = await _settings.GetBoolAsync(LegacyKeyAutoPrint).ConfigureAwait(false);
-            var allowWindowsDefault = await _settings.GetBoolAsync(KeyAllowWindowsDefault).ConfigureAwait(false);
-            var allowVirtualPrinters = await _settings.GetBoolAsync(KeyAllowVirtualPrinters).ConfigureAwait(false);
-            var cashDrawerCmd = await _settings.GetStringAsync(KeyCashDrawerCommand).ConfigureAwait(false);
+                autoPrint = ReadBool(LegacyKeyAutoPrint);
+            var allowWindowsDefault = ReadBool(KeyAllowWindowsDefault);
+            var allowVirtualPrinters = ReadBool(KeyAllowVirtualPrinters);
+            var cashDrawerCmd = ReadString(KeyCashDrawerCommand);
             if (cashDrawerCmd == null)
-                cashDrawerCmd = await _settings.GetStringAsync(LegacyKeyCashDrawerCommand).ConfigureAwait(false);
+                cashDrawerCmd = ReadString(LegacyKeyCashDrawerCommand);
             if (cashDrawerCmd == null)
                 cashDrawerCmd = DefaultCashDrawerCommand;
-            var cashDrawerEnabled = await _settings.GetBoolAsync(KeyCashDrawerEnabled).ConfigureAwait(false);
-            var cashDrawerMode = await _settings.GetStringAsync(KeyCashDrawerMode).ConfigureAwait(false);
+            var cashDrawerEnabled = ReadBool(KeyCashDrawerEnabled);
+            var cashDrawerMode = ReadString(KeyCashDrawerMode);
             if (string.IsNullOrWhiteSpace(cashDrawerMode))
                 cashDrawerMode = cashDrawerEnabled == true ? CashDrawerModePrinterKick : CashDrawerModeDisabled;
             if (!string.Equals(cashDrawerMode, CashDrawerModePrinterKick, StringComparison.OrdinalIgnoreCase))
                 cashDrawerMode = CashDrawerModeDisabled;
-            var cashDrawerPrinterName = await _settings.GetStringAsync(KeyCashDrawerPrinterName).ConfigureAwait(false) ?? string.Empty;
-            var cashDrawerOpenOnCashSale = await _settings.GetBoolAsync(KeyCashDrawerOpenOnCashSale).ConfigureAwait(false);
+            var cashDrawerPrinterName = ReadString(KeyCashDrawerPrinterName) ?? string.Empty;
+            var cashDrawerOpenOnCashSale = ReadBool(KeyCashDrawerOpenOnCashSale);
 
             return new PosPrinterSettings
             {
@@ -2962,6 +3144,7 @@ namespace Win7POS.Wpf.Pos
 
     public sealed class PosWorkflowSnapshot
     {
+        public long Revision { get; set; }
         public List<PosCartLine> Lines { get; set; } = new List<PosCartLine>();
         public long Subtotal { get; set; }
         public long Total { get; set; }
@@ -3062,6 +3245,7 @@ namespace Win7POS.Wpf.Pos
 
     public sealed class PosPrinterSettings
     {
+        public PosPrinterSettings Copy() => (PosPrinterSettings)MemberwiseClone();
         public string PrinterName { get; set; } = string.Empty;
         public int Copies { get; set; } = 1;
         public bool ReceiptEnabled { get; set; }

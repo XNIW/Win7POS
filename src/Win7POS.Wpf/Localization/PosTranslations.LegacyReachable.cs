@@ -229,6 +229,10 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("heldCarts.found", "Found: {0}", "Encontrados: {0}", "Trovati: {0}", "找到：{0}");
             yield return new TranslationEntry("heldCarts.recoverError", "Recover error: {0}", "Error recuperando: {0}", "Errore recupero: {0}", "恢复错误：{0}");
             yield return new TranslationEntry("heldCarts.deleted", "Suspended cart deleted.", "Carrito suspendido eliminado.", "Sospeso eliminato.", "已删除挂起购物车。");
+            yield return new TranslationEntry("discount.lineTotal", "Line total", "Total de línea", "Totale riga", "商品行合计");
+            yield return new TranslationEntry("pos.status.saleReconciliationRequired", "The previous sale requires reconciliation. Review the sales register before changing the cart.", "La venta anterior requiere conciliación. Revise el registro de ventas antes de cambiar el carrito.", "La vendita precedente richiede riconciliazione. Controlla il registro vendite prima di modificare il carrello.", "上一笔销售需要核对。请先检查销售记录，再修改购物车。");
+            yield return new TranslationEntry("heldCarts.activeCart", "Suspend or clear the active cart before recovering another cart.", "Suspenda o vacíe el carrito activo antes de recuperar otro.", "Sospendi o svuota il carrello attivo prima di recuperarne un altro.", "请先挂起或清空当前购物车，再恢复其他购物车。");
+            yield return new TranslationEntry("heldCarts.productUnavailable", "A held product was removed, disabled or replaced. Review the suspended cart; it has been preserved.", "Un producto fue eliminado, desactivado o sustituido. Revise el carrito suspendido; se ha conservado.", "Un prodotto è stato rimosso, disattivato o sostituito. Verifica il sospeso: è stato conservato.", "挂起的商品已被删除、停用或替换。请检查挂起购物车，其数据已保留。");
             yield return new TranslationEntry("heldCarts.deleteError", "Delete error: {0}", "Error eliminando: {0}", "Errore eliminazione: {0}", "删除错误：{0}");
 
             yield return new TranslationEntry("override.title", "Authorization required", "Autorizacion requerida", "Autorizzazione richiesta", "需要授权");

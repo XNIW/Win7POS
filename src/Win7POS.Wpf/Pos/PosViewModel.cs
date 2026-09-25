@@ -59,6 +59,7 @@ namespace Win7POS.Wpf.Pos
         private readonly EventHandler _statusToastTickHandler;
         private readonly EventHandler _languageChangedHandler;
         private bool _disposed;
+        private long _lastSnapshotRevision;
         private string _receiptPreview = string.Empty;
         private bool _useReceipt42 = true;
         private bool _isLoadingSettings;
@@ -258,7 +259,7 @@ namespace Win7POS.Wpf.Pos
         public PosCartLineRow SelectedCartItem
         {
             get => _selectedCartItem;
-            set { _selectedCartItem = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+            set { if (ReferenceEquals(_selectedCartItem, value)) return; _selectedCartItem = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
         public RecentSaleRow SelectedRecentSale
@@ -2000,13 +2001,14 @@ namespace Win7POS.Wpf.Pos
         private void OpenChangeQuantity()
         {
             if (SelectedCartItem == null || SelectedCartItem.IsDiscountLine) return;
+            var lineKey = SelectedCartItem.LineKey;
             var dlg = new Dialogs.ChangeQuantityDialog(SelectedCartItem.Name ?? "", SelectedCartItem.Quantity)
             {
                 Owner = DialogOwnerHelper.GetSafeOwner()
             };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
             if (dlg.ShowDialog() == true)
-                _ = SetSelectedLineQtyAsync(dlg.Quantity);
+                _ = SetSelectedLineQtyAsync(lineKey, dlg.Quantity);
             RequestFocusBarcode();
         }
 
@@ -2017,13 +2019,13 @@ namespace Win7POS.Wpf.Pos
             OpenChangeQuantity();
         }
 
-        private async Task SetSelectedLineQtyAsync(int qty)
+        private async Task SetSelectedLineQtyAsync(string lineKey, int qty)
         {
-            if (SelectedCartItem == null) return;
+            if (string.IsNullOrEmpty(lineKey)) return;
             IsBusy = true;
             try
             {
-                var snapshot = await _service.SetQtyByLineAsync(SelectedCartItem.LineKey, qty).ConfigureAwait(true);
+                var snapshot = await _service.SetQtyByLineAsync(lineKey, qty).ConfigureAwait(true);
                 ApplySnapshot(snapshot);
                 SetStatus(
                     qty <= 0
@@ -2199,6 +2201,8 @@ namespace Win7POS.Wpf.Pos
         /// <summary>Applica lo snapshot. preferBarcode: riga da selezionare; preferIndex: indice da selezionare (es. dopo rimozione). Le righe sconto (DISC:*) non vengono mostrate: lo sconto è fuso nella riga prodotto.</summary>
         private void ApplySnapshot(PosWorkflowSnapshot snapshot, string preferBarcode = null, int? preferIndex = null)
         {
+            if (_disposed || snapshot == null || (snapshot.Revision > 0 && snapshot.Revision < _lastSnapshotRevision)) return;
+            _lastSnapshotRevision = Math.Max(_lastSnapshotRevision, snapshot.Revision);
             _paymentReceiptDraftLines = CreatePaymentReceiptLines(snapshot.Lines);
             var existingByLineKey = CartItems
                 .Where(row => !string.IsNullOrWhiteSpace(row.LineKey))
@@ -2618,6 +2622,11 @@ namespace Win7POS.Wpf.Pos
             public void UpdateFrom(PosCartLine source)
             {
                 if (source == null) throw new ArgumentNullException(nameof(source));
+                if (LineKey == source.LineKey && Barcode == source.Barcode && Name == source.Name &&
+                    Quantity == source.Quantity && UnitPrice == source.UnitPrice && LineTotal == source.LineTotal &&
+                    StockQty == source.StockQty && DiscountAmountMinor == source.DiscountAmountMinor &&
+                    DiscountPercent == source.DiscountPercent)
+                    return;
                 var nextBarcode = source.Barcode ?? string.Empty;
                 if (!string.Equals(Barcode, nextBarcode, StringComparison.OrdinalIgnoreCase))
                     ProductImage = null;

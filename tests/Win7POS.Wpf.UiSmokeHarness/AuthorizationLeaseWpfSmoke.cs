@@ -3198,7 +3198,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "legacy v" + formatVersion + " state authorized offline");
         }
 
-        private static PosFirstLoginResponse BuildResponse(
+        internal static PosFirstLoginResponse BuildResponse(
             bool includeOfflineAttestation)
         {
             var now = DateTimeOffset.UtcNow;
@@ -3323,7 +3323,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return false;
         }
 
-        private static async Task SeedCatalogSaleSafetyAsync(
+        internal static async Task SeedCatalogSaleSafetyAsync(
             SqliteConnectionFactory factory)
         {
             await new ShopOfficialSnapshotRepository(factory).SaveAsync(
