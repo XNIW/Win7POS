@@ -86,6 +86,11 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File scripts/run-product-image-profile-smoke.ps1 -Configuration Release -Platform x86
 
+      - name: WPF functional completion regressions (x86)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Configuration Release -Platform x86
+
       - name: WPF authorization lease runtime smoke (x86)
         shell: pwsh
         run: pwsh -NoProfile -File scripts/run-authorization-lease-smoke.ps1 -Configuration Release -Platform x86

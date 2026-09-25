@@ -11,8 +11,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 {
     public sealed class HeldCartsViewModel : INotifyPropertyChanged
     {
-        private readonly PosWorkflowService _service;
+        private readonly IHeldCartWorkflow _service;
         private readonly Action<PosWorkflowSnapshot> _onRecovered;
+        private long _generation;
+        private bool _closed;
+        public bool IsMutating { get; private set; }
 
         private bool _isBusy;
         private string _status = string.Empty;
@@ -25,7 +28,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             get => _selectedHold;
             set
             {
+                if (_closed || ReferenceEquals(_selectedHold, value)) return;
                 _selectedHold = value;
+                _generation++;
                 OnPropertyChanged();
                 CommandManager.InvalidateRequerySuggested();
                 _ = LoadPreviewAsync();
@@ -51,7 +56,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand DeleteCommand { get; }
         public ICommand CloseCommand { get; }
 
-        public HeldCartsViewModel(PosWorkflowService service, Action<PosWorkflowSnapshot> onRecovered)
+        public HeldCartsViewModel(IHeldCartWorkflow service, Action<PosWorkflowSnapshot> onRecovered)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _onRecovered = onRecovered ?? throw new ArgumentNullException(nameof(onRecovered));
@@ -59,16 +64,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             RecoverCommand = new AsyncRelayCommand(RecoverAsync, _ => !IsBusy && SelectedHold != null);
             DeleteCommand = new AsyncRelayCommand(DeleteAsync, _ => !IsBusy && SelectedHold != null);
-            CloseCommand = new RelayCommand(_ => RequestClose?.Invoke(false));
+            CloseCommand = new RelayCommand(_ => { if (TryClose()) RequestClose?.Invoke(false); });
+        }
+
+        public bool TryClose()
+        {
+            if (IsMutating) return false;
+            _closed = true;
+            _generation++;
+            return true;
         }
 
         public async Task LoadAsync()
         {
+            if (_closed || IsBusy) return;
             IsBusy = true;
+            SelectedHold = null;
+            var generation = ++_generation;
             try
             {
                 Items.Clear();
                 var list = await _service.GetHeldCartsAsync().ConfigureAwait(true);
+                if (_closed || generation != _generation) return;
                 foreach (var x in list)
                 {
                     Items.Add(new HoldRow
@@ -86,28 +103,32 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
+                if (!_closed && generation == _generation) Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
-                IsBusy = false;
+                if (!_closed) IsBusy = false;
             }
         }
 
         private async Task LoadPreviewAsync()
         {
-            if (_selectedHold == null)
+            var selected = _selectedHold;
+            var generation = _generation;
+            SelectedLines.Clear();
+            if (_closed || selected == null)
             {
                 SelectedLines.Clear();
                 return;
             }
             try
             {
-                var list = await _service.PeekHeldCartLinesAsync(_selectedHold.HoldId).ConfigureAwait(true);
+                var list = await _service.PeekHeldCartLinesAsync(selected.HoldId).ConfigureAwait(true);
+                if (_closed || generation != _generation || !ReferenceEquals(selected, _selectedHold)) return;
                 SelectedLines.Clear();
                 foreach (var x in list)
                 {
-                    var lineTotal = x.UnitPrice * x.Qty;
+                    var lineTotal = checked(x.UnitPrice * x.Qty);
                     SelectedLines.Add(new HoldLineRow
                     {
                         Barcode = x.Barcode,
@@ -118,50 +139,64 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                if (_closed || generation != _generation) return;
                 SelectedLines.Clear();
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
         }
 
         private async Task RecoverAsync()
         {
-            if (SelectedHold == null) return;
+            if (_closed || IsBusy || SelectedHold == null) return;
+            var selected = SelectedHold;
             IsBusy = true;
+            IsMutating = true;
+            _generation++;
             try
             {
-                var snapshot = await _service.RecoverHeldCartAsync(SelectedHold.HoldId).ConfigureAwait(true);
+                var snapshot = await _service.RecoverHeldCartAsync(selected.HoldId).ConfigureAwait(true);
+                if (_closed) return;
                 _onRecovered(snapshot);
+                IsMutating = false;
+                TryClose();
                 RequestClose?.Invoke(true);
             }
             catch (Exception ex)
             {
-                Status = PosLocalization.F("heldCarts.recoverError", ex.Message);
+                if (!_closed) Status = PosLocalization.F("heldCarts.recoverError", ex.Message);
             }
             finally
             {
-                IsBusy = false;
+                IsMutating = false;
+                if (!_closed) IsBusy = false;
             }
         }
 
         private async Task DeleteAsync()
         {
-            if (SelectedHold == null) return;
+            if (_closed || IsBusy || SelectedHold == null) return;
+            var selected = SelectedHold;
             IsBusy = true;
+            IsMutating = true;
+            _generation++;
             try
             {
-                await _service.DeleteHeldCartAsync(SelectedHold.HoldId).ConfigureAwait(true);
-                Items.Remove(SelectedHold);
-                SelectedHold = null;
+                await _service.DeleteHeldCartAsync(selected.HoldId).ConfigureAwait(true);
+                if (_closed) return;
+                Items.Remove(selected);
+                if (ReferenceEquals(SelectedHold, selected)) SelectedHold = null;
                 Status = PosLocalization.T("heldCarts.deleted");
             }
             catch (Exception ex)
             {
-                Status = PosLocalization.F("heldCarts.deleteError", ex.Message);
+                if (!_closed) Status = PosLocalization.F("heldCarts.deleteError", ex.Message);
             }
             finally
             {
-                IsBusy = false;
+                IsMutating = false;
+                if (!_closed) IsBusy = false;
             }
         }
 
@@ -216,6 +251,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
             public async void Execute(object parameter)
             {
+                if (!CanExecute(parameter)) return;
                 try
                 {
                     await _execute().ConfigureAwait(true);

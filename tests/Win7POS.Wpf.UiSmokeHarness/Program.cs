@@ -241,7 +241,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             var artifactDirectory =
                 authorizationLeaseMode ? diagnosticsDir : dataDir;
-            var automatedRun = HasArg(args, "--seed") ||
+            var automatedRun = HasArg(args, "--functional-completion-smoke") || HasArg(args, "--cart-performance") || HasArg(args, "--seed") ||
                                authorizationLeaseSmoke ||
                                authorizationLeaseRestartPrepare ||
                                authorizationLeaseRestartVerify ||
@@ -481,6 +481,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 "authorization-lease-smoke.txt"),
                             result,
                             Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (HasArg(args, "--functional-completion-smoke") || HasArg(args, "--cart-performance"))
+                    {
+                        var result = await FunctionalCompletionSmoke.RunAsync(dataDir, HasArg(args, "--cart-performance"),
+                            ValueAfter(args, "--products"), ValueAfter(args, "--scenario")).ConfigureAwait(true);
+                        File.WriteAllText(Path.Combine(dataDir, "functional-completion.txt"), result, Encoding.UTF8);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
                         return;
                     }
@@ -2977,6 +2986,26 @@ WHERE id = @id;",
                 await CaptureProductsCloseoutAsync(outputDirectory).ConfigureAwait(true);
                 await CaptureSupplierImportCloseoutAsync(outputDirectory).ConfigureAwait(true);
                 await CaptureRefundCloseoutAsync(outputDirectory).ConfigureAwait(true);
+
+                using (var cartVm = new PosViewModel(new PosWorkflowService()))
+                {
+                    var discount = new DiscountDialog("QA", true, new PosWorkflowService(), cartVm, 100, null,
+                        new DiscountPreviewContext { Barcode = "QA", Name = "Half-peso rounding", Quantity = 3, OriginalUnitPrice = 101 });
+                    discount.ViewModel.ValueText = "50";
+                    await CaptureDialogAsync(discount, Path.Combine(outputDirectory, "discount-exact-line-total.png"),
+                        verifyRendered: dialog =>
+                        {
+                            if (!IsRenderedWithin(RequireNamed<Button>(dialog, "ConfirmDiscountButton"), RequireOverlayCard(dialog)))
+                                throw new InvalidOperationException("Discount confirmation footer was clipped.");
+                        });
+                    var heldService = new PosWorkflowService();
+                    await heldService.AddManualPriceAsync(101);
+                    await heldService.SuspendCartAsync();
+                    var heldVm = new HeldCartsViewModel(heldService, _ => { });
+                    await heldVm.LoadAsync();
+                    await CaptureDialogAsync(new HeldCartsDialog(heldVm),
+                        Path.Combine(outputDirectory, "held-carts-durable.png"), idleDelayMs: 250);
+                }
 
                 var uxResult = await CaptureUxArtifactsAsync(outputDirectory)
                     .ConfigureAwait(true);

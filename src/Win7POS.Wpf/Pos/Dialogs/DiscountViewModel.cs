@@ -22,7 +22,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public int? CurrentDiscountPercent { get; set; }
     }
 
-    public sealed class DiscountViewModel : INotifyPropertyChanged
+    public sealed class DiscountViewModel : INotifyPropertyChanged, IDisposable
     {
         private string _valueText = "0";
         private DiscountMode _mode = DiscountMode.Percent;
@@ -45,13 +45,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             BackspaceCommand = new RelayCommand(_ => Backspace(), _ => (ValueText ?? string.Empty).Length > 0);
             ConfirmCommand = new AsyncRelayCommand(ConfirmAsync, _ => CanConfirm && !IsBusy);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
-            PosLocalization.Current.LanguageChanged += (_, __) =>
-            {
-                OnPropertyChanged(nameof(ScopeText));
-                OnPropertyChanged(nameof(ValueLabel));
-                RaisePreviewChanged();
-            };
+            PosLocalization.Current.LanguageChanged += OnLanguageChanged;
         }
+
+        private void OnLanguageChanged(object sender, EventArgs e)
+        {
+            OnPropertyChanged(nameof(ScopeText));
+            OnPropertyChanged(nameof(ValueLabel));
+            RaisePreviewChanged();
+        }
+
+        public void Dispose() => PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
 
         public bool IsBusy
         {
@@ -68,7 +72,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool ApplyToWholeCart
         {
             get => _applyToWholeCart;
-            set { _applyToWholeCart = value; OnPropertyChanged(); OnPropertyChanged(nameof(ScopeText)); OnPropertyChanged(nameof(CanConfirm)); RaiseCanExecuteChanged(); }
+            set { _applyToWholeCart = value; OnPropertyChanged(); OnPropertyChanged(nameof(ScopeText)); OnPropertyChanged(nameof(CanConfirm)); OnPropertyChanged(nameof(ShowPreview)); RaiseCanExecuteChanged(); }
         }
 
         public string ScopeText => ApplyToWholeCart
@@ -155,6 +159,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void RaisePreviewChanged()
         {
             OnPropertyChanged(nameof(PreviewFinalUnitPrice));
+            OnPropertyChanged(nameof(PreviewFinalLineTotalDisplay));
             OnPropertyChanged(nameof(OriginalPriceDisplay));
             OnPropertyChanged(nameof(PreviewFinalPriceDisplay));
             OnPropertyChanged(nameof(PreviewDiscountPercentDisplay));
@@ -215,7 +220,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (IsPercentMode)
                 {
                     var p = Math.Max(0, Math.Min(100, ValueInt));
-                    return (OriginalUnitPrice * (100 - p)) / 100;
+                    return OriginalUnitPrice - Win7POS.Core.Pos.PosSession.PercentAmount(OriginalUnitPrice, p);
                 }
                 var final = ValueLong;
                 if (final < 0) final = 0;
@@ -225,13 +230,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         public string OriginalPriceDisplay => MoneyClp.Format(OriginalUnitPrice);
+        public long PreviewFinalLineTotal
+        {
+            get
+            {
+                var quantity = Math.Max(1, _previewContext?.Quantity ?? 1);
+                var gross = checked(OriginalUnitPrice * quantity);
+                return IsPercentMode ? gross - Win7POS.Core.Pos.PosSession.PercentAmount(gross, ValueInt)
+                    : checked(PreviewFinalUnitPrice * quantity);
+            }
+        }
+        public string PreviewFinalLineTotalDisplay => MoneyClp.Format(PreviewFinalLineTotal);
         public string PreviewFinalPriceDisplay => MoneyClp.Format(PreviewFinalUnitPrice);
         public string PreviewDiscountPercentDisplay
         {
             get
             {
                 if (OriginalUnitPrice <= 0 || PreviewFinalUnitPrice >= OriginalUnitPrice) return string.Empty;
-                var pct = (int)Math.Round((OriginalUnitPrice - PreviewFinalUnitPrice) * 100.0 / OriginalUnitPrice, MidpointRounding.AwayFromZero);
+                var pct = (int)Math.Round((OriginalUnitPrice - PreviewFinalUnitPrice) * 100m / OriginalUnitPrice, MidpointRounding.AwayFromZero);
                 return pct > 0 ? "-" + pct + "%" : string.Empty;
             }
         }
@@ -246,7 +262,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
         public bool HasPreviewDiscount => OriginalUnitPrice > 0 && PreviewFinalUnitPrice < OriginalUnitPrice;
         public bool IsRemovingDiscount => OriginalUnitPrice > 0 && (IsPercentMode ? ValueInt == 0 : PreviewFinalUnitPrice >= OriginalUnitPrice);
-        public bool ShowPreview => OriginalUnitPrice > 0;
+        public bool ShowPreview => OriginalUnitPrice > 0 && !ApplyToWholeCart;
 
         public ICommand DigitCommand { get; }
         public ICommand BackspaceCommand { get; }
@@ -303,7 +319,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task ConfirmAsync()
         {
-            if (!CanConfirm) return;
+            if (IsBusy || !CanConfirm) return;
             IsBusy = true;
             try
             {

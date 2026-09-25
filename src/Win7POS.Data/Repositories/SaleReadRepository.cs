@@ -223,6 +223,16 @@ namespace Win7POS.Data.Repositories
             return rows.ToList();
         }
 
+        internal async Task<Sale> GetByCodeAsync(string code)
+        {
+            using var conn = _factory.Open();
+            var id = await conn.QuerySingleOrDefaultAsync<long?>(
+                "SELECT id FROM sales WHERE code=@code", new { code }).ConfigureAwait(false);
+            // Reuse the bounded receipt-snapshot read rather than materializing an
+            // untrusted oversized snapshot before validation.
+            return id.HasValue ? await GetByIdAsync(id.Value).ConfigureAwait(false) : null;
+        }
+
         private sealed class DailySummaryRow
         {
             public string DayStr { get; set; }

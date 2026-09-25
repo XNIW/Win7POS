@@ -4,6 +4,8 @@ namespace Win7POS.Core.Models
     {
         public long Id { get; set; }
         public string ClientSaleId { get; set; }
+        /// <summary>Local-only durable hold being consumed by the sale transaction; never part of the online payload.</summary>
+        public string HeldCartId { get; set; }
         public string Code { get; set; }
         public long CreatedAt { get; set; }   // unix ms
         public int Kind { get; set; } = (int)SaleKind.Sale;

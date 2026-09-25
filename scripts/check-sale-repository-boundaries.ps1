@@ -47,6 +47,7 @@ $f1ReadMethods = @(
     "GetSalesForDateAsync",
     "GetHourlySalesAsync",
     "GetByIdAsync",
+    "GetByCodeAsync",
     "GetByCodeLikeAsync"
 )
 

@@ -4,6 +4,14 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-09-25 – Functional and performance completion
+
+- Partenza da main pulita `10e0b06fc84887c54308ea87b314e714fcb86cae`; altri worktree preservati.
+- Correzioni F01–F07: export/gate, economia CLP e limiti, batch/off-dispatcher, LIKE letterale, sospesi durevoli/scoped, richieste UI obsolete e impostazioni atomiche.
+- Difetti aggiuntivi riprodotti: preview/ricevuta e subscription, snapshot/chiavi obsoleti, modifica carrello dopo risposta persa al commit, footer login in errore catalogo.
+- Regressioni Core/Data e WPF isolate collegate alla CI; 1.033 test, 48 gate, suite autorizzazione/immagini/log/paging e matrice visiva. Misure prima/dopo con 20k/100k prodotti e 200k/1m prezzi storici.
+- Report: [functional/performance completion](reports/2026-09-25_FUNCTIONAL_PERFORMANCE_COMPLETION.md). CI, manifest e attestazione di consegna identificano lo SHA esatto; nessuna qualifica hardware/produzione implicita.
+
 ## 2026-07-30 – Article sync final acceptance e closeout
 
 - Validato Win7POS dall'exact main post-PR68 senza modificare il checkout

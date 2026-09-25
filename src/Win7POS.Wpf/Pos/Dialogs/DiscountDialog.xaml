@@ -12,9 +12,9 @@
        WindowStartupLocation="CenterOwner"
        SizeToContent="Manual"
        Width="420"
-       Height="576"
+       Height="620"
        MinWidth="420"
-       MinHeight="576"
+       MinHeight="620"
        ResizeMode="NoResize"
        ShowInTaskbar="False">
     <Grid Margin="0" Background="#F1EDF7">
@@ -75,11 +75,11 @@
                    Style="{StaticResource DialogTitleStyle}"/>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
-            <ToggleButton x:Name="PercentToggle" Content="{loc:Loc discount.percent}" MinWidth="120" Height="32" Margin="0,0,6,0"
+            <ToggleButton x:Name="PercentToggle" Content="{loc:Loc discount.percent}" MinWidth="120" Height="36" Margin="0,0,6,0"
                          IsChecked="{Binding IsPercentMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource DiscountToggleStyle}"
                          Checked="Tab_Checked"/>
-            <ToggleButton x:Name="ImportoToggle" Content="{loc:Loc discount.amount}" MinWidth="120" Height="32"
+            <ToggleButton x:Name="ImportoToggle" Content="{loc:Loc discount.amount}" MinWidth="120" Height="36"
                          IsChecked="{Binding IsAmountMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource DiscountToggleStyle}"
                          Checked="Tab_Checked"/>
@@ -104,6 +104,10 @@
                     <TextBlock Text="{Binding PreviewDiscountPercentDisplay}" Foreground="#8B6914" FontWeight="SemiBold"/>
                     <TextBlock Text="  "/>
                     <TextBlock Text="{Binding PreviewDiscountAmountDisplay}" Foreground="#8873A4"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBlock Text="{loc:Loc discount.lineTotal}"/>
+                    <TextBlock Text="{Binding PreviewFinalLineTotalDisplay}" Margin="8,0,0,0" FontWeight="SemiBold"/>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -204,7 +208,7 @@
                         <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <Button IsDefault="True"
+                <Button x:Name="ConfirmDiscountButton" IsDefault="True"
                         Style="{StaticResource DialogActionButtonStyle}"
                         Command="{Binding ConfirmCommand}">
                     <StackPanel Style="{StaticResource IconButtonContent}">

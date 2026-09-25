@@ -19,12 +19,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Close();
             };
             PreviewKeyDown += OnPreviewKeyDown;
+            Closing += (_, e) => e.Cancel = !ViewModel.TryClose();
         }
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Escape)
             {
+                if (!ViewModel.TryClose()) { e.Handled = true; return; }
                 DialogResult = false;
                 Close();
                 e.Handled = true;

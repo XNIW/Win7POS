@@ -22,6 +22,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ViewModel = new DiscountViewModel(selectedLineBarcode, hasCartItems, OnApplyAsync, previewContext);
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;
+            Closed += (_, __) => ViewModel.Dispose();
             _service = service;
             _posViewModel = posViewModel;
             _maxDiscountPercent = Math.Max(0, maxDiscountPercent);
@@ -88,7 +89,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             else if (_previewContext != null && _previewContext.OriginalUnitPrice > 0)
             {
                 var discountMinor = _previewContext.OriginalUnitPrice - finalPriceMinor;
-                exceedsLimit = discountMinor > 0 && (discountMinor * 100L) > ((long)_maxDiscountPercent * _previewContext.OriginalUnitPrice);
+                exceedsLimit = discountMinor > 0 && (discountMinor * 100m) > ((decimal)_maxDiscountPercent * _previewContext.OriginalUnitPrice);
             }
 
             if (!exceedsLimit)

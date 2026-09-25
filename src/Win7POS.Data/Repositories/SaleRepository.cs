@@ -110,6 +110,7 @@ namespace Win7POS.Data.Repositories
             _reads.GetHourlySalesAsync(date, includeFiscalPrinted);
 
         public Task<Sale> GetByIdAsync(long saleId) => _reads.GetByIdAsync(saleId);
+        public Task<Sale> GetByCodeAsync(string code) => _reads.GetByCodeAsync(code);
 
         /// <summary>Imposta pdf_printed=1 come stato documentale locale senza rimuovere la vendita da report o sync.</summary>
         public Task MarkPdfPrintedAsync(long saleId) =>
