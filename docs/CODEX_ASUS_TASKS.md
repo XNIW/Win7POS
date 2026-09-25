@@ -7,6 +7,7 @@ dated reports under `docs/reports/`.
 
 | Task ID | Status | Title | Commit | Evidence |
 | --- | --- | --- | --- | --- |
+| ASUS-W7POS-017 | EXECUTION | Post-PR109 staging prerequisites, renderer/soak and installer qualification | Starts at `be370ba3`; final attestation external | New post-PR109 report; ASUS-W7POS-016 remains closed for delivered scope. |
 | ASUS-W7POS-016 | Software implementation and local validation complete; delivery attested by exact-SHA CI/package | Functional correctness, durable held carts, scan performance and runtime completion | Delivery PR and release manifest identify the exact commit | [2026-09-25 functional/performance report](reports/2026-09-25_FUNCTIONAL_PERFORMANCE_COMPLETION.md); F01–F11 regressions, 1,033 Core/Data tests, isolated WPF/visual matrix and reproducible 20k/100k measurements. Physical qualification remains separate. |
 | ASUS-W7POS-001 | Done | Unified POS access login | Present by later unified-login commits | Single POS access startup, offline fallback, no double initial OperatorLogin, covered by later gates. |
 | ASUS-W7POS-002 | Done | Install .NET 10 and complete QA | Environment task | `C:\Dev\dotnet10\dotnet.exe` used for restore/build/test; net10 tests/CLI and net48 WPF x86 build pass. |

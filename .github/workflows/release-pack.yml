@@ -241,6 +241,7 @@ jobs:
             dist/${{ env.WIN7POS_INSTALLER_BASE_FILENAME }}.exe
             dist/Win7POS-${{ env.WIN7POS_BUILD_VERSION }}.cdx.json
             dist/RELEASE-ARTIFACTS-SHA256.txt
+            dist/Win7POS-build-report.md
             dist/release-evidence
           if-no-files-found: error
           retention-days: 14
