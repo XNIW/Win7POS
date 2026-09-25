@@ -78,6 +78,8 @@ public sealed class SaleReadRepositoryTests
         AssertSaleEqual(
             await reader.GetByIdAsync(secondId),
             await facade.GetByIdAsync(secondId));
+        AssertSaleEqual(await reader.GetByIdAsync(secondId), await facade.GetByCodeAsync("F1-PARITY-002"));
+        Assert.IsNull(await facade.GetByCodeAsync("F1-PARITY-00%"));
         AssertSalesEqual(
             await reader.GetByCodeLikeAsync("PARITY", includeFiscalPrinted: false),
             await facade.GetByCodeLikeAsync("PARITY", includeFiscalPrinted: false));
@@ -282,6 +284,8 @@ WHERE id = @originalId;",
         Assert.AreEqual(directException.Field, facadeException.Field);
         Assert.AreEqual(directException.Characters, facadeException.Characters);
         Assert.AreEqual(directException.Utf8Bytes, facadeException.Utf8Bytes);
+        await Assert.ThrowsExactlyAsync<ReceiptContentValidationException>(
+            () => facade.GetByCodeAsync("F1-SNAPSHOT-OVERSIZED"));
     }
 
     [TestMethod]
