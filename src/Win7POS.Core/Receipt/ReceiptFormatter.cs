@@ -71,7 +71,7 @@ namespace Win7POS.Core.Receipt
                 foreach (var d in lines)
                 {
                     if (d?.Barcode == null || !d.Barcode.StartsWith("DISC:LINE:", StringComparison.Ordinal)) continue;
-                    var (key, _) = DiscountKeys.ParseLinePct(d.Barcode);
+                    var key = DiscountKeys.LineDiscountTarget(d.Barcode);
                     if (key != null && !discountByProduct.ContainsKey(key))
                         discountByProduct[key] = d;
                 }
