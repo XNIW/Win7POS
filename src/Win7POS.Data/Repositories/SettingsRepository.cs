@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -46,6 +48,37 @@ namespace Win7POS.Data.Repositories
 INSERT INTO app_settings(key, value) VALUES(@key, @value)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
                 new { key, value = value ?? string.Empty }).ConfigureAwait(false);
+        }
+
+        /// <summary>Validate and commit a complete settings group, including legacy aliases.</summary>
+        public async Task SetStringsAsync(IReadOnlyDictionary<string, string> values)
+        {
+            if (values == null) throw new ArgumentNullException(nameof(values));
+            var rows = values.Select(pair => new { key = pair.Key, value = pair.Value ?? string.Empty }).ToArray();
+            if (rows.Any(row => string.IsNullOrWhiteSpace(row.key)))
+                throw new ArgumentException("key is empty", nameof(values));
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value) VALUES(@key, @value)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;", rows, tx).ConfigureAwait(false);
+            tx.Commit();
+        }
+
+        /// <summary>A single SQLite read snapshot, so readers cannot mix settings generations.</summary>
+        public async Task<IReadOnlyDictionary<string, string>> GetStringsAsync(IEnumerable<string> keys)
+        {
+            var requested = (keys ?? throw new ArgumentNullException(nameof(keys))).Distinct(StringComparer.Ordinal).ToArray();
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<SettingValue>(
+                "SELECT key AS Key, value AS Value FROM app_settings WHERE key IN @requested", new { requested }).ConfigureAwait(false);
+            return rows.ToDictionary(row => row.Key, row => row.Value, StringComparer.Ordinal);
+        }
+
+        private sealed class SettingValue
+        {
+            public string Key { get; set; }
+            public string Value { get; set; }
         }
 
         public async Task<bool> SetStringIfGenerationCurrentAsync(

@@ -112,6 +112,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
 
                 await ApplyLocalStockMovementsAsync(conn, tx, sale, lines).ConfigureAwait(false);
                 await EnqueueSalesSyncOutboxAsync(conn, tx, saleId, sale.ClientSaleId).ConfigureAwait(false);
+                await HeldCartRepository.ConsumeWithinTransactionAsync(conn, tx, sale).ConfigureAwait(false);
 
                 if (authorizationCommitGuard == null)
                 {

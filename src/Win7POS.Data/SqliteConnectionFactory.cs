@@ -54,6 +54,7 @@ namespace Win7POS.Data
             {
                 conn.Open();
                 ApplyAndVerifyRuntimePolicy(conn);
+                SqliteWorkMetrics.ConnectionOpened();
                 return conn;
             }
             catch
@@ -75,6 +76,7 @@ namespace Win7POS.Data
             {
                 await conn.OpenAsync(ct).ConfigureAwait(false);
                 await ApplyAndVerifyRuntimePolicyAsync(conn, ct).ConfigureAwait(false);
+                SqliteWorkMetrics.ConnectionOpened();
                 return conn;
             }
             catch

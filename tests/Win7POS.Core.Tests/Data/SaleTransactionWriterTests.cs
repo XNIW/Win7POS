@@ -25,6 +25,44 @@ public sealed class SaleTransactionWriterTests
     private const string ShopId = "f6-shop-id";
 
     [TestMethod]
+    public async Task HeldCart_ConsumptionIsAtomicWithSaleStockAndOutbox_AndRetryIsIdempotent()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory);
+        await SeedStockAsync(db.Factory, "HOLD", 5);
+        var holds = new HeldCartRepository(db.Factory);
+        await holds.CreateHoldAsync("H-20260925-120000", CreatedAt, 200,
+            new[] { new HeldCartLineRow { Barcode = "HOLD", Name = "HOLD", UnitPrice = 100, Qty = 2 } });
+        var code = await holds.ClaimAsync("H-20260925-120000");
+        Assert.AreEqual(code, await new HeldCartRepository(db.Factory).ClaimAsync("H-20260925-120000"));
+        Assert.HasCount(1, await holds.ListHoldsAsync());
+        using (var conn = db.Factory.Open())
+            conn.Execute("CREATE TRIGGER held_consume_fault BEFORE DELETE ON held_carts BEGIN SELECT RAISE(ABORT,'test consume fault'); END;");
+        var sale = NewOrdinarySale(code);
+        sale.HeldCartId = "H-20260925-120000";
+        var lines = new[] { NewLine("HOLD", 2, 100) };
+        var writer = new DirectTransactionSurface(db.Factory);
+        await Assert.ThrowsExactlyAsync<SqliteException>(() => writer.InsertSaleAsync(sale, lines));
+        using (var conn = db.Factory.Open())
+        {
+            Assert.AreEqual(0L, conn.ExecuteScalar<long>("SELECT COUNT(*) FROM sales"));
+            Assert.AreEqual(0L, conn.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox"));
+            Assert.AreEqual(0L, conn.ExecuteScalar<long>("SELECT COUNT(*) FROM local_stock_movements"));
+            Assert.AreEqual(5L, conn.ExecuteScalar<long>("SELECT stock_qty FROM product_meta WHERE barcode='HOLD'"));
+            Assert.AreEqual(1L, conn.ExecuteScalar<long>("SELECT COUNT(*) FROM held_carts"));
+            conn.Execute("DROP TRIGGER held_consume_fault");
+        }
+        var id = await writer.InsertSaleAsync(sale, lines);
+        Assert.AreEqual(id, await writer.InsertSaleAsync(sale, lines));
+        Assert.HasCount(0, await holds.ListHoldsAsync());
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM sales"));
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox"));
+        Assert.AreEqual(3L, verify.ExecuteScalar<long>("SELECT stock_qty FROM product_meta WHERE barcode='HOLD'"));
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM app_settings WHERE key LIKE 'pos.held.%'"));
+    }
+
+    [TestMethod]
     public async Task SaleTransactionWriter_AndSaleFacade_PreserveFullSalePersistenceStockOutboxAndHash()
     {
         using var directDb = TestDb.Create();

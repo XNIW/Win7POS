@@ -223,6 +223,19 @@ namespace Win7POS.Data.Repositories
             return rows.ToList();
         }
 
+        internal async Task<Sale> GetByCodeAsync(string code)
+        {
+            using var conn = _factory.Open();
+            var sale = await conn.QuerySingleOrDefaultAsync<Sale>(@"
+SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId,
+       voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard,
+       change, operator_id AS OperatorId, COALESCE(pdf_printed,0) AS PdfPrinted, sync_status AS SyncStatus,
+       receipt_shop_snapshot AS ReceiptShopSnapshotJson
+FROM sales WHERE code=@code", new { code }).ConfigureAwait(false);
+            ReceiptDocumentPolicy.EnsureValidSnapshotJson(sale?.ReceiptShopSnapshotJson);
+            return sale;
+        }
+
         private sealed class DailySummaryRow
         {
             public string DayStr { get; set; }

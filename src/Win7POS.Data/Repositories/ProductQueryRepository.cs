@@ -18,6 +18,7 @@ namespace Win7POS.Data.Repositories
         internal async Task<Product> GetByBarcodeAsync(string barcode)
         {
             using var conn = _factory.Open();
+            SqliteWorkMetrics.ProductCommand();
             return await conn.QuerySingleOrDefaultAsync<Product>(
                 @"SELECT id, barcode, name, unitPrice
 FROM products
@@ -45,6 +46,7 @@ WHERE barcode = @barcode
             {
                 var batch = list.Skip(i).Take(GetByBarcodesChunkSize).ToArray();
                 if (batch.Length == 0) break;
+                SqliteWorkMetrics.ProductCommand();
                 var rows = await conn.QueryAsync<Product>(
                     @"SELECT id, barcode, name, unitPrice
 FROM products
@@ -61,6 +63,7 @@ WHERE COALESCE(is_active, 1) = 1
         internal async Task<Product> GetByIdAsync(long id)
         {
             using var conn = _factory.Open();
+            SqliteWorkMetrics.ProductCommand();
             return await conn.QuerySingleOrDefaultAsync<Product>(
                 @"SELECT id, barcode, name, unitPrice
 FROM products
@@ -72,6 +75,7 @@ WHERE id = @id
         internal async Task<IReadOnlyList<Product>> ListAllAsync()
         {
             using var conn = _factory.Open();
+            SqliteWorkMetrics.ProductCommand();
             var rows = await conn.QueryAsync<Product>(
                 @"SELECT id, barcode, name, unitPrice
 FROM products
@@ -87,6 +91,7 @@ ORDER BY barcode ASC").ConfigureAwait(false);
             var q = (query ?? string.Empty).Trim();
             if (q.Length == 0)
             {
+                SqliteWorkMetrics.ProductCommand();
                 var all = await conn.QueryAsync<Product>(
                     @"SELECT id, barcode, name, unitPrice
 FROM products
@@ -96,12 +101,13 @@ ORDER BY barcode ASC LIMIT @limit",
                 return all.ToList();
             }
 
-            var like = "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
+            var like = SqliteLike.ContainsPattern(q);
+            SqliteWorkMetrics.ProductCommand();
             var rows = await conn.QueryAsync<Product>(
                 @"SELECT id, barcode, name, unitPrice
                   FROM products
                   WHERE COALESCE(is_active, 1) = 1
-                    AND (barcode = @q OR name LIKE @like)
+                    AND (barcode = @q OR name LIKE @like ESCAPE '!')
                   ORDER BY CASE WHEN barcode = @q THEN 0 ELSE 1 END, barcode ASC
                   LIMIT @limit",
                 new { q, like, limit }).ConfigureAwait(false);
@@ -113,7 +119,7 @@ ORDER BY barcode ASC LIMIT @limit",
             if (limit <= 0) limit = 50;
             using var conn = _factory.Open();
             var q = (query ?? string.Empty).Trim();
-            var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
+            var like = q.Length == 0 ? "%" : SqliteLike.ContainsPattern(q);
 
             const string sql = @"
 SELECT
@@ -145,11 +151,13 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode";
                 var allSql = categoryId.HasValue && categoryId.Value != 0
                     ? sql + " WHERE COALESCE(p.is_active, 1) = 1 AND m.category_id = @categoryId ORDER BY p.barcode ASC LIMIT @limit"
                     : sql + " WHERE COALESCE(p.is_active, 1) = 1 ORDER BY p.barcode ASC LIMIT @limit";
+                SqliteWorkMetrics.ProductCommand();
                 var all = await conn.QueryAsync<ProductDetailsRow>(allSql, prm).ConfigureAwait(false);
                 return all.ToList();
             }
 
-            var whereQuery = "WHERE COALESCE(p.is_active, 1) = 1 AND (p.barcode = @q OR p.name LIKE @like)" + whereCategory;
+            var whereQuery = "WHERE COALESCE(p.is_active, 1) = 1 AND (p.barcode = @q OR p.name LIKE @like ESCAPE '!')" + whereCategory;
+            SqliteWorkMetrics.ProductCommand();
             var rows = await conn.QueryAsync<ProductDetailsRow>(
                 sql + " " + whereQuery + @"
 ORDER BY CASE WHEN p.barcode = @q THEN 0 ELSE 1 END, p.barcode ASC
@@ -162,9 +170,9 @@ LIMIT @limit",
         {
             using var conn = _factory.Open();
             var q = (query ?? string.Empty).Trim();
-            var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
+            var like = q.Length == 0 ? "%" : SqliteLike.ContainsPattern(q);
 
-            var where = "WHERE COALESCE(p.is_active, 1) = 1 AND ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
+            var where = "WHERE COALESCE(p.is_active, 1) = 1 AND ( @q = '' OR p.barcode = @q OR p.name LIKE @like ESCAPE '!' )";
             if (categoryId.HasValue && categoryId.Value != 0)
                 where += " AND m.category_id = @categoryId";
             if (supplierId.HasValue && supplierId.Value != 0)
@@ -176,12 +184,15 @@ FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 " + where;
 
+            SqliteWorkMetrics.ProductCommand();
+
             return await conn.ExecuteScalarAsync<int>(sql, new { q, like, categoryId = categoryId ?? 0, supplierId = supplierId ?? 0 }).ConfigureAwait(false);
         }
 
         internal async Task<ProductCatalogStats> GetCatalogStatsAsync()
         {
             using var conn = _factory.Open();
+            SqliteWorkMetrics.ProductCommand();
             var productStats = await conn.QuerySingleAsync<ProductCatalogStats>(@"
 SELECT
   COUNT(1) AS TotalProducts,
@@ -191,15 +202,19 @@ FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE COALESCE(p.is_active, 1) = 1").ConfigureAwait(false);
 
+            SqliteWorkMetrics.ProductCommand();
+
             productStats.TotalCategories = await conn.ExecuteScalarAsync<int>(
                 "SELECT COUNT(1) FROM categories WHERE TRIM(COALESCE(name, '')) <> ''")
                 .ConfigureAwait(false);
+            SqliteWorkMetrics.ProductCommand();
             productStats.TotalSuppliers = await conn.ExecuteScalarAsync<int>(
                 "SELECT COUNT(1) FROM suppliers WHERE TRIM(COALESCE(name, '')) <> ''")
                 .ConfigureAwait(false);
 
             if (productStats.TotalCategories == 0)
             {
+                SqliteWorkMetrics.ProductCommand();
                 productStats.TotalCategories = await conn.ExecuteScalarAsync<int>(@"
 SELECT COUNT(1)
 FROM (
@@ -213,6 +228,7 @@ FROM (
 
             if (productStats.TotalSuppliers == 0)
             {
+                SqliteWorkMetrics.ProductCommand();
                 productStats.TotalSuppliers = await conn.ExecuteScalarAsync<int>(@"
 SELECT COUNT(1)
 FROM (
@@ -241,11 +257,11 @@ FROM (
             using var conn = _factory.Open();
             using var tx = conn.BeginTransaction();
             var q = filter.Query;
-            var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
+            var like = q.Length == 0 ? "%" : SqliteLike.ContainsPattern(q);
 
             var where = "WHERE COALESCE(p.is_active, 1) = 1";
             if (q.Length > 0)
-                where += " AND (p.barcode = @q OR p.name LIKE @like)";
+                where += " AND (p.barcode = @q OR p.name LIKE @like ESCAPE '!')";
             if (filter.CategoryId.HasValue)
                 where += " AND m.category_id = @categoryId";
             if (filter.SupplierId.HasValue)
@@ -263,6 +279,8 @@ FROM (
                 cursorBarcode = plan.Cursor?.Barcode ?? string.Empty,
                 cursorId = plan.Cursor?.Id ?? 0L
             };
+
+            SqliteWorkMetrics.ProductCommand();
 
             var totalCount = await conn.ExecuteScalarAsync<int>(@"
 SELECT COUNT(1)
@@ -297,6 +315,8 @@ SELECT
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 " + where + keyset + "\n" + ordering + "\nLIMIT @limit" + offset;
+
+            SqliteWorkMetrics.ProductCommand();
 
             var rows = (await conn.QueryAsync<ProductDetailsRow>(sql, parameters, tx).ConfigureAwait(false)).ToList();
             if (plan.Kind == ProductPageQueryKind.Reverse)
@@ -393,6 +413,7 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.id = @productId
   AND COALESCE(p.is_active, 1) = 1
 LIMIT 1";
+            SqliteWorkMetrics.ProductCommand();
             return await conn.QueryFirstOrDefaultAsync<ProductDetailsRow>(sql, new { productId }).ConfigureAwait(false);
         }
 
@@ -422,6 +443,7 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.barcode = @barcode
   AND COALESCE(p.is_active, 1) = 1
 LIMIT 1";
+            SqliteWorkMetrics.ProductCommand();
             return await conn.QueryFirstOrDefaultAsync<ProductDetailsRow>(sql, new { barcode = barcode.Trim() }).ConfigureAwait(false);
         }
 
@@ -435,6 +457,7 @@ SELECT barcode AS ProductBarcode, timestamp AS ChangedAt, type AS PriceType, old
 FROM product_price_history
 WHERE barcode = @barcode
 ORDER BY timestamp DESC, id DESC";
+            SqliteWorkMetrics.ProductCommand();
             var rows = await conn.QueryAsync<ProductPriceHistoryRow>(sql, new { barcode = barcode.Trim() }).ConfigureAwait(false);
             return rows?.ToList() ?? new List<ProductPriceHistoryRow>();
         }
@@ -458,6 +481,7 @@ FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE COALESCE(p.is_active, 1) = 1
 ORDER BY p.barcode ASC";
+            SqliteWorkMetrics.ProductCommand();
             var rows = await conn.QueryAsync<ProductDetailsRow>(sql).ConfigureAwait(false);
             return rows?.ToList() ?? new List<ProductDetailsRow>();
         }
@@ -467,7 +491,7 @@ ORDER BY p.barcode ASC";
             var normalized = (barcodes ?? Enumerable.Empty<string>())
                 .Where(barcode => !string.IsNullOrWhiteSpace(barcode))
                 .Select(barcode => barcode.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct(StringComparer.Ordinal)
                 .ToArray();
             if (normalized.Length == 0)
             {
@@ -475,6 +499,7 @@ ORDER BY p.barcode ASC";
             }
 
             using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction(deferred: true);
             var result = new List<ProductDetailsRow>();
             const int batchSize = 900;
             for (var offset = 0; offset < normalized.Length; offset += batchSize)
@@ -483,6 +508,7 @@ ORDER BY p.barcode ASC";
                     .Skip(offset)
                     .Take(batchSize)
                     .ToArray();
+                SqliteWorkMetrics.ProductCommand();
                 var rows = await conn.QueryAsync<ProductDetailsRow>(@"
 SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPrice,
   COALESCE(p.is_active, 1) AS IsActive,
@@ -498,10 +524,11 @@ FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.barcode IN @barcodes
 ORDER BY p.barcode ASC",
-                    new { barcodes = batch }).ConfigureAwait(false);
+                    new { barcodes = batch }, tx).ConfigureAwait(false);
                 result.AddRange(rows);
             }
 
+            tx.Commit();
             return result;
         }
 
@@ -513,6 +540,7 @@ ORDER BY p.barcode ASC",
 SELECT barcode AS ProductBarcode, timestamp AS ChangedAt, type AS PriceType, old_price AS OldPrice, new_price AS NewPrice, source AS Source
 FROM product_price_history
 ORDER BY barcode, timestamp DESC";
+            SqliteWorkMetrics.ProductCommand();
             var rows = await conn.QueryAsync<ProductPriceHistoryRow>(sql).ConfigureAwait(false);
             return rows?.ToList() ?? new List<ProductPriceHistoryRow>();
         }
@@ -520,6 +548,7 @@ ORDER BY barcode, timestamp DESC";
         internal async Task<long> CountActiveRemoteProductsAsync()
         {
             using var conn = _factory.Open();
+            SqliteWorkMetrics.ProductCommand();
             return await conn.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
 FROM products
