@@ -4,6 +4,15 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-09-25 – Post-PR109 residual closeout (ASUS-W7POS-017)
+
+- Baseline `be370ba3`, main locale/remota 0/0, 55 altri checkout puliti preservati; ASUS-W7POS-016 resta chiusa.
+- Riprodotta omissione di `Win7POS-build-report.md` dal ReleasePack scaricato: il manifest lo richiede, il validatore canonico fallisce. Aggiunto il report alla lista upload.
+- Esteso il solo harness prestazioni con tempi delle fasi renderer e soak finito senza GC forzato; runner riproducibile con hash prima/dopo, directory nuove e timeout.
+- Suite seriale: 1.033/1.033 Core/Data, 48 gate, build e smoke CI locali PASS. Prove package-aware e lunga durata documentate nel report di prosecuzione.
+- Readiness Admin storica ritirata, deployment corrente non attestabile con l'autorità locale disponibile, checkpoint immagini preservato dopo denial storico. Nessun bypass, nuovo READY o installazione su macchina non autorizzata.
+- Report: [post-PR109 residual closeout](reports/2026-09-25_POST_PR109_RESIDUAL_CLOSEOUT.md). SHA/run/hash finali nell'attestazione esterna; GitHub, staging e hardware hanno stati separati.
+
 ## 2026-09-25 – Functional and performance completion
 
 - Partenza da main pulita `10e0b06fc84887c54308ea87b314e714fcb86cae`; altri worktree preservati.
