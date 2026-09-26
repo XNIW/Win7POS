@@ -15,6 +15,8 @@ using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
+using Win7POS.Wpf.Products;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.UiSmokeHarness
 {
@@ -164,6 +166,30 @@ WHEN NEW.key = 'printer.copies' BEGIN SELECT RAISE(ABORT, 'injected settings fai
                 GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
                 Require(!weak.IsAlive, "discount view model retained by localization event");
                 vm.Dispose();
+                await Task.CompletedTask;
+            });
+            await CheckAsync(results, "P109_product_editor_late_render_close", async () =>
+            {
+                foreach (var closeDuringEvent in new[] { false, true })
+                {
+                    var model = new ProductEditViewModel(ProductEditMode.New, null, ProductsWorkflowService.CreateDefault());
+                    var dialog = new ProductEditDialog(model) { Owner = DialogOwnerHelper.GetSafeOwner() };
+                    try
+                    {
+                        dialog.Show();
+                        if (closeDuringEvent) dialog.ContentRendered += (_, __) => dialog.Close();
+                        else dialog.Close();
+                        // Deliver the real virtual callback in both close/render orderings.
+                        try
+                        {
+                            typeof(ProductEditDialog).GetMethod("OnContentRendered", BindingFlags.Instance | BindingFlags.NonPublic)
+                                .Invoke(dialog, new object[] { EventArgs.Empty });
+                        }
+                        catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
+                        Require(!dialog.IsVisible, "closed product editor became visible again");
+                    }
+                    finally { dialog.Close(); }
+                }
                 await Task.CompletedTask;
             });
             return (results.Count == 0 || results.Any(x => x.StartsWith("FAIL")) ? "FAIL" : "PASS") + Environment.NewLine + string.Join(Environment.NewLine, results);

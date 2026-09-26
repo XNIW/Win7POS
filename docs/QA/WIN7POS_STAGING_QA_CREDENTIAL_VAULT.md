@@ -15,8 +15,17 @@ Run the test-only acceptance harness without supplying a credential in chat,
 arguments, environment variables, logs, or screenshots:
 
 ```powershell
-pwsh -NoProfile -File scripts\qa\Invoke-Win7PosStagingAcceptance.ps1 -Profile asus-staging
+pwsh -NoProfile -File scripts\qa\Invoke-Win7PosStagingAcceptance.ps1 -Profile asus-staging -ReadinessRunId <new-maintainer-reserved-run-id> -ReleasePackRunId <successful-final-sha-release-run-id>
 ```
+
+This requires a fresh maintainer-issued readiness in Admin main for this
+client/profile/scope and an exact-SHA successful Release Pack. The wrapper
+verifies GitHub archive digests and the canonical release manifests, builds
+the QA harness, overlays every downloaded production payload file and checks
+its hashes before and after each acceptance phase. A local rebuild alone is
+not proof of released binary identity. PowerShell 7.4+ is required on the QA
+host; no new runtime is required on the Windows 7 target. No readiness or
+server authorization is created by supplying these arguments.
 
 Before the first invocation, build the test-only WPF harness in Release x86:
 
@@ -25,8 +34,8 @@ Before the first invocation, build the test-only WPF harness in Release x86:
 ```
 
 The runner requires a clean checkout whose `HEAD` exactly equals
-`origin/main`, builds with `C:\Dev\dotnet10\dotnet.exe`, and generates one
-logical run ID in the form
+`origin/main`, builds with `C:\Dev\dotnet10\dotnet.exe`, and uses the fresh
+maintainer-reserved logical run ID in the form
 `ASUSART_POST_PR68_<UTC_TIMESTAMP>_<RANDOM>`. It archives any previous isolated
 data directory before starting; it never performs an automatic or blind retry.
 Evidence is written beneath

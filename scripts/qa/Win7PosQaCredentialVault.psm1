@@ -154,7 +154,7 @@ function New-Win7PosQaDeviceDisplayName {
 }
 
 function Get-Win7PosQaFingerprint {
-    param([string]$Value)
+    param([string]$Value, [switch]$Full)
 
     if ([string]::IsNullOrEmpty($Value)) { return '' }
     $bytes = $null
@@ -164,7 +164,9 @@ function Get-Win7PosQaFingerprint {
         $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
         $sha = [Security.Cryptography.SHA256]::Create()
         $hash = $sha.ComputeHash($bytes)
-        return ([BitConverter]::ToString($hash).Replace('-', '').ToLowerInvariant()).Substring(0, 12)
+        $hex = [BitConverter]::ToString($hash).Replace('-', '').ToLowerInvariant()
+        if ($Full) { return $hex }
+        return $hex.Substring(0, 12)
     } finally {
         if ($null -ne $sha) { $sha.Dispose() }
         if ($null -ne $bytes) { [Array]::Clear($bytes, 0, $bytes.Length) }
@@ -356,6 +358,11 @@ function Get-Win7PosQaProfileValidation {
         ShopCodePresent = -not [string]::IsNullOrWhiteSpace($shopCode)
         ShopCodeLength = $shopCode.Length
         ShopCodeFormatValid = $shopCodeFormatValid
+        # Binding includes the random device identity; no credential is hashed or returned.
+        ProfileBindingSha256 = if ($baseUrlValid -and $shopCodeFormatValid -and $deviceIdentifierFormatValid) {
+            Get-Win7PosQaFingerprint -Full -Value (
+                'win7pos-qa-scope-v1' + [char]0 + $uri.Host + [char]0 + $shopCode + [char]0 + $deviceIdentifier)
+        } else { '' }
         StaffCodePresent = -not [string]::IsNullOrWhiteSpace($staffCode)
         StaffCodeLength = $staffCode.Length
         StaffCodeFormatValid = $staffCodeFormatValid

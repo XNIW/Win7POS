@@ -9,7 +9,11 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Baseline `be370ba3`, main locale/remota 0/0, 55 altri checkout puliti preservati; ASUS-W7POS-016 resta chiusa.
 - Riprodotta omissione di `Win7POS-build-report.md` dal ReleasePack scaricato: il manifest lo richiede, il validatore canonico fallisce. Aggiunto il report alla lista upload.
 - Esteso il solo harness prestazioni con tempi delle fasi renderer e soak finito senza GC forzato; runner riproducibile con hash prima/dopo, directory nuove e timeout.
+- Prosecuzione 26 settembre: soak interrotto da Modern Standby (coperchio) dopo 58 minuti di campioni, conservato senza PASS. La ripetizione sul pacchetto #110 riproduce callback tardivo del product editor su CTS disposto; quattro righe di guardia e regressione runtime prima FAIL/dopo PASS, ottavo scenario CI, dialog 35/35.
+- Readiness tipizzata: un positivo e 38 negativi, inclusi array scambiati per stringhe; ricontrollo della readiness Admin prima del lancio. Admin main aggiornata a `db5bb83`, senza nuova readiness Win7POS e senza modifiche Admin da questa task.
+- Il runner articoli ora richiede il Release Pack dell'esatto SHA: download verificato, overlay completo e hash prima/dopo prepare e restart. Helper verificato con un positivo/sei negativi e con tutti i 41 file del pacchetto reale; 48 gate PASS dopo la modifica.
 - Suite seriale: 1.033/1.033 Core/Data, 48 gate, build e smoke CI locali PASS. Prove package-aware e lunga durata documentate nel report di prosecuzione.
+- Soak finale sul pacchetto corretto: 3.617,240 secondi, 115 cicli, 2.530 campioni, hash dei 41 file invariati e nessuna sospensione. Esecuzione PASS; stabilità FAIL nelle condizioni registrate: recupero spontaneo ma crescita ricorrente della coda, scansione con UI righe p95 1.735,806 ms. Dati/analisi/grafico pubblici, senza rimuovere outlier o forzare GC; nessun nuovo claim di leak permanente.
 - Readiness Admin storica ritirata, deployment corrente non attestabile con l'autorità locale disponibile, checkpoint immagini preservato dopo denial storico. Nessun bypass, nuovo READY o installazione su macchina non autorizzata.
 - Report: [post-PR109 residual closeout](reports/2026-09-25_POST_PR109_RESIDUAL_CLOSEOUT.md). SHA/run/hash finali nell'attestazione esterna; GitHub, staging e hardware hanno stati separati.
 

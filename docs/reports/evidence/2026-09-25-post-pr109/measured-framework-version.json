@@ -1,0 +1,12 @@
+[
+  {
+    "registryPath": "HKLM:\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full",
+    "version": "4.8.09221",
+    "release": 533509
+  },
+  {
+    "registryPath": "HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full",
+    "version": "4.8.09221",
+    "release": 533509
+  }
+]

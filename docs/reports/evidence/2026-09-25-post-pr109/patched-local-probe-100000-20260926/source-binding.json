@@ -1,0 +1,7 @@
+{
+  "applicationSourceCommit": "b79451f0a475764083e1cccff3267b0b2864fa58",
+  "runtimeKind": "local Release net48 x86 build",
+  "harnessSourceSha256": "fcdcaa50989195f10403e1c22a40b6b19a4b8a4f1981c63ea9d85c543b21033f",
+  "compiler": "10.0.301",
+  "note": "Optional native-input diagnostic source recorded by hash; final source commit assigned after qualification."
+}
