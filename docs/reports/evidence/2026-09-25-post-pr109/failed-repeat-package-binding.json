@@ -1,0 +1,172 @@
+{
+  "runtimeCommitSha": "4b8af5dc8e8466da1cda53e1ffb3c96a7b994330",
+  "releaseRunId": "36190637616",
+  "harnessSourceCommit": "e3b67ce7a0d0ec7181d47872c5b05de8206e6ad2",
+  "harnessSourceSha256": "1f36401a81df43b8d915bc456880d9d35bd2b1896caa912d4bc1be6db543b026",
+  "payloadFiles": [
+    {
+      "file": "APP-FILES.txt",
+      "sha256": "897c534941240c93d58b32b2c571d0defa10176b1d1e2bfbf78668b8d1f31893"
+    },
+    {
+      "file": "check-win7-prereqs.ps1",
+      "sha256": "cd82a56c0314fd1a93d6afc5f753263118cc0e060886e040dea96e1bedba47d5"
+    },
+    {
+      "file": "ClosedXML.dll",
+      "sha256": "09a44f24d983ad8392f1255dbce493a8dc124b5da8331687bea07cd512158eec"
+    },
+    {
+      "file": "ClosedXML.Parser.dll",
+      "sha256": "a7276a119c09a7200ade269ffd4a4637a82c41c34a56b02d715be84235f5ef41"
+    },
+    {
+      "file": "Dapper.dll",
+      "sha256": "2e47c22dba7665268e40ca9ffe7c86c7cfe41e11dfc7be8e0bc92a1f9efddd3b"
+    },
+    {
+      "file": "DocumentFormat.OpenXml.dll",
+      "sha256": "bb6a988dcc8dc1c73f3caeccfeeac63d44faac051da8a8494664a4c69d174200"
+    },
+    {
+      "file": "DocumentFormat.OpenXml.Framework.dll",
+      "sha256": "d22ed8044cb3f50b608cdf6d2b0b52b477524a87cedee3e9fed332c531e2ea79"
+    },
+    {
+      "file": "e_sqlite3.dll",
+      "sha256": "8d76b5d0faa6f3a3c6204605d1a3d31dad57a0104b92fce3df19b12bdd983ae7"
+    },
+    {
+      "file": "ExcelDataReader.DataSet.dll",
+      "sha256": "9abf059409351e762e3d8c3e6a009c1d49454eb39983db809eebd1f53eccc4a6"
+    },
+    {
+      "file": "ExcelDataReader.dll",
+      "sha256": "03050036badc7651f357a57cdc150451fc021cdb56e31918f6a92d8d6629b844"
+    },
+    {
+      "file": "ExcelNumberFormat.dll",
+      "sha256": "03ccc71a42833102ef54ae9ecf39d9d62c0491c17359aa37d1d2ef0ec7397d04"
+    },
+    {
+      "file": "Microsoft.Bcl.AsyncInterfaces.dll",
+      "sha256": "9d605e925b4885eca8b0abd3203e8d7b70ab077baecff496fea13cf531abf66d"
+    },
+    {
+      "file": "Microsoft.Bcl.HashCode.dll",
+      "sha256": "76b1260ce747a317e9b514433b89a81b038411fcabddc6f9c7dbabb0742d8b81"
+    },
+    {
+      "file": "Microsoft.Data.Sqlite.dll",
+      "sha256": "e3ca42644ce012c350ef84675f399a9164d6b3492bc9a435aa7e75ae27ff1db5"
+    },
+    {
+      "file": "RBush.dll",
+      "sha256": "1bd688a5e886d4bc0785a943a82c7f77b8e28799e0749d9b27e75e989b39466c"
+    },
+    {
+      "file": "README_RUN.txt",
+      "sha256": "ba16860d4d7b93ba3a8c8fa26e6362489a3960e89375c6b9da04f6c20077c3fc"
+    },
+    {
+      "file": "RELEASE_CHECKLIST.txt",
+      "sha256": "1cd9e120ac08322ff0796ff0a08d9e104c4a552842d1e3042dc0221fb28b4a58"
+    },
+    {
+      "file": "set-admin-web-staging-url.bat",
+      "sha256": "1f21ff18887a4d9d9baadaac0c36ac9a014363375845a3c17dfb1e4a9f16363d"
+    },
+    {
+      "file": "SHA256SUMS.txt",
+      "sha256": "8d8b0426fa28b728a67665db15774bb2b66f680890f0c1c28f75585424424025"
+    },
+    {
+      "file": "SixLabors.Fonts.dll",
+      "sha256": "3d811d1c37a1f0e17f365f00603029eb53e240526537e2cd99fe4227aabf36aa"
+    },
+    {
+      "file": "SQLitePCLRaw.batteries_v2.dll",
+      "sha256": "1ee3c6ff4d39171690d6ff6f84b4d876ed038ca28e39bb6e74995f52d2aacf8b"
+    },
+    {
+      "file": "SQLitePCLRaw.core.dll",
+      "sha256": "4eb1f407f1a8ef795853c95af73edfb9aa7777e8c11aafe04612691337ccea08"
+    },
+    {
+      "file": "SQLitePCLRaw.provider.e_sqlite3.dll",
+      "sha256": "23983a4d4beff2ed2d902936de2c25b82d4da694946dcb945e2d7b7fb1af8c06"
+    },
+    {
+      "file": "System.Buffers.dll",
+      "sha256": "2d78d770c9cb997199154ae8c018b9f1d1efbc86729f7264dde6dbad2a12cac3"
+    },
+    {
+      "file": "System.Drawing.Common.dll",
+      "sha256": "82536a746c4ac8b2372e2e5c9e28b5a573a213f98e9400c4d959bab415fb6b77"
+    },
+    {
+      "file": "System.IO.Packaging.dll",
+      "sha256": "d9c9c13f0642a44e6faf1627cabff97e41c1ddd1f952bbe751e33e17dfbf08a3"
+    },
+    {
+      "file": "System.Memory.dll",
+      "sha256": "d5e8e4866f9cfa66f7765660f84b210198893e55335487afe5ebda342c0e913d"
+    },
+    {
+      "file": "System.Numerics.Vectors.dll",
+      "sha256": "20c2fa81b8c70d651099d762954f285fd4f942e63b2d7217c145dab8d4b2f4c9"
+    },
+    {
+      "file": "System.Runtime.CompilerServices.Unsafe.dll",
+      "sha256": "08cbd7278b66f1e68425a82d4b97181a4130d93e3dd91831407aba7212ccdacf"
+    },
+    {
+      "file": "System.Text.Encoding.CodePages.dll",
+      "sha256": "b77ee852824a6e8098fbade000beb42ce9df32fa4189a00d5e7f472f6c6a5030"
+    },
+    {
+      "file": "System.Threading.Tasks.Extensions.dll",
+      "sha256": "af4e13ef418fd89b432de20cd1dfb7fa10a7179c8dd049c9856316e50c5949ca"
+    },
+    {
+      "file": "System.ValueTuple.dll",
+      "sha256": "e905d102585b22c6df04f219af5cbdbfa7bc165979e9788b62df6dcc165e10f4"
+    },
+    {
+      "file": "VERSION.txt",
+      "sha256": "999f03a94001bb7b896b52eb1a0d6f68289dfdc74d7c4c75ed802ec193b2720a"
+    },
+    {
+      "file": "Win7POS.Core.dll",
+      "sha256": "f6eee54ce8992e3940c4e67af9cf620ba2c302cac3a3b8c2c1116ad467e7ffcd"
+    },
+    {
+      "file": "Win7POS.Data.dll",
+      "sha256": "61a724a4e5ad6055dbbae7e96d2535ba27e877db91e31908a1d731c779b347fe"
+    },
+    {
+      "file": "Win7POS.Wpf.exe",
+      "sha256": "ae8d319ae75dc285737134e1bd29f7a83d86156d02a514c9c23686abf306fb1f"
+    },
+    {
+      "file": "Win7POS.Wpf.exe.config",
+      "sha256": "65d907b3956787bb53df33cbb4d3129dae5dc881650fa206268815d8e7c6e4cf"
+    },
+    {
+      "file": "zxing.dll",
+      "sha256": "52f00a43f9574a411009899a6236f3efb5b597fbae0f3163dfec9cbb0c1f4d38"
+    },
+    {
+      "file": "zxing.presentation.dll",
+      "sha256": "87c4a489fff4924e798ee360064cab52011238b4ee8642fdd8e102db4615752c"
+    },
+    {
+      "file": "ZXing.Windows.Compatibility.dll",
+      "sha256": "dbb103d00654c980e436489d7949f54a1033164e74476e78dd41ff4f58184e9d"
+    },
+    {
+      "file": "Assets\\sii_qrcode.png",
+      "sha256": "b53df21345c18fd95687d27875b08f3a6d52894f3cd132d071bbd5affbf0deac"
+    }
+  ]
+}

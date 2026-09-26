@@ -13,6 +13,7 @@ namespace Win7POS.Wpf.Products
     public partial class ProductEditDialog : DialogShellWindow
     {
         private bool _priceBoxAutoSelected;
+        private bool _closed;
         private readonly CancellationTokenSource _imageLifetime =
             new CancellationTokenSource();
 
@@ -56,6 +57,7 @@ namespace Win7POS.Wpf.Products
             {
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    if (_closed) return;
                     PriceBox.Focus();
                     Keyboard.Focus(PriceBox);
                     PriceBox.SelectAll();
@@ -66,12 +68,14 @@ namespace Win7POS.Wpf.Products
         protected override void OnContentRendered(EventArgs e)
         {
             base.OnContentRendered(e);
+            if (_closed) return;
             FocusPriceBox();
             _ = ViewModel.InitializeImageAsync(_imageLifetime.Token);
         }
 
         protected override void OnClosed(EventArgs e)
         {
+            _closed = true;
             _imageLifetime.Cancel();
             _imageLifetime.Dispose();
             ViewModel.RequestClose -= OnRequestClose;

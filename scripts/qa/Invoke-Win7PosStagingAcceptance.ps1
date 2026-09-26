@@ -473,12 +473,22 @@ try {
 
     # Build/test time must not turn an expired readiness into a new live run.
     try {
+        $recheckedAdminSha = (& gh api repos/XNIW/merchandise-control-admin-web/commits/main --jq '.sha').Trim()
+        if ($LASTEXITCODE -ne 0 -or $recheckedAdminSha -cnotmatch '^[0-9a-f]{40}$') { throw 'readiness_recheck_failed' }
+        $currentContent = & gh api (
+            'repos/XNIW/merchandise-control-admin-web/contents/docs/HANDOFFS/' +
+            'WIN7POS_ARTICLE_ACCEPTANCE_READY.json?ref=' + $recheckedAdminSha) --jq '.content'
+        if ($LASTEXITCODE -ne 0) { throw 'readiness_withdrawn' }
+        $currentJson = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String((($currentContent -join '') -replace '\s','')))
+        if (-not [string]::Equals($currentJson, $handoffText, [StringComparison]::Ordinal)) { throw 'readiness_changed' }
         $null = Assert-Win7PosArticleReadiness -Json $handoffText -RunId $runId `
             -ClientCommitSha $headSha -StagingHost $profileState.BaseUrlHost `
             -ProfileBindingSha256 $profileState.ProfileBindingSha256 -ContractDigests $contractDigests
+        ('prelaunchReadinessAdminCommit=' + $recheckedAdminSha) | Add-Content -LiteralPath (
+            Join-Path $evidenceDirectory '01-admin-handoff.txt')
     } catch {
         Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
-            -Code 'acceptance_admin_readiness_expired_before_launch' -Passed $false
+            -Code 'acceptance_admin_readiness_changed_or_expired_before_launch' -Passed $false
     }
 
     if (Test-Path -LiteralPath $fullDataDirectory) {

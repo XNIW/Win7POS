@@ -9,7 +9,7 @@ outside this commit to avoid a self-referential SHA update.
 
 | Area | Classification at intake | Result |
 | --- | --- | --- |
-| A. Published application | PR109 already merged; initial local/origin main identical, 0/0 | PASS; no application change is justified by a preflight denial |
+| A. Published application | PR109 already merged; initial local/origin main identical, 0/0 | F01–F12 preserved; reproduced late product-editor render crash corrected below |
 | B. Article staging | Historical readiness superseded; zero logical runs | NOT_EXECUTED; new Admin readiness and supported fresh-run contract required |
 | C. Image recovery | Existing encrypted checkpoint, cleanupPending=true | NOT_EXECUTED; preserved, no retry of denied authority |
 | D. Performance | Short measurements do not establish retention | Stage instrumentation and finite soak added; measured results below |
@@ -31,6 +31,18 @@ The sole missing checksummed path is `Win7POS-build-report.md`.
 The workflow generated and checksummed that report, but its upload path list
 omitted it. The patch adds that existing file to the ReleasePack upload list.
 No checksum, provenance or signature validation is weakened.
+
+[PR110](https://github.com/XNIW/Win7POS/pull/110) merged normally as
+`4b8af5dc8e8466da1cda53e1ffb3c96a7b994330` after checks on exact head
+`f23b116378248c86af09db1697f4871104fd85be`. Merge checks passed:
+[CI](https://github.com/XNIW/Win7POS/actions/runs/36190637655),
+[Security/CodeQL](https://github.com/XNIW/Win7POS/actions/runs/36190637651),
+[Release Pack](https://github.com/XNIW/Win7POS/actions/runs/36190637616).
+The same downloaded-artifact verifier failed on the original run and passed
+on [fixed-head run 36186872014](https://github.com/XNIW/Win7POS/actions/runs/36186872014):
+62 checksummed release files, 41 raw payload files, matching dist/Setup copies.
+The final readiness/evidence delivery and exact final merge receipt are in
+[PR111](https://github.com/XNIW/Win7POS/pull/111), updated outside this commit.
 
 The generalized verifier below downloads dist, Setup and ReleasePack via `gh`,
 verifies the exact run SHA and each GitHub archive digest, compares dist with
@@ -54,7 +66,10 @@ candidate are distinct files and retain separate hashes in the attestation.
 ## Staging prerequisites and preserved state
 
 Admin repository: [XNIW/merchandise-control-admin-web](https://github.com/XNIW/merchandise-control-admin-web).
-Fetched Admin origin/main: `918e8e1cbe2d286c3a81b59ad586d7031fac9a78`;
+Initial fetched Admin origin/main: `918e8e1cbe2d286c3a81b59ad586d7031fac9a78`;
+read-only refresh on September 26: `db5bb83a8d54a99ae8637d3cc770af723cf00da3`.
+The intervening WeChat changes are outside this task. The new Win7POS JSON
+readiness is still absent and TASK-150 remains paused;
 the existing local checkout is preserved. Its current handoff explicitly
 withdraws the old readiness. TASK-148 is user-confirmed closed. TASK-150 is
 paused and preserves its prior evidence; neither is reactivated here.
@@ -70,10 +85,17 @@ in current Admin main and no READY document was issued in this task.
 
 `-ReadinessRunId` selects the new ID previously reserved by the maintainer;
 existing evidence directories are rejected so an execution identity cannot
-be reused. The namespace remains compatible with the current harness, but
+be reused locally; the maintainer must reserve an unused identity remotely.
+The namespace remains compatible with the current harness, but
 timestamp/random identity must be fresh. Validation runs both before build
-and before any data-directory move or harness launch. The canonical gate
+and before any data-directory move or harness launch. That final check also
+refetches the exact current Admin revision and rejects a removed or changed
+readiness document. The canonical gate
 executes synthetic positive/negative contract tests without staging requests.
+The final test set has one positive and 38 negative vectors. An additional
+negative vector reproduced PowerShell accepting an array-valued `state`;
+the parser now checks JSON string types before conversion, including contract
+digests. The vector fails before the type check and passes afterward.
 
 The Admin maintainer must review and publish a new handoff through its normal
 reviewed Git procedure after authorized live checks. The consumer contract is:
@@ -97,7 +119,7 @@ comes from this attestation, not an independent live probe. A current issuer
 and authorized staging readiness remain external prerequisites; no Admin
 runtime code, source task activation or deployment was changed.
 
-Admin's current master-plan receipt reports selective staging source
+Admin's initial master-plan receipt reports selective staging source
 `c55f88a36ac89684f25fd503ca7a3bc085c08660` and Worker version
 `6343d39c-d50a-4c88-89df-676f709697a2`, distinct from Admin main. An actual
 read-only `wrangler deployments list --name merchandise-control-admin-web-staging
@@ -105,6 +127,10 @@ read-only `wrangler deployments list --name merchandise-control-admin-web-stagin
 noninteractive Cloudflare authentication. Therefore these are **reported**
 deployment values, not a freshly verified deployment. No temporary account,
 alternative privileged credential or deployment was used.
+The September 26 refresh reports a later Worker identifier
+`f1e2e3ce-557b-42f4-9159-e796dc635c32` with the same selective source
+`c55f88a3`; it describes an enrollment-only WeChat change. This is also a
+maintainer-reported value, not a live deployment verification by this task.
 
 The canonical local QA credential validator passes version 2, restricted ACL,
 DPAPI decryption and staging host checks. That says nothing about remote actor
@@ -141,7 +167,7 @@ carts 1/10/50/100/500. Sample 0 is the first invocation; warm samples 1–30
 are summarized separately with nearest-rank p50/p95 and maximum. All samples,
 including outliers and incomplete probes, are retained. The stage CSV adds
 service, snapshot application, layout, bitmap allocation and bitmap rendering.
-These are cumulative measured work stages in one process, not an OS-cold
+These are successive measured work stages in one process, not an OS-cold
 launch or physical monitor paint measurement; JIT/GC remain included.
 
 The soak repeats a 500-line cart, ten scans in rows and grid modes, discount
@@ -160,7 +186,89 @@ An initial long run was also stopped after the observer's strong references
 were found capable of retaining dispatcher operations. Its samples are kept
 as invalid qualification evidence. The final observer uses weak references,
 prunes completed/aborted operations and counts distinct live operations, so
-the instrumentation cannot retain their closures.
+the instrumentation cannot retain their closures. A subsequent weak-reference
+probe was stopped after about five minutes to add callback diagnostics; its
+apparent pending-count growth is not proof of an application leak. Both
+diagnostic one-minute probes completed and identified the idle queue as the
+measurement callback and transient WPF input/hit-test callbacks. Desktop and
+instrumentation conditions differed across these probes; no sole cause is
+claimed for their different queue behavior.
+
+The host is an ASUS Zenbook 14 UX3405CA, Intel Core Ultra 7 255H, 16 logical
+processors, 16,497,893,376 bytes RAM, Windows 11 Home Single Language
+10.0.26200. Local build/test work is serialized around soak execution.
+JIT is included in first-use timings; the local CLR JIT
+performance-counter set was unavailable, so JIT duration is not isolated.
+Offscreen bitmap timing does not establish physical display paint latency.
+
+The first long measurement used all downloaded PR109 production payload files
+(`be370ba3`) overlaid into the diagnostic harness. The harness source is
+committed in `e3b67ce7a0d0ec7181d47872c5b05de8206e6ad2`; its SHA256 is
+`1f36401a81df43b8d915bc456880d9d35bd2b1896caa912d4bc1be6db543b026`.
+Every EXE/DLL hash is recorded in the public protocol and was rechecked after
+termination. This attempt is **NOT COMPLETED**, not PASS: it recorded 108
+complete cycles and a partial cycle, last elapsed 3507.805 seconds, before
+Modern Standby. Windows Kernel-Power event 506 records `Reason: Lid` at
+2026-09-25 18:55:15 local, just after the final sample. On resume the wrapper
+correctly enforced its wall-clock deadline and terminated its own harness.
+The missing terminal PASS and missing full 60-minute duration are preserved.
+These samples predate the product-editor lifetime fix below. They are not
+evidence that the patched application completed a soak. Final-package
+measurements and hash receipts remain separate: a different versioned binary
+is never labeled byte-identical.
+
+Safe raw CSVs, binary hash protocols, completed and stopped probes are in
+[the evidence directory](evidence/2026-09-25-post-pr109/README.md).
+No database, credential, encrypted checkpoint or private manifest is included.
+
+### Completed benchmark samples before the interrupted soak
+
+Milliseconds; each row has one first invocation and **30 warm samples**.
+All 1/10/50/100/500-line scan cases and other flows are retained in CSV.
+
+| Dataset / operation | First | Warm p50 | Warm p95 | Warm maximum |
+| --- | ---: | ---: | ---: | ---: |
+| 20k, 500-line service scan | 5.947 | 6.265 | 7.521 | 9.500 |
+| 100k, 500-line service scan | 13.272 | 6.369 | 11.401 | 11.563 |
+| 20k, scan + view bitmap | 1825.087 | 173.219 | 243.695 | 1831.738 |
+| 100k, scan + view bitmap | 2366.519 | 204.502 | 324.387 | 2335.408 |
+| 20k, layout stage | 9.776 | 3.268 | 24.713 | 1625.827 |
+| 100k, layout stage | 22.177 | 3.673 | 7.620 | 2085.842 |
+| 20k, bitmap render stage | 87.049 | 116.827 | 125.916 | 129.683 |
+| 100k, bitmap render stage | 97.942 | 129.705 | 191.841 | 192.058 |
+
+First view entry in the already-running process is 324.230 ms (20k) and
+599.516 ms (100k), one observation each. The first scan-with-view service
+stage is 1710.964/2234.564 ms; the large second-sample outlier instead lies
+in layout (1625.827/2085.842 ms). These measurements identify where elapsed
+time occurred; they do not attribute the cause to JIT alone. They also do
+not establish a speedup: the production source is unchanged and desktop,
+runtime and GC scheduling vary. No application patch is justified from
+these timings alone. Process launch/close remains NOT_EXECUTED by policy.
+
+### P109-U01 — Product editor late render after close
+
+The September 26 repeat overlaid with all 41 downloaded files from merge
+`4b8af5dc8e8466da1cda53e1ffb3c96a7b994330` failed after three full cycles
+and a partial fourth (last sample 100.488 seconds). The harness exited 2 with
+`ObjectDisposedException` in `ProductEditDialog.OnContentRendered`: a WPF
+callback arrived after `OnClosed` had disposed `_imageLifetime`.
+
+This is an application defect reproduced by the soak, separate from the
+earlier host suspension and staging preflight failures. The patch records
+closure before cancellation/disposal, ignores content-rendered work after
+closure (including closure by a ContentRendered subscriber), and ignores
+queued focus work for a closed dialog. Sizing, positioning, shared resources,
+owner rules and image cancellation remain unchanged.
+
+The runtime regression `P109_product_editor_late_render_close` uses a real
+ProductEditDialog, closes it and delivers its virtual render callback in
+both event orderings. It fails before the patch with the same disposed-source
+exception and passes afterward. It is the eighth isolated functional scenario
+in the canonical CI smoke. Dialog standards pass 35/35 and x86 builds have
+zero warnings/errors. The failed repeat's numeric samples and exception are
+preserved publicly; its misleading historical directory prefix `completed-`
+is explicitly not a PASS. A full patched-runtime soak remains to be completed.
 
 ## Installer and operator execution card
 

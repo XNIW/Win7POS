@@ -27,12 +27,17 @@ function Assert-Win7PosArticleReadiness {
             foreach ($property in $document.RootElement.EnumerateObject()) {
                 Require-Readiness ($keys.Add($property.Name)) 'duplicate_key'
                 Require-Readiness ($allowed -ccontains $property.Name) 'unknown_field'
+                if ($property.Name -cnotin @('http503','exceededCpu','exceededMemory','activeQaRuns',
+                        'qaScopeClean','salesAllowed','contractDigests')) {
+                    Require-Readiness ($property.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::String) 'field_type'
+                }
             }
             Require-Readiness ($keys.Count -eq $allowed.Count) 'missing_field'
             $digestKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
             foreach ($property in $document.RootElement.GetProperty('contractDigests').EnumerateObject()) {
                 Require-Readiness ($digestKeys.Add($property.Name)) 'duplicate_key'
                 Require-Readiness (@('request','response','firstLogin') -ccontains $property.Name) 'contract_mismatch'
+                Require-Readiness ($property.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::String) 'field_type'
             }
             Require-Readiness ($digestKeys.Count -eq 3) 'contract_mismatch'
             foreach ($field in @('issuedAtUtc','expiresAtUtc','deploymentVerifiedAtUtc')) {

@@ -37,7 +37,8 @@ $mutations = @(
     { param($v) $v.activeQaRuns=1 }, { param($v) $v.qaScopeClean=$false }, { param($v) $v.salesAllowed=$true },
     { param($v) $v.qaScopeClean='true' }, { param($v) $v.salesAllowed='false' }, { param($v) $v.http503='0' },
     { param($v) $v.contractDigests.request='f'*64 }, { param($v) $v.contractDigests.Remove('response') },
-    { param($v) $v.Remove('expiresAtUtc') }, { param($v) $v.credential='must-never-be-a-contract-field' }
+    { param($v) $v.Remove('expiresAtUtc') }, { param($v) $v.credential='must-never-be-a-contract-field' },
+    { param($v) $v.state=@('READY') }, { param($v) $v.contractDigests.request=@('a'*64) }
 )
 foreach ($mutation in $mutations) {
     $changed = ConvertFrom-Json -InputObject $json -AsHashtable
