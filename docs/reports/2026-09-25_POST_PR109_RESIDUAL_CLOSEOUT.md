@@ -12,7 +12,7 @@ outside this commit to avoid a self-referential SHA update.
 | A. Published application | PR109 already merged; initial local/origin main identical, 0/0 | F01–F12 preserved; reproduced late product-editor render crash corrected below |
 | B. Article staging | Historical readiness superseded; zero logical runs | NOT_EXECUTED; new Admin readiness and supported fresh-run contract required |
 | C. Image recovery | Existing encrypted checkpoint, cleanupPending=true | NOT_EXECUTED; preserved, no retry of denied authority |
-| D. Performance | Short measurements do not establish retention | Stage instrumentation and finite soak added; measured results below |
+| D. Performance | Short measurements do not establish retention | Measurement PASS: 60m17s / 115 cycles; stability qualification FAIL under recorded conditions (recurrent queue growth and UI latency outliers) |
 | E. Installer | Release Pack exists, installation requires authorized QA host | Download/integrity work below; install/upgrade/uninstall NOT_EXECUTED |
 | F. External qualification | Win7/peripherals and process-start permission absent | NOT_EXECUTED; one owner execution card below |
 
@@ -97,6 +97,20 @@ negative vector reproduced PowerShell accepting an array-valued `state`;
 the parser now checks JSON string types before conversion, including contract
 digests. The vector fails before the type check and passes afterward.
 
+The same wrapper now requires `-ReleasePackRunId` for the final client SHA.
+Inspection showed that the prior wrapper rebuilt exact source but did not bind
+the resulting assemblies to the released package. It now reuses the canonical
+download verifier, overlays all production payload files into its newly built
+QA harness, records their hashes and verifies them before and after both
+prepare/restart phases. No staging call is needed to test this binding. The
+small `Win7PosQaPayload` helper and its synthetic file tests cover stale local
+assemblies, changes after copy, duplicate/escaping manifest entries, missing
+application files and overlapping source/destination. The QA credential guide
+is updated solely to document the required readiness/release arguments.
+The file-level runtime suite passes one positive and six negative cases; the
+same helper also copies and verifies all 41 files of the real downloaded
+`b79451f0a475` package. All 48 canonical gates pass after this runner change.
+
 The Admin maintainer must review and publish a new handoff through its normal
 reviewed Git procedure after authorized live checks. The consumer contract is:
 
@@ -164,7 +178,9 @@ previously denied production process-start benchmark.
 
 Preserved baseline: 20k/100k products, ten price-history rows per product,
 carts 1/10/50/100/500. Sample 0 is the first invocation; warm samples 1–30
-are summarized separately with nearest-rank p50/p95 and maximum. All samples,
+are summarized separately with nearest-rank p50/p95 and maximum. Cases
+run in the same process in that order: "first"
+means first for that case, not a fresh process/JIT/OS cache state. All samples,
 including outliers and incomplete probes, are retained. The stage CSV adds
 service, snapshot application, layout, bitmap allocation and bitmap rendering.
 These are successive measured work stages in one process, not an OS-cold
@@ -196,7 +212,13 @@ claimed for their different queue behavior.
 
 The host is an ASUS Zenbook 14 UX3405CA, Intel Core Ultra 7 255H, 16 logical
 processors, 16,497,893,376 bytes RAM, Windows 11 Home Single Language
-10.0.26200. Local build/test work is serialized around soak execution.
+10.0.26200. Both installed Framework registry views report version
+`4.8.09221`, release value `533509`; `net48` is the build target, not a claim
+that this Win11 runtime qualifies the Windows 7 installation.
+Read-only `powercfg` queries reported zero AC/DC values for both display-idle
+and standby-idle timers during the repeat; no power setting was changed.
+Physical foreground/unlocked display state was not independently confirmed.
+Local build/test work is serialized around soak execution.
 JIT is included in first-use timings; the local CLR JIT
 performance-counter set was unavailable, so JIT duration is not isolated.
 Offscreen bitmap timing does not establish physical display paint latency.
@@ -216,6 +238,16 @@ These samples predate the product-editor lifetime fix below. They are not
 evidence that the patched application completed a soak. Final-package
 measurements and hash receipts remain separate: a different versioned binary
 is never labeled byte-identical.
+
+A later patched-package attempt was also interrupted, independently of the
+application fix: its last sample is 3299.835 seconds (107 complete cycles and
+a partial cycle, 2,375 samples). Windows records the Codex sandbox service
+being asked to stop at 13:16:18 local on September 26 and restarting at
+13:16:19, during the final idle interval. The wrapper and harness were absent
+afterward, with no terminal PASS or harness error file. No application-error
+or suspension event was observed in that interval. All 41 package files still
+matched their hashes. This is **NOT COMPLETED**, not a 60-minute PASS; its raw
+data and the service events are preserved under `interrupted-patched-soak-100000`.
 
 Safe raw CSVs, binary hash protocols, completed and stopped probes are in
 [the evidence directory](evidence/2026-09-25-post-pr109/README.md).
@@ -242,7 +274,7 @@ First view entry in the already-running process is 324.230 ms (20k) and
 stage is 1710.964/2234.564 ms; the large second-sample outlier instead lies
 in layout (1625.827/2085.842 ms). These measurements identify where elapsed
 time occurred; they do not attribute the cause to JIT alone. They also do
-not establish a speedup: the production source is unchanged and desktop,
+not establish a speedup: these two baseline datasets use identical application source and desktop,
 runtime and GC scheduling vary. No application patch is justified from
 these timings alone. Process launch/close remains NOT_EXECUTED by policy.
 
@@ -268,7 +300,141 @@ exception and passes afterward. It is the eighth isolated functional scenario
 in the canonical CI smoke. Dialog standards pass 35/35 and x86 builds have
 zero warnings/errors. The failed repeat's numeric samples and exception are
 preserved publicly; its misleading historical directory prefix `completed-`
-is explicitly not a PASS. A full patched-runtime soak remains to be completed.
+is explicitly not a PASS. The later full patched-runtime soak is reported below.
+
+The patched local-build diagnostic probe completed 322.783 seconds and 11
+cycles without the crash. It is an execution PASS, not a memory-stability
+PASS: pending operations increased from 26 to 235, including 150 WPF
+InitTextStore callbacks at the last idle sample; managed memory was 66.363 MiB
+at the second idle sample and 88.993 MiB at the last. Image lookups stayed zero
+and the cart metadata cache stayed at 500. The optional WPF native-pending
+diagnostic was true after each idle interval. The flag alone does not prove
+starvation: the subsequent package run also reports true with only three
+pending operations. Neither observation proves an application cache leak
+or identifies the native event. WPF's [dispatcher scheduling source](https://github.com/dotnet/wpf/blob/main/src/Microsoft.DotNet.Wpf/src/WindowsBase/System/Windows/Threading/Dispatcher.cs)
+is a behavioral reference, not proof of this net48 host's root cause;
+[MsgWaitForMultipleObjectsEx](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-msgwaitformultipleobjectsex)
+can also signal for internal system events such as activation. No callbacks
+are forcibly drained, reprioritized or discarded, and no GC is forced.
+
+### Patched package benchmark
+
+These completed samples use the downloaded `b79451f0a475` package described
+below. Milliseconds; one first invocation plus **30 warm samples** per row.
+They are separate from the older, pre-fix measurements above.
+
+| Dataset / operation | First | Warm p50 | Warm p95 | Warm maximum |
+| --- | ---: | ---: | ---: | ---: |
+| 20k, 500-line service scan | 6.483 | 5.954 | 7.266 | 9.531 |
+| 100k, 500-line service scan | 5.753 | 5.647 | 8.214 | 8.469 |
+| 20k, scan + view bitmap | 1888.782 | 173.067 | 227.816 | 1690.701 |
+| 100k, scan + view bitmap | 1747.319 | 157.783 | 204.896 | 1631.069 |
+| 20k, layout stage | 9.575 | 3.120 | 4.701 | 1494.659 |
+| 100k, layout stage | 9.173 | 2.817 | 5.282 | 1436.852 |
+| 20k, bitmap render stage | 94.864 | 110.529 | 154.724 | 164.233 |
+| 100k, bitmap render stage | 86.959 | 99.846 | 113.725 | 149.227 |
+
+First view entry is 352.755/380.834 ms for 20k/100k (n=1 each), inside an
+already-running harness. The first scan-with-view service stages take
+1770.910/1641.337 ms; the second sample includes 1494.659/1436.852 ms of
+layout work. These outliers remain included. JIT, GC and desktop effects
+are not isolated enough to infer a production speedup or physical paint SLA.
+
+### Completed patched-package soak and remaining performance limitation
+
+**Execution PASS; stability qualification FAIL in the recorded environment.**
+The final repeat completed on September 26, 16:21–17:22 UTC, with the terminal
+runner PASS: **115 complete cycles, 2,530 samples, 3,617.240 seconds** of
+workload. All 41 downloaded production payload files matched before and after.
+No Kernel-Power 42/506 suspension event occurred during this run. This is the
+completed dataset `patched-package-soak-100000` in the public evidence; the
+earlier interrupted patched attempt has a separate directory and status.
+
+| Metric | Samples | p50 | p95 | Maximum |
+| --- | ---: | ---: | ---: | ---: |
+| Rows scan + snapshot apply, ms | 1,150 | 68.905 | 1,735.806 | 2,785.086 |
+| Rows layout + bitmap, ms | 1,150 | 148.894 | 313.169 | 2,621.655 |
+| Grid scan + snapshot apply, ms | 1,150 | 70.169 | 182.335 | 429.782 |
+| Grid layout + bitmap, ms | 1,150 | 142.674 | 268.921 | 639.471 |
+| Send dispatcher probe, ms | 2,530 | 0.264 | 0.490 | 17.045 |
+| Subsequent complete cycle, seconds (includes 20s idle) | 114 | 29.901 | 33.977 | 89.838 |
+
+The first complete cycle took 28.575 seconds. Soak scan timing includes the
+asynchronous service wait and snapshot application on the UI thread; it is
+not interchangeable with the isolated service-scan benchmark. Rows outliers
+recur after switching mode: 111 of 112 scan samples exceeding 500 ms are the
+second or third scan of their ten-scan batch. The third scan has p50 1,650.547
+ms (115 samples). This is not explained by excluding the first invocation.
+The existing stage data locates elapsed work but does not isolate scheduling,
+GC and control realization sufficiently to justify changing production list
+virtualization or dispatcher priorities. No arbitrary latency SLA is invented.
+
+| Equivalent after-idle metric | First 10 mean | Last 10 mean | All-sample maximum |
+| --- | ---: | ---: | ---: |
+| Private memory, MiB | 302.742 | 437.064 | 642.469 |
+| Managed heap, MiB | 77.768 | 119.298 | 368.733 |
+| Pending observed dispatcher operations | 133.3 | 443.8 | 2,425 |
+| Process handles | 697.9 | 708.4 | 750 |
+| GDI objects | 27.2 | 27.8 | 46 |
+| USER objects | 43.0 | 43.4 | 50 |
+| Threads | 36.1 | 35.3 | 44 |
+
+Private memory decreased in all 115 before/after-idle pairs, by 22.202 MiB
+on average. Nevertheless, successive idle levels grew for roughly 30 minutes.
+The queue subsequently returned naturally to 1–3 pending operations and the
+idle heap to roughly 61–65 MiB, before another growth interval; the final idle
+sample has 512 pending operations and 131.296 MiB managed heap. This recovery
+contradicts a claim of monotonic permanent retention, but does not establish
+stable idle occupancy. The metadata cache stayed at 500 entries and image
+lookups at zero. GC counters remain in the CSV; no collection was forced.
+
+![Complete 100k soak, memory and dispatcher queue](evidence/2026-09-25-post-pr109/patched-summary/soak.png)
+
+FAIL means this run does not support memory/queue stability or consistent UI
+latency qualification. It does not identify an application leak or prove
+failure on a foreground production desktop. The one operator card specifies
+the remaining controlled-desktop reproduction and causal evidence needed.
+The corrected late-editor callback did not recur during the completed soak.
+The public CSVs, summary generator and pinned chart dependencies make these
+results independently reproducible without a private Asus script.
+
+## Validation and package binding
+
+After the editor lifetime fix, the serialized local suite passed locked
+restore, 48 canonical gates, solution/WPF/harness builds, **1,033/1,033
+Core/Data tests with zero skipped**, CLI self-test, image profile/net48
+serialization, eight isolated functional scenarios and 50 visual captures,
+authorization, bounded logging (100k) and product paging (100k). The optional
+native-pending diagnostic was included in the subsequent harness build and
+smokes; all 48 gates passed again after that instrumentation change.
+
+On exact application-fix head `b79451f0a475764083e1cccff3267b0b2864fa58`,
+[CI 36250295056](https://github.com/XNIW/Win7POS/actions/runs/36250295056),
+[Security/CodeQL 36250295177](https://github.com/XNIW/Win7POS/actions/runs/36250295177)
+and [Release Pack 36250291927](https://github.com/XNIW/Win7POS/actions/runs/36250291927)
+passed. That exact downloaded package supplied all 41 production payload files
+for the patched 20k/100k measurements and the late-render runtime regression.
+The harness source hash is
+`fcdcaa50989195f10403e1c22a40b6b19a4b8a4f1981c63ea9d85c543b21033f`.
+Its Git blob is `9d2c9fbcf9d747b79d2ea3e61228f11c1fcfe139`; the public
+`harness-source-binding.json` also records the LF-normalized hash so checkout
+line-ending conversion is not mistaken for a source change.
+These identifiers bind the long-run evidence; they are not substituted for the
+final merge's workflow and package receipts in PR111/the external attestation.
+The final package is rebuilt and versioned for its own SHA. Reuse of this long
+run requires unchanged application/build-dependency source, unchanged measured
+harness source and byte-identical vendor runtime dependencies; the final
+package still receives its own integrity checks and runtime smokes. This does
+not claim that differently versioned Win7POS assemblies are byte-identical or
+that another 60-minute run was executed on the final merge.
+
+The downloaded patched release passes all 62 checksummed-file validations.
+Separate Authenticode checks return 14 valid vendor signatures and 19 unsigned
+files among the 33 distributed EXE/DLLs including Setup. Win7POS.Core,
+Win7POS.Data, Win7POS.Wpf and Setup are unsigned. This is a development-unsigned
+candidate, not a production-signed release. No certificate was created.
+Final artifact digests, inner payload ZIP hash, Setup hash and local candidate
+hash are recorded as separate objects after the final merge download.
 
 ## Installer and operator execution card
 
@@ -285,6 +451,7 @@ attach one redacted receipt per row to this task's final attestation:
 | --- | --- |
 | Admin maintainer, staging | Confirm the actual deployed source SHA, deployment/version and supported POS contracts through authenticated Cloudflare read access. Issue a new readiness for the final client SHA, new run ID, isolated shop/scope manifest, clean preflight and expiry; do not edit the superseded marker. Review/test any new producer and consumer contract in their repositories. |
 | Shop/QA authority + Admin maintainer, staging | Explicitly authorize rehabilitation of the original image bootstrap actor through the administrative procedure. Verify lease, identity, credential generation, catalog.write and environment. Then run the existing `Invoke-Win7PosProductImageStagingAcceptance.ps1` against its preserved directory: first recovery/cleanup, verify terminal receipt/counts/ownership/idempotence, then a distinct new matrix. No synthetic sales in article/image scope. |
+| QA desktop operator, Asus/Win11 | Record an unlocked, foreground, awake desktop and repeat the retained 60-minute protocol without concurrent builds/tests. Check equivalent idle heap/queue recovery and callback classes; if the backlog recurs, collect causal dispatcher/retention evidence before changing application behavior. The current native-pending flag alone does not identify the cause. |
 | QA VM/snapshot operator | Preserve the old candidate and snapshot; verify final artifact hashes/signatures, install clean, launch, save synthetic settings/DB, install upgrade from previous candidate, verify persistence, uninstall and verify retained data. Record registry/shortcut behavior, logs, installed hashes and rollback. |
 | Win7 SP1 operator | On QA data verify net48/x86/SQLite, HTTPS/login, offline/online and restart, real scanner/focus/quantity/discount, one synthetic sale, return/void/reprint without duplicate stock or sale, interrupted backup/restore, DPI and monitor reachability. Record OS/hardware/driver and final hashes. |
 | Printer/drawer owner | Give explicit operational consent; verify driver/spooler and Notepad first, then one bounded TEST receipt and error behavior. No automatic drawer pulse. |

@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-z0-9][a-z0-9-]{0,63}$')][string]$Profile,
     [string]$DataDirectory = 'C:\POSData\Win7POSFinalArticleSyncAcceptance',
     [ValidatePattern('^ASUSART_POST_PR68_[0-9]{8}T[0-9]{9}Z_[A-F0-9]{8}$')][string]$ReadinessRunId = '',
+    [ValidatePattern('^[0-9]+$')][string]$ReleasePackRunId = '',
     [ValidateRange(15, 60)][int]$TimeoutMinutes = 15
 )
 
@@ -10,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'Win7PosQaCredentialVault.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Win7PosAcceptanceProcessRunner.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Win7PosArticleReadiness.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Win7PosQaPayload.psm1') -Force
 
 $runnerExit = @{
     ProfileMissingOrInvalid = 2
@@ -377,6 +379,24 @@ try {
         Join-Path $evidenceDirectory 'contract-digests.txt'
     ) -Encoding UTF8
 
+    if (-not $ReleasePackRunId) {
+        Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_release_pack_run_required' -Passed $false
+    }
+    $downloadDirectory = Join-Path $evidenceDirectory 'release-pack'
+    & pwsh -NoProfile -File (Join-Path $repoRoot 'scripts/win7pos/windows/test-downloaded-release-pack.ps1') `
+        -RunId $ReleasePackRunId -ExpectedCommitSha $headSha -OutputDirectory $downloadDirectory `
+        *> (Join-Path $evidenceDirectory 'release-pack-verification.txt')
+    if ($LASTEXITCODE -ne 0) {
+        Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_release_pack_verification_failed' -Passed $false
+    }
+    $releaseReceipt = Get-Content (Join-Path $downloadDirectory 'download-verification.json') -Raw | ConvertFrom-Json
+    if ($releaseReceipt.status -cne 'PASS' -or $releaseReceipt.commitSha -cne $headSha -or $releaseReceipt.runId -cne $ReleasePackRunId) {
+        Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_release_pack_receipt_mismatch' -Passed $false
+    }
+
     $dotnetPath = 'C:\Dev\dotnet10\dotnet.exe'
     if (-not (Test-Path -LiteralPath $dotnetPath -PathType Leaf)) {
         Complete-Win7PosAcceptanceRunner `
@@ -471,6 +491,25 @@ try {
             -Passed $false
     }
 
+    $harnessDirectory = [IO.Path]::GetDirectoryName($fullHarnessPath)
+    $verifiedPayload = Join-Path $downloadDirectory ('Win7POS-' + $releaseReceipt.buildVersion + '-ReleasePack-x86/Win7POS')
+    try {
+        $payloadManifest = @(Copy-Win7PosQaPayload -VerifiedPayloadDirectory $verifiedPayload -HarnessDirectory $harnessDirectory)
+    } catch {
+        Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_harness_payload_binding_failed' -Passed $false
+    }
+    [ordered]@{clientCommitSha=$headSha;releaseRunId=$ReleasePackRunId;buildVersion=$releaseReceipt.buildVersion;
+        payload=$payloadManifest} | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $evidenceDirectory 'harness-payload-binding.json')
+
+    function Confirm-AcceptancePayload {
+        try { Assert-Win7PosQaPayload -HarnessDirectory $harnessDirectory -Manifest $payloadManifest }
+        catch {
+            Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
+                -Code 'acceptance_harness_payload_mismatch' -Passed $false
+        }
+    }
+
     # Build/test time must not turn an expired readiness into a new live run.
     try {
         $recheckedAdminSha = (& gh api repos/XNIW/merchandise-control-admin-web/commits/main --jq '.sha').Trim()
@@ -502,6 +541,7 @@ try {
     New-Item -ItemType Directory -Path $fullDataDirectory -Force | Out-Null
 
     $acceptanceStartedAt = [DateTimeOffset]::UtcNow
+    Confirm-AcceptancePayload
     $prepareProcessResult = Invoke-Win7PosWaitedProcess `
         -FilePath $fullHarnessPath `
         -ArgumentList @(
@@ -515,6 +555,7 @@ try {
         -TimeoutMilliseconds ($TimeoutMinutes * 60 * 1000) `
         -EvidenceDirectory $evidenceDirectory
 
+    Confirm-AcceptancePayload
     if (-not $prepareProcessResult.Started) {
         Complete-Win7PosAcceptanceRunner `
             -ExitCode $runnerExit.LaunchFailure `
@@ -587,6 +628,7 @@ try {
             -ProcessResult $prepareProcessResult
     }
 
+    Confirm-AcceptancePayload
     $processResult = Invoke-Win7PosWaitedProcess `
         -FilePath $fullHarnessPath `
         -ArgumentList @(
@@ -599,6 +641,7 @@ try {
         ) `
         -TimeoutMilliseconds $remainingMilliseconds `
         -EvidenceDirectory $evidenceDirectory
+    Confirm-AcceptancePayload
     if (-not $processResult.Started) {
         Complete-Win7PosAcceptanceRunner `
             -ExitCode $runnerExit.LaunchFailure `

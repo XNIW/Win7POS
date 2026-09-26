@@ -1,0 +1,16 @@
+[
+  {
+    "time": "2026-09-26T13:16:19.4713747-03:00",
+    "id": 1000,
+    "values": [
+      "The Codex sandbox service is running."
+    ]
+  },
+  {
+    "time": "2026-09-26T13:16:18.5162804-03:00",
+    "id": 1001,
+    "values": [
+      "The Codex sandbox service was asked to stop."
+    ]
+  }
+]

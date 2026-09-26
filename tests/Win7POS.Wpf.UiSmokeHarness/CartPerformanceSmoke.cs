@@ -155,9 +155,10 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
         {
             using var process = Process.GetCurrentProcess();
             using var csv = new StreamWriter(Path.Combine(dataDir, "cart-soak.csv"), false) { AutoFlush = true };
-            csv.WriteLine("products,cycle,phase,elapsed_s,private_bytes,managed_bytes,handles,gdi,user,threads,gc0,gc1,gc2,dispatcher_ms,pending_dispatcher,cache_entries,image_lookups,scan_ms,render_ms");
+            csv.WriteLine("products,cycle,phase,elapsed_s,private_bytes,managed_bytes,handles,gdi,user,threads,gc0,gc1,gc2,dispatcher_ms,pending_dispatcher,cache_entries,image_lookups,scan_ms,render_ms,native_input_pending");
             var elapsed = Stopwatch.StartNew();
             var dispatcher = Dispatcher.CurrentDispatcher;
+            var inputPendingMethod = typeof(Dispatcher).GetMethod("IsInputPending", BindingFlags.Instance | BindingFlags.NonPublic);
             // Hooks can race for synchronous Send operations. Never retain the
             // operations (and their closures) just to observe queue occupancy.
             var pending = new List<WeakReference>();
@@ -203,13 +204,18 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
                     }
                 }
                 process.Refresh();
+                // Optional diagnostic only: WPF can defer background callbacks while
+                // native input is pending. Do not drain, reprioritize or drop that work.
+                var nativeInputPending = -1;
+                try { if (inputPendingMethod != null) nativeInputPending = (bool)inputPendingMethod.Invoke(dispatcher, null) ? 1 : 0; }
+                catch { /* Private runtime diagnostic unavailable; preserve unknown. */ }
                 csv.WriteLine(string.Format(CultureInfo.InvariantCulture,
-                    "{0},{1},{2},{3:F3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13:F3},{14},{15},{16},{17:F3},{18:F3}",
+                    "{0},{1},{2},{3:F3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13:F3},{14},{15},{16},{17:F3},{18:F3},{19}",
                     count, cycle, phase, elapsed.Elapsed.TotalSeconds, process.PrivateMemorySize64,
                     GC.GetTotalMemory(false), process.HandleCount, GetGuiResources(process.Handle, 0),
                     GetGuiResources(process.Handle, 1), process.Threads.Count, GC.CollectionCount(0),
                     GC.CollectionCount(1), GC.CollectionCount(2), probeMs, pendingCount,
-                    CollectionCount("_cartProductImageCache"), CollectionCount("_cartProductImageLookups"), scanMs, renderMs));
+                    CollectionCount("_cartProductImageCache"), CollectionCount("_cartProductImageLookups"), scanMs, renderMs, nativeInputPending));
             }
             try
             {

@@ -1,0 +1,13 @@
+{
+  "checkedAtUtc": "2026-09-26T17:22:31.1340173+00:00",
+  "startedUtc": "2026-09-26T13:21:29.8675938-03:00",
+  "finishedUtc": "2026-09-26T17:22:00.1866691Z",
+  "log": "System",
+  "provider": "Microsoft-Windows-Kernel-Power",
+  "sleepEventIds": [
+    42,
+    506
+  ],
+  "sleepEvents": 0,
+  "note": "No suspension events in this interval; physical foreground/unlocked display state was not confirmed."
+}

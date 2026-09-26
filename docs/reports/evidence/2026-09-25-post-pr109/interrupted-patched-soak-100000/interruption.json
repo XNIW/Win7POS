@@ -1,0 +1,14 @@
+{
+  "status": "NOT_COMPLETED",
+  "requestedMinutes": 60,
+  "lastElapsedSeconds": 3299.835,
+  "completedCycles": 107,
+  "samples": 2375,
+  "lastPhase": "before_idle",
+  "terminalPassPresent": false,
+  "harnessErrorPresent": false,
+  "processAndWrapperAbsent": true,
+  "payloadFilesRechecked": 41,
+  "payloadUnchanged": true,
+  "interruption": "Codex sandbox service stop/start recorded during the final idle interval; no application exception or suspension event observed in that interval."
+}
