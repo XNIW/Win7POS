@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -28,6 +29,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
         private static double Milliseconds(long ticks) => ticks * 1000d / Stopwatch.Frequency;
         private static int Containers(ItemsControl control) => Enumerable.Range(0, control.Items.Count).Count(index => control.ItemContainerGenerator.ContainerFromIndex(index) != null);
+        [System.Runtime.InteropServices.DllImport("UIAutomationCore.dll")]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool UiaClientsAreListening();
 
         internal static async Task RunAsync(string directory, int products, int minutes)
         {
@@ -40,6 +44,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
             if (traceEnabled) AppDomain.MonitoringIsEnabled = true;
             using var trace = new CartPerformanceDiagnostics.OperationObserver(Dispatcher.CurrentDispatcher,
                 traceEnabled ? "bounded" : "off", true, traceEnabled);
+            trace.StartTimeline(Path.Combine(directory, "diagnostic-timeline.txt"));
+            var scanLimitText = Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_SCAN_LIMIT") ?? "0";
+            if (!int.TryParse(scanLimitText, out var scanLimit) || scanLimit < 0 || scanLimit > 5)
+                throw new ArgumentException("diagnostic_scan_limit_invalid");
+            var completedScans = 0;
             using var environment = new PerformanceEnvironment(directory);
             using var scans = new StreamWriter(Path.Combine(directory, "qualification-scans.csv"));
             using var idle = new StreamWriter(Path.Combine(directory, "qualification-idle.csv"));
@@ -71,6 +80,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var grid = (ListBox)view.FindName("CartGridListBox");
                 var cycle = 0;
                 var usefulStart = environment.AwakeSeconds;
+                if (traceEnabled) trace.Checkpoint("fixture_ready;cart=" + vm.CartItems.Count + ";uia_listening=" + UiaClientsAreListening() +
+                    ";context=" + System.Threading.SynchronizationContext.Current?.GetType().FullName);
                 do
                 {
                     if (vm.CartItems.Count != 500) throw new InvalidOperationException("qualification_cart_size_mismatch");
@@ -84,14 +95,21 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             var expectedQuantity = vm.CartItems[0].Quantity + 1;
                             vm.BarcodeInput = "P00000001";
                             var finished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                            var sawBusy = false;
                             System.ComponentModel.PropertyChangedEventHandler handler = (_, args) =>
-                            { if (args.PropertyName == nameof(vm.IsBusy) && !vm.IsBusy) finished.TrySetResult(true); };
+                            {
+                                if (args.PropertyName != nameof(vm.IsBusy)) return;
+                                if (vm.IsBusy) sawBusy = true;
+                                else if (sawBusy) finished.TrySetResult(true);
+                            };
                             vm.PropertyChanged += handler;
                             using var sql = SqliteWorkMetrics.Begin();
                             using var detail = PosScanMeasurement.Begin();
                             var start = Stopwatch.GetTimestamp();
                             try
                             {
+                                if (traceEnabled) trace.Checkpoint("command_start;cycle=" + cycle + ";mode=" + mode + ";scan=" + ordinal +
+                                    ";expected_qty=" + expectedQuantity + ";focus=" + Keyboard.FocusedElement?.GetType().FullName);
                                 if (!vm.AddBarcodeCommand.CanExecute(null)) throw new InvalidOperationException("qualification_scan_command_disabled");
                                 vm.AddBarcodeCommand.Execute(null);
                                 if (await Task.WhenAny(finished.Task, Task.Delay(10000)) != finished.Task) throw new TimeoutException("qualification_public_scan_timeout");
@@ -102,6 +120,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             // async continuations otherwise postpones the app's
                             // focus/scroll until after the entire synthetic batch.
                             // This wait remains INCLUDED in command_overhead_ms.
+                            if (traceEnabled) trace.Checkpoint("busy_complete;qty=" + vm.CartItems[0].Quantity + ";service_complete=" + detail.ServiceCompletedTimestamp +
+                                ";service_ms=" + detail.ServiceMilliseconds.ToString("F3", Invariant));
+                            if (vm.CartItems[0].Quantity != expectedQuantity || detail.ServiceCompletedTimestamp == 0)
+                                throw new InvalidOperationException("qualification_public_scan_not_applied");
+                            if (traceEnabled) trace.Checkpoint("input_probe_start");
                             var visualWait = await ProbeAsync(DispatcherPriority.Input);
                             if (double.IsInfinity(visualWait))
                             {
@@ -117,9 +140,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 scans.Flush(); operations.Flush(); environment.Sample(host); environment.Flush();
                                 throw new TimeoutException("qualification_visual_scan_timeout");
                             }
+                            if (traceEnabled) trace.Checkpoint("input_probe_complete;wait_ms=" + visualWait.ToString("F3", Invariant));
                             var returned = Stopwatch.GetTimestamp();
-                            if (vm.CartItems[0].Quantity != expectedQuantity || detail.ServiceCompletedTimestamp == 0)
-                                throw new InvalidOperationException("qualification_public_scan_not_applied");
                             view.UpdateLayout();
                             var layout = Stopwatch.GetTimestamp();
                             var bitmap = new RenderTargetBitmap(1024, 768, 96, 96, PixelFormats.Pbgra32);
@@ -135,6 +157,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 detail["snapshot_query_map"].ToString("F3", Invariant), detail["snapshot_projection"].ToString("F3", Invariant),
                                 Containers(rows), Containers(grid), changes, notifications, sql.ProductCommands, sql.ProductCommandsOnCallingThread, visualWait.ToString("F3", Invariant) }));
                             environment.Sample(host);
+                            if (traceEnabled) trace.Checkpoint("scan_complete;cycle=" + cycle + ";scan=" + ordinal + ";rows=" + Containers(rows) + ";grid=" + Containers(grid));
+                            completedScans++;
+                            if (scanLimit > 0 && completedScans == scanLimit)
+                            {
+                                scans.Flush(); operations.Flush(); environment.Flush();
+                                File.WriteAllText(Path.Combine(directory, "diagnostic-scans.json"),
+                                    "{\"schemaVersion\":\"win7pos-short-public-scan-v1\",\"completedScans\":" + completedScans +
+                                    ",\"environmentValid\":" + (environment.Valid ? "true" : "false") + ",\"qualified\":false}");
+                                return;
+                            }
                         }
                     }
                     var discount = new DiscountDialog(null, true, service, vm, 100, () => Task.FromResult(false)) { Owner = DialogOwnerHelper.GetSafeOwner() };

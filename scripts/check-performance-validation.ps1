@@ -65,4 +65,30 @@ $historical = Join-Path $PSScriptRoot '../docs/reports/evidence/2026-09-25-post-
 $result = Test-Win7PosPerformance -Directory $historical -Budget $budget -RequiredSeconds 3600 -ProcessCompleted $true
 if ($result.STABILITY_PASS -or $result.MEASUREMENT_COMPLETED) { throw 'Historical qualification evidence must not pass' }
 Write-Output 'PASS validator historical soak rejected; evidence preserved'
+# These contract checks never launch a process, even if a preflight guard regresses.
+$runnerHarness = Join-Path $directory 'runner-harness'
+$null = New-Item -ItemType Directory -Path $runnerHarness
+[IO.File]::WriteAllText((Join-Path $runnerHarness 'Win7POS.Wpf.UiSmokeHarness.exe'), 'non-executable preflight fixture')
+$runnerBudget = Join-Path $directory 'runner-budget.json'
+$budget | ConvertTo-Json | Set-Content -LiteralPath $runnerBudget
+$runnerBinding = Join-Path $directory 'runner-binding.json'
+@{clientCommit=('a' * 40);payload=@();harnessSha256=('0' * 64)} | ConvertTo-Json | Set-Content -LiteralPath $runnerBinding
+function Check-RunnerRejection([string]$Name, [hashtable]$Arguments, [string]$Expected) {
+    function Start-Process { throw 'test_forbids_process_launch' }
+    $output = Join-Path $directory $Name
+    $caught = $false
+    try { & (Join-Path $PSScriptRoot 'run-cart-performance.ps1') -OutputDirectory $output -HarnessDirectory $runnerHarness @Arguments }
+    catch { $caught=$true; if ($_.Exception.Message -notlike "*$Expected*") { throw } }
+    if (-not $caught -or (Test-Path -LiteralPath $output)) { throw "$Name did not reject before execution setup" }
+    Write-Output "PASS runner $Name"
+}
+Check-RunnerRejection 'short-and-soak' @{Mode='Diagnostic';DiagnosticScanCount=5;SoakMinutes=12} 'mutually exclusive'
+Check-RunnerRejection 'short-qualification' @{Mode='Qualification';DiagnosticScanCount=5} 'diagnostic only'
+Check-RunnerRejection 'integrated-sha-mismatch' @{Mode='Qualification';Stage='Integrated';SoakMinutes=12;BudgetPath=$runnerBudget;PayloadBindingPath=$runnerBinding;ExpectedCommit=('b' * 40)} 'verified payload binding'
+$oldTrace = $env:WIN7POS_QA_PERF_TRACE
+try {
+    $env:WIN7POS_QA_PERF_TRACE='1'
+    Check-RunnerRejection 'trace-qualification' @{Mode='Qualification'} 'diagnostic only'
+}
+finally { $env:WIN7POS_QA_PERF_TRACE=$oldTrace }
 # Preserve tiny vectors in OS temp for failure inspection.

@@ -292,7 +292,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal sealed class OperationObserver : IDisposable
         {
-            private sealed class Entry { public long Id; public long Posted; public WeakReference Operation; public long Started; public long Allocated; public double Cpu; }
+            private sealed class Entry { public long Id; public long Posted; public WeakReference Operation; public long Started; public long Allocated; public double Cpu; public string Method; }
             private readonly Dispatcher _dispatcher;
             private readonly string _mode;
             private readonly bool _roots;
@@ -303,7 +303,47 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private readonly Dictionary<long, Entry> _bounded = new Dictionary<long, Entry>();
             private readonly ConditionalWeakTable<DispatcherOperation, Entry> _index = new ConditionalWeakTable<DispatcherOperation, Entry>();
             private long _next;
+            private readonly long _origin = Stopwatch.GetTimestamp();
+            private readonly Dictionary<long, Entry> _running = new Dictionary<long, Entry>();
+            private Timer _watchdog;
+            private StreamWriter _timeline;
+            private int _timelineLines;
+            private bool _disposed;
             public int Dropped { get; private set; }
+            public void StartTimeline(string path)
+            {
+                if (!_trace || _mode == "off") return;
+                _timeline = new StreamWriter(path);
+                _timeline.WriteLine("TIMELINE,clock=Stopwatch,cpu=AppDomain_including_workers,allocations=AppDomain,watchdog_ms=100,entry_capacity=16384,event_capacity=512,active_capacity=32,line_capacity=8192");
+                _timeline.Flush();
+                // Thread-pool timer: it keeps recording when the UI dispatcher
+                // is occupied. Only scalar metadata crosses the thread boundary.
+                _watchdog = new Timer(_ =>
+                {
+                    lock (_sync)
+                    {
+                        if (_disposed) return;
+                        if (_timelineLines >= 8192) { Dropped++; return; }
+                        foreach (var item in _events) { _timeline.WriteLine(item); _timelineLines++; }
+                        _events.Clear();
+                        var active = _running.Values.OrderBy(item => item.Started).LastOrDefault();
+                        _timeline.WriteLine("WATCHDOG," + Ms(Stopwatch.GetTimestamp() - _origin).ToString("F3", CultureInfo.InvariantCulture) +
+                            ",cpu_ms=" + AppDomain.CurrentDomain.MonitoringTotalProcessorTime.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
+                            ",allocated=" + AppDomain.CurrentDomain.MonitoringTotalAllocatedMemorySize + ",active=" + active?.Method +
+                            ",active_ms=" + (active == null ? 0 : Ms(Stopwatch.GetTimestamp() - active.Started)).ToString("F3", CultureInfo.InvariantCulture));
+                        _timelineLines++; _timeline.Flush();
+                    }
+                }, null, 100, 100);
+            }
+            public void Checkpoint(string value)
+            {
+                if (!_trace || _mode == "off") return;
+                lock (_sync)
+                {
+                    if (_events.Count >= 512) { Dropped++; return; }
+                    _events.Add("CHECKPOINT," + Ms(Stopwatch.GetTimestamp() - _origin).ToString("F3", CultureInfo.InvariantCulture) + "," + value);
+                }
+            }
             public OperationObserver(Dispatcher dispatcher, string mode, bool roots, bool trace)
             {
                 _dispatcher = dispatcher; _mode = mode; _roots = roots; _trace = trace;
@@ -321,13 +361,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         entry.Started = Stopwatch.GetTimestamp();
                         entry.Allocated = AppDomain.CurrentDomain.MonitoringTotalAllocatedMemorySize;
                         entry.Cpu = AppDomain.CurrentDomain.MonitoringTotalProcessorTime.TotalMilliseconds;
+                        var method = (MethodField?.GetValue(args.Operation) as Delegate)?.Method;
+                        entry.Method = args.Operation.Priority + ":" + method?.DeclaringType + ":" + method?.Name;
+                        if (_running.Count < 32) _running[entry.Id] = entry; else Dropped++;
                     }
             }
             private void Posted(object sender, DispatcherHookEventArgs args)
             {
                 lock (_sync)
                 {
-                    if (_mode == "bounded" && _bounded.Count >= 4096) { Dropped++; return; }
+                    if (args.Operation.Status == DispatcherOperationStatus.Completed || args.Operation.Status == DispatcherOperationStatus.Aborted) return;
+                    if (_mode == "bounded" && _bounded.Count >= 16384) { Dropped++; return; }
                     if (_index.TryGetValue(args.Operation, out _)) return;
                     var entry = new Entry { Id = ++_next, Posted = Stopwatch.GetTimestamp(), Operation = new WeakReference(args.Operation) };
                     _index.Add(args.Operation, entry);
@@ -340,10 +384,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 lock (_sync)
                 {
+                    if (_trace && _events.Count >= 512) Dropped++;
                     if (_trace && _index.TryGetValue(args.Operation, out var timed) && timed.Started != 0 && Ms(Stopwatch.GetTimestamp() - timed.Started) >= 10 && _events.Count < 512)
-                        _events.Add(string.Format(CultureInfo.InvariantCulture, "OP_TRACE,{0:F3},{1:F3},{2},{3},{4}", Ms(Stopwatch.GetTimestamp() - timed.Started),
+                        _events.Add(string.Format(CultureInfo.InvariantCulture, "OP_TRACE,{0:F3},{1:F3},{2},{3},{4},start_ms={5:F3},end_ms={6:F3}", Ms(Stopwatch.GetTimestamp() - timed.Started),
                             AppDomain.CurrentDomain.MonitoringTotalProcessorTime.TotalMilliseconds - timed.Cpu, AppDomain.CurrentDomain.MonitoringTotalAllocatedMemorySize - timed.Allocated,
-                            args.Operation.Priority, (MethodField?.GetValue(args.Operation) as Delegate)?.Method.DeclaringType + ":" + (MethodField?.GetValue(args.Operation) as Delegate)?.Method));
+                            args.Operation.Priority, timed.Method, Ms(timed.Started - _origin), Ms(Stopwatch.GetTimestamp() - _origin)));
+                    if (_index.TryGetValue(args.Operation, out var running)) _running.Remove(running.Id);
                     if (_mode == "legacy") _legacy.RemoveAll(entry => !entry.Operation.IsAlive || ReferenceEquals(entry.Operation.Target, args.Operation));
                     else if (_index.TryGetValue(args.Operation, out var entry)) _bounded.Remove(entry.Id);
                     _index.Remove(args.Operation);
@@ -396,6 +442,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             public void Dispose()
             {
+                _watchdog?.Dispose();
+                lock (_sync)
+                {
+                    _disposed = true;
+                    if (_timeline != null)
+                    {
+                        foreach (var value in _events) _timeline.WriteLine(value);
+                        _timeline.WriteLine("TRACE_DROPPED," + Dropped);
+                        _timeline.Dispose();
+                    }
+                }
                 _dispatcher.Hooks.OperationPosted -= Posted;
                 _dispatcher.Hooks.OperationStarted -= Started;
                 _dispatcher.Hooks.OperationCompleted -= Finished;

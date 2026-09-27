@@ -14,6 +14,11 @@ on:
         required: false
         default: false
         type: boolean
+      cart_diagnostic_only:
+        description: Diagnose the first five public cart scans on this independent hosted QA runner
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -24,6 +29,7 @@ permissions:
 
 jobs:
   build-and-check:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.cart_diagnostic_only != true }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -104,3 +110,69 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         shell: pwsh
         run: pwsh -NoProfile -File scripts/run-product-paging-dispatcher-smoke.ps1 -Configuration Release -Platform x86
+
+  cart-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout independent QA source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Resolve exact-SHA build version
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $env:GITHUB_SHA -Ref $env:GITHUB_REF -GitHubEnvironmentFile $env:GITHUB_ENV
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Restore and build hosted QA harness
+        shell: pwsh
+        run: |
+          dotnet restore Win7POS.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Hosted harness build failed.' }
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/cart-diagnostic" | Out-Null
+          [ordered]@{ commit=$env:GITHUB_SHA; source='Independent GitHub-hosted Windows QA build; no Asus binaries transferred'; image=$env:ImageOS; imageVersion=$env:ImageVersion; system=(Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,TotalPhysicalMemory,NumberOfLogicalProcessors); cpu=(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors); qualifiesAsus=$false } | ConvertTo-Json -Depth 5 | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/host-provenance.json"
+      - name: First five public scans without trace
+        id: untraced
+        continue-on-error: true
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/untraced"
+      - name: First five public scans with bounded timeline
+        id: traced
+        continue-on-error: true
+        shell: pwsh
+        env:
+          WIN7POS_QA_PERF_TRACE: '1'
+        run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
+      - name: Preserve synthetic diagnostic evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Win7POS-Cart-Diagnostic-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/cart-diagnostic/host-provenance.json
+            ${{ runner.temp }}/cart-diagnostic/*/protocol.json
+            ${{ runner.temp }}/cart-diagnostic/*/performance-result.json
+            ${{ runner.temp }}/cart-diagnostic/*/*.csv
+            ${{ runner.temp }}/cart-diagnostic/*/qualification-operations.txt
+            ${{ runner.temp }}/cart-diagnostic/*/qualification-runtime.txt
+            ${{ runner.temp }}/cart-diagnostic/*/diagnostic-timeline.txt
+            ${{ runner.temp }}/cart-diagnostic/*/diagnostic-scans.json
+            ${{ runner.temp }}/cart-diagnostic/*/harness-error.txt
+            ${{ runner.temp }}/cart-diagnostic/*/functional-completion.txt
+      - name: Report diagnostic completion without certifying stability
+        if: always()
+        shell: pwsh
+        env:
+          UNTRACED_OUTCOME: ${{ steps.untraced.outcome }}
+          TRACED_OUTCOME: ${{ steps.traced.outcome }}
+        run: |
+          Write-Output "Untraced=$env:UNTRACED_OUTCOME; Traced=$env:TRACED_OUTCOME; STABILITY_PASS=false (Diagnostic only; independent hosted machine)."
+          if ($env:UNTRACED_OUTCOME -ne 'success' -or $env:TRACED_OUTCOME -ne 'success') { throw 'A short diagnostic did not complete; inspect preserved evidence.' }

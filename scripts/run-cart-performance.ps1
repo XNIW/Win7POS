@@ -9,9 +9,11 @@ param(
     [string]$BudgetPath = '',
     [string]$PayloadBindingPath = '',
     [string]$ExpectedCommit = '',
-    [switch]$DisableObserver
+    [switch]$DisableObserver,
+    [ValidateRange(0,5)][int]$DiagnosticScanCount = 0
 )
 $ErrorActionPreference = 'Stop'
+if ($DiagnosticScanCount -and $SoakMinutes) { throw 'Short scan reproduction and soak duration are mutually exclusive.' }
 Import-Module (Join-Path $PSScriptRoot 'qa/Win7PosPerformanceValidation.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'qa/Win7PosQaPayload.psm1') -Force
 if (-not $HarnessDirectory) {
@@ -22,6 +24,7 @@ if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Build the Releas
 $budget = $null
 $binding = $null
 if ($Mode -eq 'Qualification') {
+    if ($DiagnosticScanCount) { throw 'Short scan reproduction is diagnostic only.' }
     if ($env:WIN7POS_QA_PERF_TRACE -eq '1') { throw 'Operation tracing is diagnostic only.' }
     if ($DisableObserver) { throw 'Qualification requires dispatcher observation.' }
     if ($Stage -eq 'Final' -and $Products -ne 100000) { throw 'Final qualification requires the 100000-product fixture.' }
@@ -30,8 +33,8 @@ if ($Mode -eq 'Qualification') {
     if (-not $BudgetPath -or -not $PayloadBindingPath) { throw 'Qualification requires a preregistered budget and verified payload binding.' }
     $budget = Get-Content -LiteralPath $BudgetPath -Raw | ConvertFrom-Json
     $binding = Get-Content -LiteralPath $PayloadBindingPath -Raw | ConvertFrom-Json
-    if ($Stage -eq 'Final' -and ($ExpectedCommit -cnotmatch '^[0-9a-f]{40}$' -or $binding.clientCommit -cne $ExpectedCommit)) {
-        throw 'Final qualification requires the exact downloaded merge commit.'
+    if (($Stage -eq 'Final' -or $ExpectedCommit) -and ($ExpectedCommit -cnotmatch '^[0-9a-f]{40}$' -or $binding.clientCommit -cne $ExpectedCommit)) {
+        throw 'Qualification commit does not match the verified payload binding.'
     }
     Assert-Win7PosQaPayload -HarnessDirectory $HarnessDirectory -Manifest $binding.payload
     if ((Get-FileHash -LiteralPath $exe).Hash -ine $binding.harnessSha256) { throw 'Bound harness hash mismatch.' }
@@ -49,21 +52,23 @@ $hostOperatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAc
 [ordered]@{ products=$Products; soakMinutes=$SoakMinutes; mode=$Mode; stage=$Stage; startedUtc=[DateTimeOffset]::UtcNow.ToString('O');
     protocol='win7pos-public-scan-v3: persistent 500 line identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement';
     benchmarkProtocol='31 service samples per size: first call 0, warm 1..30; rendered-view bitmap is not monitor latency';
-    budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
+    budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
 if ($BudgetPath) { Copy-Item -LiteralPath $BudgetPath -Destination (Join-Path $OutputDirectory 'preregistered-budget.json') }
 if ($PayloadBindingPath) { Copy-Item -LiteralPath $PayloadBindingPath -Destination (Join-Path $OutputDirectory 'payload-binding.json') }
 $previousSoak = $env:WIN7POS_QA_SOAK_MINUTES
 $previousDiagnostic = $env:WIN7POS_QA_CART_DIAGNOSTIC
 $previousObserver = $env:WIN7POS_QA_PERF_OBSERVER_OFF
+$previousScanLimit = $env:WIN7POS_QA_PERF_SCAN_LIMIT
 $status = $null
 try {
-    $env:WIN7POS_QA_SOAK_MINUTES = if ($SoakMinutes) { [string]$SoakMinutes } else { $null }
+    $env:WIN7POS_QA_SOAK_MINUTES = if ($DiagnosticScanCount) { '1' } elseif ($SoakMinutes) { [string]$SoakMinutes } else { $null }
+    $env:WIN7POS_QA_PERF_SCAN_LIMIT = if ($DiagnosticScanCount) { [string]$DiagnosticScanCount } else { $null }
     $env:WIN7POS_QA_CART_DIAGNOSTIC = $null
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = if ($DisableObserver) { '1' } else { $null }
     $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"'+$OutputDirectory+'"'), '--cart-performance', '--products', $Products) -WindowStyle Hidden -PassThru
     $deadline = [Diagnostics.Stopwatch]::StartNew()
     while (-not $process.WaitForExit(1000)) {
-        if ($deadline.Elapsed.TotalMinutes -gt $SoakMinutes + 10) {
+        if ($deadline.Elapsed.TotalMinutes -gt $(if ($DiagnosticScanCount) { 2 } else { $SoakMinutes + 10 })) {
             Stop-Process -Id $process.Id -ErrorAction SilentlyContinue
             throw 'Performance harness timed out; partial samples preserved.'
         }
@@ -83,7 +88,13 @@ try {
     }
     else {
         $environmentValid = $false
-        if ($SoakMinutes) {
+        if ($DiagnosticScanCount) {
+            $receipt = Get-Content (Join-Path $OutputDirectory 'diagnostic-scans.json') -Raw | ConvertFrom-Json
+            if ($receipt.schemaVersion -ne 'win7pos-short-public-scan-v1' -or $receipt.completedScans -ne $DiagnosticScanCount -or
+                @(Import-Csv (Join-Path $OutputDirectory 'qualification-scans.csv')).Count -ne $DiagnosticScanCount) { throw 'Incomplete short scan reproduction.' }
+            $environmentValid = $receipt.environmentValid -eq $true
+        }
+        elseif ($SoakMinutes) {
             $receipt = Get-Content (Join-Path $OutputDirectory 'qualification-measurement.json') -Raw | ConvertFrom-Json
             $samples = @(Import-Csv (Join-Path $OutputDirectory 'qualification-idle.csv'))
             if (-not $receipt.measurementCompleted -or $receipt.products -ne $Products -or $samples.Count -eq 0 -or
@@ -111,4 +122,5 @@ finally {
     $env:WIN7POS_QA_SOAK_MINUTES = $previousSoak
     $env:WIN7POS_QA_CART_DIAGNOSTIC = $previousDiagnostic
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = $previousObserver
+    $env:WIN7POS_QA_PERF_SCAN_LIMIT = $previousScanLimit
 }
