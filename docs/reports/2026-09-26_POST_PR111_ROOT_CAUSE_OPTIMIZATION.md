@@ -190,8 +190,9 @@ regression reaches its focus phase, then fails with `hostActive=False`,
 `hostVisible=True`, `viewLoaded=True`; its preceding recycling/structural checks
 pass. The functional runner therefore correctly remains nonpositive overall.
 Authorization lease (including restart/capacity), 100k bounded logging and 100k
-product paging also pass. The validator has 26 passing positive/negative vectors,
-including wrong dataset/cart receipts and the old soak rejection. PR/head CI,
+product paging also pass. The validator has 28 passing positive/negative vectors,
+including wrong dataset/cart receipts, numerically duplicate sample identifiers,
+non-finite required duration and the old soak rejection. PR/head CI,
 valid integrated qualification and downloaded final-package qualification remain
 pending. No final performance PASS is claimed.
 

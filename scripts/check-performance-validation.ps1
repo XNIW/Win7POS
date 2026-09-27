@@ -17,15 +17,17 @@ function Fixture {
         [pscustomobject]@{cycle=$cycle;mode=$mode;ordinal=$ordinal;service_ms=8;ui_return_ms=3;apply_ms=2;layout_ms=8;bitmap_ms=20;command_overhead_ms=1;realized_grid=12;product_commands=2;commands_on_dispatcher=0;collection_changes=0}
     } } })
 }
-function Check([string]$Name, [bool]$Expected, [bool]$Completed=$true, [string]$Reason='', [int]$ReceiptProducts=100000, [int]$ReceiptCart=500) {
+function Check([string]$Name, [bool]$Expected, [bool]$Completed=$true, [string]$Reason='', [int]$ReceiptProducts=100000, [int]$ReceiptCart=500, [switch]$DuplicateIsolated, [double]$Seconds=400) {
     @{schemaVersion='win7pos-performance-measurement-v1';measurementCompleted=$true;environmentValid=$true;products=$ReceiptProducts;cartSize=$ReceiptCart;protocolVersion=3;cycles=$idle.Count} |
         ConvertTo-Json | Set-Content (Join-Path $directory 'qualification-measurement.json')
-    @(foreach($size in @(1,10,50,100,500)) { foreach($sample in 0..30) {
+    $isolated = @(foreach($size in @(1,10,50,100,500)) { foreach($sample in 0..30) {
         [pscustomobject]@{products=100000;cart=$size;sample=$sample;ms=8;dispatcher_probe_ms=$script:sendLatency;product_commands=2;commands_on_dispatcher=0}
-    } }) | Export-Csv (Join-Path $directory 'cart-performance.csv') -NoTypeInformation
+    } })
+    if ($DuplicateIsolated) { $isolated[2].sample='01' }
+    $isolated | Export-Csv (Join-Path $directory 'cart-performance.csv') -NoTypeInformation
     $idle | Export-Csv (Join-Path $directory 'qualification-idle.csv') -NoTypeInformation
     $scans | Export-Csv (Join-Path $directory 'qualification-scans.csv') -NoTypeInformation
-    $result = Test-Win7PosPerformance -Directory $directory -Budget $budget -RequiredSeconds 400 -ProcessCompleted $Completed
+    $result = Test-Win7PosPerformance -Directory $directory -Budget $budget -RequiredSeconds $Seconds -ProcessCompleted $Completed
     if ($result.STABILITY_PASS -ne $Expected) { throw "$Name unexpected result: $($result | ConvertTo-Json -Depth 5 -Compress)" }
     $reasons = @($result.measurementReasons) + @($result.environmentReasons) + @($result.stabilityReasons)
     if ($Reason -and -not ($reasons -like "*$Reason*")) { throw "$Name missing expected reason $Reason" }
@@ -35,6 +37,8 @@ $script:sendLatency=.2
 Fixture; Check 'stable' $true
 Fixture; Check 'wrong product fixture' $false -Reason 'invalid_measurement_receipt' -ReceiptProducts 20000
 Fixture; Check 'wrong cart fixture' $false -Reason 'invalid_measurement_receipt' -ReceiptCart 50
+Fixture; Check 'equivalent isolated sample identities' $false -Reason 'invalid_isolated_service_sample_identity' -DuplicateIsolated
+Fixture; Check 'invalid required duration' $false -Reason 'invalid_qualification_contract' -Seconds ([double]::NaN)
 Fixture; $script:sendLatency=17; Check 'existing Send budget' $false -Reason 'send_probe_p95'; $script:sendLatency=.2
 Fixture; $budget.serviceP95Ms='1e3'; Check 'exponential widened budget' $false -Reason 'budget_exceeds'; $budget.serviceP95Ms=50
 Fixture; $budget.memoryWindowCycles=2.5; Check 'fractional window rejected' $false -Reason 'invalid_integral'; $budget.memoryWindowCycles=3
@@ -50,7 +54,7 @@ Fixture; Check 'terminated process' $false -Completed $false -Reason 'process_no
 Fixture; $idle[5].environment_valid=0; Check 'unsuitable desktop' $false -Reason 'unqualified_desktop'
 Fixture; $idle[5].suspended=1; Check 'suspend' $false -Reason 'suspend'
 Fixture; $idle[5].background_ms=251; Check 'priority timeout' $false -Reason 'priority_probe'
-Fixture; $idle[5].background_ms='Infinity'; Check 'explicit probe timeout' $false -Reason 'invalid_numeric'
+Fixture; $idle[5].background_ms='Infinity'; Check 'explicit probe timeout' $false -Reason 'priority_probe_timeout'
 Fixture; $idle[5].focus_maximum_wait_ms=101; Check 'visual delay before idle' $false -Reason 'application_visual_backlog'
 Fixture; $idle[5].scroll_peak=2; Check 'duplicate visual operations' $false -Reason 'application_visual_backlog'
 Fixture; $scans[5].product_commands=3; Check 'public query budget' $false -Reason 'query_batch'

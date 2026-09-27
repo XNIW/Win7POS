@@ -30,7 +30,8 @@ function Test-Win7PosPerformance {
     }
     if (-not $ProcessCompleted) { $measurement.Add('process_not_completed_normally') }
     try {
-        if ($RequiredSeconds -le 0 -or $Budget.schemaVersion -cne 'win7pos-performance-budget-v1') { throw 'invalid_qualification_contract' }
+        if ([double]::IsNaN($RequiredSeconds) -or [double]::IsInfinity($RequiredSeconds) -or $RequiredSeconds -le 0 -or
+            $Budget.schemaVersion -cne 'win7pos-performance-budget-v1') { throw 'invalid_qualification_contract' }
         foreach ($field in @('warmupCycles','serviceP95Ms','sendP95Ms','uiP95Ms','uiMaximumMs','probeMaximumMs',
             'pendingMaximum','oldestMaximumMs','privateMaximumBytes','managedMaximumBytes',
             'managedWindowGrowthBytes','memoryWindowCycles','cacheMaximumBytes','realizedGridMaximum','visualMaximumWaitMs')) {
@@ -55,10 +56,10 @@ function Test-Win7PosPerformance {
             foreach ($field in @('products','cart','sample','ms','dispatcher_probe_ms','product_commands','commands_on_dispatcher')) { $null = Number $row $field }
             if ([double]$row.products -ne $receipt.products) { throw 'benchmark_product_count_mismatch' }
             if ([double]$row.cart -ne [int]$row.cart -or [int]$row.cart -notin @(1,10,50,100,500) -or [double]$row.sample -ne [int]$row.sample -or [int]$row.sample -gt 30 -or
-                -not $serviceKeys.Add("$($row.cart)/$($row.sample)")) { throw 'invalid_isolated_service_sample_identity' }
+                -not $serviceKeys.Add("$([int]$row.cart)/$([int]$row.sample)")) { throw 'invalid_isolated_service_sample_identity' }
             if ([double]$row.product_commands -gt 2 -or [double]$row.commands_on_dispatcher -ne 0) { $stability.Add('product_query_batch_or_dispatcher_violation') }
         }
-        $metrics.isolatedServiceP95Ms = P95 @($serviceSamples | Where-Object { $_.cart -eq '500' -and [int]$_.sample -gt 0 } | ForEach-Object { [double]$_.ms })
+        $metrics.isolatedServiceP95Ms = P95 @($serviceSamples | Where-Object { [int]$_.cart -eq 500 -and [int]$_.sample -gt 0 } | ForEach-Object { [double]$_.ms })
         $metrics.sendProbeP95Ms = P95 @($serviceSamples | Where-Object { [int]$_.sample -gt 0 } | ForEach-Object { [double]$_.dispatcher_probe_ms })
         if ($metrics.isolatedServiceP95Ms -gt $Budget.serviceP95Ms) { $stability.Add('isolated_service_p95') }
         if ($metrics.sendProbeP95Ms -gt $Budget.sendP95Ms) { $stability.Add('send_probe_p95') }
@@ -71,6 +72,13 @@ function Test-Win7PosPerformance {
             $time = Number $row 'elapsed_s'
             if ($time -le $previousTime) { throw 'non_monotonic_elapsed_time' }
             $previousTime = $time
+            foreach ($probe in @('input_ms','render_ms','databind_ms','background_ms')) {
+                $property = $row.PSObject.Properties[$probe]
+                # The harness writes Infinity only when its bounded probe did
+                # not complete. Preserve that specific cause before rejecting
+                # the non-finite measurement below.
+                if ($null -ne $property -and $property.Value -ceq 'Infinity') { $measurement.Add("priority_probe_timeout:${probe}:cycle=$index") }
+            }
             foreach ($field in @('private_bytes','managed_bytes','pending','oldest_ms','focus_pending','focus_oldest_ms',
                 'scroll_pending','scroll_oldest_ms','closed_rooted_windows','cache_bytes','input_ms','render_ms','databind_ms','background_ms','observer_dropped',
                 'focus_peak','scroll_peak','focus_maximum_wait_ms','scroll_maximum_wait_ms','metadata_entries')) {
