@@ -36,6 +36,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using var process = Process.GetCurrentProcess();
             using var observer = new BoundedDispatcherObservation(Dispatcher.CurrentDispatcher,
                 Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_OBSERVER_OFF") != "1");
+            var traceEnabled = Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_TRACE") == "1";
+            if (traceEnabled) AppDomain.MonitoringIsEnabled = true;
+            using var trace = new CartPerformanceDiagnostics.OperationObserver(Dispatcher.CurrentDispatcher,
+                traceEnabled ? "bounded" : "off", true, traceEnabled);
             using var environment = new PerformanceEnvironment(directory);
             using var scans = new StreamWriter(Path.Combine(directory, "qualification-scans.csv"));
             using var idle = new StreamWriter(Path.Combine(directory, "qualification-idle.csv"));
@@ -99,7 +103,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             // focus/scroll until after the entire synthetic batch.
                             // This wait remains INCLUDED in command_overhead_ms.
                             var visualWait = await ProbeAsync(DispatcherPriority.Input);
-                            if (double.IsInfinity(visualWait)) throw new TimeoutException("qualification_visual_scan_timeout");
+                            if (double.IsInfinity(visualWait))
+                            {
+                                // Failure-only evidence: preserve the pending producers
+                                // and native queue without changing or draining WPF work.
+                                var failure = observer.Snapshot();
+                                operations.WriteLine("VISUAL_SCAN_TIMEOUT," + cycle + "," + mode + "," + ordinal + "," + failure.Detail);
+                                var native = new StringBuilder();
+                                trace.Snapshot(cycle, native);
+                                if (traceEnabled) native.AppendLine("TRACE_DROPPED," + trace.Dropped);
+                                CartPerformanceDiagnostics.RecordNativeQueue(cycle, "visual_timeout", native);
+                                operations.Write(native);
+                                scans.Flush(); operations.Flush(); environment.Sample(host); environment.Flush();
+                                throw new TimeoutException("qualification_visual_scan_timeout");
+                            }
                             var returned = Stopwatch.GetTimestamp();
                             if (vm.CartItems[0].Quantity != expectedQuantity || detail.ServiceCompletedTimestamp == 0)
                                 throw new InvalidOperationException("qualification_public_scan_not_applied");

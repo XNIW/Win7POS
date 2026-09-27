@@ -5,6 +5,37 @@ Status: implementation and short causal verification in progress; **not yet
 qualified**. The historical b794 soak remains STABILITY=FAIL. Final merge,
 package binding and external attestation are pending.
 
+Resume on an unlocked desktop (2026-09-27 UTC): exact-head CI and security for
+`0ed0a061f5d85f3e21097d11c0d5161b5444ccab` passed, including all nine functional
+scenarios. The same complete interactive suite then passed on Asus, including
+scanner focus and Unicode composition. The first Integrated attempt nevertheless
+failed at cycle 0, Rows scan 3 with `qualification_visual_scan_timeout`, before
+completing a cycle. Input/thread desktop matched and QA had foreground in every
+recorded sample. A short observer-off ablation reproduced that same third-scan
+timeout. Thus the remaining interactive failure is **not resolved** by restoring
+the desktop and is not caused by the bounded observer alone. No threshold was
+changed; no merge or final qualification is justified by this attempt.
+
+Failure-only collection in v16 retained 1,177 pending Background UpdatePeer
+callbacks plus focus/text/caret/render work. Native PM_NOREMOVE observed dispatcher
+message `0xC215`, with no keyboard or mouse queue indication. This identifies the
+pending work, not the callback consuming the interval. A new v17 trace-enabled
+harness was then blocked before process creation by Smart App Control: event
+3077, `VerifiedAndReputableDesktop`, status `0xc0e90002`, executable SHA256
+`01836d90abfa71d84bb6d9b9b2f2f5427d2243ff0b5ee396692b2d89f6795550`.
+The matching 3118 event and source/binary are preserved privately. No policy
+change, renamed copy, alternate launch or replacement collector was attempted.
+The trace code compiles but its new runtime path remains unverified; Qualification
+rejects trace mode. Collection runs only after failure unless explicitly tracing
+in Diagnostic mode, and does not change the measured acceptance limits.
+
+The [interactive attempt summary](evidence/2026-09-26-post-pr111/interactive-attempts.json)
+and partial CSVs retain the failed runs. Their final flags are
+MEASUREMENT_COMPLETED=false, ENVIRONMENT_VALID=false, STABILITY_PASS=false:
+valid early environment samples do not certify an incomplete run. The previously
+completed diagnostic control remains separate. Further causal work requires a
+QA harness accepted through the host's authorized approval/signing channel.
+
 ## Causal ledger
 
 | Finding | Supported cause and discriminating evidence | Change and regression |
@@ -98,7 +129,7 @@ zero dropped. Both runs have ENVIRONMENT_VALID=false because the input desktop
 cannot be matched and QA has no foreground. See the
 [observer comparison](evidence/2026-09-26-post-pr111/observer-comparison-v12.csv).
 
-The latest structural regression passed public remove/re-add, empty-grid and
+Before the desktop was unlocked, the structural regression passed public remove/re-add, empty-grid and
 new-scan checks before failing the keyboard-focus assertion in that same
 noninteractive environment. Earlier interactive v9 focus/composition checks
 passed, but are not substituted for current or final-payload qualification.
@@ -121,7 +152,7 @@ and dispatcher work; `product_lookup_update` includes lookup and session update,
 The environment records UTC, awake monotonic time excluding suspend, CLR/WPF,
 input desktop, WTS session, foreground/visibility, 192-DPI host samples, power
 and suspend/session events. Offscreen rendering is not monitor latency.
-Current host inventory is Windows 11 Home Single Language 10.0.26200 x64;
+Host inventory is Windows 11 Home Single Language 10.0.26200 x64;
 the QA process is x86, CLR 4.0.30319.42000, Framework file version 4.8.9345.0 and
 WPF file version 4.8.9347.0. `Environment.OSVersion` reports compatibility version
 6.2.9200.0; the runner records the installed OS via Win32_OperatingSystem separately.
@@ -192,16 +223,19 @@ pass. The functional runner therefore correctly remains nonpositive overall.
 Authorization lease (including restart/capacity), 100k bounded logging and 100k
 product paging also pass. The validator has 28 passing positive/negative vectors,
 including wrong dataset/cart receipts, numerically duplicate sample identifiers,
-non-finite required duration and the old soak rejection. PR/head CI,
-valid integrated qualification and downloaded final-package qualification remain
-pending. No final performance PASS is claimed.
+non-finite required duration and the old soak rejection. These initial local
+focus failures were followed by successful exact-head CI and unlocked-Asus
+functional checks on `0ed0a06`, as recorded above. The subsequent Integrated
+attempt failed; valid integrated and downloaded final-package qualification
+remain pending. No final performance PASS is claimed.
 
-Next authorized sequence: provide an active/unlocked QA desktop, rerun the
-interactive regression and a 10–15 minute Integrated qualification against the
+Next authorized sequence: resolve the new QA executable policy block through an
+authorized owner channel, identify and correct the remaining interactive
+third-scan timeout, then pass a 10–15 minute Integrated qualification against the
 unchanged preregistered budget; then exact-head CI/normal merge, download and
 validate the merge Release Pack, repeat 20k/100k measurements and run at least
-60 useful minutes of Final qualification. The unavailable desktop is not an
-accepted exception and no final soak is started while its validity is known false.
+60 useful minutes of Final qualification. Neither the remaining timeout nor
+the executable policy block is an accepted exception; no final soak has started.
 
 ## External prerequisites — checked once
 

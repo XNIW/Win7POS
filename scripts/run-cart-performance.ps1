@@ -22,6 +22,7 @@ if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Build the Releas
 $budget = $null
 $binding = $null
 if ($Mode -eq 'Qualification') {
+    if ($env:WIN7POS_QA_PERF_TRACE -eq '1') { throw 'Operation tracing is diagnostic only.' }
     if ($DisableObserver) { throw 'Qualification requires dispatcher observation.' }
     if ($Stage -eq 'Final' -and $Products -ne 100000) { throw 'Final qualification requires the 100000-product fixture.' }
     $minimum = if ($Stage -eq 'Final') { 60 } else { 10 }

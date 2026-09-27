@@ -1,0 +1,4 @@
+utc,awake_s,desktop_matches,session_active,own_foreground,visible,ac_line,battery_percent,suspended,session_interrupted,dpi_x,dpi_y,input_desktop_observed,thread_desktop_observed,desktop_access_error
+2026-09-27T02:12:29.1211536+00:00,0.463,1,1,1,1,0,46,0,0,192,192,1,1,0
+2026-09-27T02:12:29.1853639+00:00,0.527,1,1,1,1,0,46,0,0,192,192,1,1,0
+2026-09-27T02:12:29.5805785+00:00,0.922,1,1,1,1,0,46,0,0,192,192,1,1,0

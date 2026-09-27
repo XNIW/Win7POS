@@ -255,7 +255,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll", SetLastError = true)] private static extern uint MsgWaitForMultipleObjectsEx(uint count, IntPtr handles, uint milliseconds, uint wakeMask, uint flags);
         [DllImport("user32.dll")] private static extern bool PeekMessage(out MSG message, IntPtr window, uint minimum, uint maximum, uint remove);
-        private static void RecordNativeQueue(int cycle, string phase, StringBuilder text)
+        internal static void RecordNativeQueue(int cycle, string phase, StringBuilder text)
         {
             // Zero-time, non-consuming observation of this QA UI thread only.
             // QS_EVENT is recorded separately from keyboard/mouse/post messages.
@@ -290,7 +290,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             File.WriteAllText(Path.Combine(directory, "diagnostic-environment.txt"), text.ToString());
         }
 
-        private sealed class OperationObserver : IDisposable
+        internal sealed class OperationObserver : IDisposable
         {
             private sealed class Entry { public long Id; public long Posted; public WeakReference Operation; public long Started; public long Allocated; public double Cpu; }
             private readonly Dispatcher _dispatcher;
