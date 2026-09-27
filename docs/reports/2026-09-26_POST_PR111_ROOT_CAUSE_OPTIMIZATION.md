@@ -25,7 +25,8 @@ harness was then blocked before process creation by Smart App Control: event
 `01836d90abfa71d84bb6d9b9b2f2f5427d2243ff0b5ee396692b2d89f6795550`.
 The matching 3118 event and source/binary are preserved privately. No policy
 change, renamed copy, alternate launch or replacement collector was attempted.
-The trace code compiles but its new runtime path remains unverified; Qualification
+At that checkpoint the new trace path was only compiled; it has since run on the
+independent hosted QA channel described below, but not on Asus. Qualification
 rejects trace mode. Collection runs only after failure unless explicitly tracing
 in Diagnostic mode, and does not change the measured acceptance limits.
 
@@ -34,7 +35,91 @@ and partial CSVs retain the failed runs. Their final flags are
 MEASUREMENT_COMPLETED=false, ENVIRONMENT_VALID=false, STABILITY_PASS=false:
 valid early environment samples do not certify an incomplete run. The previously
 completed diagnostic control remains separate. Further causal work requires a
-QA harness accepted through the host's authorized approval/signing channel.
+QA harness accepted through the Asus host's authorized approval/signing channel.
+
+## Authorized hosted QA and remaining Asus reproduction
+
+The existing public-repository `windows-latest` WPF CI runner is an available
+development QA channel with its own execution policy. An explicit manual option
+in the existing CI workflow builds source independently and calls the existing
+performance runner serially. No denied Asus executable was transferred, retried,
+renamed or loaded through another mechanism. No certificate, paid service,
+account, host security configuration or production release was created.
+The skipped full-CI job in this manual workflow is named `canonical-not-requested`;
+it does not substitute for the separate PR `build-and-check` job.
+
+[Run 36289638541](https://github.com/XNIW/Win7POS/actions/runs/36289638541)
+at `554743b1e0a30f6d2e1dd39e0b88b6712386ed65` completed five public scans with
+and without trace. [Run 36290265761](https://github.com/XNIW/Win7POS/actions/runs/36290265761)
+at `08b96fc6adf798c1f5fb87e868c3a11363372ba7` additionally compared dispatching
+the same public command at Input. Each run starts with 100k products and 500
+persistent cart identities; all five increments completed, quantity reached six,
+and collection changes stayed zero. Each result is **M=true, E=true, S=false**:
+these are short Diagnostic runs, not Integrated or Final qualification.
+
+Both machines are Microsoft VMs with 16GiB RAM, four logical CPUs, image
+`win25-vs2026` / `20260922.246.2`, AC power, matched Default desktops and their
+own QA window foreground. CPU models differ: EPYC 7763 in the first run and
+EPYC 9V74 in the second. Comparisons below stay within each machine. They use
+96 DPI versus Asus's 192 DPI. CLR/WPF file versions match Asus, but this does
+not establish equivalent rendering, scheduling, input state or hardware latency.
+UI Automation reports clients listening in both traced runs; its presence alone
+does not reproduce the Asus timeout.
+
+Full UI includes service, return to UI, apply, command overhead and layout;
+bitmap cost stays separate. Every cold sample is retained:
+
+| Hosted run / variant | Scan 1 | Scan 2 | Scan 3 | Scan 4 | Scan 5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 36289638541 / untraced | 322.205 | 37.913 | 69.500 | 47.315 | 64.603 |
+| 36289638541 / traced | 244.183 | 54.054 | 48.148 | 52.559 | 37.966 |
+| 36290265761 / untraced | 261.197 | 39.523 | 30.502 | 49.038 | 30.473 |
+| 36290265761 / traced | 162.823 | 37.290 | 31.976 | 48.920 | 28.529 |
+| 36290265761 / traced Input dispatch | 262.708 | 33.494 | 40.534 | 29.509 | 36.780 |
+
+Values are milliseconds; five samples cannot establish useful tail percentiles
+or a stability PASS. [Raw samples, provenance and executable hashes](evidence/2026-09-26-post-pr111/hosted-diagnostic-summary.json)
+are preserved, with the complete timelines in the downloaded private artifacts.
+No Asus before/after improvement is inferred from these separate hosts.
+
+The trace captures executed-operation start/end, application checkpoints and
+a 100ms thread-pool watchdog independent of the UI dispatcher. Capacities are
+bounded; both hosted comparisons record zero dropped trace entries. First-run
+render work spans 150.769ms with about 7MB allocated and 156.25ms AppDomain CPU;
+the watchdog observes that running callback while the UI is occupied. These
+counters include workers and are not exclusive CPU stacks or an attribution of
+the missing Asus interval. Timer file I/O shares the diagnostic observer lock,
+so traced timing has overhead; the separate untraced control remains necessary.
+
+The new checkpoint demonstrates `DispatcherSynchronizationContext` priority
+**Send** in the startup-derived driver, and **Input** in the explicit comparison.
+The earlier description of this as a Normal-only continuation chain was too
+narrow. WPF's [context implementation](https://raw.githubusercontent.com/dotnet/wpf/main/src/Microsoft.DotNet.Wpf/src/WindowsBase/System/Windows/Threading/DispatcherSynchronizationContext.cs)
+posts with its captured priority; the observed runtime value is the evidence
+for this harness. The Input variant preserves enqueue latency inside the same
+end-to-end clock: its first scan includes about 252ms command overhead. Neither
+variant reproduces the third-scan timeout here, so this is a diagnostic control,
+**not a proven fix or a change to qualification protocol v3**. Internal WPF work,
+IME, accessibility and timeouts remain unchanged.
+
+For the ordinary-product path under test, `IsBusy=false` follows the awaited
+service and applied snapshot, then the command requests scanner focus. The
+harness now requires an observed true-to-false transition, the exact quantity
+increment and a completed service timestamp before probing Input. That verifies
+economic completion without treating it as completion of queued focus/render
+work. The 250ms visual probe remains distinct from the 10s public-command limit.
+New runner contract cases reject short qualification, tracing in qualification,
+Input comparison outside short Diagnostic, mixed short/soak and mismatched
+Integrated SHA before any process launch: 28 validator vectors plus six runner
+preflight cases pass; all 49 canonical gates and the x86 build pass locally.
+
+The structural regression additionally asserts different card heights, public
+quantity/identity/selection after recycling, and real Grid presenter product
+binding with removal of a synthetic previous-product image after container
+reuse. It exercises actual view templates and public commands. It is not an
+image download/decode, physical scanner or installed-IME certification. Runtime
+results of the consolidated suite belong to the exact-head CI run recorded in
+the external attestation, rather than being inferred from a predecessor.
 
 ## Causal ledger
 
@@ -43,7 +128,9 @@ QA harness accepted through the host's authorized approval/signing channel.
 | PERF-LATENCY | Resetting 500 identities each cycle repeatedly realizes all 500 hidden Grid cards. Removing only the hidden Grid ItemsSource eliminates multi-second Rows stalls; restoring it reproduces them. A visibility guard alone does not. Ordinary scans have zero collection changes. | Replace eager WrapPanel with a recycling, variable-height, multi-column `VirtualizingCartWrapPanel`. Preserve card width, selection, scrolling and resize. Runtime regression checks attached visible containers at indices 0/250/499, four widths, both views, removal/empty/re-add and public commands. Corrected an initially detached recycled-container implementation before accepting measurements. |
 | PERF-QUEUE | 501 invisible ProgressBars remain indeterminate. Original mixed control leaves 96 operations, oldest 38,262ms after four cycles; disabling only invisible indicators leaves two, oldest 18ms. Reintroduction reproduces accumulation. Producer stacks identify TextEditor.OnTextViewUpdated during arrange. | Bind IsIndeterminate to actual IsVisible in the cart busy indicator and ProductImagePresenter. Test loading-visible, ancestor-hidden and completed-image states. Do not abort, reprioritize or remove internal WPF operations. |
 | PERF-MEMORY | Pending Background InitTextStore delegates retain TextEditor._uiScope → TextBox → dialog parents → closed ProductEditDialog → VM. Animated rendering repeatedly allocates while the controls are invisible; removing that work drains the demonstrated root chain. Eager card trees also retain 500 control subtrees. | Same two application fixes. Observe natural GC, post-idle heap/private bytes, known closed-window root chains and decoded cache pixel bytes. No forced GC. This establishes those paths, not an exhaustive heap census. |
-| PERF-VALIDATION | Previous runner verified process/sample/duration completion but no stability predicate. Legacy observer scans a weak-reference list on completion; replacement has fixed capacity and O(1) normal completion. Replacing constructor VM disconnects real focus wiring. Reset stress and chained Normal continuations are harness artifacts. | Preserve real PosView composition, persistent identities, alternating mode order, explicit Input completion inside scan timing, separate bitmap timing, bounded observer and three independent result flags. Synthetic negative vectors cover stalls, partial recovery, invalid/missing data, environment, timeouts, roots, overflow and visual waits. |
+| PERF-VALIDATION | Previous runner verified process/sample/duration completion but no stability predicate. Legacy observer scans a weak-reference list on completion; replacement has fixed capacity and O(1) normal completion. Replacing constructor VM disconnects real focus wiring. Reset stress and chained high-priority continuations are harness artifacts. | Preserve real PosView composition, persistent identities, alternating mode order, explicit Input completion inside scan timing, separate bitmap timing, bounded observer and three independent result flags. Synthetic negative vectors cover stalls, partial recovery, invalid/missing data, environment, timeouts, roots, overflow and visual waits. |
+| INTERACTIVE-RESIDUAL | Asus cycle 0 / Rows scan 3 times out even without the observer, with valid foreground/desktop samples. Pending UpdatePeer callbacks do not identify the executed blocker. Hosted controls do not reproduce it. | No residual production fix claimed. Bounded executed-operation timeline and short public-scan controls are available; Asus attribution and equivalent before/after remain missing. |
+| QA-EXECUTION | SAC rejects v17 before process creation; separate from the earlier running-process timeout. Existing signing assessment finds no configured trusted channel. | Independent hosted source builds now execute successfully under their own QA policy. Asus acceptance/signing remains external; no bypass, merge or qualification exception. |
 
 Equivalent visual requests also had an independently reproduced defect: 250
 RestoreScannerFocus calls posted 250 Input operations. PosView now keeps at
@@ -88,7 +175,7 @@ are preserved. All 56 worktrees were clean at intake.
   those runs are invalid measurements. Capacity is explicitly 16,384, peak and
   dropped counts are recorded, and any further overflow invalidates qualification.
   This is observer capacity, not a widened stability threshold.
-- An uninterrupted chain of Normal continuations postponed focus/scroll through
+- An uninterrupted chain of higher-priority continuations postponed focus/scroll through
   a synthetic 20-scan batch. Protocol v3 yields at Input for each completed public
   command and includes the entire wait in `command_overhead_ms`; the separate
   `focus_scroll_wait_ms` is a subcomponent and must not be added twice.
@@ -105,10 +192,10 @@ scan/idle CSVs and [hash provenance](evidence/2026-09-26-post-pr111/scale-proven
 retain equivalent four-cycle reset stress (cycle zero preserved, cycles 1–3
 summarized; 30 samples per mode). These are diagnostic, not desktop qualification:
 
-| Products / rows | Rows p95 before → patched | Rows maximum before → patched | Scan 2 median before → patched | Scan 3 median before → patched |
-| --- | --- | --- | --- | --- |
-| 20k / 500 | 3422.55 → 192.26ms | 3422.59 → 245.38ms | 3422.55 → 12.81ms | 17.24 → 8.12ms |
-| 100k / 500 | 3394.40 → 186.64ms | 3693.49 → 192.82ms | 3106.70 → 12.19ms | 33.14 → 13.02ms |
+| Products / rows | Rows p50 before → patched | Rows p95 before → patched | Rows maximum before → patched | Scan 2 median before → patched | Scan 3 median before → patched |
+| --- | --- | --- | --- | --- | --- |
+| 20k / 500 | 60.78 → 8.41ms | 3422.55 → 192.26ms | 3422.59 → 245.38ms | 3422.55 → 12.81ms | 17.24 → 8.12ms |
+| 100k / 500 | 57.05 → 9.47ms | 3394.40 → 186.64ms | 3693.49 → 192.82ms | 3106.70 → 12.19ms | 33.14 → 13.02ms |
 
 Grid realization falls from 500 to at most 11 containers in these controls.
 All final scale comparisons use the same bounded observer and diagnostic
@@ -229,9 +316,10 @@ functional checks on `0ed0a06`, as recorded above. The subsequent Integrated
 attempt failed; valid integrated and downloaded final-package qualification
 remain pending. No final performance PASS is claimed.
 
-Next authorized sequence: resolve the new QA executable policy block through an
-authorized owner channel, identify and correct the remaining interactive
-third-scan timeout, then pass a 10–15 minute Integrated qualification against the
+Next authorized sequence: use the available hosted diagnostic channel for
+independent regressions; activate an accepted Asus QA harness through the owner
+channel below, identify and correct the remaining interactive third-scan timeout,
+then pass a 12-minute Integrated qualification against the
 unchanged preregistered budget; then exact-head CI/normal merge, download and
 validate the merge Release Pack, repeat 20k/100k measurements and run at least
 60 useful minutes of Final qualification. Neither the remaining timeout nor
@@ -248,3 +336,35 @@ readiness/recovery handoff, disposable installer VM, Win7/peripheral target and
 explicit previously denied startup-benchmark authorization for those separate
 paths. No production release/tag, production launch, printer/cash drawer action
 or renewed staging denial attempt is part of this local performance work.
+
+## Single activation card for the remaining external work
+
+| Prerequisite / responsible party | Activation and verification | Resume point |
+| --- | --- | --- |
+| Asus QA executable acceptance / PC owner and authorized signing administrator | Supply a configured trusted signing procedure, or owner-managed official development-host configuration. The saved signing assessment is reused; no repeated certificate search. If signing is chosen, use staging, record hashes before/after, verify signatures and regenerate the actual payload binding. No policy change is embedded in project scripts. | Accepted current-head harness, short untraced/traced Asus reproduction; no retry of the denied v17 file. |
+| Article staging and image recovery / Admin deployment and shop owner | Provide current typed readiness plus authorized recovery/cleanup handoff. No new readiness or cleanup is invented. Existing DPAPI checkpoint and `cleanupPending` remain unchanged. | Canonical staging/image runner only after local performance is stabilized. |
+| Installer and Windows 7 / QA host and hardware owner | Provide disposable VM/snapshot for install/upgrade/uninstall and an authorized Win7 SP1 net48/x86 target. Scanner/IME and printer/drawer need their real hardware/driver checks and operational consent. | Exact verified merge package, economic/offline/restart/backup checks. Hosted Windows QA does not certify Win7. |
+
+After the first row is satisfied, resolve `$HarnessDir` and `$Binding` from the
+accepted, byte-verified current-head payload, and `$HeadSha` from PR112. Do not
+reuse the old `0ed0a06` binding or its intentionally head-bound resume script.
+Use a new `$ShortOut`, then the existing runner (trace enabled only for a separate
+Diagnostic reproduction):
+
+```powershell
+pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -HarnessDirectory $HarnessDir -OutputDirectory $ShortOut
+```
+
+Verify five quantity increments, valid desktop/foreground, zero trace loss and
+actual executed-operation attribution. A failure returns to that short
+reproducer. Only after a demonstrated correction and the functional suite pass,
+resolve new evidence paths and use the unchanged budget hash stated above:
+
+```powershell
+pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Qualification -Stage Integrated -Products 100000 -SoakMinutes 12 -HarnessDirectory $HarnessDir -BudgetPath $Budget -PayloadBindingPath $Binding -ExpectedCommit $HeadSha -OutputDirectory $IntegratedOut
+```
+
+Require all three flags true before normal merge and exact-merge ReleasePack
+download/verification. Final needs that new package's harness/binding and at
+least 60 useful minutes. Neither Integrated nor Final has passed; Final has not
+started. PR112 stays draft with no merge while the Asus residual remains open.

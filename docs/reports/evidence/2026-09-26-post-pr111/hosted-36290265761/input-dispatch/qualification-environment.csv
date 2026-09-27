@@ -1,0 +1,6 @@
+utc,awake_s,desktop_matches,session_active,own_foreground,visible,ac_line,battery_percent,suspended,session_interrupted,dpi_x,dpi_y,input_desktop_observed,thread_desktop_observed,desktop_access_error
+2026-09-27T03:04:41.0002141+00:00,0.462,1,1,1,1,1,255,0,0,96,96,1,1,0
+2026-09-27T03:04:41.0562198+00:00,0.518,1,1,1,1,1,255,0,0,96,96,1,1,0
+2026-09-27T03:04:41.1202133+00:00,0.582,1,1,1,1,1,255,0,0,96,96,1,1,0
+2026-09-27T03:04:41.1776879+00:00,0.640,1,1,1,1,1,255,0,0,96,96,1,1,0
+2026-09-27T03:04:41.2282099+00:00,0.691,1,1,1,1,1,255,0,0,96,96,1,1,0

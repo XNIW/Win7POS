@@ -1,0 +1,387 @@
+[
+  {
+    "run": "36289638541",
+    "url": "https://github.com/XNIW/Win7POS/actions/runs/36289638541",
+    "sourceCommit": "554743b1e0a30f6d2e1dd39e0b88b6712386ed65",
+    "variant": "untraced",
+    "host": {
+      "commit": "554743b1e0a30f6d2e1dd39e0b88b6712386ed65",
+      "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+      "image": "win25-vs2026",
+      "imageVersion": "20260922.246.2",
+      "system": {
+        "Manufacturer": "Microsoft Corporation",
+        "Model": "Virtual Machine",
+        "TotalPhysicalMemory": 17174360064,
+        "NumberOfLogicalProcessors": 4
+      },
+      "cpu": {
+        "Name": "AMD EPYC 7763 64-Core Processor                ",
+        "NumberOfCores": 2,
+        "NumberOfLogicalProcessors": 4
+      },
+      "qualifiesAsus": false
+    },
+    "protocolSha256": "993184a782fe34f69ad4ac6d795f2973e83eba83368e0eaf8d919abecb15fb72",
+    "binaries": [
+      {
+        "file": "Win7POS.Wpf.exe",
+        "sha256": "5a31f2e3287edd1d75f4d163dc3d902c964d4a1395f9661700f70d59ccd18eaf"
+      },
+      {
+        "file": "Win7POS.Wpf.UiSmokeHarness.exe",
+        "sha256": "82859ac8d4dd3a3ce59207f79b6cb76d840c8ac55deb4c4e364a8f4602c0f7f7"
+      }
+    ],
+    "timelineSha256": null,
+    "measurementCompleted": true,
+    "environmentValid": true,
+    "stabilityPass": false,
+    "qualification": "Diagnostic only; five cold/warm samples are not a latency or stability qualification",
+    "samples": [
+      {
+        "ordinal": 1,
+        "fullUiMs": 322.205,
+        "bitmapMs": 17.991,
+        "inputWaitMs": 134.894,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 2,
+        "fullUiMs": 37.913,
+        "bitmapMs": 14.943,
+        "inputWaitMs": 18.565,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 3,
+        "fullUiMs": 69.5,
+        "bitmapMs": 14.662,
+        "inputWaitMs": 40.139,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 4,
+        "fullUiMs": 47.315,
+        "bitmapMs": 34.807,
+        "inputWaitMs": 16.577,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 5,
+        "fullUiMs": 64.603,
+        "bitmapMs": 14.231,
+        "inputWaitMs": 37.812,
+        "collectionChanges": 0
+      }
+    ]
+  },
+  {
+    "run": "36289638541",
+    "url": "https://github.com/XNIW/Win7POS/actions/runs/36289638541",
+    "sourceCommit": "554743b1e0a30f6d2e1dd39e0b88b6712386ed65",
+    "variant": "traced",
+    "host": {
+      "commit": "554743b1e0a30f6d2e1dd39e0b88b6712386ed65",
+      "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+      "image": "win25-vs2026",
+      "imageVersion": "20260922.246.2",
+      "system": {
+        "Manufacturer": "Microsoft Corporation",
+        "Model": "Virtual Machine",
+        "TotalPhysicalMemory": 17174360064,
+        "NumberOfLogicalProcessors": 4
+      },
+      "cpu": {
+        "Name": "AMD EPYC 7763 64-Core Processor                ",
+        "NumberOfCores": 2,
+        "NumberOfLogicalProcessors": 4
+      },
+      "qualifiesAsus": false
+    },
+    "protocolSha256": "f0c37560569aa870317805b3fb56658e3a5ee075656cacb577c24caed2153a61",
+    "binaries": [
+      {
+        "file": "Win7POS.Wpf.exe",
+        "sha256": "5a31f2e3287edd1d75f4d163dc3d902c964d4a1395f9661700f70d59ccd18eaf"
+      },
+      {
+        "file": "Win7POS.Wpf.UiSmokeHarness.exe",
+        "sha256": "82859ac8d4dd3a3ce59207f79b6cb76d840c8ac55deb4c4e364a8f4602c0f7f7"
+      }
+    ],
+    "timelineSha256": "1b94932a73fa3ed5d0edb3bdc2d269e6d1c393f151af58e05d153d9d46c446a1",
+    "measurementCompleted": true,
+    "environmentValid": true,
+    "stabilityPass": false,
+    "qualification": "Diagnostic only; five cold/warm samples are not a latency or stability qualification",
+    "samples": [
+      {
+        "ordinal": 1,
+        "fullUiMs": 244.183,
+        "bitmapMs": 30.136,
+        "inputWaitMs": 51.894,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 2,
+        "fullUiMs": 54.054,
+        "bitmapMs": 20.03,
+        "inputWaitMs": 21.341,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 3,
+        "fullUiMs": 48.148,
+        "bitmapMs": 13.799,
+        "inputWaitMs": 17.602,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 4,
+        "fullUiMs": 52.559,
+        "bitmapMs": 22.255,
+        "inputWaitMs": 16.697,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 5,
+        "fullUiMs": 37.966,
+        "bitmapMs": 20.081,
+        "inputWaitMs": 14.551,
+        "collectionChanges": 0
+      }
+    ]
+  },
+  {
+    "run": "36290265761",
+    "url": "https://github.com/XNIW/Win7POS/actions/runs/36290265761",
+    "sourceCommit": "08b96fc6adf798c1f5fb87e868c3a11363372ba7",
+    "variant": "untraced",
+    "host": {
+      "commit": "08b96fc6adf798c1f5fb87e868c3a11363372ba7",
+      "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+      "image": "win25-vs2026",
+      "imageVersion": "20260922.246.2",
+      "system": {
+        "Manufacturer": "Microsoft Corporation",
+        "Model": "Virtual Machine",
+        "TotalPhysicalMemory": 17174360064,
+        "NumberOfLogicalProcessors": 4
+      },
+      "cpu": {
+        "Name": "AMD EPYC 9V74 80-Core Processor                ",
+        "NumberOfCores": 2,
+        "NumberOfLogicalProcessors": 4
+      },
+      "qualifiesAsus": false
+    },
+    "protocolSha256": "a953d19064fd9c178eb39265e64a4849e9a36aa6c9e59bdf777e3d7f9f6de6d6",
+    "binaries": [
+      {
+        "file": "Win7POS.Wpf.exe",
+        "sha256": "5953082910750fcb5077320948d57c2cf3168a4fb7553ffa774cb7b4f5d36c68"
+      },
+      {
+        "file": "Win7POS.Wpf.UiSmokeHarness.exe",
+        "sha256": "2b90963ac3d5d07efe39973d977611898165c7130037b52cd9a9c09f043783e1"
+      }
+    ],
+    "timelineSha256": null,
+    "measurementCompleted": true,
+    "environmentValid": true,
+    "stabilityPass": false,
+    "qualification": "Diagnostic only; five cold/warm samples are not a latency or stability qualification",
+    "samples": [
+      {
+        "ordinal": 1,
+        "fullUiMs": 261.197,
+        "bitmapMs": 15.085,
+        "inputWaitMs": 122.277,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 2,
+        "fullUiMs": 39.523,
+        "bitmapMs": 12.838,
+        "inputWaitMs": 12.2,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 3,
+        "fullUiMs": 30.502,
+        "bitmapMs": 20.158,
+        "inputWaitMs": 11.041,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 4,
+        "fullUiMs": 49.038,
+        "bitmapMs": 18.613,
+        "inputWaitMs": 11.495,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 5,
+        "fullUiMs": 30.473,
+        "bitmapMs": 12.736,
+        "inputWaitMs": 11.786,
+        "collectionChanges": 0
+      }
+    ]
+  },
+  {
+    "run": "36290265761",
+    "url": "https://github.com/XNIW/Win7POS/actions/runs/36290265761",
+    "sourceCommit": "08b96fc6adf798c1f5fb87e868c3a11363372ba7",
+    "variant": "traced",
+    "host": {
+      "commit": "08b96fc6adf798c1f5fb87e868c3a11363372ba7",
+      "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+      "image": "win25-vs2026",
+      "imageVersion": "20260922.246.2",
+      "system": {
+        "Manufacturer": "Microsoft Corporation",
+        "Model": "Virtual Machine",
+        "TotalPhysicalMemory": 17174360064,
+        "NumberOfLogicalProcessors": 4
+      },
+      "cpu": {
+        "Name": "AMD EPYC 9V74 80-Core Processor                ",
+        "NumberOfCores": 2,
+        "NumberOfLogicalProcessors": 4
+      },
+      "qualifiesAsus": false
+    },
+    "protocolSha256": "b698d8e0ac7d7b3dd1be2543f7e4eda957fa3734c2b13673b92b9e019e73aa80",
+    "binaries": [
+      {
+        "file": "Win7POS.Wpf.exe",
+        "sha256": "5953082910750fcb5077320948d57c2cf3168a4fb7553ffa774cb7b4f5d36c68"
+      },
+      {
+        "file": "Win7POS.Wpf.UiSmokeHarness.exe",
+        "sha256": "2b90963ac3d5d07efe39973d977611898165c7130037b52cd9a9c09f043783e1"
+      }
+    ],
+    "timelineSha256": "1183f1d69d39a417ba0bcd2f56b57c5ca32228ede4b55c7fcbf586ebb3ac771d",
+    "measurementCompleted": true,
+    "environmentValid": true,
+    "stabilityPass": false,
+    "qualification": "Diagnostic only; five cold/warm samples are not a latency or stability qualification",
+    "samples": [
+      {
+        "ordinal": 1,
+        "fullUiMs": 162.823,
+        "bitmapMs": 15.75,
+        "inputWaitMs": 26.93,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 2,
+        "fullUiMs": 37.29,
+        "bitmapMs": 14.509,
+        "inputWaitMs": 15.199,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 3,
+        "fullUiMs": 31.976,
+        "bitmapMs": 17.781,
+        "inputWaitMs": 12.673,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 4,
+        "fullUiMs": 48.92,
+        "bitmapMs": 20.302,
+        "inputWaitMs": 13.742,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 5,
+        "fullUiMs": 28.529,
+        "bitmapMs": 17.738,
+        "inputWaitMs": 9.795,
+        "collectionChanges": 0
+      }
+    ]
+  },
+  {
+    "run": "36290265761",
+    "url": "https://github.com/XNIW/Win7POS/actions/runs/36290265761",
+    "sourceCommit": "08b96fc6adf798c1f5fb87e868c3a11363372ba7",
+    "variant": "input-dispatch",
+    "host": {
+      "commit": "08b96fc6adf798c1f5fb87e868c3a11363372ba7",
+      "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+      "image": "win25-vs2026",
+      "imageVersion": "20260922.246.2",
+      "system": {
+        "Manufacturer": "Microsoft Corporation",
+        "Model": "Virtual Machine",
+        "TotalPhysicalMemory": 17174360064,
+        "NumberOfLogicalProcessors": 4
+      },
+      "cpu": {
+        "Name": "AMD EPYC 9V74 80-Core Processor                ",
+        "NumberOfCores": 2,
+        "NumberOfLogicalProcessors": 4
+      },
+      "qualifiesAsus": false
+    },
+    "protocolSha256": "d3e6b17b022842567da484ef9590e916b6608545284850461e5020bf96ab2884",
+    "binaries": [
+      {
+        "file": "Win7POS.Wpf.exe",
+        "sha256": "5953082910750fcb5077320948d57c2cf3168a4fb7553ffa774cb7b4f5d36c68"
+      },
+      {
+        "file": "Win7POS.Wpf.UiSmokeHarness.exe",
+        "sha256": "2b90963ac3d5d07efe39973d977611898165c7130037b52cd9a9c09f043783e1"
+      }
+    ],
+    "timelineSha256": "b4e70a623475c1541ebe1437f61d047452475234f8e56640712edd6f18b2d357",
+    "measurementCompleted": true,
+    "environmentValid": true,
+    "stabilityPass": false,
+    "qualification": "Diagnostic only; five cold/warm samples are not a latency or stability qualification",
+    "samples": [
+      {
+        "ordinal": 1,
+        "fullUiMs": 262.708,
+        "bitmapMs": 33.476,
+        "inputWaitMs": 23.317,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 2,
+        "fullUiMs": 33.494,
+        "bitmapMs": 14.184,
+        "inputWaitMs": 14.237,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 3,
+        "fullUiMs": 40.534,
+        "bitmapMs": 22.603,
+        "inputWaitMs": 17.754,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 4,
+        "fullUiMs": 29.509,
+        "bitmapMs": 19.619,
+        "inputWaitMs": 13.594,
+        "collectionChanges": 0
+      },
+      {
+        "ordinal": 5,
+        "fullUiMs": 36.78,
+        "bitmapMs": 12.776,
+        "inputWaitMs": 14.068,
+        "collectionChanges": 0
+      }
+    ]
+  }
+]
