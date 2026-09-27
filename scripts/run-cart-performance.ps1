@@ -10,10 +10,12 @@ param(
     [string]$PayloadBindingPath = '',
     [string]$ExpectedCommit = '',
     [switch]$DisableObserver,
-    [ValidateRange(0,5)][int]$DiagnosticScanCount = 0
+    [ValidateRange(0,5)][int]$DiagnosticScanCount = 0,
+    [switch]$DiagnosticInputDispatch
 )
 $ErrorActionPreference = 'Stop'
 if ($DiagnosticScanCount -and $SoakMinutes) { throw 'Short scan reproduction and soak duration are mutually exclusive.' }
+if ($DiagnosticInputDispatch -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount)) { throw 'Input dispatch comparison requires short Diagnostic scans.' }
 Import-Module (Join-Path $PSScriptRoot 'qa/Win7PosPerformanceValidation.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'qa/Win7PosQaPayload.psm1') -Force
 if (-not $HarnessDirectory) {
@@ -52,17 +54,19 @@ $hostOperatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAc
 [ordered]@{ products=$Products; soakMinutes=$SoakMinutes; mode=$Mode; stage=$Stage; startedUtc=[DateTimeOffset]::UtcNow.ToString('O');
     protocol='win7pos-public-scan-v3: persistent 500 line identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement';
     benchmarkProtocol='31 service samples per size: first call 0, warm 1..30; rendered-view bitmap is not monitor latency';
-    budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
+    budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; diagnosticInputDispatch=[bool]$DiagnosticInputDispatch; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
 if ($BudgetPath) { Copy-Item -LiteralPath $BudgetPath -Destination (Join-Path $OutputDirectory 'preregistered-budget.json') }
 if ($PayloadBindingPath) { Copy-Item -LiteralPath $PayloadBindingPath -Destination (Join-Path $OutputDirectory 'payload-binding.json') }
 $previousSoak = $env:WIN7POS_QA_SOAK_MINUTES
 $previousDiagnostic = $env:WIN7POS_QA_CART_DIAGNOSTIC
 $previousObserver = $env:WIN7POS_QA_PERF_OBSERVER_OFF
 $previousScanLimit = $env:WIN7POS_QA_PERF_SCAN_LIMIT
+$previousInputDispatch = $env:WIN7POS_QA_PERF_INPUT_DISPATCH
 $status = $null
 try {
     $env:WIN7POS_QA_SOAK_MINUTES = if ($DiagnosticScanCount) { '1' } elseif ($SoakMinutes) { [string]$SoakMinutes } else { $null }
     $env:WIN7POS_QA_PERF_SCAN_LIMIT = if ($DiagnosticScanCount) { [string]$DiagnosticScanCount } else { $null }
+    $env:WIN7POS_QA_PERF_INPUT_DISPATCH = if ($DiagnosticInputDispatch) { '1' } else { $null }
     $env:WIN7POS_QA_CART_DIAGNOSTIC = $null
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = if ($DisableObserver) { '1' } else { $null }
     $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"'+$OutputDirectory+'"'), '--cart-performance', '--products', $Products) -WindowStyle Hidden -PassThru
@@ -123,4 +127,5 @@ finally {
     $env:WIN7POS_QA_CART_DIAGNOSTIC = $previousDiagnostic
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = $previousObserver
     $env:WIN7POS_QA_PERF_SCAN_LIMIT = $previousScanLimit
+    $env:WIN7POS_QA_PERF_INPUT_DISPATCH = $previousInputDispatch
 }

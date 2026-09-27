@@ -48,6 +48,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var scanLimitText = Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_SCAN_LIMIT") ?? "0";
             if (!int.TryParse(scanLimitText, out var scanLimit) || scanLimit < 0 || scanLimit > 5)
                 throw new ArgumentException("diagnostic_scan_limit_invalid");
+            var inputDispatch = Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_INPUT_DISPATCH") == "1";
+            if (inputDispatch && scanLimit == 0) throw new ArgumentException("input_dispatch_requires_short_diagnostic");
             var completedScans = 0;
             using var environment = new PerformanceEnvironment(directory);
             using var scans = new StreamWriter(Path.Combine(directory, "qualification-scans.csv"));
@@ -106,17 +108,32 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             using var sql = SqliteWorkMetrics.Begin();
                             using var detail = PosScanMeasurement.Begin();
                             var start = Stopwatch.GetTimestamp();
+                            DispatcherOperation commandDispatch = null;
                             try
                             {
                                 if (traceEnabled) trace.Checkpoint("command_start;cycle=" + cycle + ";mode=" + mode + ";scan=" + ordinal +
                                     ";expected_qty=" + expectedQuantity + ";focus=" + Keyboard.FocusedElement?.GetType().FullName);
-                                if (!vm.AddBarcodeCommand.CanExecute(null)) throw new InvalidOperationException("qualification_scan_command_disabled");
-                                vm.AddBarcodeCommand.Execute(null);
+                                if (inputDispatch)
+                                {
+                                    // One-factor Diagnostic comparison only. The enqueue,
+                                    // execution and completion all stay inside the scan timer.
+                                    commandDispatch = Dispatcher.CurrentDispatcher.InvokeAsync(() =>
+                                    {
+                                        try { ExecutePublicScan(vm, traceEnabled ? trace : null); }
+                                        catch (Exception error) { finished.TrySetException(error); }
+                                    }, DispatcherPriority.Input);
+                                }
+                                else ExecutePublicScan(vm, traceEnabled ? trace : null);
                                 if (await Task.WhenAny(finished.Task, Task.Delay(10000)) != finished.Task) throw new TimeoutException("qualification_public_scan_timeout");
+                                await finished.Task;
                             }
-                            finally { vm.PropertyChanged -= handler; }
+                            finally
+                            {
+                                vm.PropertyChanged -= handler;
+                                if (commandDispatch?.Status == DispatcherOperationStatus.Pending) commandDispatch.Abort(); // Only our unstarted command.
+                            }
                             // Return control at Input between public scans, as
-                            // actual input delivery does. A chain of Normal
+                            // actual input delivery does. A chain of higher-priority
                             // async continuations otherwise postpones the app's
                             // focus/scroll until after the entire synthetic batch.
                             // This wait remains INCLUDED in command_overhead_ms.
@@ -205,6 +222,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     (environment.Valid ? "true" : "false") + ",\"products\":" + products + ",\"cartSize\":" + vm.CartItems.Count + ",\"protocolVersion\":3,\"cycles\":" + cycle + ",\"stabilityEvaluatedByHarness\":false}");
             }
             finally { host.Close(); vm.Dispose(); Application.Current.MainWindow = null; OperatorSessionHolder.Current = previousOperator; }
+        }
+
+        private static void ExecutePublicScan(PosViewModel vm, CartPerformanceDiagnostics.OperationObserver trace)
+        {
+            if (trace != null)
+            {
+                var context = System.Threading.SynchronizationContext.Current;
+                var priority = context?.GetType().GetField("_priority", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(context);
+                trace.Checkpoint("command_execute;context=" + context?.GetType().FullName + ";context_priority=" + (priority ?? "unavailable"));
+            }
+            if (!vm.AddBarcodeCommand.CanExecute(null)) throw new InvalidOperationException("qualification_scan_command_disabled");
+            vm.AddBarcodeCommand.Execute(null);
         }
 
         private static async Task<double> ProbeAsync(DispatcherPriority priority)

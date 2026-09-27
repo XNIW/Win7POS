@@ -118,8 +118,9 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                 var service = (PosWorkflowService)typeof(PosViewModel).GetField("_service", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(vm);
                 var session = (PosSession)typeof(PosWorkflowService).GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(service);
                 session.ReplaceWithLines(Enumerable.Range(1, 500).Select(index => new RestoredLine
-                { Barcode = "PERF" + index.ToString("D4"), Name = "中文 café wrapped product " + index, UnitPrice = 1000, Quantity = 1 }).ToList());
+                { Barcode = "PERF" + index.ToString("D4"), Name = index % 3 == 0 ? "短" : "中文 café wrapped product " + index, UnitPrice = 1000, Quantity = 1 }).ToList());
                 vm.ApplyDiscountSnapshot(await service.GetSnapshotAsync());
+                var measuredCardHeights = new System.Collections.Generic.HashSet<double>();
                 foreach (var width in new[] { 1024d, 1440d, 800d, 1024d })
                 {
                     host.Width = width;
@@ -150,10 +151,54 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                                 Require(Descendants(active).OfType<VirtualizingCartWrapPanel>().Any(), "grid panel contract missing");
                                 if (active.ActualWidth >= 368) Require(realized.Select(item => Math.Round(item.TransformToAncestor(active).Transform(new Point()).X)).Distinct().Count() > 1, "grid lost multiple columns");
                                 Require(realized.All(item => item.ActualHeight > 0 && item.DesiredSize.Height <= item.ActualHeight + item.Margin.Top + item.Margin.Bottom + 1), "card height clipped");
+                                foreach (var item in realized) measuredCardHeights.Add(Math.Round(item.DesiredSize.Height));
                             }
                         }
                     }
                 }
+                Require(measuredCardHeights.Count > 1, "variable-height card fixture did not exercise different heights");
+                phase = "public quantity after recycling";
+                var recycledRow = vm.CartItems[250];
+                var recycledQuantity = recycledRow.Quantity + 1;
+                vm.BarcodeInput = recycledRow.Barcode;
+                vm.AddBarcodeCommand.Execute(null);
+                await WaitAsync(() => !vm.IsBusy && recycledRow.Quantity == recycledQuantity, "public scan after recycling lost quantity");
+                await DrainAsync(); view.UpdateLayout();
+                Require(ReferenceEquals(vm.CartItems[250], recycledRow) && ReferenceEquals(vm.SelectedCartItem, recycledRow), "scan after recycling changed identity or selection");
+                phase = "image binding after container recycling";
+                await vm.SetCartViewModeAsync(CartViewMode.Grid);
+                await WaitAsync(() => vm.CartItems.All(row => row.ProductImage != null), "cart image metadata did not settle");
+                var previousCards = new System.Collections.Generic.Dictionary<ListBoxItem, string>();
+                var recycledImages = 0;
+                foreach (var index in new[] { 0, 499, 250, 0 })
+                {
+                    vm.SelectedCartItem = vm.CartItems[index];
+                    grid.ScrollIntoView(grid.SelectedItem);
+                    view.UpdateLayout(); await DrainAsync(); view.UpdateLayout();
+                    foreach (var item in Descendants(grid).OfType<ListBoxItem>())
+                    {
+                        var rowIndex = grid.ItemContainerGenerator.IndexFromContainer(item);
+                        Require(rowIndex >= 0, "recycled image card lost item mapping");
+                        var row = vm.CartItems[rowIndex];
+                        var presenter = Descendants(item).OfType<ProductImageListPresenter>().Single();
+                        Require(ReferenceEquals(presenter.Product, row.ProductImage) && presenter.Product.Barcode == row.Barcode,
+                            "recycled image presenter retained another product");
+                        var display = (ProductImageDisplayViewModel)Descendants(presenter).OfType<ProductImagePresenter>().Single().DataContext;
+                        if (previousCards.TryGetValue(item, out var oldBarcode) && oldBarcode != row.Barcode)
+                        {
+                            await WaitAsync(() => display.ShowsPlaceholder && display.Image == null, "recycled card retained the previous product image");
+                            recycledImages++;
+                        }
+                        // Seed a distinctive visible image through the real presentation
+                        // API. The next product has no image and must clear this source.
+                        display.SetLoaded(new DrawingImage(new GeometryDrawing(Brushes.Magenta, null, new RectangleGeometry(new Rect(0, 0, 16, 16)))));
+                        previousCards[item] = row.Barcode;
+                    }
+                }
+                Require(recycledImages > 0, "image regression did not exercise container reuse");
+                File.WriteAllText(Path.Combine(Path.GetDirectoryName(PosDbOptions.Default().DbPath), "cart-image-recycling.txt"),
+                    "PASS reused_cards=" + recycledImages + ";product_binding=true;previous_image_cleared=true;synthetic_presenter_image=true");
+                previousCards.Clear();
                 phase = "grid structural changes and last public scan";
                 await vm.SetCartViewModeAsync(CartViewMode.Grid);
                 vm.SelectedCartItem = vm.CartItems[499];

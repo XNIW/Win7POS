@@ -29,6 +29,7 @@ permissions:
 
 jobs:
   build-and-check:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true && 'canonical-not-requested' || 'build-and-check' }}
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.cart_diagnostic_only != true }}
     runs-on: windows-latest
     steps:
@@ -149,6 +150,13 @@ jobs:
         env:
           WIN7POS_QA_PERF_TRACE: '1'
         run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
+      - name: Compare public command dispatch at Input with bounded timeline
+        id: input_dispatch
+        continue-on-error: true
+        shell: pwsh
+        env:
+          WIN7POS_QA_PERF_TRACE: '1'
+        run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -DiagnosticInputDispatch -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/input-dispatch"
       - name: Preserve synthetic diagnostic evidence even on failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -173,6 +181,7 @@ jobs:
         env:
           UNTRACED_OUTCOME: ${{ steps.untraced.outcome }}
           TRACED_OUTCOME: ${{ steps.traced.outcome }}
+          INPUT_OUTCOME: ${{ steps.input_dispatch.outcome }}
         run: |
-          Write-Output "Untraced=$env:UNTRACED_OUTCOME; Traced=$env:TRACED_OUTCOME; STABILITY_PASS=false (Diagnostic only; independent hosted machine)."
-          if ($env:UNTRACED_OUTCOME -ne 'success' -or $env:TRACED_OUTCOME -ne 'success') { throw 'A short diagnostic did not complete; inspect preserved evidence.' }
+          Write-Output "Untraced=$env:UNTRACED_OUTCOME; Traced=$env:TRACED_OUTCOME; Input=$env:INPUT_OUTCOME; STABILITY_PASS=false (Diagnostic only; independent hosted machine)."
+          if ($env:UNTRACED_OUTCOME -ne 'success' -or $env:TRACED_OUTCOME -ne 'success' -or $env:INPUT_OUTCOME -ne 'success') { throw 'A short diagnostic did not complete; inspect preserved evidence.' }

@@ -84,6 +84,8 @@ function Check-RunnerRejection([string]$Name, [hashtable]$Arguments, [string]$Ex
 }
 Check-RunnerRejection 'short-and-soak' @{Mode='Diagnostic';DiagnosticScanCount=5;SoakMinutes=12} 'mutually exclusive'
 Check-RunnerRejection 'short-qualification' @{Mode='Qualification';DiagnosticScanCount=5} 'diagnostic only'
+Check-RunnerRejection 'input-qualification' @{Mode='Qualification';DiagnosticScanCount=5;DiagnosticInputDispatch=$true} 'requires short Diagnostic'
+Check-RunnerRejection 'input-without-short' @{Mode='Diagnostic';DiagnosticInputDispatch=$true} 'requires short Diagnostic'
 Check-RunnerRejection 'integrated-sha-mismatch' @{Mode='Qualification';Stage='Integrated';SoakMinutes=12;BudgetPath=$runnerBudget;PayloadBindingPath=$runnerBinding;ExpectedCommit=('b' * 40)} 'verified payload binding'
 $oldTrace = $env:WIN7POS_QA_PERF_TRACE
 try {
