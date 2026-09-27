@@ -1015,16 +1015,22 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> AddByBarcodeAsync(string barcode)
         {
-            await _gate.WaitAsync().ConfigureAwait(false);
+            var measurement = PosScanMeasurement.Current;
+            measurement?.ServiceStarted();
+            using (PosScanMeasurement.Measure("gate_wait"))
+                await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
+                var workerWait = PosScanMeasurement.Measure("worker_queue");
                 return await Task.Run(async () =>
                 {
+                    workerWait?.Dispose();
                     await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
                     var code = (barcode ?? string.Empty).Trim();
                     _logger.LogInfo("POS add barcode: " + code);
-                    await _session.AddByBarcodeAsync(code).ConfigureAwait(false);
+                    using (PosScanMeasurement.Measure("product_lookup_update"))
+                        await _session.AddByBarcodeAsync(code).ConfigureAwait(false);
                     InvalidatePendingSaleAttemptIfCartChanged();
                     return await BuildSnapshotAsync(PosLocalization.T("pos.status.itemAdded"));
                 }).ConfigureAwait(false);
@@ -1037,6 +1043,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 _gate.Release();
+                measurement?.ServiceCompleted();
             }
         }
 
@@ -2488,7 +2495,9 @@ namespace Win7POS.Wpf.Pos
 
         private async Task<PosWorkflowSnapshot> BuildSnapshotAsync(string status, Dictionary<string, ProductDetailsRow> detailsByBarcode = null)
         {
-            detailsByBarcode = detailsByBarcode ?? await ReadCartDetailsAsync().ConfigureAwait(false);
+            using (PosScanMeasurement.Measure("snapshot_query_map"))
+                detailsByBarcode = detailsByBarcode ?? await ReadCartDetailsAsync().ConfigureAwait(false);
+            using var projection = PosScanMeasurement.Measure("snapshot_projection");
             var discountByBarcode = _session.Lines.Where(x => DiscountKeys.IsLineDiscount(x.Barcode))
                 .GroupBy(x => DiscountKeys.LineDiscountTarget(x.Barcode), StringComparer.Ordinal)
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);

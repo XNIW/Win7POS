@@ -1,0 +1,3 @@
+# Preserve measured CSVs and preregistered/hash-bound JSON byte for byte.
+*.csv -text
+*.json -text

@@ -2201,6 +2201,7 @@ namespace Win7POS.Wpf.Pos
         /// <summary>Applica lo snapshot. preferBarcode: riga da selezionare; preferIndex: indice da selezionare (es. dopo rimozione). Le righe sconto (DISC:*) non vengono mostrate: lo sconto è fuso nella riga prodotto.</summary>
         private void ApplySnapshot(PosWorkflowSnapshot snapshot, string preferBarcode = null, int? preferIndex = null)
         {
+            using var measurement = PosScanMeasurement.Measure("apply_snapshot");
             if (_disposed || snapshot == null || (snapshot.Revision > 0 && snapshot.Revision < _lastSnapshotRevision)) return;
             _lastSnapshotRevision = Math.Max(_lastSnapshotRevision, snapshot.Revision);
             _paymentReceiptDraftLines = CreatePaymentReceiptLines(snapshot.Lines);

@@ -1,0 +1,71 @@
+{
+  "cycles": 26,
+  "elapsedSeconds": 614.903,
+  "environmentValid": "0",
+  "warmupCycles": 2,
+  "private_bytes": {
+    "minimum": 141393920.0,
+    "maximum": 153796608.0
+  },
+  "managed_bytes": {
+    "minimum": 15041588.0,
+    "maximum": 17992232.0
+  },
+  "pending": {
+    "minimum": 0.0,
+    "maximum": 3.0
+  },
+  "oldest_ms": {
+    "minimum": 0.0,
+    "maximum": 26.051
+  },
+  "focus_maximum_wait_ms": {
+    "minimum": 92.207,
+    "maximum": 176.154
+  },
+  "scroll_maximum_wait_ms": {
+    "minimum": 60.258,
+    "maximum": 190.68
+  },
+  "input_ms": {
+    "minimum": 0.089,
+    "maximum": 66.907
+  },
+  "render_ms": {
+    "minimum": 0.023,
+    "maximum": 0.173
+  },
+  "databind_ms": {
+    "minimum": 0.022,
+    "maximum": 0.148
+  },
+  "background_ms": {
+    "minimum": 0.023,
+    "maximum": 15.233
+  },
+  "observer_dropped": {
+    "minimum": 0.0,
+    "maximum": 0.0
+  },
+  "closed_rooted_windows": {
+    "minimum": 0.0,
+    "maximum": 0.0
+  },
+  "cache_bytes": {
+    "minimum": 0.0,
+    "maximum": 0.0
+  },
+  "handles": {
+    "minimum": 715.0,
+    "maximum": 750.0
+  },
+  "threads": {
+    "minimum": 42.0,
+    "maximum": 46.0
+  },
+  "peak_observed_dispatcher": {
+    "minimum": 9556.0,
+    "maximum": 9558.0
+  },
+  "maximumFiveCycleWindowGrowthBytes": 383019.2000000011
+}

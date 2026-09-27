@@ -5,7 +5,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Threading;
@@ -37,6 +36,9 @@ INSERT INTO product_price_history(barcode,timestamp,type,old_price,new_price,sou
 SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-performance' FROM products CROSS JOIN n;", transaction: tx);
                 tx.Commit();
             }
+            var diagnostic = Environment.GetEnvironmentVariable("WIN7POS_QA_CART_DIAGNOSTIC");
+            if (!string.IsNullOrWhiteSpace(diagnostic))
+                return await CartPerformanceDiagnostics.RunAsync(dataDir, count, diagnostic);
             var text = new StringBuilder("products,cart,operation,sample,ms,private_bytes,gc0,gc1,gc2,dispatcher_probe_ms,connections,product_commands,commands_on_dispatcher\n");
             foreach (var size in new[] { 1, 10, 50, 100, 500 })
             {
@@ -66,7 +68,7 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
             {
                 if (!int.TryParse(soakText, out var minutes) || minutes < 1 || minutes > 120)
                     throw new ArgumentException("WIN7POS_QA_SOAK_MINUTES must be 1..120.");
-                await MeasureSoakAsync(dataDir, count, minutes);
+                await CartQualificationSmoke.RunAsync(dataDir, count, minutes);
             }
             return "PASS measurements recorded; sample 0 is first-call, samples 1-30 warm; no physical hardware used.";
         }
@@ -80,21 +82,21 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
                     count, operation, sample, watch.Elapsed.TotalMilliseconds,
                     Process.GetCurrentProcess().PrivateMemorySize64, GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2));
             }
-            var service = new PosWorkflowService();
+            var watch = Stopwatch.StartNew();
+            var view = new PosView();
+            var composedViewModel = (PosViewModel)view.DataContext;
+            var service = (PosWorkflowService)typeof(PosViewModel).GetField("_service", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(composedViewModel);
             var stages = new StringBuilder("products,sample,service_ms,apply_ms,layout_ms,bitmap_allocate_ms,bitmap_render_ms\n");
-            using (var vm = new PosViewModel(service))
+            using (var vm = composedViewModel)
             {
-                var watch = Stopwatch.StartNew();
-                var view = new PosView();
-                (view.DataContext as IDisposable)?.Dispose();
-                view.DataContext = vm;
+                var loaded = false;
+                view.Loaded += (_, __) => loaded = true;
                 var host = new Window { Width = 1024, Height = 768, Content = view, ShowInTaskbar = false };
                 try
                 {
                     host.Show();
-                    await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-                    while (vm.IsBusy) await Task.Delay(1);
-                    await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    await CartPerformanceRegressionSmoke.WaitAsync(() => loaded && !vm.IsBusy, "render benchmark real view initialization", 10000);
+                    await CartPerformanceRegressionSmoke.DrainAsync();
                     Record("pos_view_entry_first_in_process", 0, watch);
                     var session = (PosSession)typeof(PosWorkflowService).GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(service);
                     session.ReplaceWithLines(Enumerable.Range(1, 500).Select(i => new RestoredLine
@@ -130,7 +132,7 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
             { ShopCode = "PERF-SHOP", ShopId = "synthetic-performance-shop", ShopName = "Synthetic performance fixture" });
             for (var sample = 0; sample < 31; sample++)
             {
-                var watch = Stopwatch.StartNew();
+                watch.Restart();
                 await products.SearchDetailsAsync("Product 000", 100);
                 Record("search_details_100", sample, watch);
                 var sale = new Sale { Code = "PERF-" + Guid.NewGuid().ToString("N"), CreatedAt = UnixTime.NowMs(),
@@ -147,120 +149,5 @@ SELECT barcode,printf('2026-09-%02d',x),'retail',900,1000,'synthetic-functional-
             File.WriteAllText(Path.Combine(dataDir, "render-stages.csv"), stages.ToString());
         }
 
-        [DllImport("user32.dll")]
-        private static extern int GetGuiResources(IntPtr process, int flags);
-
-        // Test-only finite soak. No forced collection, hardware output or remote requests.
-        private static async Task MeasureSoakAsync(string dataDir, int count, int minutes)
-        {
-            using var process = Process.GetCurrentProcess();
-            using var csv = new StreamWriter(Path.Combine(dataDir, "cart-soak.csv"), false) { AutoFlush = true };
-            csv.WriteLine("products,cycle,phase,elapsed_s,private_bytes,managed_bytes,handles,gdi,user,threads,gc0,gc1,gc2,dispatcher_ms,pending_dispatcher,cache_entries,image_lookups,scan_ms,render_ms,native_input_pending");
-            var elapsed = Stopwatch.StartNew();
-            var dispatcher = Dispatcher.CurrentDispatcher;
-            var inputPendingMethod = typeof(Dispatcher).GetMethod("IsInputPending", BindingFlags.Instance | BindingFlags.NonPublic);
-            // Hooks can race for synchronous Send operations. Never retain the
-            // operations (and their closures) just to observe queue occupancy.
-            var pending = new List<WeakReference>();
-            DispatcherHookEventHandler posted = (s, e) => { lock (pending) pending.Add(new WeakReference(e.Operation)); };
-            DispatcherHookEventHandler finished = (s, e) =>
-            {
-                lock (pending) pending.RemoveAll(reference => !reference.IsAlive || ReferenceEquals(reference.Target, e.Operation));
-            };
-            dispatcher.Hooks.OperationPosted += posted;
-            dispatcher.Hooks.OperationCompleted += finished;
-            dispatcher.Hooks.OperationAborted += finished;
-            var service = new PosWorkflowService();
-            using var vm = new PosViewModel(service);
-            var view = new PosView();
-            (view.DataContext as IDisposable)?.Dispose();
-            view.DataContext = vm;
-            var host = new Window { Width = 1024, Height = 768, Content = view, ShowInTaskbar = false };
-            int CollectionCount(string field)
-            {
-                var value = typeof(PosViewModel).GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(vm);
-                return (int)value.GetType().GetProperty("Count").GetValue(value);
-            }
-            async Task Record(int cycle, string phase, double scanMs = 0, double renderMs = 0)
-            {
-                var probe = Stopwatch.StartNew();
-                await dispatcher.InvokeAsync(() => { }, DispatcherPriority.Send);
-                var probeMs = probe.Elapsed.TotalMilliseconds;
-                int pendingCount;
-                lock (pending)
-                {
-                    pending.RemoveAll(reference => !(reference.Target is DispatcherOperation operation) ||
-                        operation.Status == DispatcherOperationStatus.Completed || operation.Status == DispatcherOperationStatus.Aborted);
-                    pendingCount = pending.Select(reference => reference.Target).Where(operation => operation != null).Distinct().Count();
-                    if (phase == "after_idle")
-                    {
-                        var groups = pending.Select(reference => reference.Target as DispatcherOperation)
-                            .Where(operation => operation != null).Distinct()
-                            .GroupBy(operation => operation.Priority + ":" + operation.Status + ":" +
-                                ((typeof(DispatcherOperation).GetField("_method", BindingFlags.Instance | BindingFlags.NonPublic)
-                                    ?.GetValue(operation) as Delegate)?.Method.ToString() ?? "unknown"))
-                            .Select(group => cycle + "," + group.Count() + "," + group.Key);
-                        File.AppendAllLines(Path.Combine(dataDir, "dispatcher-operations.txt"), groups);
-                    }
-                }
-                process.Refresh();
-                // Optional diagnostic only: WPF can defer background callbacks while
-                // native input is pending. Do not drain, reprioritize or drop that work.
-                var nativeInputPending = -1;
-                try { if (inputPendingMethod != null) nativeInputPending = (bool)inputPendingMethod.Invoke(dispatcher, null) ? 1 : 0; }
-                catch { /* Private runtime diagnostic unavailable; preserve unknown. */ }
-                csv.WriteLine(string.Format(CultureInfo.InvariantCulture,
-                    "{0},{1},{2},{3:F3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13:F3},{14},{15},{16},{17:F3},{18:F3},{19}",
-                    count, cycle, phase, elapsed.Elapsed.TotalSeconds, process.PrivateMemorySize64,
-                    GC.GetTotalMemory(false), process.HandleCount, GetGuiResources(process.Handle, 0),
-                    GetGuiResources(process.Handle, 1), process.Threads.Count, GC.CollectionCount(0),
-                    GC.CollectionCount(1), GC.CollectionCount(2), probeMs, pendingCount,
-                    CollectionCount("_cartProductImageCache"), CollectionCount("_cartProductImageLookups"), scanMs, renderMs, nativeInputPending));
-            }
-            try
-            {
-                host.Show();
-                while (vm.IsBusy) await Task.Delay(10);
-                var session = (PosSession)typeof(PosWorkflowService).GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(service);
-                for (var cycle = 0; elapsed.Elapsed < TimeSpan.FromMinutes(minutes); cycle++)
-                {
-                    session.ReplaceWithLines(Enumerable.Range(1, 500).Select(i => new RestoredLine
-                    { ProductId = i, Barcode = "P" + i.ToString("D8"), Name = "Product " + i, UnitPrice = 1000, Quantity = 1 }).ToList());
-                    vm.ApplyDiscountSnapshot(await service.GetSnapshotAsync());
-                    foreach (var mode in new[] { CartViewMode.Rows, CartViewMode.Grid })
-                    {
-                        await vm.SetCartViewModeAsync(mode);
-                        for (var scan = 0; scan < 10; scan++)
-                        {
-                            var watch = Stopwatch.StartNew();
-                            vm.ApplyDiscountSnapshot(await service.AddByBarcodeAsync("P00000001"));
-                            var scanMs = watch.Elapsed.TotalMilliseconds;
-                            view.UpdateLayout();
-                            var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(1024, 768, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-                            bitmap.Render(view);
-                            await Record(cycle, mode.ToString(), scanMs, watch.Elapsed.TotalMilliseconds - scanMs);
-                        }
-                    }
-                    var dialog = new Win7POS.Wpf.Pos.Dialogs.DiscountDialog(null, true, service, vm, 100, () => Task.FromResult(false))
-                    { Owner = Win7POS.Wpf.Infrastructure.DialogOwnerHelper.GetSafeOwner() };
-                    dialog.Show();
-                    dialog.UpdateLayout();
-                    dialog.Close();
-                    // Exercise real image presenters and editor lifetime using synthetic images.
-                    var imageResult = await ProductImageUiWpfSmoke.RunAsync(Path.Combine(dataDir, "soak-images"));
-                    if (!imageResult.StartsWith("PASS", StringComparison.Ordinal)) throw new InvalidOperationException(imageResult);
-                    await Record(cycle, "before_idle");
-                    await Task.Delay(TimeSpan.FromSeconds(20));
-                    await Record(cycle, "after_idle");
-                }
-            }
-            finally
-            {
-                host.Close();
-                dispatcher.Hooks.OperationPosted -= posted;
-                dispatcher.Hooks.OperationCompleted -= finished;
-                dispatcher.Hooks.OperationAborted -= finished;
-            }
-        }
     }
 }

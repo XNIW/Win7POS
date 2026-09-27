@@ -1,0 +1,86 @@
+[
+  {
+    "name": "restore",
+    "exit": 0,
+    "seconds": 1.589,
+    "reason": null
+  },
+  {
+    "name": "gates",
+    "exit": 0,
+    "seconds": 64.738,
+    "reason": null
+  },
+  {
+    "name": "solution",
+    "exit": 0,
+    "seconds": 8.458,
+    "reason": null
+  },
+  {
+    "name": "core-data",
+    "exit": 0,
+    "seconds": 233.415,
+    "reason": null
+  },
+  {
+    "name": "cli-selftest",
+    "exit": 0,
+    "seconds": 3.536,
+    "reason": null
+  },
+  {
+    "name": "wpf",
+    "exit": 0,
+    "seconds": 0.957,
+    "reason": null
+  },
+  {
+    "name": "harness",
+    "exit": 0,
+    "seconds": 0.957,
+    "reason": null
+  },
+  {
+    "name": "image-profile",
+    "exit": 0,
+    "seconds": 2.667,
+    "reason": null
+  },
+  {
+    "name": "functional",
+    "exit": 1,
+    "seconds": 6.808,
+    "reason": null
+  },
+  {
+    "name": "functional-repaired",
+    "exit": 1,
+    "seconds": null,
+    "reason": "50 captures and eight existing scenarios pass; new focus assertion fails with hostActive=False"
+  },
+  {
+    "name": "authorization",
+    "exit": 0,
+    "seconds": 9.825,
+    "reason": null
+  },
+  {
+    "name": "logging",
+    "exit": 0,
+    "seconds": 2.421,
+    "reason": null
+  },
+  {
+    "name": "paging",
+    "exit": 0,
+    "seconds": 2.432,
+    "reason": null
+  },
+  {
+    "name": "diff",
+    "exit": 0,
+    "seconds": 0.094,
+    "reason": null
+  }
+]

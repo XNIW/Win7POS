@@ -30,6 +30,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             DbInitializer.EnsureCreated(options);
             if (performance) return await CartPerformanceSmoke.RunAsync(dataDir, int.TryParse(productCount, out var count) ? count : 20000);
             var results = new List<string>();
+            await CheckAsync(results, "PERF_visual_lifetime_and_public_commands", CartPerformanceRegressionSmoke.RunAsync);
             await CheckAsync(results, "INTEGRATED_login_sale_retry_receipt_restart", FunctionalSaleSmoke.RunAsync);
             await CheckAsync(results, "F06_reversed_preview_delete_close", HeldCartsViewModelSmoke.RunAsync);
             await CheckAsync(results, "F01_export_gate", async () =>

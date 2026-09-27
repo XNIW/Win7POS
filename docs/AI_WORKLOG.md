@@ -4,6 +4,17 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-09-26 – Post-PR111 root cause optimization (ASUS-W7POS-018, in corso)
+
+- Baseline `bedcf17a97d8`, 56 worktree inizialmente puliti; candidati e checkpoint esterni preservati.
+- Ablazione/reintroduzione: 500 card Grid anche nascoste causano gli stalli di realizzazione; 501 indicatori indeterminati invisibili causano render ricorrenti e ritardano callback che trattengono editor/VM chiusi. Patch mirate a virtualizzazione multicolonna, visibilità degli indicatori e coalescenza del solo focus/scroll dell'app.
+- Corretto il harness: composizione PosView reale, identità persistenti, alternanza ordine, attesa visuale inclusa, osservatore limitato e flag separati. Ventisei vettori del validatore PASS, incluso rifiuto del soak storico, dei budget allargati e di fixture errate.
+- Matrice finale equivalente 20k/100k × 50/100/500 con identico osservatore; a 100k/500 Rows p95 reset-stress da 3394 a 187ms e container Grid da 500 a 11. Conservato il precedente 20k p95 259ms; il pannello definitivo misura 192ms, senza attribuire la variabilità solo alle ultime correzioni né certificare latenza monitor.
+- Regressione canonica ha trovato/corretto inizializzazione lazy del generatore con carrello già popolato. PASS: 49 gate, 1.033 Core/Data, CLI, build x86, profilo immagini, 50 catture, otto scenari preesistenti, autorizzazione/logging/paging. Il nuovo scenario strutturale arriva al focus e resta FAIL per host non attivo.
+- Controllo diagnostico 614,903s/26 cicli: heap idle 14,34–17,16MiB, coda 0–3, nessun overflow o root osservato verso finestre chiuse; budget congelati prima della qualifica. Desktop non corrispondente/non accessibile e host non attivo: ENVIRONMENT_VALID=false e STABILITY_PASS=false. Focus corrente da riverificare in sessione disponibile.
+- Traccia WPR negata da Windows (0x80070005), nessun aggiramento; prove interne CPU/allocazioni e catene di riferimenti conservate privatamente. Qualifica integrata/finale, merge e hardware non dichiarati completati.
+- Report unico: [root cause optimization](reports/2026-09-26_POST_PR111_ROOT_CAUSE_OPTIMIZATION.md).
+
 ## 2026-09-25 – Post-PR109 residual closeout (ASUS-W7POS-017)
 
 - Baseline `be370ba3`, main locale/remota 0/0, 55 altri checkout puliti preservati; ASUS-W7POS-016 resta chiusa.
