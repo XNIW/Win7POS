@@ -110,8 +110,16 @@ economic completion without treating it as completion of queued focus/render
 work. The 250ms visual probe remains distinct from the 10s public-command limit.
 New runner contract cases reject short qualification, tracing in qualification,
 Input comparison outside short Diagnostic, mixed short/soak and mismatched
-Integrated SHA before any process launch: 28 validator vectors plus six runner
+Integrated SHA before any process launch: 32 validator vectors plus six runner
 preflight cases pass; all 49 canonical gates and the x86 build pass locally.
+
+Final review also reproduced a validator omission: a warm scan with 101ms visual
+wait against a synthetic 100ms visual budget was accepted when its full UI time
+remained below 250ms and owned focus/scroll callbacks stayed fast. The validator
+now checks each warm scan's `focus_scroll_wait_ms`, rejects missing/non-finite
+values and disallows a visual budget above the already-required 250ms ceiling.
+Four focused negative cases close this false-positive path. The frozen budget
+file and measured samples are unchanged; this does not fix the Asus timeout.
 
 The structural regression additionally asserts different card heights, public
 quantity/identity/selection after recycling, and real Grid presenter product

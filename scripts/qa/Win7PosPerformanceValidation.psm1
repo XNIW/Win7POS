@@ -42,7 +42,7 @@ function Test-Win7PosPerformance {
         }
         if ($Budget.serviceP95Ms -gt 50 -or $Budget.sendP95Ms -gt 16 -or $Budget.uiP95Ms -gt 250 -or $Budget.uiMaximumMs -gt 1000 -or
             $Budget.memoryWindowCycles -lt 2 -or $Budget.warmupCycles -lt 1 -or $Budget.probeMaximumMs -ge 250 -or
-            $Budget.visualMaximumWaitMs -gt 1000) { throw 'budget_exceeds_fixed_latency_contract' }
+            $Budget.visualMaximumWaitMs -gt 250) { throw 'budget_exceeds_fixed_latency_contract' }
         $scans = @(Import-Csv -LiteralPath (Join-Path $Directory 'qualification-scans.csv') -ErrorAction Stop)
         $idle = @(Import-Csv -LiteralPath (Join-Path $Directory 'qualification-idle.csv') -ErrorAction Stop)
         $receipt = Get-Content -LiteralPath (Join-Path $Directory 'qualification-measurement.json') -Raw -ErrorAction Stop | ConvertFrom-Json
@@ -103,7 +103,7 @@ function Test-Win7PosPerformance {
         if ($previousTime -lt $RequiredSeconds) { $measurement.Add('incomplete_duration') }
         $metrics.elapsedSeconds = $previousTime
         foreach ($row in $scans) {
-            foreach ($field in @('cycle','ordinal','service_ms','ui_return_ms','apply_ms','layout_ms','bitmap_ms','command_overhead_ms','realized_grid','product_commands','commands_on_dispatcher','collection_changes')) { $null = Number $row $field }
+            foreach ($field in @('cycle','ordinal','service_ms','ui_return_ms','apply_ms','layout_ms','bitmap_ms','command_overhead_ms','realized_grid','product_commands','commands_on_dispatcher','collection_changes','focus_scroll_wait_ms')) { $null = Number $row $field }
             if ([double]$row.product_commands -gt 2 -or [double]$row.commands_on_dispatcher -ne 0) { $stability.Add('public_product_query_batch_or_dispatcher_violation') }
             if ([double]$row.collection_changes -ne 0) { $stability.Add('public_scan_rebuilt_collection') }
             $cycle = [int]$row.cycle
@@ -111,6 +111,9 @@ function Test-Win7PosPerformance {
             if ($cycle -ne [double]$row.cycle -or $cycle -ge $idle.Count -or $ordinal -ne [double]$row.ordinal -or
                 $ordinal -lt 1 -or $ordinal -gt 10 -or $row.mode -cnotin @('Rows','Grid') -or
                 -not $seen.Add("$cycle/$($row.mode)/$ordinal")) { throw 'invalid_or_duplicate_scan_identity' }
+            if ($cycle -ge $Budget.warmupCycles -and [double]$row.focus_scroll_wait_ms -gt $Budget.visualMaximumWaitMs) {
+                $stability.Add("public_visual_wait:cycle=$cycle,mode=$($row.mode),ordinal=$ordinal")
+            }
         }
         if ($scans.Count -ne $idle.Count * 20) { throw 'missing_scan_samples' }
         foreach ($mode in @('Rows','Grid')) {

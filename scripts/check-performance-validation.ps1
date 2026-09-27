@@ -14,7 +14,7 @@ function Fixture {
         closed_rooted_windows=0; cache_bytes=50; input_ms=2; render_ms=2; databind_ms=2; background_ms=2;
         observer_dropped=0; environment_valid=1; suspended=0; focus_peak=1;scroll_peak=1;focus_maximum_wait_ms=5;scroll_maximum_wait_ms=5;metadata_entries=500} })
     $script:scans = @(foreach($cycle in 0..13) { foreach($mode in @('Rows','Grid')) { foreach($ordinal in 1..10) {
-        [pscustomobject]@{cycle=$cycle;mode=$mode;ordinal=$ordinal;service_ms=8;ui_return_ms=3;apply_ms=2;layout_ms=8;bitmap_ms=20;command_overhead_ms=1;realized_grid=12;product_commands=2;commands_on_dispatcher=0;collection_changes=0}
+        [pscustomobject]@{cycle=$cycle;mode=$mode;ordinal=$ordinal;service_ms=8;ui_return_ms=3;apply_ms=2;layout_ms=8;bitmap_ms=20;command_overhead_ms=1;realized_grid=12;product_commands=2;commands_on_dispatcher=0;collection_changes=0;focus_scroll_wait_ms=1}
     } } })
 }
 function Check([string]$Name, [bool]$Expected, [bool]$Completed=$true, [string]$Reason='', [int]$ReceiptProducts=100000, [int]$ReceiptCart=500, [switch]$DuplicateIsolated, [double]$Seconds=400) {
@@ -56,6 +56,10 @@ Fixture; $idle[5].suspended=1; Check 'suspend' $false -Reason 'suspend'
 Fixture; $idle[5].background_ms=251; Check 'priority timeout' $false -Reason 'priority_probe'
 Fixture; $idle[5].background_ms='Infinity'; Check 'explicit probe timeout' $false -Reason 'priority_probe_timeout'
 Fixture; $idle[5].focus_maximum_wait_ms=101; Check 'visual delay before idle' $false -Reason 'application_visual_backlog'
+Fixture; $scans[62].focus_scroll_wait_ms=101; $scans[62].command_overhead_ms=101; Check 'per-scan visual wait despite acceptable UI percentiles' $false -Reason 'public_visual_wait'
+Fixture; $scans[62].focus_scroll_wait_ms='Infinity'; Check 'non-finite scan visual wait' $false -Reason 'invalid_numeric_field:focus_scroll_wait_ms'
+Fixture; $scans[62].PSObject.Properties.Remove('focus_scroll_wait_ms'); Check 'missing scan visual wait' $false -Reason 'invalid_numeric_field:focus_scroll_wait_ms'
+Fixture; $budget.visualMaximumWaitMs=251; Check 'widened visual wait budget' $false -Reason 'budget_exceeds'; $budget.visualMaximumWaitMs=100
 Fixture; $idle[5].scroll_peak=2; Check 'duplicate visual operations' $false -Reason 'application_visual_backlog'
 Fixture; $scans[5].product_commands=3; Check 'public query budget' $false -Reason 'query_batch'
 Fixture; $idle[5].closed_rooted_windows=1; Check 'closed window retained' $false -Reason 'closed_window'
