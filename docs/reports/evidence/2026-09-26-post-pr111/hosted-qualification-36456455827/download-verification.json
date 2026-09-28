@@ -1,0 +1,161 @@
+{
+  "status": "PASS",
+  "runId": "36454068992",
+  "commitSha": "cb43fd4b23cd26859ab2f370d1c0cfe47aaff205",
+  "buildVersion": "1.0.0-dev.cb43fd4b23cd",
+  "archives": [
+    {
+      "name": "Win7POS-1.0.0-dev.cb43fd4b23cd-ReleasePack-x86",
+      "id": 10986035292,
+      "digest": "sha256:3c2deea7e8aa02460722989a643521521c3fa900766d442c2e58578e90794f64"
+    },
+    {
+      "name": "Win7POS-1.0.0-dev.cb43fd4b23cd-Setup",
+      "id": 10985074469,
+      "digest": "sha256:961386879d3d835c2dc0b3cffa309168e9b8f12ebdf02f32ffbc54ffd2cf7904"
+    },
+    {
+      "name": "Win7POS-1.0.0-dev.cb43fd4b23cd-dist",
+      "id": 10985174347,
+      "digest": "sha256:96734a0e76032979647d766fd12622bed322a7650f8058fd77ec18ee8559c746"
+    }
+  ],
+  "payloadFiles": 41,
+  "setupSha256": "bd8e4ba7df68720ddd54075c2d130a43925fc72dd47da3c283264d884f2c1073",
+  "payloadZipSha256": "9715308b7cdd8d1db41c73b1d99d03cff82eede3c6c2b511ef55107b505d4246",
+  "signatures": [
+    {
+      "file": "Win7POS\\ClosedXML.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\ClosedXML.Parser.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\Dapper.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\DocumentFormat.OpenXml.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\DocumentFormat.OpenXml.Framework.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\e_sqlite3.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\ExcelDataReader.DataSet.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\ExcelDataReader.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\ExcelNumberFormat.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\Microsoft.Bcl.AsyncInterfaces.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\Microsoft.Bcl.HashCode.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\Microsoft.Data.Sqlite.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\RBush.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\SixLabors.Fonts.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\SQLitePCLRaw.batteries_v2.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\SQLitePCLRaw.core.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\SQLitePCLRaw.provider.e_sqlite3.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\System.Buffers.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\System.Drawing.Common.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\System.IO.Packaging.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\System.Memory.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\System.Numerics.Vectors.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\System.Runtime.CompilerServices.Unsafe.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\System.Text.Encoding.CodePages.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\System.Threading.Tasks.Extensions.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\System.ValueTuple.dll",
+      "status": "Valid"
+    },
+    {
+      "file": "Win7POS\\Win7POS.Core.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\Win7POS.Data.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\Win7POS.Wpf.exe",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\zxing.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\zxing.presentation.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS\\ZXing.Windows.Compatibility.dll",
+      "status": "NotSigned"
+    },
+    {
+      "file": "Win7POS-1.0.0-dev.cb43fd4b23cd-Setup.exe",
+      "status": "NotSigned"
+    }
+  ],
+  "installation": "NOT_EXECUTED"
+}

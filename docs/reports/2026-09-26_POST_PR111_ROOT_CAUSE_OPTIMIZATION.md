@@ -1,9 +1,11 @@
 # Post-PR111 root cause optimization — ASUS-W7POS-018
 
 Baseline: `bedcf17a97d814a3b098387cc2720ff2b11abbbf` (PR109–111).
-Status: implementation and short causal verification in progress; **not yet
-qualified**. The historical b794 soak remains STABILITY=FAIL. Final merge,
-package binding and external attestation are pending.
+Status: full hosted Integrated measured on 2026-09-28, **M=true, E=true,
+S=false**; Asus residual still open. PR112 remains draft, with no merge or Final.
+The historical b794 soak remains STABILITY=FAIL. Candidate package binding is
+verified for the hosted run below; exact published-head delivery is recorded in
+the single external interim attestation.
 
 Resume on an unlocked desktop (2026-09-27 UTC): exact-head CI and security for
 `0ed0a061f5d85f3e21097d11c0d5161b5444ccab` passed, including all nine functional
@@ -36,6 +38,104 @@ MEASUREMENT_COMPLETED=false, ENVIRONMENT_VALID=false, STABILITY_PASS=false:
 valid early environment samples do not certify an incomplete run. The previously
 completed diagnostic control remains separate. Further causal work requires a
 QA harness accepted through the Asus host's authorized approval/signing channel.
+
+## Full hosted Integrated qualification — 2026-09-28
+
+Resumed from `8111c8f9357d09a68343613080bf0b47041efc09`. The only new code is
+the existing CI workflow's explicit hosted qualification path and seven tests
+of its failure aggregation. Application code, public-scan protocol v3 and
+frozen budget bytes are unchanged. Qualification has no trace, short-scan,
+Input-dispatch or observer-disable option. Manual runs have their own concurrency
+identity and cannot be cancelled by a later documentation PR update. The manual
+job does not replace the canonical PR checks.
+
+The [canonical Release Pack 36454068992](https://github.com/XNIW/Win7POS/actions/runs/36454068992)
+passed on `cb43fd4b23cd26859ab2f370d1c0cfe47aaff205`, version
+`1.0.0-dev.cb43fd4b23cd`. The existing downloaded-pack verifier checked all three
+GitHub archive digests, integrity/provenance, matching dist/ZIP/installer and
+41 payload files. The existing payload module then overlaid those actual bytes
+on the exact-source x86 harness. No synthetic replacement manifest was used.
+The SDK was 10.0.301 with locked restore. The separate
+[CI 36454075173](https://github.com/XNIW/Win7POS/actions/runs/36454075173) and
+[Security 36454075193](https://github.com/XNIW/Win7POS/actions/runs/36454075193)
+also passed on this code revision: 49 gates, 1,033 Core/Data tests with zero
+failed/skipped, all nine WPF functional scenarios and the other canonical smokes.
+The 32 validator vectors and six runner preflights remain active, including
+the individual `focus_scroll_wait_ms` check; seven new workflow aggregation
+cases reject failed/skipped measurements and missing/nonpositive receipts.
+
+[Qualification run 36456455827](https://github.com/XNIW/Win7POS/actions/runs/36456455827)
+completed **733.084 useful seconds, 33 cycles, 660 public scans** with 100k
+products and 500 persistent cart identities. All 1,353 environment samples were
+valid. Host: Microsoft VM, AMD EPYC 7763, four logical CPUs, approximately 16GiB,
+Windows Server 2025 build 26100, image `win25-vs2026 / 20260922.246.2`, 96 DPI.
+Runtime: x86, CLR 4.0.30319.42000, Framework 4.8.9345.0, WPF 4.8.9347.0.
+This host is distinct from Asus; no cross-host performance improvement is inferred.
+
+| Lane | Duration / host / source | M / E / S |
+| --- | --- | --- |
+| QUALIFICA_HOSTED, Integrated | 733.084s; VM above; `cb43fd4b23cd` | true / true / **false** |
+| PREMERGE_HOSTED_SOAK, Integrated | Not started: 12-minute validator failed; same candidate was requested | not measured |
+| Asus Integrated | Historical `0ed0a061f5d8`; interrupted at Rows scan 3 before a complete cycle | false / false / false overall; early environment samples valid |
+| Asus Final | Not started; no merge or exact-merge payload exists | not measured |
+
+Hosted harness SHA256:
+`787e3262a9e68609c8929333589a78d48828a0b1fb8bc33270cc1752d31ef4ab`.
+Executed WPF SHA256:
+`13526398aa361326920c27c63e60b10a8c3f93f239a876aeda60cfc5f3e540b3`.
+Budget SHA256 remains
+`63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398`.
+The historical Asus harness/WPF hashes remain in the unchanged interactive
+attempt evidence and external attestation; they are not this hosted payload.
+
+The **first specific failure** is `dispatcher_backlog:cycle=3`, at 89.661 useful
+seconds: three pending operations, oldest eligible age **280.275ms**, over the
+250ms limit. The operation snapshot identifies `Background:FireTick:280.3`,
+plus Input marker and Render timer work. The same reason occurs at cycles
+12, 13, 17, 18 and 23; maximum age is **309.130ms** at cycle 13. Pending count
+never exceeds three, so the failing condition is age, not queue size.
+Own focus/scroll are zero after idle; no closed-window roots or observer drops
+are observed. Subsequent Background probes are at most 0.696ms and Input probes
+at most 74.466ms: these later probes do not erase the earlier queue-age failure.
+
+This evidence identifies a pending timer callback, **not its owner or the work
+that delayed it**, and does not establish an application defect, an observer
+defect or the cause of the different Asus third-scan timeout. No callback was
+excluded and no threshold, dispatch priority or application code was changed
+to turn this run green. Before a new hosted experiment, the discriminating
+hypothesis is that the eligible timer is deferred by actual dispatcher/native
+input scheduling during idle. A bounded trace must identify its owner and
+promotion/start timestamps and the operation executing during that interval;
+only demonstrated observation accounting or application scheduling errors
+justify a patch. A repeated unmodified five-scan run cannot test this idle failure.
+
+Warm statistics use the original two-cycle warm-up, with every raw sample retained:
+
+| Full public UI milliseconds | p50 | p95 | max | Scan 2 p50 / p95 / max | Scan 3 p50 / p95 / max |
+| --- | ---: | ---: | ---: | --- | --- |
+| Rows, 310 warm scans | 40.518 | 68.496 | 98.949 | 38.561 / 55.503 / 58.679 | 39.899 / 52.897 / 58.613 |
+| Grid, 310 warm scans | 43.407 | 61.105 | 98.935 | 40.355 / 52.357 / 61.105 | 40.720 / 52.524 / 55.598 |
+
+Cold Rows scans 1/2/3 are 353.087 / 37.334 / 49.027ms, retained in full.
+Isolated service p95 is 12.828ms; Send probe p95 0.093ms. Full UI includes
+command overhead and visual completion; bitmap cost remains separate. Warm
+private/managed peaks are 87.020/16.326MiB, managed rolling-window growth zero,
+ready queue 0–3, Grid containers 12, metadata entries 500, decoded cache pixels
+zero, collection changes zero over all 660 scans. Individual visual wait peaks
+at 69.534ms. These positive submetrics do not override the six queue-age failures.
+The comparable historical before/after reset-stress results below retain their
+original host/protocol; they are not compared numerically with this new VM run.
+
+The job stayed **FAIL** after evidence collection; the 60-minute step was skipped.
+Local revalidation of the downloaded CSVs reproduces exactly M=true/E=true/S=false
+and the same six reasons. [Summary, hashes and full synthetic evidence](evidence/2026-09-26-post-pr111/hosted-qualification-summary.json)
+include protocol, binding, canonical download receipt, runtime and all CSVs.
+No executables, databases, images, checkpoint, keys or private dumps are published.
+The development-unsigned package/installer were built and verified, not installed
+or certified on Win7. The 55 unrelated worktrees and DPAPI checkpoint are unchanged.
+The single targeted prerequisite check found SAC still On, no new repository
+signing configuration, and Admin main still `fe4907adc51ff842720e1c7eb36aa05e0fa53cb8`;
+no staging cleanup, hardware test or denied local executable retry was attempted.
 
 ## Authorized hosted QA and remaining Asus reproduction
 
@@ -324,9 +424,9 @@ functional checks on `0ed0a06`, as recorded above. The subsequent Integrated
 attempt failed; valid integrated and downloaded final-package qualification
 remain pending. No final performance PASS is claimed.
 
-Next authorized sequence: use the available hosted diagnostic channel for
-independent regressions; activate an accepted Asus QA harness through the owner
-channel below, identify and correct the remaining interactive third-scan timeout,
+Next authorized sequence: attribute the recorded hosted idle timer delay before
+repeating qualification; activate an accepted Asus QA harness through the owner
+channel below, identify and correct the separate interactive third-scan timeout,
 then pass a 12-minute Integrated qualification against the
 unchanged preregistered budget; then exact-head CI/normal merge, download and
 validate the merge Release Pack, repeat 20k/100k measurements and run at least
@@ -349,24 +449,35 @@ or renewed staging denial attempt is part of this local performance work.
 
 | Prerequisite / responsible party | Activation and verification | Resume point |
 | --- | --- | --- |
-| Asus QA executable acceptance / PC owner and authorized signing administrator | Supply a configured trusted signing procedure, or owner-managed official development-host configuration. The saved signing assessment is reused; no repeated certificate search. If signing is chosen, use staging, record hashes before/after, verify signatures and regenerate the actual payload binding. No policy change is embedded in project scripts. | Accepted current-head harness, short untraced/traced Asus reproduction; no retry of the denied v17 file. |
+| Asus QA executable acceptance / PC owner and authorized signing administrator | Make the existing authorized trusted code-signing channel available for the compiled candidate below, following [Microsoft's signing procedure](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control). Record hashes before/after, verify Authenticode and chain, then bind the accepted bytes. No certificate purchase, self-signed trust, policy change or hosted-binary substitution. | Accepted exact-source harness, short untraced/traced Asus reproduction; no retry of the denied v17 file. |
 | Article staging and image recovery / Admin deployment and shop owner | Provide current typed readiness plus authorized recovery/cleanup handoff. No new readiness or cleanup is invented. Existing DPAPI checkpoint and `cleanupPending` remain unchanged. | Canonical staging/image runner only after local performance is stabilized. |
 | Installer and Windows 7 / QA host and hardware owner | Provide disposable VM/snapshot for install/upgrade/uninstall and an authorized Win7 SP1 net48/x86 target. Scanner/IME and printer/drawer need their real hardware/driver checks and operational consent. | Exact verified merge package, economic/offline/restart/backup checks. Hosted Windows QA does not certify Win7. |
 
-After the first row is satisfied, resolve `$HarnessDir` and `$Binding` from the
-accepted, byte-verified current-head payload, and `$HeadSha` from PR112. Do not
-reuse the old `0ed0a06` binding or its intentionally head-bound resume script.
-Use a new `$ShortOut`, then the existing runner (trace enabled only for a separate
-Diagnostic reproduction):
+Only the first row is the immediate owner action; the other rows describe
+separate external resource prerequisites. The locally compiled candidate has
+source `cb43fd4b23cd26859ab2f370d1c0cfe47aaff205` and has **not been executed**.
+File: `C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\bin\x86\Release\net48\Win7POS.Wpf.UiSmokeHarness.exe`.
+Unsigned SHA256: `b47a2fd3eca47e0865e0013bb9b5ed6a5915a86f94a6f7bd82f053ebca0c53ce`.
+Its 33 exe/DLL hashes and signature states are recorded privately in
+`C:\Dev\Win7POS-post-pr111-20260926\owner-activation-20260928.json`;
+the single operational card is `ASUS-OWNER-ACTIVATION.md` in that same directory.
+This is a signing/acceptance handoff, not authorization to retry an unsigned file.
+
+After owner-channel acceptance and signature/chain verification, resume from
+the repository root with the existing runner and a new output directory:
 
 ```powershell
-pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -HarnessDirectory $HarnessDir -OutputDirectory $ShortOut
+pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -HarnessDirectory 'C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\bin\x86\Release\net48' -OutputDirectory ('C:\Dev\Win7POS-post-pr111-20260926\asus-accepted-cb43fd4-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss'))
+if ($LASTEXITCODE -ne 0) { throw 'Preserve the Asus failure and identify its first cause.' }
 ```
 
 Verify five quantity increments, valid desktop/foreground, zero trace loss and
 actual executed-operation attribution. A failure returns to that short
 reproducer. Only after a demonstrated correction and the functional suite pass,
-resolve new evidence paths and use the unchanged budget hash stated above:
+resolve `$HarnessDir`, `$Binding` and `$HeadSha` from a newly accepted,
+canonically verified candidate of that exact revision, and new evidence paths.
+Do not reuse the old `0ed0a06` binding or its head-bound resume script. Use the
+unchanged budget hash stated above:
 
 ```powershell
 pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Qualification -Stage Integrated -Products 100000 -SoakMinutes 12 -HarnessDirectory $HarnessDir -BudgetPath $Budget -PayloadBindingPath $Binding -ExpectedCommit $HeadSha -OutputDirectory $IntegratedOut
@@ -374,5 +485,6 @@ pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Qualification -Stag
 
 Require all three flags true before normal merge and exact-merge ReleasePack
 download/verification. Final needs that new package's harness/binding and at
-least 60 useful minutes. Neither Integrated nor Final has passed; Final has not
-started. PR112 stays draft with no merge while the Asus residual remains open.
+least 60 useful minutes. Hosted Integrated completed but failed stability;
+hosted premerge soak, Asus qualification completion and Final remain unpassed.
+PR112 stays draft with no merge while the Asus residual remains open.

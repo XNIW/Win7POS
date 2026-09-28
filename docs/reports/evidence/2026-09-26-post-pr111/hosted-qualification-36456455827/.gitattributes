@@ -1,0 +1,2 @@
+# Keep the downloaded synthetic text evidence byte-identical to its recorded hashes.
+*.txt -text

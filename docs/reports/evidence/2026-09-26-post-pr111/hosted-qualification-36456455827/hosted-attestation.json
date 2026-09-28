@@ -1,0 +1,50 @@
+{
+  "commit": "cb43fd4b23cd26859ab2f370d1c0cfe47aaff205",
+  "runId": "36456455827",
+  "qualifiesAsus": false,
+  "qualifiesMergeFinal": false,
+  "lanes": [
+    {
+      "label": "QUALIFICA_HOSTED",
+      "requestedMinutes": 12,
+      "outcome": "failure",
+      "passed": false,
+      "result": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "dispatcher_backlog:cycle=3",
+          "dispatcher_backlog:cycle=12",
+          "dispatcher_backlog:cycle=13",
+          "dispatcher_backlog:cycle=17",
+          "dispatcher_backlog:cycle=18",
+          "dispatcher_backlog:cycle=23"
+        ],
+        "metrics": {
+          "isolatedServiceP95Ms": 12.828,
+          "sendProbeP95Ms": 0.093,
+          "elapsedSeconds": 733.084,
+          "RowsServiceP95Ms": 24.375,
+          "RowsUiP95Ms": 68.496,
+          "RowsUiMaximumMs": 98.94900000000001,
+          "RowsBitmapP95Ms": 24.513,
+          "GridServiceP95Ms": 24.505,
+          "GridUiP95Ms": 61.105000000000004,
+          "GridUiMaximumMs": 98.935,
+          "GridBitmapP95Ms": 24.884,
+          "maximumManagedWindowGrowthBytes": 0.0
+        }
+      }
+    },
+    {
+      "label": "PREMERGE_HOSTED_SOAK",
+      "requestedMinutes": 60,
+      "outcome": "skipped",
+      "passed": false,
+      "result": null
+    }
+  ]
+}
