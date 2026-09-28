@@ -53,7 +53,7 @@ function Read-AndValidateManifest {
         -not [string]::Equals($manifest.targetFramework, "net48", [StringComparison]::Ordinal)) {
         throw "$Label normalized manifest must describe the net48/x86 payload."
     }
-    if ($manifest.buildVersion -notmatch '^(?<product>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))(?:-dev\.[0-9a-f]{12})?$') {
+    if ($manifest.buildVersion -notmatch '^(?<product>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))(?:-dev\.(?:[0-9a-f]{12}|g[0-9]{12}))?$') {
         throw "$Label normalized manifest has invalid buildVersion '$($manifest.buildVersion)'."
     }
     $expectedProductVersion = $Matches["product"]

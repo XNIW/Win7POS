@@ -254,10 +254,19 @@ else {
     $resolved = $null
     try {
         $resolved = & $versionResolver -RepoRoot $repoRoot -CommitSha $headSha -Ref "refs/heads/release-foundation-test"
-        if ($resolved.BuildVersion -notmatch '^\d+\.\d+\.\d+-dev\.[0-9a-f]{12}$') {
+        if ($resolved.BuildVersion -notmatch '^\d+\.\d+\.\d+-dev\.(?:[0-9a-f]{12}|g[0-9]{12})$') {
             throw "unexpected development version '$($resolved.BuildVersion)'"
         }
         Pass "Semantic version resolver accepts an exact-SHA development build"
+        foreach ($numericPrefix in @("015640663695", "123456789012", "000000000000")) {
+            $numericSha = $numericPrefix + ("a" * 28)
+            $numericVersion = & $versionResolver -RepoRoot $repoRoot -CommitSha $numericSha -Ref "refs/heads/release-foundation-test"
+            $null = [semver]::Parse($numericVersion.BuildVersion)
+            if ($numericVersion.BuildVersion -ne "$($resolved.ProductVersion)-dev.g$numericPrefix" -or
+                $numericVersion.InformationalVersion -ne "$($numericVersion.BuildVersion)+sha.$numericSha" -or
+                $numericVersion.CommitSha -ne $numericSha) { throw "decimal SHA prefix lost exact identity" }
+        }
+        Pass "Decimal SHA prefixes produce valid SemVer with unchanged exact identity"
 
         $releaseRef = "refs/tags/v$($resolved.ProductVersion)"
         $releaseResolved = & $versionResolver -RepoRoot $repoRoot -CommitSha $headSha -Ref $releaseRef
