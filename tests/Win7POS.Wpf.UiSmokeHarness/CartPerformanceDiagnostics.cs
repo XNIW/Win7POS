@@ -45,13 +45,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using var environment = new PerformanceEnvironment(directory);
             using var idle = new StreamWriter(Path.Combine(directory, "diagnostic-idle.csv"));
             idle.WriteLine("cycle,elapsed_s,pending,oldest_ms,inactive,observer_dropped,trace_dropped");
-            var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(125) };
-            timer.Tick += ControlledTick;
+            var extraWakeup = Environment.GetEnvironmentVariable("WIN7POS_QA_TIMER_WAKEUP") == "1";
+            var timer = extraWakeup ? new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(125) } : null;
+            if (timer != null) timer.Tick += ControlledTick;
             trace.StartTimeline(Path.Combine(directory, "diagnostic-timeline.txt"));
             var cycle = 0;
             try
             {
-                host.Show(); host.Activate(); input.Focus(); timer.Start();
+                host.Show(); host.Activate(); input.Focus(); timer?.Start();
+                trace.Checkpoint("minimal_focus=" + input.IsKeyboardFocusWithin + ";extra_wakeup=" + extraWakeup);
                 var start = environment.AwakeSeconds;
                 do
                 {
@@ -75,9 +77,21 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 File.WriteAllText(Path.Combine(directory, "diagnostic-scans.json"), "{\"control\":\"minimal-wpf-timer\",\"measurementCompleted\":true,\"environmentValid\":" + (environment.Valid ? "true" : "false") + ",\"cycles\":" + cycle + ",\"qualifiesApplication\":false}");
                 return "PASS DIAGNOSTIC_COMPLETED minimal WPF control; no application qualification";
             }
-            finally { timer.Stop(); timer.Tick -= ControlledTick; host.Close(); }
+            finally { if (timer != null) { timer.Stop(); timer.Tick -= ControlledTick; } host.Close(); }
         }
         private static void ControlledTick(object sender, EventArgs args) { }
+
+        internal static void ObserveScene(Window host, OperationObserver trace, int cycle, string phase = "before_idle")
+        {
+            var nodes = Descendants(host).Take(4097).ToArray();
+            var bars = nodes.OfType<ProgressBar>().ToArray();
+            trace.Checkpoint("scene;cycle=" + cycle + ";phase=" + phase + ";nodes=" + nodes.Length + ";truncated=" + (nodes.Length > 4096) +
+                ";progress=" + bars.Length + ";visible_indeterminate=" + bars.Count(bar => bar.IsVisible && bar.IsIndeterminate) +
+                ";hidden_indeterminate=" + bars.Count(bar => !bar.IsVisible && bar.IsIndeterminate) + ";focus=" + Keyboard.FocusedElement?.GetType().FullName);
+            foreach (var element in nodes.OfType<UIElement>().Where(element => element.HasAnimatedProperties).Take(32))
+                trace.Checkpoint("animated_visual;cycle=" + cycle + ";phase=" + phase + ";type=" + element.GetType().FullName + ";visible=" + element.IsVisible +
+                    ";opacity_animation=" + DependencyPropertyHelper.GetValueSource(element, UIElement.OpacityProperty).IsAnimated);
+        }
 
         internal static async Task<string> RunAsync(string directory, int products, string specification)
         {
@@ -346,7 +360,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private readonly bool _roots;
             private readonly bool _trace;
             private readonly List<object> _events = new List<object>();
-            private readonly DispatcherTimerTrace _timers = new DispatcherTimerTrace();
+            private readonly DispatcherTimerTrace _timers;
             private readonly object _writeSync = new object();
             private readonly object _sync = new object();
             private readonly List<Entry> _legacy = new List<Entry>();
@@ -365,7 +379,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 if (!_trace || _mode == "off") return;
                 _timeline = new StreamWriter(path);
-                _timeline.WriteLine("TIMELINE,version=3,clock=Stopwatch,cpu=AppDomain_including_workers,allocations=AppDomain,watchdog_ms=100,entry_capacity=16384,event_capacity=512,active_capacity=32,line_capacity=131072,native_due_precision_ms=15.625_plus_bracket,creation=first_observed_not_constructor,priority_hook=may_precede_property_publication");
+                _timeline.WriteLine("TIMELINE,version=3,clock=Stopwatch,cpu=AppDomain_including_workers,allocations=AppDomain,watchdog_ms=100,entry_capacity=16384,event_capacity=512,active_capacity=32,data_line_capacity=131072,native_due=approximate_tickcount_resolution_not_measured,creation=first_observed_not_constructor,priority_hook=may_precede_property_publication");
                 _timeline.Flush();
                 // Thread-pool timer: it keeps recording when the UI dispatcher
                 // is occupied. Only scalar metadata crosses the thread boundary.
@@ -412,6 +426,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             public OperationObserver(Dispatcher dispatcher, string mode, bool roots, bool trace)
             {
                 _dispatcher = dispatcher; _mode = mode; _roots = roots; _trace = trace;
+                if (trace) _timers = new DispatcherTimerTrace();
                 if (mode == "off") return;
                 dispatcher.Hooks.OperationPosted += Posted;
                 if (trace) dispatcher.Hooks.OperationStarted += Started;
@@ -554,7 +569,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             public void Dispose()
             {
-                _watchdog?.Dispose();
+                // Complete any already-drained batch before the final flush;
+                // disposing Timer alone does not wait for an active callback.
+                // No UI-observer lock is held while waiting for the writer.
+                if (_watchdog != null)
+                    using (var finished = new ManualResetEvent(false))
+                    { if (_watchdog.Dispose(finished)) finished.WaitOne(); }
                 lock (_sync)
                 {
                     _disposed = true;
@@ -563,7 +583,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     if (_timeline != null)
                     {
-                        foreach (var value in _events) _timeline.WriteLine(value);
+                        foreach (var value in _events)
+                            if (_timelineLines < 131072) { _timeline.WriteLine(value); _timelineLines++; } else Dropped++;
                         _timeline.WriteLine("TRACE_DROPPED," + Dropped);
                         _timeline.Dispose();
                     }

@@ -12,9 +12,11 @@ param(
     [switch]$DisableObserver,
     [ValidateRange(0,5)][int]$DiagnosticScanCount = 0,
     [switch]$DiagnosticInputDispatch,
-    [switch]$DiagnosticTimerControl
+    [switch]$DiagnosticTimerControl,
+    [switch]$DiagnosticTimerWakeup
 )
 $ErrorActionPreference = 'Stop'
+if ($DiagnosticTimerWakeup -and -not $DiagnosticTimerControl) { throw 'Diagnostic timer wakeup requires the minimal control.' }
 if ($DiagnosticTimerControl -and ($Mode -ne 'Diagnostic' -or $SoakMinutes -lt 1 -or $SoakMinutes -gt 5 -or $DiagnosticScanCount -or $DiagnosticInputDispatch)) { throw 'Minimal timer control requires Diagnostic and 1..5 minutes.' }
 if ($DiagnosticScanCount -and $SoakMinutes) { throw 'Short scan reproduction and soak duration are mutually exclusive.' }
 if ($DiagnosticInputDispatch -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount)) { throw 'Input dispatch comparison requires short Diagnostic scans.' }
@@ -54,7 +56,7 @@ $budgetHash = if ($BudgetPath) { (Get-FileHash -LiteralPath $BudgetPath).Hash.To
 $hostOperatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop |
     Select-Object Caption,Version,BuildNumber,OSArchitecture
 [ordered]@{ products=$Products; soakMinutes=$SoakMinutes; mode=$Mode; stage=$Stage; startedUtc=[DateTimeOffset]::UtcNow.ToString('O');
-    protocol=$(if ($DiagnosticTimerControl) { 'minimal-wpf-timer-v1: no POS view/cart/service; 125ms Background no-op timer; 20-second idle blocks; diagnostic only' } else { 'win7pos-public-scan-v3: persistent 500 line identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement' });
+    protocol=$(if ($DiagnosticTimerControl) { "minimal-wpf-timer-v2: focused TextBox, actual InputManager timer, no POS view/cart/service; extra 125ms QA wakeup timer=$DiagnosticTimerWakeup; 20-second idle blocks; diagnostic only" } else { 'win7pos-public-scan-v3: persistent 500 line identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement' });
     benchmarkProtocol='31 service samples per size: first call 0, warm 1..30; rendered-view bitmap is not monitor latency';
     budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; diagnosticInputDispatch=[bool]$DiagnosticInputDispatch; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
 if ($BudgetPath) { Copy-Item -LiteralPath $BudgetPath -Destination (Join-Path $OutputDirectory 'preregistered-budget.json') }
@@ -64,12 +66,14 @@ $previousDiagnostic = $env:WIN7POS_QA_CART_DIAGNOSTIC
 $previousObserver = $env:WIN7POS_QA_PERF_OBSERVER_OFF
 $previousScanLimit = $env:WIN7POS_QA_PERF_SCAN_LIMIT
 $previousInputDispatch = $env:WIN7POS_QA_PERF_INPUT_DISPATCH
+$previousTimerWakeup = $env:WIN7POS_QA_TIMER_WAKEUP
 $status = $null
 try {
     $env:WIN7POS_QA_SOAK_MINUTES = if ($DiagnosticScanCount) { '1' } elseif ($SoakMinutes) { [string]$SoakMinutes } else { $null }
     $env:WIN7POS_QA_PERF_SCAN_LIMIT = if ($DiagnosticScanCount) { [string]$DiagnosticScanCount } else { $null }
     $env:WIN7POS_QA_PERF_INPUT_DISPATCH = if ($DiagnosticInputDispatch) { '1' } else { $null }
     $env:WIN7POS_QA_CART_DIAGNOSTIC = if ($DiagnosticTimerControl) { 'timer-control' } else { $null }
+    $env:WIN7POS_QA_TIMER_WAKEUP = if ($DiagnosticTimerWakeup) { '1' } else { $null }
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = if ($DisableObserver) { '1' } else { $null }
     $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"'+$OutputDirectory+'"'), '--cart-performance', '--products', $Products) -WindowStyle Hidden -PassThru
     $deadline = [Diagnostics.Stopwatch]::StartNew()
@@ -137,4 +141,5 @@ finally {
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = $previousObserver
     $env:WIN7POS_QA_PERF_SCAN_LIMIT = $previousScanLimit
     $env:WIN7POS_QA_PERF_INPUT_DISPATCH = $previousInputDispatch
+    $env:WIN7POS_QA_TIMER_WAKEUP = $previousTimerWakeup
 }

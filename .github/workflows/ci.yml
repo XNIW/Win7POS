@@ -163,7 +163,7 @@ jobs:
         env:
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
-          'A: Original protocol, trace off. Fixed 3-minute coverage with complete cycles and 20-second idle. Reproduce >250ms ready age; no rerun-until-green. No patch implied by this arm.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-A.txt"
+          'A3: One fixed 3-minute original-protocol control, trace off. Preserve first-scan timeout if it recurs, now with quantity/busy/service/apply and monotonic failure-stage values. Do not repeat until green or classify it as Asus. Compare with B3 on this same VM.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-A.txt"
           $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/untraced"
       - name: Same public protocol with bounded timeline
@@ -174,7 +174,7 @@ jobs:
           WIN7POS_QA_PERF_TRACE: '1'
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
-          'B2: Fixed 3 minutes. First run identified InputManager.ValidateInputDevices (125ms Background) and repeated short Render callbacks while watchdog reported no long active callback. Framework hook exposes OLD priority: v3 trace resolves at next observation, 131072 bounded lines cover measured event rate. Verify full promotion-to-start interval and observer cost; no eligibility interval subtraction or threshold change.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-B.txt"
+          'B3: Fixed 3 minutes. Actual InputManager timer still waits >250ms after corrected promotion accounting; minimal C2 did not. Inventory visible/hidden indeterminate indicators and animated visual types once per cycle to identify the POS render producer. No UI values/text collected. No app patch until a producer is demonstrated.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-B.txt"
           $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
       - name: Minimal WPF idle control or short Input comparison
@@ -185,9 +185,19 @@ jobs:
           WIN7POS_QA_PERF_TRACE: '1'
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
-          'C2: Fixed 3 minutes; plain TextBox now explicitly focused, matching POS scanner focus. C1 had no InputManager timer and is not handler-equivalent. Hypothesis: focused WPF caret/render scheduling also delays the actual InputManager.ValidateInputDevices timer without POS. Same 20-second idle sampler plus controlled 125ms Background no-op; no internal callbacks removed. Require actual handler and delayed execution, else hypothesis remains unproven. Never application qualification.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-C.txt"
+          'C3: Fixed 3 minutes, focused plain TextBox with the actual InputManager timer. Remove ONLY our extra 125ms no-op wakeup timer from C2: it may perturb dispatch progress and mask the delay. Leave every WPF callback, caret, input and protection intact. If C3 reproduces while D3 does not, the added QA timer was an invalid control aid; neither control qualifies the POS.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-C.txt"
           $control = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3;DiagnosticTimerControl=$true} } else { @{DiagnosticScanCount=5;DiagnosticInputDispatch=$true} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @control -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/input-dispatch"
+      - name: Reintroduce only the additional QA wakeup timer in minimal control
+        if: ${{ inputs.cart_diagnostic_idle == true }}
+        id: timer_wakeup
+        continue-on-error: true
+        shell: pwsh
+        env:
+          WIN7POS_QA_PERF_TRACE: '1'
+        run: |
+          'D3: Same focused minimal WPF window, duration and sampler as C3; reintroduce only the extra 125ms QA Background no-op timer from C2. This tests whether the control itself helped queue progress. No internal WPF callback removed, no product qualification or production timer change.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-D.txt"
+          & ./scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticTimerControl -DiagnosticTimerWakeup -SoakMinutes 3 -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/timer-wakeup"
       - name: Preserve synthetic diagnostic evidence even on failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -215,9 +225,12 @@ jobs:
           UNTRACED_OUTCOME: ${{ steps.untraced.outcome }}
           TRACED_OUTCOME: ${{ steps.traced.outcome }}
           INPUT_OUTCOME: ${{ steps.input_dispatch.outcome }}
+          WAKEUP_OUTCOME: ${{ steps.timer_wakeup.outcome }}
+          IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
           Write-Output "Untraced=$env:UNTRACED_OUTCOME; Traced=$env:TRACED_OUTCOME; Input=$env:INPUT_OUTCOME; STABILITY_PASS=false (Diagnostic only; independent hosted machine)."
           if ($env:UNTRACED_OUTCOME -ne 'success' -or $env:TRACED_OUTCOME -ne 'success' -or $env:INPUT_OUTCOME -ne 'success') { throw 'A short diagnostic did not complete; inspect preserved evidence.' }
+          if ($env:IDLE_CONTROL -eq 'true' -and $env:WAKEUP_OUTCOME -ne 'success') { throw 'Minimal wakeup control incomplete.' }
 
   cart-qualification:
     name: Hosted Integrated qualification (not canonical PR checks)

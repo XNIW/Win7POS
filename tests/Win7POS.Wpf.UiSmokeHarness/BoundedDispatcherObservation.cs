@@ -126,7 +126,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
         }
         private void Inconsistent(Entry entry)
-        { if (!entry.Inconsistent) { entry.Inconsistent = true; Dropped++; } }
+        {
+            if (entry.Inconsistent) return;
+            entry.Inconsistent = true; Dropped++;
+            if (OverflowDetail == null) OverflowDetail = "priority_transition_timestamp_missing_or_concurrent";
+        }
         private void ReconcilePriority(Entry entry, DispatcherPriority current)
         {
             if (current == entry.Priority) return; // Hook's new value may not yet be published.

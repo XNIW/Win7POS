@@ -148,6 +148,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 // Failure-only evidence: preserve the pending producers
                                 // and native queue without changing or draining WPF work.
                                 var failure = observer.Snapshot();
+                                operations.WriteLine(string.Format(Invariant,
+                                    "FAILED_SCAN_STAGES,cycle={0},mode={1},scan={2},expected_qty={3},actual_qty={4},busy={5},service_ms={6:F3},apply_ms={7:F3},elapsed_ms={8:F3},start_tick={9},service_complete_tick={10},observed_tick={11}",
+                                    cycle, mode, ordinal, expectedQuantity, vm.CartItems[0].Quantity, vm.IsBusy, detail.ServiceMilliseconds,
+                                    detail["apply_snapshot"], Milliseconds(Stopwatch.GetTimestamp() - start), start, detail.ServiceCompletedTimestamp, Stopwatch.GetTimestamp()));
                                 operations.WriteLine("VISUAL_SCAN_TIMEOUT," + cycle + "," + mode + "," + ordinal + "," + failure.Detail);
                                 var native = new StringBuilder();
                                 trace.Snapshot(cycle, native);
@@ -194,6 +198,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     // its cart once. A lost foreground during idle is recorded,
                     // never repeatedly overridden to conceal user interaction.
                     host.Activate();
+                    if (traceEnabled) CartPerformanceDiagnostics.ObserveScene(host, trace, cycle);
                     for (var second = 0; second < 20; second++)
                     {
                         if (traceEnabled) trace.Checkpoint("idle_sample_begin;cycle=" + cycle + ";second=" + second);
@@ -208,6 +213,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     trace.SampleTimers("before_snapshot");
                     var state = observer.Snapshot(); // Before probes can help work progress.
                     if (traceEnabled) trace.Checkpoint("snapshot_end;cycle=" + cycle + ";oldest_ms=" + state.OldestMs.ToString("F3", Invariant));
+                    if (traceEnabled) CartPerformanceDiagnostics.ObserveScene(host, trace, cycle, "after_idle");
                     var input = await ProbeAsync(DispatcherPriority.Input);
                     var render = await ProbeAsync(DispatcherPriority.Render);
                     var binding = await ProbeAsync(DispatcherPriority.DataBind);

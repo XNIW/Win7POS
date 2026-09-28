@@ -70,7 +70,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Handlers = handlers?.GetInvocationList().Take(16).Select(handler => Tuple.Create(handler.Target?.GetType(), handler.Method)).ToArray() };
                 // Restart assigns the native due field AFTER OperationPosted. Do not read stale due on Posted.
                 // Convert only a signed modulo-2^32 DELTA to our monotonic clock, never subtract clock epochs.
-                // TickCount quantization (typically up to 15.625ms) plus this bracket bounds conversion precision.
+                // TickCount quantization is platform-dependent and is not measured
+                // here. Due offsets are approximate, never acceptance timestamps.
                 if (phase != "posted" && Due?.FieldType == typeof(int))
                 {
                     var before = Stopwatch.GetTimestamp();
