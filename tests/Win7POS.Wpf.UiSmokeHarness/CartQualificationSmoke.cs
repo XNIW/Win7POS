@@ -226,7 +226,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     cycle++;
                 } while (environment.AwakeSeconds - usefulStart < minutes * 60);
                 File.WriteAllText(Path.Combine(directory, "qualification-measurement.json"), "{\"schemaVersion\":\"win7pos-performance-measurement-v1\",\"measurementCompleted\":true,\"environmentValid\":" +
-                    (environment.Valid ? "true" : "false") + ",\"products\":" + products + ",\"cartSize\":" + vm.CartItems.Count + ",\"protocolVersion\":3,\"cycles\":" + cycle + ",\"stabilityEvaluatedByHarness\":false}");
+                    (environment.Valid ? "true" : "false") + ",\"products\":" + products + ",\"cartSize\":" + vm.CartItems.Count + ",\"protocolVersion\":3,\"observerVersion\":2,\"cycles\":" + cycle + ",\"stabilityEvaluatedByHarness\":false}");
             }
             finally { host.Close(); vm.Dispose(); Application.Current.MainWindow = null; OperatorSessionHolder.Current = previousOperator; }
         }

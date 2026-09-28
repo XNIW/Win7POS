@@ -174,7 +174,7 @@ jobs:
           WIN7POS_QA_PERF_TRACE: '1'
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
-          'B: Same duration/protocol as A. Identify actual timer target/args, Tick handler, promotion/start/end and executing callback during ready delay. If only B stalls inspect trace overhead; if QA sampling occupies the interval patch only that demonstrated producer.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-B.txt"
+          'B2: Fixed 3 minutes. First run identified InputManager.ValidateInputDevices (125ms Background) and repeated short Render callbacks while watchdog reported no long active callback. Framework hook exposes OLD priority: v3 trace resolves at next observation, 131072 bounded lines cover measured event rate. Verify full promotion-to-start interval and observer cost; no eligibility interval subtraction or threshold change.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-B.txt"
           $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
       - name: Minimal WPF idle control or short Input comparison
@@ -185,7 +185,7 @@ jobs:
           WIN7POS_QA_PERF_TRACE: '1'
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
-          'C: Fixed 3 minutes, same window size/foreground, environment sampler and 20-second idle blocks. Plain TextBox plus controlled 125ms Background timer; no POS view/cart/service. Identical delay without POS separates QA/runtime from app; handler equivalence must be checked against B before claiming cause. Synthetic control never qualifies app.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-C.txt"
+          'C2: Fixed 3 minutes; plain TextBox now explicitly focused, matching POS scanner focus. C1 had no InputManager timer and is not handler-equivalent. Hypothesis: focused WPF caret/render scheduling also delays the actual InputManager.ValidateInputDevices timer without POS. Same 20-second idle sampler plus controlled 125ms Background no-op; no internal callbacks removed. Require actual handler and delayed execution, else hypothesis remains unproven. Never application qualification.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-C.txt"
           $control = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3;DiagnosticTimerControl=$true} } else { @{DiagnosticScanCount=5;DiagnosticInputDispatch=$true} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @control -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/input-dispatch"
       - name: Preserve synthetic diagnostic evidence even on failure

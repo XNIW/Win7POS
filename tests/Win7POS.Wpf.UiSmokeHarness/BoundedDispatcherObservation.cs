@@ -18,7 +18,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         // not a performance acceptance budget; exceeding it invalidates data.
         private const int Capacity = 16384;
         private sealed class Entry
-        { public long Id, Posted, Eligible; public DispatcherPriority Priority; public WeakReference Operation; public byte VisualCategory; public bool Started; }
+        { public long Id, Posted, Eligible, PriorityChangedAt; public DispatcherPriority Priority; public WeakReference Operation; public byte VisualCategory; public bool Started, VisualReleased, Inconsistent, PriorityChangePending; }
         internal sealed class State
         {
             public int Pending, Inactive, FocusPending, ScrollPending, ClosedRootedWindows;
@@ -29,6 +29,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
         private readonly Dispatcher _dispatcher;
         private readonly bool _enabled;
+        private readonly Func<long> _clock;
         private readonly object _sync = new object();
         private readonly Dictionary<long, Entry> _entries = new Dictionary<long, Entry>();
         private readonly ConditionalWeakTable<DispatcherOperation, Entry> _index = new ConditionalWeakTable<DispatcherOperation, Entry>();
@@ -40,12 +41,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
         internal int Dropped { get; private set; }
         internal int PeakObserved { get; private set; }
         internal string OverflowDetail { get; private set; }
-        internal BoundedDispatcherObservation(Dispatcher dispatcher, bool enabled = true)
+        internal BoundedDispatcherObservation(Dispatcher dispatcher, bool enabled = true) : this(dispatcher, enabled, Stopwatch.GetTimestamp, true) { }
+        private BoundedDispatcherObservation(Dispatcher dispatcher, bool enabled, Func<long> clock, bool subscribe)
         {
             _dispatcher = dispatcher;
             _enabled = enabled;
+            _clock = clock;
             if (!enabled) return;
             if (Method == null || Arguments == null) throw new InvalidOperationException("dispatcher_observation_not_supported_on_this_runtime");
+            if (!subscribe) return;
             dispatcher.Hooks.OperationPosted += Posted;
             dispatcher.Hooks.OperationCompleted += Finished;
             dispatcher.Hooks.OperationAborted += Finished;
@@ -53,20 +57,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
             dispatcher.Hooks.OperationStarted += Started;
         }
         private void Posted(object sender, DispatcherHookEventArgs args)
+            => RecordPosted(args.Operation);
+        private void RecordPosted(DispatcherOperation operation)
         {
             lock (_sync)
             {
                 // Synchronous Send can raise Completed before Posted on another
                 // thread. Do not retain its already-finished bookkeeping entry.
-                if (args.Operation.Status == DispatcherOperationStatus.Completed || args.Operation.Status == DispatcherOperationStatus.Aborted) return;
-                if (_index.TryGetValue(args.Operation, out _)) return;
+                if (operation.Status == DispatcherOperationStatus.Completed || operation.Status == DispatcherOperationStatus.Aborted) return;
+                if (_index.TryGetValue(operation, out _)) return;
                 if (_entries.Count >= Capacity)
                 {
                     foreach (var old in _entries.Values.ToArray())
                     {
-                        var operation = old.Operation.Target as DispatcherOperation;
-                        if (operation == null || operation.Status == DispatcherOperationStatus.Completed || operation.Status == DispatcherOperationStatus.Aborted)
+                        var oldOperation = old.Operation.Target as DispatcherOperation;
+                        if (oldOperation == null || oldOperation.Status == DispatcherOperationStatus.Completed || oldOperation.Status == DispatcherOperationStatus.Aborted)
+                        {
+                            RemoveVisualPending(old);
                             _entries.Remove(old.Id);
+                            if (oldOperation != null) _index.Remove(oldOperation);
+                        }
                     }
                     if (_entries.Count >= Capacity)
                     {
@@ -77,54 +87,92 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Dropped++; return;
                     }
                 }
-                var now = Stopwatch.GetTimestamp();
-                var entry = new Entry { Id = ++_next, Posted = now, Eligible = now, Priority = args.Operation.Priority, Operation = new WeakReference(args.Operation) };
+                var now = _clock();
+                var entry = new Entry { Id = ++_next, Posted = now, Eligible = now, Priority = operation.Priority, Operation = new WeakReference(operation) };
                 // Inspect only Input work for the two application-owned visual
                 // categories; never retain the delegate or its target.
-                if (args.Operation.Priority == DispatcherPriority.Input && Method.GetValue(args.Operation) is Delegate callback && callback.Target is Win7POS.Wpf.Pos.PosView)
+                if (operation.Priority == DispatcherPriority.Input && Method.GetValue(operation) is Delegate callback && callback.Target is Win7POS.Wpf.Pos.PosView)
                 {
                     if (callback.Method.Name.Contains("FocusBarcode")) { entry.VisualCategory = 1; _focusPeak = Math.Max(_focusPeak, ++_focusPending); }
                     if (callback.Method.Name.Contains("QueueSelectionScroll")) { entry.VisualCategory = 2; _scrollPeak = Math.Max(_scrollPeak, ++_scrollPending); }
                 }
-                _index.Add(args.Operation, entry); _entries.Add(entry.Id, entry);
+                _index.Add(operation, entry); _entries.Add(entry.Id, entry);
                 PeakObserved = Math.Max(PeakObserved, _entries.Count);
             }
         }
         private void PriorityChanged(object sender, DispatcherHookEventArgs args)
+            => RecordPriorityChanged(args.Operation);
+        private void RecordPriorityChanged(DispatcherOperation operation)
         {
             lock (_sync)
-                if (_index.TryGetValue(args.Operation, out var entry))
+                if (_index.TryGetValue(operation, out var entry))
                 {
-                    if (entry.Priority == DispatcherPriority.Inactive) entry.Eligible = Stopwatch.GetTimestamp();
-                    entry.Priority = args.Operation.Priority;
+                    if (entry.PriorityChangePending) ReconcilePriority(entry, operation.Priority);
+                    if (entry.PriorityChangePending) Inconsistent(entry);
+                    if (operation.Priority != entry.Priority)
+                    {
+                        // A runtime exposing the new priority at the hook.
+                        if (entry.Priority == DispatcherPriority.Inactive) entry.Eligible = _clock();
+                        entry.Priority = operation.Priority;
+                    }
+                    else
+                    {
+                        // Framework 4.8 raises the hook before publishing the new
+                        // operation.Priority. Retain the event time, resolve the
+                        // destination at the next observation/hook/start.
+                        entry.PriorityChangedAt = _clock();
+                        entry.PriorityChangePending = true;
+                    }
                 }
         }
+        private void Inconsistent(Entry entry)
+        { if (!entry.Inconsistent) { entry.Inconsistent = true; Dropped++; } }
+        private void ReconcilePriority(Entry entry, DispatcherPriority current)
+        {
+            if (current == entry.Priority) return; // Hook's new value may not yet be published.
+            if (entry.PriorityChangePending)
+            {
+                if (entry.Priority == DispatcherPriority.Inactive && current != DispatcherPriority.Inactive)
+                    entry.Eligible = entry.PriorityChangedAt;
+                entry.PriorityChangePending = false;
+                entry.Priority = current;
+            }
+            else Inconsistent(entry); // No timestamp can be reconstructed for a lost hook.
+        }
         private void Finished(object sender, DispatcherHookEventArgs args)
+            => RecordFinished(args.Operation);
+        private void RecordFinished(DispatcherOperation operation)
         {
             lock (_sync)
-                if (_index.TryGetValue(args.Operation, out var entry))
+                if (_index.TryGetValue(operation, out var entry))
                 {
                     if (!entry.Started) RemoveVisualPending(entry);
-                    _entries.Remove(entry.Id); _index.Remove(args.Operation);
+                    _entries.Remove(entry.Id); _index.Remove(operation);
                 }
         }
         private void RemoveVisualPending(Entry entry)
         {
+            if (entry.VisualReleased) return;
+            entry.VisualReleased = true;
             if (entry.VisualCategory == 1) _focusPending--;
             if (entry.VisualCategory == 2) _scrollPending--;
         }
         private void Started(object sender, DispatcherHookEventArgs args)
+            => RecordStarted(args.Operation);
+        private void RecordStarted(DispatcherOperation operation)
         {
             lock (_sync)
-                if (_index.TryGetValue(args.Operation, out var entry))
+                if (_index.TryGetValue(operation, out var entry))
                 {
+                    if (entry.Started) return;
+                    ReconcilePriority(entry, operation.Priority);
                     entry.Started = true;
                     RemoveVisualPending(entry);
                     if (entry.VisualCategory == 1) _focusMaximumWait = Math.Max(_focusMaximumWait, Age(entry.Eligible));
                     if (entry.VisualCategory == 2) _scrollMaximumWait = Math.Max(_scrollMaximumWait, Age(entry.Eligible));
                 }
         }
-        private static double Age(long timestamp) => (Stopwatch.GetTimestamp() - timestamp) * 1000d / Stopwatch.Frequency;
+        private double Age(long timestamp) => (_clock() - timestamp) * 1000d / Stopwatch.Frequency;
         internal State Snapshot()
         {
             if (!_enabled) return new State { Pending = -1, ClosedRootedWindows = -1, Detail = "OBSERVER_DISABLED_DIAGNOSTIC_ONLY" };
@@ -141,8 +189,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     var operation = entry.Operation.Target as DispatcherOperation;
                     if (operation == null || operation.Status == DispatcherOperationStatus.Completed || operation.Status == DispatcherOperationStatus.Aborted)
-                    { _entries.Remove(entry.Id); continue; }
+                    {
+                        RemoveVisualPending(entry);
+                        _entries.Remove(entry.Id);
+                        if (operation != null) _index.Remove(operation);
+                        continue;
+                    }
                     if (operation.Status != DispatcherOperationStatus.Pending) continue;
+                    ReconcilePriority(entry, operation.Priority);
                     var callback = Method?.GetValue(operation) as Delegate;
                     var method = callback?.Method.Name ?? "unknown";
                     if (operation.Priority == DispatcherPriority.Inactive) { result.Inactive++; continue; }
@@ -175,6 +229,66 @@ namespace Win7POS.Wpf.UiSmokeHarness
             result.ClosedRootedWindows = closed.Count;
             result.Detail = string.Join("|", details);
             return result;
+        }
+
+        internal static void VerifyControlledEvents(Dispatcher dispatcher)
+        {
+            var now = 1L;
+            long At(int ms) => 1 + (long)(ms * Stopwatch.Frequency / 1000d);
+            using var observer = new BoundedDispatcherObservation(dispatcher, true, () => System.Threading.Interlocked.Read(ref now), false);
+            var operations = new List<DispatcherOperation>();
+            DispatcherOperation Post(DispatcherPriority priority)
+            {
+                var operation = dispatcher.BeginInvoke(priority, new Action(() => { }));
+                operations.Add(operation); observer.RecordPosted(operation); return operation;
+            }
+            void Require(bool condition, string message)
+            { if (!condition) throw new InvalidOperationException("observer_controlled_events:" + message); }
+            try
+            {
+                Require(DispatcherTimerTrace.NativeDueDelta(int.MinValue + 4, int.MaxValue - 5) == 10 &&
+                    DispatcherTimerTrace.NativeDueDelta(int.MaxValue - 5, int.MinValue + 4) == -10, "native due wrap conversion");
+                var timer = Post(DispatcherPriority.Inactive);
+                now = At(90000);
+                Require(observer.Snapshot().Pending == 0, "scheduled interval counted ready");
+                observer.RecordPriorityChanged(timer); timer.Priority = DispatcherPriority.Background;
+                now = At(90001);
+                Require(observer.Snapshot().OldestMs < 1.01, "Inactive time counted after promotion");
+                now = At(90100); observer.RecordPriorityChanged(timer); timer.Priority = DispatcherPriority.Input;
+                now = At(90301);
+                Require(observer.Snapshot().OldestMs >= 301, "ready reprioritization erased real >250ms delay");
+                observer.RecordPriorityChanged(timer); timer.Priority = DispatcherPriority.Inactive;
+                now = At(100000); observer.RecordPriorityChanged(timer); timer.Priority = DispatcherPriority.Render;
+                now = At(100002);
+                Require(observer.Snapshot().OldestMs < 2.01, "second Inactive interval counted ready");
+                timer.Abort(); observer.RecordFinished(timer); observer.RecordFinished(timer); observer.RecordPosted(timer);
+                Require(observer.Snapshot().Pending == 0, "aborted/completed-before-posted operation retained");
+                var restarted = Post(DispatcherPriority.Background);
+                now = At(100003); Require(observer.Snapshot().OldestMs < 1.01, "restart inherited old age");
+                // Model the two owned categories without constructing a POS view.
+                observer._index.TryGetValue(restarted, out var visual);
+                visual.VisualCategory = 1; observer._focusPending = observer._focusPeak = 1;
+                observer.RecordStarted(restarted); observer.RecordStarted(restarted); observer.RecordFinished(restarted);
+                Require(observer._focusPending == 0, "duplicate start/finish made counter negative");
+                restarted.Abort();
+                var missingFinish = Post(DispatcherPriority.Input);
+                observer._index.TryGetValue(missingFinish, out visual);
+                visual.VisualCategory = 2; observer._scrollPending = observer._scrollPeak = 1;
+                missingFinish.Abort(); observer.Snapshot(); observer.RecordFinished(missingFinish);
+                Require(observer._scrollPending == 0, "missing finish left stale visual counter");
+                var missingPromotion = Post(DispatcherPriority.Inactive);
+                missingPromotion.Priority = DispatcherPriority.Background;
+                observer.Snapshot(); observer.Snapshot();
+                Require(observer.Dropped == 1, "missing/racing priority event concealed or double-counted");
+                missingPromotion.Abort(); observer.RecordFinished(missingPromotion);
+                var raced = Post(DispatcherPriority.Background);
+                var worker = System.Threading.Tasks.Task.Run(() =>
+                { for (var index = 0; index < 1000; index++) observer.RecordFinished(raced); });
+                for (var index = 0; index < 1000; index++) observer.Snapshot();
+                Require(worker.Wait(5000) && observer.Snapshot().Pending == 0 && observer._focusPending == 0 && observer._scrollPending == 0,
+                    "concurrent completion/snapshot lost accounting");
+            }
+            finally { foreach (var operation in operations) operation.Abort(); }
         }
         public void Dispose()
         {

@@ -247,6 +247,7 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                 host.Activate(); await DrainAsync();
                 phase = "bounded observer synchronous completion ordering";
                 var dispatcher = Dispatcher.CurrentDispatcher;
+                BoundedDispatcherObservation.VerifyControlledEvents(dispatcher);
                 using (var observer = new BoundedDispatcherObservation(dispatcher))
                 {
                     await Task.Run(() =>

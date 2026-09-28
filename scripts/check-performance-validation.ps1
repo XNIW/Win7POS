@@ -91,6 +91,8 @@ Check-RunnerRejection 'short-qualification' @{Mode='Qualification';DiagnosticSca
 Check-RunnerRejection 'input-qualification' @{Mode='Qualification';DiagnosticScanCount=5;DiagnosticInputDispatch=$true} 'requires short Diagnostic'
 Check-RunnerRejection 'input-without-short' @{Mode='Diagnostic';DiagnosticInputDispatch=$true} 'requires short Diagnostic'
 Check-RunnerRejection 'integrated-sha-mismatch' @{Mode='Qualification';Stage='Integrated';SoakMinutes=12;BudgetPath=$runnerBudget;PayloadBindingPath=$runnerBinding;ExpectedCommit=('b' * 40)} 'verified payload binding'
+Check-RunnerRejection 'minimal-timer-qualification' @{Mode='Qualification';SoakMinutes=3;DiagnosticTimerControl=$true} 'requires Diagnostic'
+Check-RunnerRejection 'minimal-timer-short-scans' @{Mode='Diagnostic';SoakMinutes=3;DiagnosticTimerControl=$true;DiagnosticScanCount=5} 'requires Diagnostic'
 $oldTrace = $env:WIN7POS_QA_PERF_TRACE
 try {
     $env:WIN7POS_QA_PERF_TRACE='1'

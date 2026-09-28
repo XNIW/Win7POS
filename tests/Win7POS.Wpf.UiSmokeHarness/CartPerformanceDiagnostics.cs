@@ -38,7 +38,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             AppDomain.MonitoringIsEnabled = true;
             var minutes = int.Parse(Environment.GetEnvironmentVariable("WIN7POS_QA_SOAK_MINUTES"), CultureInfo.InvariantCulture);
             if (minutes < 1 || minutes > 5) throw new ArgumentException("timer control duration");
-            var host = new Window { Width = 1024, Height = 768, Content = new TextBox { Text = "Synthetic timer control" }, ShowInTaskbar = false };
+            var input = new TextBox { Text = "Synthetic timer control" };
+            var host = new Window { Width = 1024, Height = 768, Content = input, ShowInTaskbar = false };
             using var trace = new OperationObserver(Dispatcher.CurrentDispatcher, "bounded", false, true);
             using var observation = new BoundedDispatcherObservation(Dispatcher.CurrentDispatcher);
             using var environment = new PerformanceEnvironment(directory);
@@ -50,7 +51,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var cycle = 0;
             try
             {
-                host.Show(); host.Activate(); timer.Start();
+                host.Show(); host.Activate(); input.Focus(); timer.Start();
                 var start = environment.AwakeSeconds;
                 do
                 {
@@ -339,7 +340,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal sealed class OperationObserver : IDisposable
         {
-            private sealed class Entry { public long Id; public long Posted, Eligible; public DispatcherPriority Priority; public WeakReference Operation; public long Started; public long Allocated; public double Cpu; public string Method; }
+            private sealed class Entry { public long Id; public long Posted, Eligible, PriorityChangedAt; public bool PriorityChangePending; public DispatcherPriority Priority; public WeakReference Operation; public long Started; public long Allocated; public double Cpu; public string Method; }
             private readonly Dispatcher _dispatcher;
             private readonly string _mode;
             private readonly bool _roots;
@@ -358,12 +359,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private StreamWriter _timeline;
             private int _timelineLines;
             private bool _disposed;
+            private bool _producerRecorded;
             public int Dropped { get; private set; }
             public void StartTimeline(string path)
             {
                 if (!_trace || _mode == "off") return;
                 _timeline = new StreamWriter(path);
-                _timeline.WriteLine("TIMELINE,version=2,clock=Stopwatch,cpu=AppDomain_including_workers,allocations=AppDomain,watchdog_ms=100,entry_capacity=16384,event_capacity=512,active_capacity=32,line_capacity=32768,native_due_precision_ms=15.625_plus_bracket,creation=first_observed_not_constructor");
+                _timeline.WriteLine("TIMELINE,version=3,clock=Stopwatch,cpu=AppDomain_including_workers,allocations=AppDomain,watchdog_ms=100,entry_capacity=16384,event_capacity=512,active_capacity=32,line_capacity=131072,native_due_precision_ms=15.625_plus_bracket,creation=first_observed_not_constructor,priority_hook=may_precede_property_publication");
                 _timeline.Flush();
                 // Thread-pool timer: it keeps recording when the UI dispatcher
                 // is occupied. Only scalar metadata crosses the thread boundary.
@@ -387,7 +389,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     lock (_writeSync)
                     {
                         if (_disposed) return;
-                        if (_timelineLines + batch.Length + 1 > 32768) { lock (_sync) Dropped += batch.Length + 1; return; }
+                        if (_timelineLines + batch.Length + 1 > 131072) { lock (_sync) Dropped += batch.Length + 1; return; }
                         foreach (var item in batch) { _timeline.WriteLine(item); _timelineLines++; }
                         _timeline.WriteLine("WATCHDOG," + Ms(Stopwatch.GetTimestamp() - _origin).ToString("F3", CultureInfo.InvariantCulture) +
                             ",cpu_ms=" + AppDomain.CurrentDomain.MonitoringTotalProcessorTime.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
@@ -420,18 +422,31 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private void TimerEvent(DispatcherOperation operation, Entry entry, string phase)
             {
                 if (!_trace) return;
+                ReconcilePriority(entry, operation.Priority);
                 var value = _timers.Capture(operation, phase, _origin, entry.Posted, entry.Eligible, entry.Started);
                 if (value == null) return;
                 if (_events.Count < 512) _events.Add(value); else Dropped++;
+            }
+            private static void ReconcilePriority(Entry entry, DispatcherPriority current)
+            {
+                if (!entry.PriorityChangePending || entry.Priority == current) return;
+                if (entry.Priority == DispatcherPriority.Inactive && current != DispatcherPriority.Inactive)
+                    entry.Eligible = entry.PriorityChangedAt;
+                entry.Priority = current;
+                entry.PriorityChangePending = false;
             }
             private void PriorityChanged(object sender, DispatcherHookEventArgs args)
             {
                 lock (_sync)
                     if (_index.TryGetValue(args.Operation, out var entry))
                     {
-                        if (entry.Priority == DispatcherPriority.Inactive && args.Operation.Priority != DispatcherPriority.Inactive)
-                            entry.Eligible = Stopwatch.GetTimestamp();
-                        entry.Priority = args.Operation.Priority;
+                        ReconcilePriority(entry, args.Operation.Priority);
+                        if (entry.Priority != args.Operation.Priority)
+                        {
+                            if (entry.Priority == DispatcherPriority.Inactive) entry.Eligible = Stopwatch.GetTimestamp();
+                            entry.Priority = args.Operation.Priority;
+                        }
+                        else { entry.PriorityChangedAt = Stopwatch.GetTimestamp(); entry.PriorityChangePending = true; }
                         TimerEvent(args.Operation, entry, "priority");
                     }
             }
@@ -468,8 +483,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Priority = args.Operation.Priority, Operation = new WeakReference(args.Operation) };
                     _index.Add(args.Operation, entry);
                     TimerEvent(args.Operation, entry, "posted");
-                    if (_trace && _events.Count < 3 && (MethodField?.GetValue(args.Operation) as Delegate)?.Method.Name == "InitTextStore")
+                    if (_trace && !_producerRecorded && _events.Count < 512 && (MethodField?.GetValue(args.Operation) as Delegate)?.Method.Name == "InitTextStore")
+                    {
+                        _producerRecorded = true;
                         _events.Add("PRODUCER," + new StackTrace(1, false));
+                    }
                     if (_mode == "legacy") _legacy.Add(entry); else _bounded.Add(entry.Id, entry);
                 }
             }
