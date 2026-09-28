@@ -18,6 +18,7 @@ using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Online;
+using Win7POS.Wpf.Products;
 using Win7POS.Wpf.Products.Images;
 
 namespace Win7POS.Wpf.UiSmokeHarness
@@ -244,6 +245,27 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                     Require(!progress.IsIndeterminate, "completed image indicator animates");
                 }
                 finally { imageHost.Close(); }
+                phase = "products loading indicator lifecycle";
+                var productsModel = new ProductsViewModel { IsBusy = true };
+                var productsView = new ProductsView { DataContext = productsModel };
+                var productsHost = new Window { Content = productsView, Width = 1024, Height = 768, Owner = host, ShowInTaskbar = false };
+                var productsProgress = (ProgressBar)productsView.FindName("ProductsLoadingProgress");
+                try
+                {
+                    productsHost.Show(); productsHost.UpdateLayout(); await DrainAsync();
+                    Require(productsProgress.IsVisible && productsProgress.IsIndeterminate, "visible catalog loading indicator stopped");
+                    productsModel.IsBusy = false; productsHost.UpdateLayout(); await DrainAsync();
+                    Require(!productsProgress.IsVisible && !productsProgress.IsIndeterminate, "completed catalog load keeps animating");
+                    productsModel.IsBusy = true; productsHost.UpdateLayout(); await DrainAsync();
+                    Require(productsProgress.IsIndeterminate, "catalog indicator did not restart");
+                    productsView.Visibility = Visibility.Collapsed; await DrainAsync();
+                    Require(!productsProgress.IsIndeterminate, "hidden catalog view keeps animating");
+                    productsView.Visibility = Visibility.Visible; productsHost.UpdateLayout(); await DrainAsync();
+                    Require(productsProgress.IsIndeterminate, "catalog indicator did not restart after ancestor visibility restored");
+                    productsHost.Close(); await DrainAsync();
+                    Require(!productsProgress.IsIndeterminate, "closed catalog window keeps animating");
+                }
+                finally { productsHost.Close(); }
                 host.Activate(); await DrainAsync();
                 phase = "bounded observer synchronous completion ordering";
                 var dispatcher = Dispatcher.CurrentDispatcher;

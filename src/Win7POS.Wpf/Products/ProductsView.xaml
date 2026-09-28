@@ -277,7 +277,7 @@
                         AutomationProperties.LiveSetting="Polite"
                         AutomationProperties.Name="{loc:Loc common.loading}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <ProgressBar IsIndeterminate="True" Width="220" Height="6" Margin="0,0,0,12"/>
+                        <ProgressBar x:Name="ProductsLoadingProgress" IsIndeterminate="{Binding IsVisible, RelativeSource={RelativeSource Self}}" Width="220" Height="6" Margin="0,0,0,12"/>
                         <TextBlock Text="{loc:Loc common.loading}"
                                    Style="{StaticResource PageTitleTextStyle}"
                                    FontSize="18"

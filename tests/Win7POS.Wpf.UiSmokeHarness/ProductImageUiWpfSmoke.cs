@@ -18,7 +18,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 {
     internal static class ProductImageUiWpfSmoke
     {
-        internal static async Task<string> RunAsync(string outputDirectory)
+        internal static async Task<string> RunAsync(string outputDirectory, CartPerformanceDiagnostics.OperationObserver trace = null, int cycle = 0)
         {
             Directory.CreateDirectory(outputDirectory);
             var product = new ProductDetailsRow
@@ -43,6 +43,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             ProductEditDialog editor = null;
             try
             {
+                // One-factor diagnostic reintroduction of the former product
+                // loading indicator; never changes an internal WPF callback.
+                if (Environment.GetEnvironmentVariable("WIN7POS_QA_LEGACY_PRODUCTS_PROGRESS") == "1")
+                    ((ProgressBar)((ProductsView)listWindow.Content).FindName("ProductsLoadingProgress")).IsIndeterminate = true;
                 listWindow.Show();
                 listWindow.UpdateLayout();
                 await Task.Delay(250).ConfigureAwait(true);
@@ -169,8 +173,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             finally
             {
+                if (trace != null)
+                {
+                    CartPerformanceDiagnostics.ObserveScene(listWindow, trace, cycle, "image_list_before_close");
+                    if (editor != null) CartPerformanceDiagnostics.ObserveScene(editor, trace, cycle, "image_editor_before_close");
+                }
                 try { editor?.Close(); } catch { }
                 try { listWindow.Close(); } catch { }
+                if (trace != null) CartPerformanceDiagnostics.ObserveScene(listWindow, trace, cycle, "image_list_after_close");
             }
         }
 

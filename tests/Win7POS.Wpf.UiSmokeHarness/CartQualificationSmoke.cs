@@ -192,7 +192,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                     var discount = new DiscountDialog(null, true, service, vm, 100, () => Task.FromResult(false)) { Owner = DialogOwnerHelper.GetSafeOwner() };
                     discount.Show(); discount.UpdateLayout(); discount.Close();
-                    var imageResult = await ProductImageUiWpfSmoke.RunAsync(Path.Combine(directory, "images"));
+                    var imageResult = await ProductImageUiWpfSmoke.RunAsync(Path.Combine(directory, "images"), traceEnabled ? trace : null, cycle);
                     if (!imageResult.StartsWith("PASS", StringComparison.Ordinal)) throw new InvalidOperationException(imageResult);
                     // Normal QA workflow returns from its auxiliary windows to
                     // its cart once. A lost foreground during idle is recorded,

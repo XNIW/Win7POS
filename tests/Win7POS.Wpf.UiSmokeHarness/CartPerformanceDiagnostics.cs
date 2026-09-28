@@ -104,7 +104,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
             object Field(object value, string name) => value?.GetType().GetField(name, flags)?.GetValue(value);
-            string Scalar(object value, string name) => Convert.ToString(Field(value, name), CultureInfo.InvariantCulture) ?? "unknown";
+            string Scalar(object value, string name) => Field(value, name) is object scalar ? Convert.ToString(scalar, CultureInfo.InvariantCulture) : "unknown";
             var prefix = "clock_scene;cycle=" + cycle + ";phase=" + phase;
             try
             {
@@ -117,7 +117,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var rendering = Field(media, "Rendering") as Delegate;
                 trace.Checkpoint(prefix + ";compatibility=available;render_rate=" + Scalar(media, "_animationRenderRate") +
                     ";display_rate=" + Scalar(media, "_displayRefreshRate") + ";interlock=" + Scalar(media, "_interlockState") +
-                    ";render_handlers=" + (rendering == null ? "none" : string.Join("|", rendering.GetInvocationList().Take(16).Select(handler => handler.Method.DeclaringType?.FullName + "." + handler.Method.Name))));
+                    ";render_handlers=" + (media.GetType().GetField("Rendering", flags) == null ? "unknown" : rendering == null ? "none" : string.Join("|", rendering.GetInvocationList().Take(16).Select(handler => handler.Method.DeclaringType?.FullName + "." + handler.Method.Name))));
                 var pending = new Queue<Clock>();
                 var weakRoots = roots.GetValue(root) as IEnumerable<WeakReference>;
                 if (weakRoots == null) { trace.Checkpoint(prefix + ";roots=unknown"); return; }
@@ -140,7 +140,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             ";type=" + timeline.GetType().FullName + ";state=" + clock.CurrentState +
                             ";duration=" + timeline.Duration + ";repeat=" + timeline.RepeatBehavior +
                             ";desired_fps=" + (Timeline.GetDesiredFrameRate(timeline)?.ToString(CultureInfo.InvariantCulture) ?? "default") +
-                            ";autoreverse=" + timeline.AutoReverse);
+                            ";autoreverse=" + timeline.AutoReverse + ";template_target=" + Storyboard.GetTargetName(timeline) +
+                            ";target_property=" + Storyboard.GetTargetProperty(timeline)?.Path);
                     }
                     if (clock is ClockGroup group)
                         foreach (Clock child in group.Children.Take(Math.Max(0, 1024 - count - pending.Count))) pending.Enqueue(child);
@@ -439,6 +440,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (!_trace || _mode == "off") return;
                 _timeline = new StreamWriter(path);
                 _timeline.WriteLine("TIMELINE,version=3,clock=Stopwatch,cpu=AppDomain_including_workers,allocations=AppDomain,watchdog_ms=100,entry_capacity=16384,event_capacity=512,active_capacity=32,data_line_capacity=131072,native_due=approximate_tickcount_resolution_not_measured,creation=first_observed_not_constructor,priority_hook=may_precede_property_publication");
+                _timeline.WriteLine("COMPATIBILITY," + DispatcherTimerTrace.Compatibility);
                 _timeline.Flush();
                 // Thread-pool timer: it keeps recording when the UI dispatcher
                 // is occupied. Only scalar metadata crosses the thread boundary.

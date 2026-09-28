@@ -94,6 +94,8 @@ Check-RunnerRejection 'integrated-sha-mismatch' @{Mode='Qualification';Stage='In
 Check-RunnerRejection 'minimal-timer-qualification' @{Mode='Qualification';SoakMinutes=3;DiagnosticTimerControl=$true} 'requires Diagnostic'
 Check-RunnerRejection 'minimal-timer-short-scans' @{Mode='Diagnostic';SoakMinutes=3;DiagnosticTimerControl=$true;DiagnosticScanCount=5} 'requires Diagnostic'
 Check-RunnerRejection 'timer-wakeup-without-control' @{Mode='Qualification';DiagnosticTimerWakeup=$true} 'requires the minimal control'
+Check-RunnerRejection 'legacy-progress-qualification' @{Mode='Qualification';SoakMinutes=3;DiagnosticLegacyProductsProgress=$true} 'requires full Diagnostic'
+Check-RunnerRejection 'legacy-progress-minimal' @{Mode='Diagnostic';SoakMinutes=3;DiagnosticLegacyProductsProgress=$true;DiagnosticTimerControl=$true} 'requires full Diagnostic'
 $oldTrace = $env:WIN7POS_QA_PERF_TRACE
 try {
     $env:WIN7POS_QA_PERF_TRACE='1'
