@@ -97,4 +97,37 @@ try {
     Check-RunnerRejection 'trace-qualification' @{Mode='Qualification'} 'diagnostic only'
 }
 finally { $env:WIN7POS_QA_PERF_TRACE=$oldTrace }
+# Execute the workflow's actual aggregation with synthetic receipts. A tolerated
+# measurement step failure must never become a successful qualification job.
+$workflow = Get-Content (Join-Path $PSScriptRoot '../.github/workflows/ci.yml') -Raw
+$aggregateMatch = [regex]::Match($workflow, '(?s)- name: Preserve qualification failures in the final job outcome.*?        run: \|\r?\n(?<body>.*?)(?=      - name:)')
+if (-not $aggregateMatch.Success -or $workflow -notmatch "steps\.integrated\.outcome == 'success' && inputs\.cart_qualification == 'integrated-12-and-soak-60'") { throw 'Hosted qualification failure gating missing.' }
+$aggregate = [scriptblock]::Create([regex]::Replace($aggregateMatch.Groups['body'].Value, '(?m)^          ', ''))
+$savedEnvironment = @{}
+foreach ($name in @('QA_ROOT','INTEGRATED_OUTCOME','SOAK_OUTCOME','SELECTION')) { $savedEnvironment[$name]=[Environment]::GetEnvironmentVariable($name) }
+try {
+    foreach ($case in @(
+        @{name='12 minutes only';selection='integrated-12';integrated='success';soak='skipped';receipt=$true;stable=$true;expected=$true},
+        @{name='12 plus 60 minutes';selection='integrated-12-and-soak-60';integrated='success';soak='success';receipt=$true;stable=$true;expected=$true},
+        @{name='failed integrated blocks soak';selection='integrated-12-and-soak-60';integrated='failure';soak='skipped';receipt=$true;stable=$false;expected=$false},
+        @{name='failed soak stays failed';selection='integrated-12-and-soak-60';integrated='success';soak='failure';receipt=$true;stable=$true;expected=$false},
+        @{name='requested soak cannot be skipped';selection='integrated-12-and-soak-60';integrated='success';soak='skipped';receipt=$true;stable=$true;expected=$false},
+        @{name='missing receipt stays failed';selection='integrated-12';integrated='success';soak='skipped';receipt=$false;stable=$true;expected=$false},
+        @{name='nonpositive validator stays failed';selection='integrated-12';integrated='success';soak='skipped';receipt=$true;stable=$false;expected=$false}
+    )) {
+        $env:QA_ROOT=Join-Path $directory ('hosted-' + [guid]::NewGuid().ToString('N'))
+        $null=New-Item -ItemType Directory -Path $env:QA_ROOT
+        $env:INTEGRATED_OUTCOME=$case.integrated; $env:SOAK_OUTCOME=$case.soak; $env:SELECTION=$case.selection
+        if ($case.receipt) {
+            foreach ($lane in @('integrated-12','premerge-soak-60')) {
+                $null=New-Item -ItemType Directory -Path (Join-Path $env:QA_ROOT $lane)
+                @{MEASUREMENT_COMPLETED=$true;ENVIRONMENT_VALID=$true;STABILITY_PASS=$case.stable} | ConvertTo-Json | Set-Content (Join-Path $env:QA_ROOT "$lane/performance-result.json")
+            }
+        }
+        $passed=$true
+        try { & $aggregate } catch { if ($_.Exception.Message -notlike 'Hosted qualification did not pass*') { throw }; $passed=$false }
+        if ($passed -ne $case.expected -or -not (Test-Path (Join-Path $env:QA_ROOT 'hosted-attestation.json'))) { throw "Hosted outcome regression: $($case.name)" }
+        Write-Output "PASS hosted aggregation $($case.name)"
+    }
+} finally { foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name,$savedEnvironment[$name]) } }
 # Preserve tiny vectors in OS temp for failure inspection.

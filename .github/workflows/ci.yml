@@ -19,9 +19,22 @@ on:
         required: false
         default: false
         type: boolean
+      cart_qualification:
+        description: Independent hosted Integrated qualification (never Asus or merge Final)
+        required: false
+        default: none
+        type: choice
+        options:
+          - none
+          - integrated-12
+          - integrated-12-and-soak-60
+      release_pack_run_id:
+        description: Successful canonical Release Pack run on this exact branch SHA (required for qualification)
+        required: false
+        type: string
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', github.run_id) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -29,8 +42,8 @@ permissions:
 
 jobs:
   build-and-check:
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true && 'canonical-not-requested' || 'build-and-check' }}
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.cart_diagnostic_only != true }}
+    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.cart_diagnostic_only == true || (inputs.cart_qualification != '' && inputs.cart_qualification != 'none')) && 'canonical-not-requested' || 'build-and-check' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -113,7 +126,7 @@ jobs:
         run: pwsh -NoProfile -File scripts/run-product-paging-dispatcher-smoke.ps1 -Configuration Release -Platform x86
 
   cart-diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none') }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -185,3 +198,114 @@ jobs:
         run: |
           Write-Output "Untraced=$env:UNTRACED_OUTCOME; Traced=$env:TRACED_OUTCOME; Input=$env:INPUT_OUTCOME; STABILITY_PASS=false (Diagnostic only; independent hosted machine)."
           if ($env:UNTRACED_OUTCOME -ne 'success' -or $env:TRACED_OUTCOME -ne 'success' -or $env:INPUT_OUTCOME -ne 'success') { throw 'A short diagnostic did not complete; inspect preserved evidence.' }
+
+  cart-qualification:
+    name: Hosted Integrated qualification (not canonical PR checks)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_qualification != '' && inputs.cart_qualification != 'none' }}
+    runs-on: windows-latest
+    timeout-minutes: 110
+    permissions:
+      contents: read
+      actions: read
+    env:
+      QA_HARNESS: ${{ github.workspace }}/tests/Win7POS.Wpf.UiSmokeHarness/bin/x86/Release/net48
+      QA_BUDGET: ${{ github.workspace }}/docs/reports/evidence/2026-09-26-post-pr111/preregistered-budget-v1.json
+    steps:
+      - name: Checkout exact hosted candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Record independent host and validate qualification selection
+        shell: pwsh
+        env:
+          SELECTION: ${{ inputs.cart_qualification }}
+          RELEASE_RUN: ${{ inputs.release_pack_run_id }}
+          DIAGNOSTIC: ${{ inputs.cart_diagnostic_only }}
+          LEASE_ONLY: ${{ inputs.authorization_lease_smoke_only }}
+        run: |
+          $env:QA_ROOT = "$env:RUNNER_TEMP/cart-qualification"
+          "QA_ROOT=$env:QA_ROOT" | Add-Content -LiteralPath $env:GITHUB_ENV
+          New-Item -ItemType Directory -Path $env:QA_ROOT | Out-Null
+          [ordered]@{ commit=$env:GITHUB_SHA; runId=$env:GITHUB_RUN_ID; selection=$env:SELECTION; releaseRunId=$env:RELEASE_RUN; image=$env:ImageOS; imageVersion=$env:ImageVersion; runner=$env:RUNNER_NAME; system=(Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,TotalPhysicalMemory,NumberOfLogicalProcessors); cpu=(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors); os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber); qualifiesAsus=$false; qualifiesMergeFinal=$false } | ConvertTo-Json -Depth 5 | Set-Content "$env:QA_ROOT/host-provenance.json"
+          if ($env:SELECTION -notin @('integrated-12','integrated-12-and-soak-60') -or $env:RELEASE_RUN -notmatch '^[0-9]+$' -or $env:DIAGNOSTIC -eq 'true' -or $env:LEASE_ONLY -eq 'true') { throw 'Select only hosted qualification and supply its exact-SHA Release Pack run ID.' }
+      - name: Resolve exact-SHA build version
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $env:GITHUB_SHA -Ref $env:GITHUB_REF -GitHubEnvironmentFile $env:GITHUB_ENV
+      - name: Setup locked .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Build harness and bind canonically verified Release Pack
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN: ${{ inputs.release_pack_run_id }}
+        run: |
+          dotnet --info | Set-Content "$env:QA_ROOT/sdk.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'SDK inventory failed.' }
+          dotnet restore Win7POS.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Hosted harness build failed.' }
+          & scripts/win7pos/windows/test-downloaded-release-pack.ps1 -RunId $env:RELEASE_RUN -ExpectedCommitSha $env:GITHUB_SHA -OutputDirectory "$env:RUNNER_TEMP/qualification-release-pack"
+          $receiptPath = "$env:RUNNER_TEMP/qualification-release-pack/download-verification.json"
+          $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'PASS' -or $receipt.commitSha -cne $env:GITHUB_SHA) { throw 'Canonical download verification failed.' }
+          Import-Module ./scripts/qa/Win7PosQaPayload.psm1 -Force
+          $payload = @(Copy-Win7PosQaPayload -VerifiedPayloadDirectory "$env:RUNNER_TEMP/qualification-release-pack/Win7POS-$($receipt.buildVersion)-ReleasePack-x86/Win7POS" -HarnessDirectory $env:QA_HARNESS)
+          $budgetHash = (Get-FileHash -LiteralPath $env:QA_BUDGET).Hash.ToLowerInvariant()
+          if ($budgetHash -cne '63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398') { throw 'Frozen budget changed.' }
+          [ordered]@{ clientCommit=$env:GITHUB_SHA; releaseRunId=$env:RELEASE_RUN; buildVersion=$receipt.buildVersion; verificationSha256=(Get-FileHash -LiteralPath $receiptPath).Hash.ToLowerInvariant(); harnessSha256=(Get-FileHash -LiteralPath "$env:QA_HARNESS/Win7POS.Wpf.UiSmokeHarness.exe").Hash.ToLowerInvariant(); budgetSha256=$budgetHash; payload=$payload } | ConvertTo-Json -Depth 5 | Set-Content "$env:QA_ROOT/payload-binding.json"
+          Copy-Item -LiteralPath $receiptPath -Destination "$env:QA_ROOT/download-verification.json"
+      - name: QUALIFICA_HOSTED - 12 useful minutes Integrated
+        id: integrated
+        continue-on-error: true
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Qualification -Stage Integrated -Products 100000 -SoakMinutes 12 -HarnessDirectory $env:QA_HARNESS -BudgetPath $env:QA_BUDGET -PayloadBindingPath "$env:QA_ROOT/payload-binding.json" -ExpectedCommit $env:GITHUB_SHA -OutputDirectory "$env:QA_ROOT/integrated-12"
+      # Same job/host/binaries/binding, no rebuild or competing workload between measurements.
+      - name: PREMERGE_HOSTED_SOAK - 60 useful minutes Integrated
+        id: soak
+        if: ${{ success() && steps.integrated.outcome == 'success' && inputs.cart_qualification == 'integrated-12-and-soak-60' }}
+        continue-on-error: true
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Qualification -Stage Integrated -Products 100000 -SoakMinutes 60 -HarnessDirectory $env:QA_HARNESS -BudgetPath $env:QA_BUDGET -PayloadBindingPath "$env:QA_ROOT/payload-binding.json" -ExpectedCommit $env:GITHUB_SHA -OutputDirectory "$env:QA_ROOT/premerge-soak-60"
+      - name: Preserve qualification failures in the final job outcome
+        if: always()
+        shell: pwsh
+        env:
+          INTEGRATED_OUTCOME: ${{ steps.integrated.outcome }}
+          SOAK_OUTCOME: ${{ steps.soak.outcome }}
+          SELECTION: ${{ inputs.cart_qualification }}
+        run: |
+          $lanes = @(foreach ($lane in @(@{label='QUALIFICA_HOSTED';directory='integrated-12';minutes=12;outcome=$env:INTEGRATED_OUTCOME},@{label='PREMERGE_HOSTED_SOAK';directory='premerge-soak-60';minutes=60;outcome=$env:SOAK_OUTCOME})) {
+            $resultPath = Join-Path $env:QA_ROOT "$($lane.directory)/performance-result.json"
+            $result = if (Test-Path -LiteralPath $resultPath) { Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json } else { $null }
+            $passed = $lane.outcome -eq 'success' -and $null -ne $result -and $result.MEASUREMENT_COMPLETED -eq $true -and $result.ENVIRONMENT_VALID -eq $true -and $result.STABILITY_PASS -eq $true
+            [ordered]@{label=$lane.label;requestedMinutes=$lane.minutes;outcome=$lane.outcome;passed=$passed;result=$result}
+          })
+          [ordered]@{commit=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;qualifiesAsus=$false;qualifiesMergeFinal=$false;lanes=$lanes} | ConvertTo-Json -Depth 12 | Set-Content "$env:QA_ROOT/hosted-attestation.json"
+          if (-not $lanes[0].passed -or ($env:SELECTION -eq 'integrated-12-and-soak-60' -and -not $lanes[1].passed)) { throw 'Hosted qualification did not pass; inspect preserved evidence. Asus and Final remain separate.' }
+      - name: Preserve synthetic qualification evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Win7POS-Cart-Qualification-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/cart-qualification/host-provenance.json
+            ${{ runner.temp }}/cart-qualification/sdk.txt
+            ${{ runner.temp }}/cart-qualification/payload-binding.json
+            ${{ runner.temp }}/cart-qualification/download-verification.json
+            ${{ runner.temp }}/cart-qualification/hosted-attestation.json
+            ${{ runner.temp }}/cart-qualification/*/protocol.json
+            ${{ runner.temp }}/cart-qualification/*/performance-result.json
+            ${{ runner.temp }}/cart-qualification/*/qualification-measurement.json
+            ${{ runner.temp }}/cart-qualification/*/preregistered-budget.json
+            ${{ runner.temp }}/cart-qualification/*/payload-binding.json
+            ${{ runner.temp }}/cart-qualification/*/*.csv
+            ${{ runner.temp }}/cart-qualification/*/qualification-operations.txt
+            ${{ runner.temp }}/cart-qualification/*/qualification-runtime.txt
+            ${{ runner.temp }}/cart-qualification/*/harness-error.txt
+            ${{ runner.temp }}/cart-qualification/*/functional-completion.txt
