@@ -15,6 +15,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Win7POS.Core.Models;
@@ -57,6 +58,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var start = environment.AwakeSeconds;
                 do
                 {
+                    ObserveScene(host, trace, cycle);
                     for (var second = 0; second < 20; second++)
                     {
                         trace.Checkpoint("idle_sample_begin;cycle=" + cycle + ";second=" + second);
@@ -70,6 +72,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     trace.Checkpoint("final_sample_end;cycle=" + cycle);
                     trace.SampleTimers("before_snapshot");
                     var state = observation.Snapshot();
+                    ObserveScene(host, trace, cycle, "after_idle");
                     idle.WriteLine(string.Join(",", cycle++, (environment.AwakeSeconds - start).ToString("F3", CultureInfo.InvariantCulture), state.Pending,
                         state.OldestMs.ToString("F3", CultureInfo.InvariantCulture), state.Inactive, observation.Dropped, trace.Dropped));
                     idle.Flush(); environment.Flush();
@@ -91,6 +94,62 @@ namespace Win7POS.Wpf.UiSmokeHarness
             foreach (var element in nodes.OfType<UIElement>().Where(element => element.HasAnimatedProperties).Take(32))
                 trace.Checkpoint("animated_visual;cycle=" + cycle + ";phase=" + phase + ";type=" + element.GetType().FullName + ";visible=" + element.IsVisible +
                     ";opacity_animation=" + DependencyPropertyHelper.GetValueSource(element, UIElement.OpacityProperty).IsAnimated);
+            ObserveAnimationClocks(host.Dispatcher, trace, cycle, phase);
+        }
+
+        // Read existing runtime state only: do not call MediaContext.From, which
+        // can create a context. No clock, timeline, resource or delegate survives
+        // this UI-thread snapshot; all output is bounded type/state metadata.
+        private static void ObserveAnimationClocks(Dispatcher dispatcher, OperationObserver trace, int cycle, string phase)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+            object Field(object value, string name) => value?.GetType().GetField(name, flags)?.GetValue(value);
+            string Scalar(object value, string name) => Convert.ToString(Field(value, name), CultureInfo.InvariantCulture) ?? "unknown";
+            var prefix = "clock_scene;cycle=" + cycle + ";phase=" + phase;
+            try
+            {
+                var media = typeof(Dispatcher).GetProperty("Reserved0", flags)?.GetValue(dispatcher);
+                var manager = Field(media, "_timeManager");
+                var root = Field(manager, "_timeManagerClock") as ClockGroup;
+                var roots = typeof(ClockGroup).GetField("_rootChildren", flags);
+                if (media?.GetType().FullName != "System.Windows.Media.MediaContext" || root == null || roots == null)
+                { trace.Checkpoint(prefix + ";compatibility=unknown"); return; }
+                var rendering = Field(media, "Rendering") as Delegate;
+                trace.Checkpoint(prefix + ";compatibility=available;render_rate=" + Scalar(media, "_animationRenderRate") +
+                    ";display_rate=" + Scalar(media, "_displayRefreshRate") + ";interlock=" + Scalar(media, "_interlockState") +
+                    ";render_handlers=" + (rendering == null ? "none" : string.Join("|", rendering.GetInvocationList().Take(16).Select(handler => handler.Method.DeclaringType?.FullName + "." + handler.Method.Name))));
+                var pending = new Queue<Clock>();
+                var weakRoots = roots.GetValue(root) as IEnumerable<WeakReference>;
+                if (weakRoots == null) { trace.Checkpoint(prefix + ";roots=unknown"); return; }
+                var rootCount = 0;
+                foreach (var weak in weakRoots.Take(1025))
+                {
+                    rootCount++;
+                    if (weak.Target is Clock clock) pending.Enqueue(clock);
+                }
+                var count = 0; var active = 0; var filling = 0; var emitted = 0;
+                while (pending.Count > 0 && count < 1024)
+                {
+                    var clock = pending.Dequeue(); count++;
+                    if (clock.CurrentState == ClockState.Active) active++;
+                    if (clock.CurrentState == ClockState.Filling) filling++;
+                    if (clock.CurrentState != ClockState.Stopped && emitted++ < 128)
+                    {
+                        var timeline = clock.Timeline;
+                        trace.Checkpoint("animation_clock;cycle=" + cycle + ";phase=" + phase + ";ordinal=" + count +
+                            ";type=" + timeline.GetType().FullName + ";state=" + clock.CurrentState +
+                            ";duration=" + timeline.Duration + ";repeat=" + timeline.RepeatBehavior +
+                            ";desired_fps=" + (Timeline.GetDesiredFrameRate(timeline)?.ToString(CultureInfo.InvariantCulture) ?? "default") +
+                            ";autoreverse=" + timeline.AutoReverse);
+                    }
+                    if (clock is ClockGroup group)
+                        foreach (Clock child in group.Children.Take(Math.Max(0, 1024 - count - pending.Count))) pending.Enqueue(child);
+                }
+                trace.Checkpoint(prefix + ";roots=" + rootCount + ";clocks=" + count + ";active=" + active + ";filling=" + filling +
+                    ";truncated=" + (rootCount > 1024 || pending.Count > 0 || count >= 1024 || emitted > 128));
+            }
+            catch (Exception error) when (error is MemberAccessException || error is TargetInvocationException || error is System.Security.SecurityException || error is NotSupportedException)
+            { trace.Checkpoint(prefix + ";compatibility=unknown;error=" + error.GetType().Name); }
         }
 
         internal static async Task<string> RunAsync(string directory, int products, string specification)

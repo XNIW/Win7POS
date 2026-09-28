@@ -20,7 +20,7 @@ on:
         default: false
         type: boolean
       cart_diagnostic_idle:
-        description: Three-minute full-cycle untraced/traced and minimal WPF timer controls in the diagnostic job
+        description: Three-minute traced POS and minimal WPF active-clock comparison
         required: false
         default: false
         type: boolean
@@ -156,7 +156,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Hosted harness build failed.' }
           New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/cart-diagnostic" | Out-Null
           [ordered]@{ commit=$env:GITHUB_SHA; source='Independent GitHub-hosted Windows QA build; no Asus binaries transferred'; image=$env:ImageOS; imageVersion=$env:ImageVersion; system=(Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,TotalPhysicalMemory,NumberOfLogicalProcessors); cpu=(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors); qualifiesAsus=$false } | ConvertTo-Json -Depth 5 | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/host-provenance.json"
-      - name: Public scans without trace (full idle when requested)
+      - name: Public scans without trace (short diagnostic)
+        if: ${{ inputs.cart_diagnostic_idle != true }}
         id: untraced
         continue-on-error: true
         shell: pwsh
@@ -174,7 +175,7 @@ jobs:
           WIN7POS_QA_PERF_TRACE: '1'
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
-          'B3: Fixed 3 minutes. Actual InputManager timer still waits >250ms after corrected promotion accounting; minimal C2 did not. Inventory visible/hidden indeterminate indicators and animated visual types once per cycle to identify the POS render producer. No UI values/text collected. No app patch until a producer is demonstrated.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-B.txt"
+          'B4: Fixed 3 minutes, traced POS. B3 found only visible caret animation and no indeterminate progress. Hypothesis: another active animation clock on a brush/resource or stale lifecycle drives the continuous Render timer. Read existing MediaContext and active clock type/state/duration/frame-rate metadata before and after each idle. No internal state changes. Compare C4 on this VM. Prior A/B controls are preserved; no repeated untraced arm for this read-only attribution.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-B.txt"
           $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
       - name: Minimal WPF idle control or short Input comparison
@@ -185,19 +186,9 @@ jobs:
           WIN7POS_QA_PERF_TRACE: '1'
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
-          'C3: Fixed 3 minutes, focused plain TextBox with the actual InputManager timer. Remove ONLY our extra 125ms no-op wakeup timer from C2: it may perturb dispatch progress and mask the delay. Leave every WPF callback, caret, input and protection intact. If C3 reproduces while D3 does not, the added QA timer was an invalid control aid; neither control qualifies the POS.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-C.txt"
+          'C4: Fixed 3 minutes, focused plain TextBox with the actual InputManager timer and no added wakeup timer. Same active-clock and MediaContext snapshot as B4. Compare active timeline types and desired frame rate to isolate why minimal WPF did not reproduce. No internal callbacks, protections, caret or input changed. Diagnostic only.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-C.txt"
           $control = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3;DiagnosticTimerControl=$true} } else { @{DiagnosticScanCount=5;DiagnosticInputDispatch=$true} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @control -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/input-dispatch"
-      - name: Reintroduce only the additional QA wakeup timer in minimal control
-        if: ${{ inputs.cart_diagnostic_idle == true }}
-        id: timer_wakeup
-        continue-on-error: true
-        shell: pwsh
-        env:
-          WIN7POS_QA_PERF_TRACE: '1'
-        run: |
-          'D3: Same focused minimal WPF window, duration and sampler as C3; reintroduce only the extra 125ms QA Background no-op timer from C2. This tests whether the control itself helped queue progress. No internal WPF callback removed, no product qualification or production timer change.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-D.txt"
-          & ./scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticTimerControl -DiagnosticTimerWakeup -SoakMinutes 3 -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/timer-wakeup"
       - name: Preserve synthetic diagnostic evidence even on failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -225,12 +216,10 @@ jobs:
           UNTRACED_OUTCOME: ${{ steps.untraced.outcome }}
           TRACED_OUTCOME: ${{ steps.traced.outcome }}
           INPUT_OUTCOME: ${{ steps.input_dispatch.outcome }}
-          WAKEUP_OUTCOME: ${{ steps.timer_wakeup.outcome }}
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
         run: |
           Write-Output "Untraced=$env:UNTRACED_OUTCOME; Traced=$env:TRACED_OUTCOME; Input=$env:INPUT_OUTCOME; STABILITY_PASS=false (Diagnostic only; independent hosted machine)."
-          if ($env:UNTRACED_OUTCOME -ne 'success' -or $env:TRACED_OUTCOME -ne 'success' -or $env:INPUT_OUTCOME -ne 'success') { throw 'A short diagnostic did not complete; inspect preserved evidence.' }
-          if ($env:IDLE_CONTROL -eq 'true' -and $env:WAKEUP_OUTCOME -ne 'success') { throw 'Minimal wakeup control incomplete.' }
+          if ($env:TRACED_OUTCOME -ne 'success' -or $env:INPUT_OUTCOME -ne 'success' -or ($env:IDLE_CONTROL -ne 'true' -and $env:UNTRACED_OUTCOME -ne 'success')) { throw 'A diagnostic did not complete; inspect preserved evidence.' }
 
   cart-qualification:
     name: Hosted Integrated qualification (not canonical PR checks)
