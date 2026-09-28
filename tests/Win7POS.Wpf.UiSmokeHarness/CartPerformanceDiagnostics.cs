@@ -31,6 +31,53 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static readonly FieldInfo MethodField = typeof(DispatcherOperation).GetField("_method", BindingFlags.Instance | BindingFlags.NonPublic);
         private static double Ms(long ticks) => ticks * 1000d / Stopwatch.Frequency;
 
+        // Controlled equivalent: same 20-second idle sampling, foreground WPF
+        // window and 125ms Background timer, no POS view, cart, service or fixture.
+        internal static async Task<string> RunTimerControlAsync(string directory)
+        {
+            AppDomain.MonitoringIsEnabled = true;
+            var minutes = int.Parse(Environment.GetEnvironmentVariable("WIN7POS_QA_SOAK_MINUTES"), CultureInfo.InvariantCulture);
+            if (minutes < 1 || minutes > 5) throw new ArgumentException("timer control duration");
+            var host = new Window { Width = 1024, Height = 768, Content = new TextBox { Text = "Synthetic timer control" }, ShowInTaskbar = false };
+            using var trace = new OperationObserver(Dispatcher.CurrentDispatcher, "bounded", false, true);
+            using var observation = new BoundedDispatcherObservation(Dispatcher.CurrentDispatcher);
+            using var environment = new PerformanceEnvironment(directory);
+            using var idle = new StreamWriter(Path.Combine(directory, "diagnostic-idle.csv"));
+            idle.WriteLine("cycle,elapsed_s,pending,oldest_ms,inactive,observer_dropped,trace_dropped");
+            var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(125) };
+            timer.Tick += ControlledTick;
+            trace.StartTimeline(Path.Combine(directory, "diagnostic-timeline.txt"));
+            var cycle = 0;
+            try
+            {
+                host.Show(); host.Activate(); timer.Start();
+                var start = environment.AwakeSeconds;
+                do
+                {
+                    for (var second = 0; second < 20; second++)
+                    {
+                        trace.Checkpoint("idle_sample_begin;cycle=" + cycle + ";second=" + second);
+                        environment.Sample(host);
+                        trace.Checkpoint("idle_sample_end;cycle=" + cycle + ";second=" + second);
+                        trace.SampleTimers("idle");
+                        await Task.Delay(1000);
+                    }
+                    trace.Checkpoint("final_sample_begin;cycle=" + cycle);
+                    environment.Sample(host);
+                    trace.Checkpoint("final_sample_end;cycle=" + cycle);
+                    trace.SampleTimers("before_snapshot");
+                    var state = observation.Snapshot();
+                    idle.WriteLine(string.Join(",", cycle++, (environment.AwakeSeconds - start).ToString("F3", CultureInfo.InvariantCulture), state.Pending,
+                        state.OldestMs.ToString("F3", CultureInfo.InvariantCulture), state.Inactive, observation.Dropped, trace.Dropped));
+                    idle.Flush(); environment.Flush();
+                } while (environment.AwakeSeconds - start < minutes * 60);
+                File.WriteAllText(Path.Combine(directory, "diagnostic-scans.json"), "{\"control\":\"minimal-wpf-timer\",\"measurementCompleted\":true,\"environmentValid\":" + (environment.Valid ? "true" : "false") + ",\"cycles\":" + cycle + ",\"qualifiesApplication\":false}");
+                return "PASS DIAGNOSTIC_COMPLETED minimal WPF control; no application qualification";
+            }
+            finally { timer.Stop(); timer.Tick -= ControlledTick; host.Close(); }
+        }
+        private static void ControlledTick(object sender, EventArgs args) { }
+
         internal static async Task<string> RunAsync(string directory, int products, string specification)
         {
             var options = specification.Split(';').Select(value => value.Split('='))
@@ -292,12 +339,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal sealed class OperationObserver : IDisposable
         {
-            private sealed class Entry { public long Id; public long Posted; public WeakReference Operation; public long Started; public long Allocated; public double Cpu; public string Method; }
+            private sealed class Entry { public long Id; public long Posted, Eligible; public DispatcherPriority Priority; public WeakReference Operation; public long Started; public long Allocated; public double Cpu; public string Method; }
             private readonly Dispatcher _dispatcher;
             private readonly string _mode;
             private readonly bool _roots;
             private readonly bool _trace;
-            private readonly List<string> _events = new List<string>();
+            private readonly List<object> _events = new List<object>();
+            private readonly DispatcherTimerTrace _timers = new DispatcherTimerTrace();
+            private readonly object _writeSync = new object();
             private readonly object _sync = new object();
             private readonly List<Entry> _legacy = new List<Entry>();
             private readonly Dictionary<long, Entry> _bounded = new Dictionary<long, Entry>();
@@ -314,23 +363,37 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 if (!_trace || _mode == "off") return;
                 _timeline = new StreamWriter(path);
-                _timeline.WriteLine("TIMELINE,clock=Stopwatch,cpu=AppDomain_including_workers,allocations=AppDomain,watchdog_ms=100,entry_capacity=16384,event_capacity=512,active_capacity=32,line_capacity=8192");
+                _timeline.WriteLine("TIMELINE,version=2,clock=Stopwatch,cpu=AppDomain_including_workers,allocations=AppDomain,watchdog_ms=100,entry_capacity=16384,event_capacity=512,active_capacity=32,line_capacity=32768,native_due_precision_ms=15.625_plus_bracket,creation=first_observed_not_constructor");
                 _timeline.Flush();
                 // Thread-pool timer: it keeps recording when the UI dispatcher
                 // is occupied. Only scalar metadata crosses the thread boundary.
                 _watchdog = new Timer(_ =>
                 {
+                    object[] batch;
+                    string activeMethod;
+                    long activeStarted;
+                    var waiting = Stopwatch.GetTimestamp();
                     lock (_sync)
                     {
                         if (_disposed) return;
-                        if (_timelineLines >= 8192) { Dropped++; return; }
-                        foreach (var item in _events) { _timeline.WriteLine(item); _timelineLines++; }
+                        batch = _events.ToArray();
                         _events.Clear();
                         var active = _running.Values.OrderBy(item => item.Started).LastOrDefault();
+                        activeMethod = active?.Method;
+                        activeStarted = active?.Started ?? 0;
+                    }
+                    var acquired = Stopwatch.GetTimestamp();
+                    // Never hold the UI-observer lock across formatting or file I/O.
+                    lock (_writeSync)
+                    {
+                        if (_disposed) return;
+                        if (_timelineLines + batch.Length + 1 > 32768) { lock (_sync) Dropped += batch.Length + 1; return; }
+                        foreach (var item in batch) { _timeline.WriteLine(item); _timelineLines++; }
                         _timeline.WriteLine("WATCHDOG," + Ms(Stopwatch.GetTimestamp() - _origin).ToString("F3", CultureInfo.InvariantCulture) +
                             ",cpu_ms=" + AppDomain.CurrentDomain.MonitoringTotalProcessorTime.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
-                            ",allocated=" + AppDomain.CurrentDomain.MonitoringTotalAllocatedMemorySize + ",active=" + active?.Method +
-                            ",active_ms=" + (active == null ? 0 : Ms(Stopwatch.GetTimestamp() - active.Started)).ToString("F3", CultureInfo.InvariantCulture));
+                            ",allocated=" + AppDomain.CurrentDomain.MonitoringTotalAllocatedMemorySize + ",active=" + activeMethod +
+                            ",active_ms=" + (activeStarted == 0 ? 0 : Ms(Stopwatch.GetTimestamp() - activeStarted)).ToString("F3", CultureInfo.InvariantCulture) +
+                            ",observer_lock_ms=" + Ms(acquired - waiting).ToString("F3", CultureInfo.InvariantCulture));
                         _timelineLines++; _timeline.Flush();
                     }
                 }, null, 100, 100);
@@ -350,8 +413,34 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (mode == "off") return;
                 dispatcher.Hooks.OperationPosted += Posted;
                 if (trace) dispatcher.Hooks.OperationStarted += Started;
+                if (trace) dispatcher.Hooks.OperationPriorityChanged += PriorityChanged;
                 dispatcher.Hooks.OperationCompleted += Finished;
                 dispatcher.Hooks.OperationAborted += Finished;
+            }
+            private void TimerEvent(DispatcherOperation operation, Entry entry, string phase)
+            {
+                if (!_trace) return;
+                var value = _timers.Capture(operation, phase, _origin, entry.Posted, entry.Eligible, entry.Started);
+                if (value == null) return;
+                if (_events.Count < 512) _events.Add(value); else Dropped++;
+            }
+            private void PriorityChanged(object sender, DispatcherHookEventArgs args)
+            {
+                lock (_sync)
+                    if (_index.TryGetValue(args.Operation, out var entry))
+                    {
+                        if (entry.Priority == DispatcherPriority.Inactive && args.Operation.Priority != DispatcherPriority.Inactive)
+                            entry.Eligible = Stopwatch.GetTimestamp();
+                        entry.Priority = args.Operation.Priority;
+                        TimerEvent(args.Operation, entry, "priority");
+                    }
+            }
+            internal void SampleTimers(string phase)
+            {
+                if (!_trace) return;
+                lock (_sync)
+                    foreach (var entry in _bounded.Values)
+                        if (entry.Operation.Target is DispatcherOperation operation) TimerEvent(operation, entry, phase);
             }
             private void Started(object sender, DispatcherHookEventArgs args)
             {
@@ -359,6 +448,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (_index.TryGetValue(args.Operation, out var entry))
                     {
                         entry.Started = Stopwatch.GetTimestamp();
+                        TimerEvent(args.Operation, entry, "start");
                         entry.Allocated = AppDomain.CurrentDomain.MonitoringTotalAllocatedMemorySize;
                         entry.Cpu = AppDomain.CurrentDomain.MonitoringTotalProcessorTime.TotalMilliseconds;
                         var method = (MethodField?.GetValue(args.Operation) as Delegate)?.Method;
@@ -373,8 +463,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (args.Operation.Status == DispatcherOperationStatus.Completed || args.Operation.Status == DispatcherOperationStatus.Aborted) return;
                     if (_mode == "bounded" && _bounded.Count >= 16384) { Dropped++; return; }
                     if (_index.TryGetValue(args.Operation, out _)) return;
-                    var entry = new Entry { Id = ++_next, Posted = Stopwatch.GetTimestamp(), Operation = new WeakReference(args.Operation) };
+                    var now = Stopwatch.GetTimestamp();
+                    var entry = new Entry { Id = ++_next, Posted = now, Eligible = args.Operation.Priority == DispatcherPriority.Inactive ? 0 : now,
+                        Priority = args.Operation.Priority, Operation = new WeakReference(args.Operation) };
                     _index.Add(args.Operation, entry);
+                    TimerEvent(args.Operation, entry, "posted");
                     if (_trace && _events.Count < 3 && (MethodField?.GetValue(args.Operation) as Delegate)?.Method.Name == "InitTextStore")
                         _events.Add("PRODUCER," + new StackTrace(1, false));
                     if (_mode == "legacy") _legacy.Add(entry); else _bounded.Add(entry.Id, entry);
@@ -384,6 +477,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 lock (_sync)
                 {
+                    if (_index.TryGetValue(args.Operation, out var timerEntry)) TimerEvent(args.Operation, timerEntry, "end");
                     if (_trace && _events.Count >= 512) Dropped++;
                     if (_trace && _index.TryGetValue(args.Operation, out var timed) && timed.Started != 0 && Ms(Stopwatch.GetTimestamp() - timed.Started) >= 10 && _events.Count < 512)
                         _events.Add(string.Format(CultureInfo.InvariantCulture, "OP_TRACE,{0:F3},{1:F3},{2},{3},{4},start_ms={5:F3},end_ms={6:F3}", Ms(Stopwatch.GetTimestamp() - timed.Started),
@@ -400,7 +494,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (_mode == "off") return Tuple.Create(-1, -1d);
                 lock (_sync)
                 {
-                    foreach (var value in _events) text.AppendLine(value);
+                    foreach (var value in _events) text.AppendLine(value.ToString());
                     _events.Clear();
                     var entries = (_mode == "legacy" ? _legacy.ToArray() : _bounded.Values.ToArray());
                     var pending = new List<Tuple<DispatcherOperation, Entry>>();
@@ -446,6 +540,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 lock (_sync)
                 {
                     _disposed = true;
+                }
+                lock (_writeSync)
+                {
                     if (_timeline != null)
                     {
                         foreach (var value in _events) _timeline.WriteLine(value);
@@ -455,6 +552,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 _dispatcher.Hooks.OperationPosted -= Posted;
                 _dispatcher.Hooks.OperationStarted -= Started;
+                _dispatcher.Hooks.OperationPriorityChanged -= PriorityChanged;
                 _dispatcher.Hooks.OperationCompleted -= Finished;
                 _dispatcher.Hooks.OperationAborted -= Finished;
             }

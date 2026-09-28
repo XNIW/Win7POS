@@ -23,6 +23,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
     {
         internal static async Task<string> RunAsync(string dataDir, int count)
         {
+            if (Environment.GetEnvironmentVariable("WIN7POS_QA_CART_DIAGNOSTIC") == "timer-control")
+                return await CartPerformanceDiagnostics.RunTimerControlAsync(dataDir);
             DbInitializer.EnsureCreated(PosDbOptions.Default());
             var factory = new SqliteConnectionFactory(PosDbOptions.Default());
             using (var conn = factory.Open())

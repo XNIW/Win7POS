@@ -19,6 +19,11 @@ on:
         required: false
         default: false
         type: boolean
+      cart_diagnostic_idle:
+        description: Three-minute full-cycle untraced/traced and minimal WPF timer controls in the diagnostic job
+        required: false
+        default: false
+        type: boolean
       cart_qualification:
         description: Independent hosted Integrated qualification (never Asus or merge Final)
         required: false
@@ -128,7 +133,7 @@ jobs:
   cart-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none') }}
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout independent QA source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -151,25 +156,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Hosted harness build failed.' }
           New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/cart-diagnostic" | Out-Null
           [ordered]@{ commit=$env:GITHUB_SHA; source='Independent GitHub-hosted Windows QA build; no Asus binaries transferred'; image=$env:ImageOS; imageVersion=$env:ImageVersion; system=(Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,TotalPhysicalMemory,NumberOfLogicalProcessors); cpu=(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors); qualifiesAsus=$false } | ConvertTo-Json -Depth 5 | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/host-provenance.json"
-      - name: First five public scans without trace
+      - name: Public scans without trace (full idle when requested)
         id: untraced
         continue-on-error: true
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/untraced"
-      - name: First five public scans with bounded timeline
+        env:
+          IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
+        run: |
+          'A: Original protocol, trace off. Fixed 3-minute coverage with complete cycles and 20-second idle. Reproduce >250ms ready age; no rerun-until-green. No patch implied by this arm.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-A.txt"
+          $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
+          & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/untraced"
+      - name: Same public protocol with bounded timeline
         id: traced
         continue-on-error: true
         shell: pwsh
         env:
           WIN7POS_QA_PERF_TRACE: '1'
-        run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
-      - name: Compare public command dispatch at Input with bounded timeline
+          IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
+        run: |
+          'B: Same duration/protocol as A. Identify actual timer target/args, Tick handler, promotion/start/end and executing callback during ready delay. If only B stalls inspect trace overhead; if QA sampling occupies the interval patch only that demonstrated producer.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-B.txt"
+          $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
+          & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
+      - name: Minimal WPF idle control or short Input comparison
         id: input_dispatch
         continue-on-error: true
         shell: pwsh
         env:
           WIN7POS_QA_PERF_TRACE: '1'
-        run: pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -DiagnosticInputDispatch -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/input-dispatch"
+          IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
+        run: |
+          'C: Fixed 3 minutes, same window size/foreground, environment sampler and 20-second idle blocks. Plain TextBox plus controlled 125ms Background timer; no POS view/cart/service. Identical delay without POS separates QA/runtime from app; handler equivalence must be checked against B before claiming cause. Synthetic control never qualifies app.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-C.txt"
+          $control = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3;DiagnosticTimerControl=$true} } else { @{DiagnosticScanCount=5;DiagnosticInputDispatch=$true} }
+          & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @control -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/input-dispatch"
       - name: Preserve synthetic diagnostic evidence even on failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -179,6 +197,7 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/cart-diagnostic/host-provenance.json
+            ${{ runner.temp }}/cart-diagnostic/hypothesis-*.txt
             ${{ runner.temp }}/cart-diagnostic/*/protocol.json
             ${{ runner.temp }}/cart-diagnostic/*/performance-result.json
             ${{ runner.temp }}/cart-diagnostic/*/*.csv
@@ -186,6 +205,7 @@ jobs:
             ${{ runner.temp }}/cart-diagnostic/*/qualification-runtime.txt
             ${{ runner.temp }}/cart-diagnostic/*/diagnostic-timeline.txt
             ${{ runner.temp }}/cart-diagnostic/*/diagnostic-scans.json
+            ${{ runner.temp }}/cart-diagnostic/*/qualification-measurement.json
             ${{ runner.temp }}/cart-diagnostic/*/harness-error.txt
             ${{ runner.temp }}/cart-diagnostic/*/functional-completion.txt
       - name: Report diagnostic completion without certifying stability

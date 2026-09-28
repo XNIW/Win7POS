@@ -196,11 +196,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     host.Activate();
                     for (var second = 0; second < 20; second++)
                     {
+                        if (traceEnabled) trace.Checkpoint("idle_sample_begin;cycle=" + cycle + ";second=" + second);
                         environment.Sample(host);
+                        if (traceEnabled) trace.Checkpoint("idle_sample_end;cycle=" + cycle + ";second=" + second);
+                        trace.SampleTimers("idle");
                         await Task.Delay(1000);
                     }
+                    if (traceEnabled) trace.Checkpoint("final_sample_begin;cycle=" + cycle);
                     environment.Sample(host);
+                    if (traceEnabled) trace.Checkpoint("final_sample_end;cycle=" + cycle);
+                    trace.SampleTimers("before_snapshot");
                     var state = observer.Snapshot(); // Before probes can help work progress.
+                    if (traceEnabled) trace.Checkpoint("snapshot_end;cycle=" + cycle + ";oldest_ms=" + state.OldestMs.ToString("F3", Invariant));
                     var input = await ProbeAsync(DispatcherPriority.Input);
                     var render = await ProbeAsync(DispatcherPriority.Render);
                     var binding = await ProbeAsync(DispatcherPriority.DataBind);
