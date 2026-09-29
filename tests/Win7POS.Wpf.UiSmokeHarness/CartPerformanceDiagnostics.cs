@@ -93,7 +93,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 ";hidden_indeterminate=" + bars.Count(bar => !bar.IsVisible && bar.IsIndeterminate) + ";focus=" + Keyboard.FocusedElement?.GetType().FullName);
             foreach (var element in nodes.OfType<UIElement>().Where(element => element.HasAnimatedProperties).Take(32))
                 trace.Checkpoint("animated_visual;cycle=" + cycle + ";phase=" + phase + ";type=" + element.GetType().FullName + ";visible=" + element.IsVisible +
-                    ";opacity_animation=" + DependencyPropertyHelper.GetValueSource(element, UIElement.OpacityProperty).IsAnimated);
+                    ";opacity_animation=" + DependencyPropertyHelper.GetValueSource(element, UIElement.OpacityProperty).IsAnimated +
+                    ";origin_animation=" + DependencyPropertyHelper.GetValueSource(element, UIElement.RenderTransformOriginProperty).IsAnimated +
+                    ";template_owner=" + (element as FrameworkElement)?.TemplatedParent?.GetType().FullName +
+                    ";template_owner_name=" + ((element as FrameworkElement)?.TemplatedParent as FrameworkElement)?.Name);
             ObserveAnimationClocks(host.Dispatcher, trace, cycle, phase);
         }
 

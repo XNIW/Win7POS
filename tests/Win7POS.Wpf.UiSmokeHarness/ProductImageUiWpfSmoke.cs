@@ -43,10 +43,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
             ProductEditDialog editor = null;
             try
             {
-                // One-factor diagnostic reintroduction of the former product
-                // loading indicator; never changes an internal WPF callback.
-                if (Environment.GetEnvironmentVariable("WIN7POS_QA_LEGACY_PRODUCTS_PROGRESS") == "1")
-                    ((ProgressBar)((ProductsView)listWindow.Content).FindName("ProductsLoadingProgress")).IsIndeterminate = true;
                 listWindow.Show();
                 listWindow.UpdateLayout();
                 await Task.Delay(250).ConfigureAwait(true);
@@ -102,6 +98,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     Owner = listWindow
                 };
+                // Reintroduce only the former image-upload indicator for the
+                // full diagnostic control; no internal WPF callback is changed.
+                if (Environment.GetEnvironmentVariable("WIN7POS_QA_LEGACY_IMAGE_PROGRESS") == "1")
+                    ((ProgressBar)editor.FindName("ImageUploadProgress")).IsIndeterminate = true;
                 editor.Show();
                 editor.UpdateLayout();
                 await Task.Delay(250).ConfigureAwait(true);

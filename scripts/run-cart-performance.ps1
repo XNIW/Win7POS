@@ -14,10 +14,10 @@ param(
     [switch]$DiagnosticInputDispatch,
     [switch]$DiagnosticTimerControl,
     [switch]$DiagnosticTimerWakeup,
-    [switch]$DiagnosticLegacyProductsProgress
+    [switch]$DiagnosticLegacyImageProgress
 )
 $ErrorActionPreference = 'Stop'
-if ($DiagnosticLegacyProductsProgress -and ($Mode -ne 'Diagnostic' -or $DiagnosticTimerControl -or $SoakMinutes -lt 1 -or $SoakMinutes -gt 5)) { throw 'Legacy products progress requires full Diagnostic and 1..5 minutes.' }
+if ($DiagnosticLegacyImageProgress -and ($Mode -ne 'Diagnostic' -or $DiagnosticTimerControl -or $SoakMinutes -lt 1 -or $SoakMinutes -gt 5)) { throw 'Legacy image progress requires full Diagnostic and 1..5 minutes.' }
 if ($DiagnosticTimerWakeup -and -not $DiagnosticTimerControl) { throw 'Diagnostic timer wakeup requires the minimal control.' }
 if ($DiagnosticTimerControl -and ($Mode -ne 'Diagnostic' -or $SoakMinutes -lt 1 -or $SoakMinutes -gt 5 -or $DiagnosticScanCount -or $DiagnosticInputDispatch)) { throw 'Minimal timer control requires Diagnostic and 1..5 minutes.' }
 if ($DiagnosticScanCount -and $SoakMinutes) { throw 'Short scan reproduction and soak duration are mutually exclusive.' }
@@ -60,7 +60,7 @@ $hostOperatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAc
 [ordered]@{ products=$Products; soakMinutes=$SoakMinutes; mode=$Mode; stage=$Stage; startedUtc=[DateTimeOffset]::UtcNow.ToString('O');
     protocol=$(if ($DiagnosticTimerControl) { "minimal-wpf-timer-v2: focused TextBox, actual InputManager timer, no POS view/cart/service; extra 125ms QA wakeup timer=$DiagnosticTimerWakeup; 20-second idle blocks; diagnostic only" } else { 'win7pos-public-scan-v3: persistent 500 line identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement' });
     benchmarkProtocol='31 service samples per size: first call 0, warm 1..30; rendered-view bitmap is not monitor latency';
-    budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; diagnosticInputDispatch=[bool]$DiagnosticInputDispatch; diagnosticLegacyProductsProgress=[bool]$DiagnosticLegacyProductsProgress; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
+    budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; diagnosticInputDispatch=[bool]$DiagnosticInputDispatch; diagnosticLegacyImageProgress=[bool]$DiagnosticLegacyImageProgress; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
 if ($BudgetPath) { Copy-Item -LiteralPath $BudgetPath -Destination (Join-Path $OutputDirectory 'preregistered-budget.json') }
 if ($PayloadBindingPath) { Copy-Item -LiteralPath $PayloadBindingPath -Destination (Join-Path $OutputDirectory 'payload-binding.json') }
 $previousSoak = $env:WIN7POS_QA_SOAK_MINUTES
@@ -69,7 +69,7 @@ $previousObserver = $env:WIN7POS_QA_PERF_OBSERVER_OFF
 $previousScanLimit = $env:WIN7POS_QA_PERF_SCAN_LIMIT
 $previousInputDispatch = $env:WIN7POS_QA_PERF_INPUT_DISPATCH
 $previousTimerWakeup = $env:WIN7POS_QA_TIMER_WAKEUP
-$previousLegacyProgress = $env:WIN7POS_QA_LEGACY_PRODUCTS_PROGRESS
+$previousLegacyProgress = $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS
 $status = $null
 try {
     $env:WIN7POS_QA_SOAK_MINUTES = if ($DiagnosticScanCount) { '1' } elseif ($SoakMinutes) { [string]$SoakMinutes } else { $null }
@@ -77,7 +77,7 @@ try {
     $env:WIN7POS_QA_PERF_INPUT_DISPATCH = if ($DiagnosticInputDispatch) { '1' } else { $null }
     $env:WIN7POS_QA_CART_DIAGNOSTIC = if ($DiagnosticTimerControl) { 'timer-control' } else { $null }
     $env:WIN7POS_QA_TIMER_WAKEUP = if ($DiagnosticTimerWakeup) { '1' } else { $null }
-    $env:WIN7POS_QA_LEGACY_PRODUCTS_PROGRESS = if ($DiagnosticLegacyProductsProgress) { '1' } else { $null }
+    $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS = if ($DiagnosticLegacyImageProgress) { '1' } else { $null }
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = if ($DisableObserver) { '1' } else { $null }
     $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"'+$OutputDirectory+'"'), '--cart-performance', '--products', $Products) -WindowStyle Hidden -PassThru
     $deadline = [Diagnostics.Stopwatch]::StartNew()
@@ -146,5 +146,5 @@ finally {
     $env:WIN7POS_QA_PERF_SCAN_LIMIT = $previousScanLimit
     $env:WIN7POS_QA_PERF_INPUT_DISPATCH = $previousInputDispatch
     $env:WIN7POS_QA_TIMER_WAKEUP = $previousTimerWakeup
-    $env:WIN7POS_QA_LEGACY_PRODUCTS_PROGRESS = $previousLegacyProgress
+    $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS = $previousLegacyProgress
 }
