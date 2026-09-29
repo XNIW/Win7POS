@@ -4,6 +4,8 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
+using System.IO;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Media;
@@ -18,7 +20,32 @@ namespace Win7POS.Wpf.UiSmokeHarness
         // not a performance acceptance budget; exceeding it invalidates data.
         private const int Capacity = 16384;
         private sealed class Entry
-        { public long Id, Posted, Eligible, PriorityChangedAt; public DispatcherPriority Priority; public WeakReference Operation; public byte VisualCategory; public bool Started, VisualReleased, Inconsistent, PriorityChangePending; }
+        { public long Id, Posted, Eligible, PriorityChangedAt, ExecutionStarted; public DispatcherPriority Priority; public WeakReference Operation; public byte VisualCategory; public bool Started, VisualReleased, Inconsistent, PriorityChangePending; }
+        private struct Execution
+        { internal long Id, Posted, Start, End; internal DispatcherPriority Priority; internal MethodInfo Method; }
+        private Execution[] _executions;
+        private int _executionCount;
+        internal void EnableExecutionCapture() { lock (_sync) _executions = new Execution[256]; }
+        internal void WriteExecutions(TextWriter writer)
+        {
+            Execution[] records; int total;
+            lock (_sync)
+            {
+                if (_executions == null) return;
+                total = _executionCount;
+                records = Enumerable.Range(Math.Max(0, total - _executions.Length), Math.Min(total, _executions.Length))
+                    .Select(index => _executions[index % _executions.Length]).ToArray();
+            }
+            // A diagnostic window of completed callbacks >=2ms, not a complete
+            // event trace. No timer reflection, stack capture, watchdog or I/O in
+            // the measured callback; never retain an operation or delegate target.
+            writer.WriteLine("EXECUTION_WINDOW,clock=Stopwatch_absolute_ticks,minimum_ms=2,capacity=256,frequency=" + Stopwatch.Frequency + ",total=" + total + ",overwritten=" + Math.Max(0, total - records.Length));
+            foreach (var record in records)
+                writer.WriteLine(string.Format(CultureInfo.InvariantCulture,
+                    "EXECUTION,{0},posted_tick={1},start_tick={2},end_tick={3},duration_ms={4:F3},priority={5},method={6}.{7}",
+                    record.Id, record.Posted, record.Start, record.End, (record.End - record.Start) * 1000d / Stopwatch.Frequency,
+                    record.Priority, record.Method?.DeclaringType?.FullName, record.Method?.Name));
+        }
         internal sealed class State
         {
             public int Pending, Inactive, FocusPending, ScrollPending, ClosedRootedWindows;
@@ -150,6 +177,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             lock (_sync)
                 if (_index.TryGetValue(operation, out var entry))
                 {
+                    if (_executions != null && entry.ExecutionStarted != 0)
+                    {
+                        var end = _clock();
+                        if ((end - entry.ExecutionStarted) * 1000d / Stopwatch.Frequency >= 2)
+                            _executions[_executionCount++ % _executions.Length] = new Execution { Id = entry.Id, Posted = entry.Posted,
+                                Start = entry.ExecutionStarted, End = end, Priority = operation.Priority, Method = (Method.GetValue(operation) as Delegate)?.Method };
+                    }
                     if (!entry.Started) RemoveVisualPending(entry);
                     _entries.Remove(entry.Id); _index.Remove(operation);
                 }
@@ -171,6 +205,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (entry.Started) return;
                     ReconcilePriority(entry, operation.Priority);
                     entry.Started = true;
+                    if (_executions != null) entry.ExecutionStarted = _clock();
                     RemoveVisualPending(entry);
                     if (entry.VisualCategory == 1) _focusMaximumWait = Math.Max(_focusMaximumWait, Age(entry.Eligible));
                     if (entry.VisualCategory == 2) _scrollMaximumWait = Math.Max(_scrollMaximumWait, Age(entry.Eligible));

@@ -40,6 +40,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using var process = Process.GetCurrentProcess();
             using var observer = new BoundedDispatcherObservation(Dispatcher.CurrentDispatcher,
                 Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_OBSERVER_OFF") != "1");
+            var captureExecutions = Environment.GetEnvironmentVariable("WIN7POS_QA_EXECUTION_CAPTURE") == "1";
+            if (captureExecutions) observer.EnableExecutionCapture();
             var traceEnabled = Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_TRACE") == "1";
             if (traceEnabled) AppDomain.MonitoringIsEnabled = true;
             using var trace = new CartPerformanceDiagnostics.OperationObserver(Dispatcher.CurrentDispatcher,
@@ -80,6 +82,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 foreach (var row in vm.CartItems) row.PropertyChanged += (_, __) => notifications++;
                 var rows = (ListBox)view.FindName("CartListBox");
                 var grid = (ListBox)view.FindName("CartGridListBox");
+                var fixtureTick = captureExecutions ? Stopwatch.GetTimestamp() : 0;
+                var fixtureMeasureValid = captureExecutions && view.IsMeasureValid;
+                var fixtureArrangeValid = captureExecutions && view.IsArrangeValid;
+                var fixtureRows = captureExecutions ? Containers(rows) : 0;
+                long firstScanTick = 0;
+                void WriteExecutionWindow()
+                {
+                    if (!captureExecutions) return;
+                    operations.WriteLine("FIXTURE_STATE,applied_tick=" + fixtureTick + ",measure_valid=" + fixtureMeasureValid +
+                        ",arrange_valid=" + fixtureArrangeValid + ",realized_rows=" + fixtureRows + ",first_scan_tick=" + firstScanTick);
+                    observer.WriteExecutions(operations);
+                }
                 var cycle = 0;
                 var usefulStart = environment.AwakeSeconds;
                 if (traceEnabled) trace.Checkpoint("fixture_ready;cart=" + vm.CartItems.Count + ";uia_listening=" + UiaClientsAreListening() +
@@ -108,6 +122,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             using var sql = SqliteWorkMetrics.Begin();
                             using var detail = PosScanMeasurement.Begin();
                             var start = Stopwatch.GetTimestamp();
+                            if (captureExecutions && firstScanTick == 0) firstScanTick = start;
                             DispatcherOperation commandDispatch = null;
                             try
                             {
@@ -153,6 +168,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                     cycle, mode, ordinal, expectedQuantity, vm.CartItems[0].Quantity, vm.IsBusy, detail.ServiceMilliseconds,
                                     detail["apply_snapshot"], Milliseconds(Stopwatch.GetTimestamp() - start), start, detail.ServiceCompletedTimestamp, Stopwatch.GetTimestamp()));
                                 operations.WriteLine("VISUAL_SCAN_TIMEOUT," + cycle + "," + mode + "," + ordinal + "," + failure.Detail);
+                                WriteExecutionWindow();
                                 var native = new StringBuilder();
                                 trace.Snapshot(cycle, native);
                                 if (traceEnabled) native.AppendLine("TRACE_DROPPED," + trace.Dropped);
@@ -182,6 +198,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             completedScans++;
                             if (scanLimit > 0 && completedScans == scanLimit)
                             {
+                                WriteExecutionWindow();
                                 scans.Flush(); operations.Flush(); environment.Flush();
                                 File.WriteAllText(Path.Combine(directory, "diagnostic-scans.json"),
                                     "{\"schemaVersion\":\"win7pos-short-public-scan-v1\",\"completedScans\":" + completedScans +

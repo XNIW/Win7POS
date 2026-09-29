@@ -24,6 +24,11 @@ on:
         required: false
         default: false
         type: boolean
+      cart_diagnostic_cold:
+        description: Three fixed fresh-process five-scan trials with a lightweight executed-callback window
+        required: false
+        default: false
+        type: boolean
       cart_qualification:
         description: Independent hosted Integrated qualification (never Asus or merge Final)
         required: false
@@ -162,35 +167,50 @@ jobs:
         shell: pwsh
         env:
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
+          COLD_CONTROL: ${{ inputs.cart_diagnostic_cold }}
         run: |
+          if ($env:COLD_CONTROL -eq 'true') {
+            if ($env:IDLE_CONTROL -eq 'true') { throw 'Select one diagnostic hypothesis.' }
+            'H7: Exactly three fresh-process five-scan trials, original setup and command policy, regardless of outcomes. Hypothesis: the first scan races pending initial layout from seeding 500 lines. Capture completed callbacks >=2ms in a bounded 256-record value-only window; no timer reflection, watchdog, CPU accounting or full timeline. Record fixture layout validity/container count and monotonic first-scan timestamp. Preserve all success/failure windows. No setup barrier, priority, warmup, timeout or product change in this experiment.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-cold.txt"
+            $failures = 0
+            foreach ($trial in 1..3) {
+              try { & ./scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -DiagnosticExecutionCapture -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/cold-$trial" }
+              catch { $failures++; Write-Output ("Trial $trial retained: " + $_.Exception.Message) }
+            }
+            if ($failures) { throw "$failures cold trials did not complete; all attempts retained." }
+            return
+          }
           'A6: Fixed 3 minutes, full unchanged public workload without trace. B5 disproved ProductsView loading progress as the cause; that candidate change is reverted. The observed hidden animated Rectangle belongs to ProductEditDialog. Bind only ImageUploadProgress to effective visibility; keep the catalog view unchanged. Predict removal of the remaining infinite storyboard and timer delays. Preserve every outcome.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-A.txt"
           $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/untraced"
       - name: Same public protocol with bounded timeline
+        if: ${{ inputs.cart_diagnostic_cold != true }}
         id: traced
         continue-on-error: true
         shell: pwsh
         env:
           WIN7POS_QA_PERF_TRACE: '1'
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
+          COLD_CONTROL: ${{ inputs.cart_diagnostic_cold }}
         run: |
           'B6: Same fixed 3-minute protocol with bounded trace. B5 located a hidden animated Rectangle in ProductEditDialog while ProductsView had no indeterminate indicators; the infinite storyboard survived closure. Inspect the actual template-owner type/name and clock targets. Predict no extra default-rate storyboard and no repeated long InputManager ready waits. Compare D6 on this same VM.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-B.txt"
           $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
       - name: Short Input comparison
-        if: ${{ inputs.cart_diagnostic_idle != true }}
+        if: ${{ inputs.cart_diagnostic_idle != true && inputs.cart_diagnostic_cold != true }}
         id: input_dispatch
         continue-on-error: true
         shell: pwsh
         env:
           WIN7POS_QA_PERF_TRACE: '1'
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
+          COLD_CONTROL: ${{ inputs.cart_diagnostic_cold }}
         run: |
           'C: Five public scans using Input dispatch, compared with the untraced/traced short Send controls. Timing remains end-to-end; Diagnostic only.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-C.txt"
           $control = @{DiagnosticScanCount=5;DiagnosticInputDispatch=$true}
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @control -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/input-dispatch"
       - name: Reintroduce only the former image editor indicator
-        if: ${{ inputs.cart_diagnostic_idle == true }}
+        if: ${{ inputs.cart_diagnostic_idle == true && inputs.cart_diagnostic_cold != true }}
         id: legacy_progress
         continue-on-error: true
         shell: pwsh
@@ -228,8 +248,13 @@ jobs:
           INPUT_OUTCOME: ${{ steps.input_dispatch.outcome }}
           LEGACY_OUTCOME: ${{ steps.legacy_progress.outcome }}
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
+          COLD_CONTROL: ${{ inputs.cart_diagnostic_cold }}
         run: |
           Write-Output "Untraced=$env:UNTRACED_OUTCOME; Traced=$env:TRACED_OUTCOME; Input=$env:INPUT_OUTCOME; STABILITY_PASS=false (Diagnostic only; independent hosted machine)."
+          if ($env:COLD_CONTROL -eq 'true') {
+            if ($env:UNTRACED_OUTCOME -ne 'success') { throw 'At least one fixed cold trial failed; inspect retained windows.' }
+            return
+          }
           if ($env:UNTRACED_OUTCOME -ne 'success' -or $env:TRACED_OUTCOME -ne 'success' -or ($env:IDLE_CONTROL -eq 'true' -and $env:LEGACY_OUTCOME -ne 'success') -or ($env:IDLE_CONTROL -ne 'true' -and $env:INPUT_OUTCOME -ne 'success')) { throw 'A diagnostic did not complete; inspect preserved evidence.' }
 
   cart-qualification:

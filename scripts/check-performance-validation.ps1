@@ -96,6 +96,8 @@ Check-RunnerRejection 'minimal-timer-short-scans' @{Mode='Diagnostic';SoakMinute
 Check-RunnerRejection 'timer-wakeup-without-control' @{Mode='Qualification';DiagnosticTimerWakeup=$true} 'requires the minimal control'
 Check-RunnerRejection 'legacy-progress-qualification' @{Mode='Qualification';SoakMinutes=3;DiagnosticLegacyImageProgress=$true} 'requires full Diagnostic'
 Check-RunnerRejection 'legacy-progress-minimal' @{Mode='Diagnostic';SoakMinutes=3;DiagnosticLegacyImageProgress=$true;DiagnosticTimerControl=$true} 'requires full Diagnostic'
+Check-RunnerRejection 'execution-capture-qualification' @{Mode='Qualification';DiagnosticScanCount=5;DiagnosticExecutionCapture=$true} 'requires short Diagnostic'
+Check-RunnerRejection 'execution-capture-observer-off' @{Mode='Diagnostic';DiagnosticScanCount=5;DiagnosticExecutionCapture=$true;DisableObserver=$true} 'requires short Diagnostic'
 $oldTrace = $env:WIN7POS_QA_PERF_TRACE
 try {
     $env:WIN7POS_QA_PERF_TRACE='1'
