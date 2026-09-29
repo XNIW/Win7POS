@@ -15,9 +15,11 @@ param(
     [switch]$DiagnosticTimerControl,
     [switch]$DiagnosticTimerWakeup,
     [switch]$DiagnosticLegacyImageProgress,
-    [switch]$DiagnosticExecutionCapture
+    [switch]$DiagnosticExecutionCapture,
+    [switch]$DiagnosticLegacyFixtureSetup
 )
 $ErrorActionPreference = 'Stop'
+if ($DiagnosticLegacyFixtureSetup -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount -or $DiagnosticTimerControl)) { throw 'Legacy fixture setup requires short Diagnostic scans.' }
 if ($DiagnosticExecutionCapture -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount -or $DisableObserver -or $DiagnosticTimerControl)) { throw 'Execution capture requires short Diagnostic scans with the observer enabled.' }
 if ($DiagnosticLegacyImageProgress -and ($Mode -ne 'Diagnostic' -or $DiagnosticTimerControl -or $SoakMinutes -lt 1 -or $SoakMinutes -gt 5)) { throw 'Legacy image progress requires full Diagnostic and 1..5 minutes.' }
 if ($DiagnosticTimerWakeup -and -not $DiagnosticTimerControl) { throw 'Diagnostic timer wakeup requires the minimal control.' }
@@ -60,7 +62,7 @@ $budgetHash = if ($BudgetPath) { (Get-FileHash -LiteralPath $BudgetPath).Hash.To
 $hostOperatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop |
     Select-Object Caption,Version,BuildNumber,OSArchitecture
 [ordered]@{ products=$Products; soakMinutes=$SoakMinutes; mode=$Mode; stage=$Stage; startedUtc=[DateTimeOffset]::UtcNow.ToString('O');
-    protocol=$(if ($DiagnosticTimerControl) { "minimal-wpf-timer-v2: focused TextBox, actual InputManager timer, no POS view/cart/service; extra 125ms QA wakeup timer=$DiagnosticTimerWakeup; 20-second idle blocks; diagnostic only" } else { 'win7pos-public-scan-v3: persistent 500 line identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement' });
+    protocol=$(if ($DiagnosticTimerControl) { "minimal-wpf-timer-v2: focused TextBox, actual InputManager timer, no POS view/cart/service; extra 125ms QA wakeup timer=$DiagnosticTimerWakeup; 20-second idle blocks; diagnostic only" } elseif ($DiagnosticLegacyFixtureSetup) { 'win7pos-public-scan-v3: legacy fixture setup Diagnostic comparison only' } else { 'win7pos-public-scan-v4: verify rendered 500-line fixture before useful clock; persistent identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement' });
     benchmarkProtocol='31 service samples per size: first call 0, warm 1..30; rendered-view bitmap is not monitor latency';
     budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; diagnosticInputDispatch=[bool]$DiagnosticInputDispatch; diagnosticLegacyImageProgress=[bool]$DiagnosticLegacyImageProgress; diagnosticExecutionCapture=[bool]$DiagnosticExecutionCapture; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
 if ($BudgetPath) { Copy-Item -LiteralPath $BudgetPath -Destination (Join-Path $OutputDirectory 'preregistered-budget.json') }
@@ -73,6 +75,7 @@ $previousInputDispatch = $env:WIN7POS_QA_PERF_INPUT_DISPATCH
 $previousTimerWakeup = $env:WIN7POS_QA_TIMER_WAKEUP
 $previousLegacyProgress = $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS
 $previousExecutionCapture = $env:WIN7POS_QA_EXECUTION_CAPTURE
+$previousLegacySetup = $env:WIN7POS_QA_LEGACY_FIXTURE_SETUP
 $status = $null
 try {
     $env:WIN7POS_QA_SOAK_MINUTES = if ($DiagnosticScanCount) { '1' } elseif ($SoakMinutes) { [string]$SoakMinutes } else { $null }
@@ -82,6 +85,7 @@ try {
     $env:WIN7POS_QA_TIMER_WAKEUP = if ($DiagnosticTimerWakeup) { '1' } else { $null }
     $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS = if ($DiagnosticLegacyImageProgress) { '1' } else { $null }
     $env:WIN7POS_QA_EXECUTION_CAPTURE = if ($DiagnosticExecutionCapture) { '1' } else { $null }
+    $env:WIN7POS_QA_LEGACY_FIXTURE_SETUP = if ($DiagnosticLegacyFixtureSetup) { '1' } else { $null }
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = if ($DisableObserver) { '1' } else { $null }
     $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"'+$OutputDirectory+'"'), '--cart-performance', '--products', $Products) -WindowStyle Hidden -PassThru
     $deadline = [Diagnostics.Stopwatch]::StartNew()
@@ -152,4 +156,5 @@ finally {
     $env:WIN7POS_QA_TIMER_WAKEUP = $previousTimerWakeup
     $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS = $previousLegacyProgress
     $env:WIN7POS_QA_EXECUTION_CAPTURE = $previousExecutionCapture
+    $env:WIN7POS_QA_LEGACY_FIXTURE_SETUP = $previousLegacySetup
 }

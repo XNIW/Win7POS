@@ -86,6 +86,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var fixtureMeasureValid = captureExecutions && view.IsMeasureValid;
                 var fixtureArrangeValid = captureExecutions && view.IsArrangeValid;
                 var fixtureRows = captureExecutions ? Containers(rows) : 0;
+                var legacySetup = Environment.GetEnvironmentVariable("WIN7POS_QA_LEGACY_FIXTURE_SETUP") == "1";
+                if (legacySetup && scanLimit == 0) throw new ArgumentException("legacy_fixture_setup_requires_short_diagnostic");
+                var setupMilliseconds = legacySetup ? 0 : await PrepareFixtureAsync(view, vm, rows);
+                // Setup is recorded separately, before the useful workload clock.
+                // No scan, callback or sample is discarded to establish readiness.
+                File.WriteAllText(Path.Combine(directory, "fixture-setup.json"), string.Format(Invariant,
+                    "{{\"schemaVersion\":\"win7pos-fixture-setup-v1\",\"completed\":{0},\"elapsedMs\":{1:F3},\"cartSize\":{2},\"realizedRows\":{3},\"legacyDiagnostic\":{4}}}",
+                    legacySetup ? "false" : "true", setupMilliseconds, vm.CartItems.Count, Containers(rows), legacySetup ? "true" : "false"));
                 long firstScanTick = 0;
                 void WriteExecutionWindow()
                 {
@@ -249,9 +257,33 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     cycle++;
                 } while (environment.AwakeSeconds - usefulStart < minutes * 60);
                 File.WriteAllText(Path.Combine(directory, "qualification-measurement.json"), "{\"schemaVersion\":\"win7pos-performance-measurement-v1\",\"measurementCompleted\":true,\"environmentValid\":" +
-                    (environment.Valid ? "true" : "false") + ",\"products\":" + products + ",\"cartSize\":" + vm.CartItems.Count + ",\"protocolVersion\":3,\"observerVersion\":2,\"cycles\":" + cycle + ",\"stabilityEvaluatedByHarness\":false}");
+                    (environment.Valid ? "true" : "false") + ",\"products\":" + products + ",\"cartSize\":" + vm.CartItems.Count + ",\"protocolVersion\":4,\"observerVersion\":2,\"cycles\":" + cycle + ",\"stabilityEvaluatedByHarness\":false}");
             }
             finally { host.Close(); vm.Dispose(); Application.Current.MainWindow = null; OperatorSessionHolder.Current = previousOperator; }
+        }
+
+        internal static async Task<double> PrepareFixtureAsync(PosView view, PosViewModel vm, ListBox rows)
+        {
+            var watch = Stopwatch.StartNew();
+            await vm.SetCartViewModeAsync(CartViewMode.Rows);
+            while (watch.ElapsedMilliseconds < 10000)
+            {
+                // Observe after queued binding, layout, input and viewport work.
+                // The priority belongs only to this setup check, never to scans.
+                var operation = view.Dispatcher.InvokeAsync(() =>
+                    !vm.IsBusy && vm.CartItems.Count == 500 && rows.Items.Count == 500 && rows.IsVisible &&
+                    view.IsMeasureValid && view.IsArrangeValid && rows.IsMeasureValid && rows.IsArrangeValid &&
+                    rows.ActualHeight > 0 && Containers(rows) > 0, DispatcherPriority.ContextIdle);
+                await Task.WhenAny(operation.Task, Task.Delay(Math.Max(1, 10000 - (int)watch.ElapsedMilliseconds)));
+                if (operation.Status != DispatcherOperationStatus.Completed)
+                {
+                    operation.Abort(); // Only our unstarted setup check.
+                    break;
+                }
+                if (await operation.Task && watch.ElapsedMilliseconds < 10000) return watch.Elapsed.TotalMilliseconds;
+                await Task.Delay(1);
+            }
+            throw new TimeoutException("qualification_fixture_not_ready");
         }
 
         private static void ExecutePublicScan(PosViewModel vm, CartPerformanceDiagnostics.OperationObserver trace)

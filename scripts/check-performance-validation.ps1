@@ -17,8 +17,8 @@ function Fixture {
         [pscustomobject]@{cycle=$cycle;mode=$mode;ordinal=$ordinal;service_ms=8;ui_return_ms=3;apply_ms=2;layout_ms=8;bitmap_ms=20;command_overhead_ms=1;realized_grid=12;product_commands=2;commands_on_dispatcher=0;collection_changes=0;focus_scroll_wait_ms=1}
     } } })
 }
-function Check([string]$Name, [bool]$Expected, [bool]$Completed=$true, [string]$Reason='', [int]$ReceiptProducts=100000, [int]$ReceiptCart=500, [switch]$DuplicateIsolated, [double]$Seconds=400) {
-    @{schemaVersion='win7pos-performance-measurement-v1';measurementCompleted=$true;environmentValid=$true;products=$ReceiptProducts;cartSize=$ReceiptCart;protocolVersion=3;cycles=$idle.Count} |
+function Check([string]$Name, [bool]$Expected, [bool]$Completed=$true, [string]$Reason='', [int]$ReceiptProducts=100000, [int]$ReceiptCart=500, [switch]$DuplicateIsolated, [double]$Seconds=400, [int]$ProtocolVersion=3) {
+    @{schemaVersion='win7pos-performance-measurement-v1';measurementCompleted=$true;environmentValid=$true;products=$ReceiptProducts;cartSize=$ReceiptCart;protocolVersion=$ProtocolVersion;cycles=$idle.Count} |
         ConvertTo-Json | Set-Content (Join-Path $directory 'qualification-measurement.json')
     $isolated = @(foreach($size in @(1,10,50,100,500)) { foreach($sample in 0..30) {
         [pscustomobject]@{products=100000;cart=$size;sample=$sample;ms=8;dispatcher_probe_ms=$script:sendLatency;product_commands=2;commands_on_dispatcher=0}
@@ -35,6 +35,18 @@ function Check([string]$Name, [bool]$Expected, [bool]$Completed=$true, [string]$
 }
 $script:sendLatency=.2
 Fixture; Check 'stable' $true
+Fixture; Check 'v4 missing fixture receipt' $false -ProtocolVersion 4 -Reason 'fixture-setup.json'
+$setup = @{schemaVersion='win7pos-fixture-setup-v1';completed=$true;elapsedMs=250;cartSize=500;realizedRows=14;legacyDiagnostic=$false}
+$setupPath = Join-Path $directory 'fixture-setup.json'
+$setup | ConvertTo-Json | Set-Content $setupPath
+Fixture; Check 'v4 rendered fixture' $true -ProtocolVersion 4
+$setup.realizedRows=0; $setup | ConvertTo-Json | Set-Content $setupPath
+Fixture; Check 'v4 empty visual fixture' $false -ProtocolVersion 4 -Reason 'invalid_fixture_setup'
+$setup.realizedRows=14; $setup.legacyDiagnostic=$true; $setup | ConvertTo-Json | Set-Content $setupPath
+Fixture; Check 'v4 diagnostic setup rejected' $false -ProtocolVersion 4 -Reason 'invalid_fixture_setup'
+$setup.legacyDiagnostic=$false; $setup.elapsedMs=10000; $setup | ConvertTo-Json | Set-Content $setupPath
+Fixture; Check 'v4 setup timeout rejected' $false -ProtocolVersion 4 -Reason 'invalid_fixture_setup'
+Fixture; Check 'v3 history unchanged by separate setup receipt' $true
 Fixture; Check 'wrong product fixture' $false -Reason 'invalid_measurement_receipt' -ReceiptProducts 20000
 Fixture; Check 'wrong cart fixture' $false -Reason 'invalid_measurement_receipt' -ReceiptCart 50
 Fixture; Check 'equivalent isolated sample identities' $false -Reason 'invalid_isolated_service_sample_identity' -DuplicateIsolated
@@ -98,6 +110,8 @@ Check-RunnerRejection 'legacy-progress-qualification' @{Mode='Qualification';Soa
 Check-RunnerRejection 'legacy-progress-minimal' @{Mode='Diagnostic';SoakMinutes=3;DiagnosticLegacyImageProgress=$true;DiagnosticTimerControl=$true} 'requires full Diagnostic'
 Check-RunnerRejection 'execution-capture-qualification' @{Mode='Qualification';DiagnosticScanCount=5;DiagnosticExecutionCapture=$true} 'requires short Diagnostic'
 Check-RunnerRejection 'execution-capture-observer-off' @{Mode='Diagnostic';DiagnosticScanCount=5;DiagnosticExecutionCapture=$true;DisableObserver=$true} 'requires short Diagnostic'
+Check-RunnerRejection 'legacy-setup-qualification' @{Mode='Qualification';DiagnosticScanCount=5;DiagnosticLegacyFixtureSetup=$true} 'requires short Diagnostic'
+Check-RunnerRejection 'legacy-setup-without-short' @{Mode='Diagnostic';DiagnosticLegacyFixtureSetup=$true} 'requires short Diagnostic'
 $oldTrace = $env:WIN7POS_QA_PERF_TRACE
 try {
     $env:WIN7POS_QA_PERF_TRACE='1'

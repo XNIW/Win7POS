@@ -122,6 +122,10 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                 session.ReplaceWithLines(Enumerable.Range(1, 500).Select(index => new RestoredLine
                 { Barcode = "PERF" + index.ToString("D4"), Name = index % 3 == 0 ? "短" : "中文 café wrapped product " + index, UnitPrice = 1000, Quantity = 1 }).ToList());
                 vm.ApplyDiscountSnapshot(await service.GetSnapshotAsync());
+                phase = "qualification fixture readiness";
+                await CartQualificationSmoke.PrepareFixtureAsync(view, vm, rows);
+                Require(rows.Items.Count == 500 && rows.IsMeasureValid && rows.IsArrangeValid &&
+                    Descendants(rows).OfType<ListBoxItem>().Any(), "qualification fixture started without rendered rows");
                 var measuredCardHeights = new System.Collections.Generic.HashSet<double>();
                 foreach (var width in new[] { 1024d, 1440d, 800d, 1024d })
                 {

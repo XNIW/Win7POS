@@ -47,7 +47,14 @@ function Test-Win7PosPerformance {
         $idle = @(Import-Csv -LiteralPath (Join-Path $Directory 'qualification-idle.csv') -ErrorAction Stop)
         $receipt = Get-Content -LiteralPath (Join-Path $Directory 'qualification-measurement.json') -Raw -ErrorAction Stop | ConvertFrom-Json
         if ($receipt.schemaVersion -cne 'win7pos-performance-measurement-v1' -or $receipt.measurementCompleted -isnot [bool] -or $receipt.measurementCompleted -ne $true -or
-            $receipt.cycles -ne $idle.Count -or $receipt.products -ne $ExpectedProducts -or $receipt.cartSize -ne 500 -or $receipt.protocolVersion -ne 3) { throw 'invalid_measurement_receipt' }
+            $receipt.cycles -ne $idle.Count -or $receipt.products -ne $ExpectedProducts -or $receipt.cartSize -ne 500 -or $receipt.protocolVersion -notin @(3,4)) { throw 'invalid_measurement_receipt' }
+        # Preserve v3 historical verdicts; v4 additionally proves fixture readiness.
+        if ($receipt.protocolVersion -eq 4) {
+            $setup = Get-Content -LiteralPath (Join-Path $Directory 'fixture-setup.json') -Raw -ErrorAction Stop | ConvertFrom-Json
+            if ($setup.schemaVersion -cne 'win7pos-fixture-setup-v1' -or $setup.completed -isnot [bool] -or $setup.completed -ne $true -or
+                $setup.legacyDiagnostic -isnot [bool] -or $setup.legacyDiagnostic -ne $false -or $setup.cartSize -ne 500 -or
+                (Number $setup 'realizedRows') -lt 1 -or (Number $setup 'elapsedMs') -ge 10000) { throw 'invalid_fixture_setup' }
+        }
         if ($receipt.environmentValid -isnot [bool] -or $receipt.environmentValid -ne $true) { $environment.Add('unqualified_desktop:receipt') }
         $serviceSamples = @(Import-Csv -LiteralPath (Join-Path $Directory 'cart-performance.csv') -ErrorAction Stop)
         if ($serviceSamples.Count -ne 155) { throw 'incomplete_isolated_service_benchmark' }

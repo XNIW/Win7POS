@@ -25,7 +25,7 @@ on:
         default: false
         type: boolean
       cart_diagnostic_cold:
-        description: Three fixed fresh-process five-scan trials with a lightweight executed-callback window
+        description: Three fixed pairs comparing legacy and rendered-fixture setup with lightweight callback windows
         required: false
         default: false
         type: boolean
@@ -171,11 +171,14 @@ jobs:
         run: |
           if ($env:COLD_CONTROL -eq 'true') {
             if ($env:IDLE_CONTROL -eq 'true') { throw 'Select one diagnostic hypothesis.' }
-            'H7: Exactly three fresh-process five-scan trials, original setup and command policy, regardless of outcomes. Hypothesis: the first scan races pending initial layout from seeding 500 lines. Capture completed callbacks >=2ms in a bounded 256-record value-only window; no timer reflection, watchdog, CPU accounting or full timeline. Record fixture layout validity/container count and monotonic first-scan timestamp. Preserve all success/failure windows. No setup barrier, priority, warmup, timeout or product change in this experiment.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-cold.txt"
+            'H8: Exactly three fresh-process pairs, alternate arm order, five public scans each. H7 observed zero realized fixture rows at all three first scans and initial render 141..146ms within scan work. Compare former setup to v4 checking the rendered 500-line fixture at ContextIdle before the useful clock. Predict initial binding/render moves to separately recorded setup and first-scan UI return decreases. Same product, public command priorities and 250ms probe; no warmup scans. Light completed-callback capture identical in both arms, no full trace. Preserve all outcomes, including legacy failures; this is not proof of the exact H2/H6 timeout cause.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-cold.txt"
             $failures = 0
             foreach ($trial in 1..3) {
-              try { & ./scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -DiagnosticExecutionCapture -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/cold-$trial" }
-              catch { $failures++; Write-Output ("Trial $trial retained: " + $_.Exception.Message) }
+              $arms = if ($trial % 2) { @('legacy','ready') } else { @('ready','legacy') }
+              foreach ($arm in $arms) {
+                try { & ./scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -DiagnosticExecutionCapture -DiagnosticLegacyFixtureSetup:($arm -eq 'legacy') -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/cold-$trial-$arm" }
+                catch { $failures++; Write-Output ("Trial $trial $arm retained: " + $_.Exception.Message) }
+              }
             }
             if ($failures) { throw "$failures cold trials did not complete; all attempts retained." }
             return
@@ -237,6 +240,7 @@ jobs:
             ${{ runner.temp }}/cart-diagnostic/*/diagnostic-timeline.txt
             ${{ runner.temp }}/cart-diagnostic/*/diagnostic-scans.json
             ${{ runner.temp }}/cart-diagnostic/*/qualification-measurement.json
+            ${{ runner.temp }}/cart-diagnostic/*/fixture-setup.json
             ${{ runner.temp }}/cart-diagnostic/*/harness-error.txt
             ${{ runner.temp }}/cart-diagnostic/*/functional-completion.txt
       - name: Report diagnostic completion without certifying stability
@@ -360,6 +364,7 @@ jobs:
             ${{ runner.temp }}/cart-qualification/*/protocol.json
             ${{ runner.temp }}/cart-qualification/*/performance-result.json
             ${{ runner.temp }}/cart-qualification/*/qualification-measurement.json
+            ${{ runner.temp }}/cart-qualification/*/fixture-setup.json
             ${{ runner.temp }}/cart-qualification/*/preregistered-budget.json
             ${{ runner.temp }}/cart-qualification/*/payload-binding.json
             ${{ runner.temp }}/cart-qualification/*/*.csv
