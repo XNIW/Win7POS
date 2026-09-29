@@ -483,6 +483,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (!_trace || _mode == "off") return;
                 lock (_sync)
                 {
+                    if (_disposed) return;
                     if (_events.Count >= 512) { Dropped++; return; }
                     _events.Add("CHECKPOINT," + Ms(Stopwatch.GetTimestamp() - _origin).ToString("F3", CultureInfo.InvariantCulture) + "," + value);
                 }
@@ -517,7 +518,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private void PriorityChanged(object sender, DispatcherHookEventArgs args)
             {
                 lock (_sync)
-                    if (_index.TryGetValue(args.Operation, out var entry))
+                    if (!_disposed && _index.TryGetValue(args.Operation, out var entry))
                     {
                         ReconcilePriority(entry, args.Operation.Priority);
                         if (entry.Priority != args.Operation.Priority)
@@ -533,13 +534,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 if (!_trace) return;
                 lock (_sync)
+                {
+                    if (_disposed) return;
                     foreach (var entry in _bounded.Values)
                         if (entry.Operation.Target is DispatcherOperation operation) TimerEvent(operation, entry, phase);
+                }
             }
             private void Started(object sender, DispatcherHookEventArgs args)
             {
                 lock (_sync)
-                    if (_index.TryGetValue(args.Operation, out var entry))
+                    if (!_disposed && _index.TryGetValue(args.Operation, out var entry))
                     {
                         entry.Started = Stopwatch.GetTimestamp();
                         TimerEvent(args.Operation, entry, "start");
@@ -554,6 +558,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 lock (_sync)
                 {
+                    if (_disposed) return;
                     if (args.Operation.Status == DispatcherOperationStatus.Completed || args.Operation.Status == DispatcherOperationStatus.Aborted) return;
                     if (_mode == "bounded" && _bounded.Count >= 16384) { Dropped++; return; }
                     if (_index.TryGetValue(args.Operation, out _)) return;
@@ -574,6 +579,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 lock (_sync)
                 {
+                    if (_disposed) return;
                     if (_index.TryGetValue(args.Operation, out var timerEntry)) TimerEvent(args.Operation, timerEntry, "end");
                     if (_trace && _events.Count >= 512) Dropped++;
                     if (_trace && _index.TryGetValue(args.Operation, out var timed) && timed.Started != 0 && Ms(Stopwatch.GetTimestamp() - timed.Started) >= 10 && _events.Count < 512)
@@ -633,31 +639,61 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             public void Dispose()
             {
+                lock (_sync) { if (_disposed) return; }
+                _dispatcher.Hooks.OperationPosted -= Posted;
+                _dispatcher.Hooks.OperationStarted -= Started;
+                _dispatcher.Hooks.OperationPriorityChanged -= PriorityChanged;
+                _dispatcher.Hooks.OperationCompleted -= Finished;
+                _dispatcher.Hooks.OperationAborted -= Finished;
                 // Complete any already-drained batch before the final flush;
                 // disposing Timer alone does not wait for an active callback.
                 // No UI-observer lock is held while waiting for the writer.
                 if (_watchdog != null)
                     using (var finished = new ManualResetEvent(false))
                     { if (_watchdog.Dispose(finished)) finished.WaitOne(); }
+                object[] finalBatch;
                 lock (_sync)
                 {
+                    if (_disposed) return;
                     _disposed = true;
+                    finalBatch = _events.ToArray();
+                    _events.Clear();
                 }
                 lock (_writeSync)
                 {
                     if (_timeline != null)
                     {
-                        foreach (var value in _events)
+                        foreach (var value in finalBatch)
                             if (_timelineLines < 131072) { _timeline.WriteLine(value); _timelineLines++; } else Dropped++;
                         _timeline.WriteLine("TRACE_DROPPED," + Dropped);
                         _timeline.Dispose();
                     }
                 }
-                _dispatcher.Hooks.OperationPosted -= Posted;
-                _dispatcher.Hooks.OperationStarted -= Started;
-                _dispatcher.Hooks.OperationPriorityChanged -= PriorityChanged;
-                _dispatcher.Hooks.OperationCompleted -= Finished;
-                _dispatcher.Hooks.OperationAborted -= Finished;
+            }
+
+            private sealed class ShutdownProbe
+            {
+                internal Action DuringFlush;
+                public override string ToString() { DuringFlush(); return "SHUTDOWN_PROBE"; }
+            }
+
+            internal static void VerifyConcurrentShutdown(Dispatcher dispatcher)
+            {
+                // Deterministically call a trace producer during the final write.
+                // Previously this mutated the enumerated event list and threw.
+                using var stream = new MemoryStream();
+                var observer = new OperationObserver(dispatcher, "bounded", false, true);
+                observer._timeline = new StreamWriter(stream);
+                observer._events.Add(new ShutdownProbe { DuringFlush = () =>
+                    Task.Run(() => observer.Checkpoint("AFTER_OBSERVATION_STOPPED")).GetAwaiter().GetResult() });
+                try
+                {
+                    observer.Dispose();
+                    var output = Encoding.UTF8.GetString(stream.ToArray());
+                    if (!output.Contains("SHUTDOWN_PROBE") || !output.Contains("TRACE_DROPPED,0"))
+                        throw new InvalidOperationException("trace_shutdown_lost_final_batch");
+                }
+                finally { observer.Dispose(); }
             }
         }
     }

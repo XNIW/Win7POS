@@ -73,6 +73,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal static async Task RunAsync()
         {
+            CartPerformanceDiagnostics.OperationObserver.VerifyConcurrentShutdown(Dispatcher.CurrentDispatcher);
             var previous = OperatorSessionHolder.Current;
             Window host = null;
             PosViewModel vm = null;
