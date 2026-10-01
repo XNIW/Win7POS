@@ -1073,6 +1073,72 @@ ON CONFLICT(id) DO UPDATE SET value=@value;", new { value });
 public sealed class BackupAutomationTests
 {
     [TestMethod]
+    public async Task DestinationCasingChange_RetainsOneWindowsDirectoryOwnershipSet()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        var options = new BackupAutomationOptions { RetentionMaxCount = 3, RetentionMaxAgeDays = 3650 };
+        await service.SaveOptionsAsync(options, "test");
+        for (var index = 0; index < 3; index++)
+        {
+            Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
+            files.Clock.Advance(TimeSpan.FromMinutes(1));
+        }
+        options.DestinationKind = "custom_local";
+        options.DestinationPath = files.Backups.ToUpperInvariant();
+        await service.SaveOptionsAsync(options, "test");
+        var newest = await service.BackupNowAsync();
+        Assert.IsTrue(newest.IsSuccess);
+        Assert.IsTrue(File.Exists(newest.Path));
+        Assert.AreEqual(3, files.Snapshots().Length);
+        Assert.AreEqual(3L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+    }
+
+    [TestMethod]
+    public async Task DestinationChangedAfterFailedManualBackup_FutureScheduleRemainsNotDue()
+    {
+        using var files = new AutomationFiles();
+        var failing = files.Service((path, ct) => throw new IOException("deterministic"));
+        var options = Daily();
+        await failing.SaveOptionsAsync(options, "test");
+        Assert.AreEqual("backup_failed", (await failing.BackupNowAsync()).Code);
+        Directory.CreateDirectory(files.Backups);
+        var userFile = Path.Combine(files.Backups, "pos_backup_user.db");
+        File.WriteAllText(userFile, "user-file-preserved");
+        options.DestinationKind = "custom_local";
+        options.DestinationPath = Path.Combine(files.Root, "new-destination");
+        var service = files.Service();
+        await service.SaveOptionsAsync(options, "test");
+        files.Clock.Advance(TimeSpan.FromMinutes(6));
+        Assert.AreEqual("not_due", (await service.PollAsync()).Code);
+        Assert.IsFalse(Directory.Exists(options.DestinationPath));
+        Assert.AreEqual("user-file-preserved", File.ReadAllText(userFile));
+    }
+
+    [TestMethod]
+    public async Task ReplacedAfterEnginePublish_IsNotRegisteredOrRemovedByRetention()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service(async (path, ct) =>
+        {
+            var validation = await new SqliteOnlineBackup(files.Factory).CreateVerifiedAsync(path, ct);
+            SqliteConnectionFactory.ClearAllPools();
+            File.WriteAllText(path, "replacement-user-file-before-registration");
+            return validation;
+        });
+        await service.SaveOptionsAsync(new BackupAutomationOptions
+        { RetentionMaxCount = 3, RetentionMaxAgeDays = 1 }, "test");
+        var result = await service.BackupNowAsync();
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("published_identity_invalid", result.Code);
+        Assert.AreEqual("replacement-user-file-before-registration", File.ReadAllText(result.Path));
+        Assert.AreEqual(0L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+        Assert.AreEqual(0, result.DeletedCount);
+        Assert.AreEqual(1, files.Snapshots().Length);
+        Assert.IsTrue(files.Query<string>("SELECT pending_id FROM backup_automation_state;").Length > 0);
+    }
+
+    [TestMethod]
     public async Task ReconciledOldDestination_DoesNotApplyNewDestinationRetentionPolicy()
     {
         using var files = new AutomationFiles();

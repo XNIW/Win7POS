@@ -178,7 +178,7 @@ ON CONFLICT(path) DO NOTHING;", managed, transaction);
                 return connection.Query<BackupAutomationManagedFile>(@"
 SELECT path AS Path,destination AS Destination,db_key AS DbKey,created_utc AS CreatedUtc,
  length AS Length,hash AS Hash,operation_id AS OperationId
-FROM backup_automation_files WHERE destination=@destination AND db_key=@dbKey
+FROM backup_automation_files WHERE destination=@destination COLLATE NOCASE AND db_key=@dbKey
 ORDER BY created_utc DESC, rowid DESC;", new { destination, dbKey = _dbKey }).ToList();
         }
 

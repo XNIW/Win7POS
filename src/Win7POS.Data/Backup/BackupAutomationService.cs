@@ -20,6 +20,12 @@ namespace Win7POS.Data.Backup
         internal BackupAutomationCrashException() : base("Deterministic backup automation crash after publish.") { }
     }
 
+    internal sealed class BackupAutomationIdentityException : IOException
+    {
+        internal BackupAutomationIdentityException(Exception innerException = null)
+            : base("Published snapshot identity is invalid.", innerException) { }
+    }
+
     public sealed class BackupAutomationService : IDisposable
     {
         private static readonly ConcurrentDictionary<string, BackupAutomationService> Services =
@@ -233,9 +239,8 @@ namespace Win7POS.Data.Backup
                 if (state.PendingId.Length != 0) _destinationProbe?.Invoke(state.PendingDestination);
                 if (state.PendingId.Length != 0 && FileExistsStrict(state.PendingPath))
                 {
-                    await ValidatePendingSnapshotAsync(state).ConfigureAwait(false);
                     published = true;
-                    return CompletePublished(state, options);
+                    return await CompletePublishedAsync(state, options).ConfigureAwait(false);
                 }
 
                 if (!manual && state.PendingLocal != 0 && state.PendingLocal <= state.ConsideredLocal)
@@ -254,6 +259,11 @@ namespace Win7POS.Data.Backup
                 if (state.PendingId.Length != 0 && !string.Equals(state.PendingDestination, destination,
                     StringComparison.OrdinalIgnoreCase))
                     state.ClearPending();
+                if (!manual && !due.HasValue && state.PendingId.Length == 0)
+                {
+                    _store.SaveState(state);
+                    return Result("not_due");
+                }
                 if (state.PendingId.Length == 0)
                 {
                     _destinationProbe?.Invoke(destination);
@@ -277,13 +287,13 @@ namespace Win7POS.Data.Backup
                 _failureHook?.Invoke(BackupAutomationFailurePoint.AfterPublish);
                 // Publication is the cancellation boundary: a verified published snapshot
                 // must be finalized even if the caller cancels while the engine returns.
-                return CompletePublished(state, options);
+                return await CompletePublishedAsync(state, options).ConfigureAwait(false);
             }
             catch (BackupAutomationCrashException) { throw; }
             catch (Exception exception)
             {
                 var code = FailureCode(exception, options?.DestinationKind == "network_share");
-                if (published) code = "backup_finalize_pending";
+                if (published && !(exception is BackupAutomationIdentityException)) code = "backup_finalize_pending";
                 if (state != null)
                 {
                     try
@@ -306,28 +316,36 @@ namespace Win7POS.Data.Backup
             }
         }
 
-        private BackupAutomationResult CompletePublished(BackupAutomationState state, BackupAutomationOptions options)
+        private async Task<BackupAutomationResult> CompletePublishedAsync(BackupAutomationState state,
+            BackupAutomationOptions options)
         {
             var path = state.PendingPath;
             var utc = EffectiveUtc(state);
-            var managed = new BackupAutomationManagedFile
+            BackupAutomationManagedFile managed;
+            // Bind identity validation, hash and ownership registration to the same
+            // immutable file. An engine-return/persistence gap must not adopt a replacement.
+            using (var publicationGuard = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                Path = path, Destination = state.PendingDestination, DbKey = _dbKey,
-                CreatedUtc = utc.Ticks, OperationId = state.PendingId,
-                Hash = BackupAutomationRetention.HashFile(path, out var length), Length = length
-            };
-            // Never clear the caller's durable intent before its completion transaction commits.
-            state = state.Copy();
-            if (state.PendingLocal != 0)
-            {
-                // A successful retry covers current data once, rather than replaying a backlog.
-                var latest = BackupSchedulePolicy.GetLatestSlot(options.Schedule, LocalNow);
-                state.ConsideredLocal = Math.Max(state.ConsideredLocal,
-                    Math.Max(state.PendingLocal, latest?.Ticks ?? 0));
+                await ValidatePendingSnapshotAsync(state).ConfigureAwait(false);
+                managed = new BackupAutomationManagedFile
+                {
+                    Path = path, Destination = state.PendingDestination, DbKey = _dbKey,
+                    CreatedUtc = utc.Ticks, OperationId = state.PendingId,
+                    Hash = BackupAutomationRetention.HashFile(path, out var length), Length = length
+                };
+                // Never clear the caller's durable intent before its completion transaction commits.
+                state = state.Copy();
+                if (state.PendingLocal != 0)
+                {
+                    // A successful retry covers current data once, rather than replaying a backlog.
+                    var latest = BackupSchedulePolicy.GetLatestSlot(options.Schedule, LocalNow);
+                    state.ConsideredLocal = Math.Max(state.ConsideredLocal,
+                        Math.Max(state.PendingLocal, latest?.Ticks ?? 0));
+                }
+                state.LastResult = LastResult("backup_verified", utc, path);
+                state.ClearPending();
+                _store.SaveState(state, "backup_verified", path, managed: managed);
             }
-            state.LastResult = LastResult("backup_verified", utc, path);
-            state.ClearPending();
-            _store.SaveState(state, "backup_verified", path, managed: managed);
 
             var deleted = 0;
             var warning = false;
@@ -392,7 +410,7 @@ namespace Win7POS.Data.Backup
         private async Task ValidatePendingSnapshotAsync(BackupAutomationState state)
         {
             if ((File.GetAttributes(state.PendingPath) & FileAttributes.ReparsePoint) != 0)
-                throw new InvalidDataException("Published snapshot identity is invalid.");
+                throw new BackupAutomationIdentityException();
             BackupAutomationDestination.RejectReparseAncestors(state.PendingDestination);
             using (var guard = new FileStream(state.PendingPath, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
@@ -401,15 +419,23 @@ namespace Win7POS.Data.Backup
                 Cache = SqliteCacheMode.Private
             }.ToString()))
             {
-                await connection.OpenAsync().ConfigureAwait(false);
-                var identity = await connection.ExecuteScalarAsync<long>(@"
+                try
+                {
+                    await connection.OpenAsync().ConfigureAwait(false);
+                    var identity = await connection.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1) FROM backup_automation_state WHERE singleton_id=1 AND db_key=@DbKey
  AND pending_id=@PendingId AND pending_path=@PendingPath;", state).ConfigureAwait(false);
-                if (identity != 1) throw new InvalidDataException("Published snapshot identity is invalid.");
-                var integrity = await connection.ExecuteScalarAsync<string>("PRAGMA integrity_check;").ConfigureAwait(false);
-                var foreignKeys = await connection.QueryAsync<object>("PRAGMA foreign_key_check;").ConfigureAwait(false);
-                if (!string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase) || foreignKeys.Any())
-                    throw new InvalidDataException("Published snapshot identity is invalid.");
+                    if (identity != 1) throw new BackupAutomationIdentityException();
+                    var integrity = await connection.ExecuteScalarAsync<string>("PRAGMA integrity_check;").ConfigureAwait(false);
+                    var foreignKeys = await connection.QueryAsync<object>("PRAGMA foreign_key_check;").ConfigureAwait(false);
+                    if (!string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase) || foreignKeys.Any())
+                        throw new BackupAutomationIdentityException();
+                }
+                catch (SqliteException exception) when (exception.SqliteErrorCode == 1 ||
+                    exception.SqliteErrorCode == 11 || exception.SqliteErrorCode == 26)
+                {
+                    throw new BackupAutomationIdentityException(exception);
+                }
             }
         }
 
@@ -475,6 +501,7 @@ SELECT COUNT(1) FROM backup_automation_state WHERE singleton_id=1 AND db_key=@Db
             if (exception is OperationCanceledException) return "cancelled";
             if (exception is UnauthorizedAccessException) return "access_denied";
             if (exception is ArgumentException) return "configuration_invalid";
+            if (exception is BackupAutomationIdentityException) return "published_identity_invalid";
             if (exception is InvalidDataException) return "published_identity_invalid";
             if (network && exception is IOException) return "network_unavailable";
             return "backup_failed";
