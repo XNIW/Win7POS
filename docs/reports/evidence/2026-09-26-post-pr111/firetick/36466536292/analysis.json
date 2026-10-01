@@ -1,0 +1,151 @@
+{
+  "source": "C:\\Dev\\Win7POS-post-pr111-20260926\\firetick-focused-36466536292",
+  "host": {
+    "commit": "c24ac7841b4ce6804910bc5e773b207fd7ca3103",
+    "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+    "image": "win25-vs2026",
+    "imageVersion": "20260922.246.2",
+    "system": {
+      "Manufacturer": "Microsoft Corporation",
+      "Model": "Virtual Machine",
+      "TotalPhysicalMemory": 17174360064,
+      "NumberOfLogicalProcessors": 4
+    },
+    "cpu": {
+      "Name": "AMD EPYC 9V74 80-Core Processor                ",
+      "NumberOfCores": 2,
+      "NumberOfLogicalProcessors": 4
+    },
+    "qualifiesAsus": false
+  },
+  "arms": {
+    "untraced": {
+      "cycles": 0,
+      "duration": 0,
+      "oldestMs": null,
+      "over250": [],
+      "over250AfterWarmup": [],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": false,
+        "ENVIRONMENT_VALID": false,
+        "STABILITY_PASS": false,
+        "measurementReasons": [
+          "Performance harness exit=2; inspect preserved harness-error.txt."
+        ]
+      }
+    },
+    "traced": {
+      "cycles": 9,
+      "duration": 199.312,
+      "oldestMs": 339.984,
+      "over250": [
+        8
+      ],
+      "over250AfterWarmup": [
+        8
+      ],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      },
+      "traceDropped": 0,
+      "timerHandlers": [
+        "System.Windows.Controls.TextBoxView:System.Windows.Controls.TextBoxView.OnThrottleBackgroundTimeout",
+        "System.Windows.Input.InputManager:System.Windows.Input.InputManager.ValidateInputDevices",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.EstimatedNextVSyncTimeExpired",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToInput",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToRender",
+        "Win7POS.Wpf.Pos.PosViewModel:Win7POS.Wpf.Pos.PosViewModel.<.ctor>b__240_0"
+      ],
+      "watchdogLockMaximumMs": 513.838,
+      "actualInputTimerEvents": 3221,
+      "allInputTimerReadyWaits": {
+        "count": 763,
+        "maximumMs": 525.6570000000065,
+        "over250Count": 73
+      },
+      "inputTimerSnapshots": [
+        {
+          "timer": "6",
+          "posted": 199599.807,
+          "promotionHook": 199732.016,
+          "snapshot": 200071.98,
+          "start": 200072.382,
+          "end": 200072.394,
+          "scheduledObservedMs": 132.20900000000256,
+          "readyAtSnapshotMs": 339.9640000000072,
+          "readyToStartMs": 340.3660000000091,
+          "executionMs": 0.011999999987892807,
+          "watchdogDuring": [
+            {
+              "time": 199809.159,
+              "cpu_ms": "13421.875",
+              "allocated": "733768984",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.005"
+            },
+            {
+              "time": 199916.22,
+              "cpu_ms": "13421.875",
+              "allocated": "733916440",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.007"
+            },
+            {
+              "time": 200024.289,
+              "cpu_ms": "13421.875",
+              "allocated": "734088472",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.007"
+            }
+          ],
+          "renderTimerStartsDuring": 23,
+          "slowCallbacksOverlapping": []
+        }
+      ]
+    },
+    "input-dispatch": {
+      "cycles": 9,
+      "duration": 181.289,
+      "oldestMs": 18.381,
+      "over250": [],
+      "over250AfterWarmup": [],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      },
+      "traceDropped": 0,
+      "timerHandlers": [
+        "System.Windows.Controls.TextBoxView:System.Windows.Controls.TextBoxView.OnThrottleBackgroundTimeout",
+        "System.Windows.Input.InputManager:System.Windows.Input.InputManager.ValidateInputDevices",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.EstimatedNextVSyncTimeExpired",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToInput",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToRender",
+        "static:Win7POS.Wpf.UiSmokeHarness.CartPerformanceDiagnostics.ControlledTick"
+      ],
+      "watchdogLockMaximumMs": 0.887,
+      "actualInputTimerEvents": 3749,
+      "allInputTimerReadyWaits": {
+        "count": 906,
+        "maximumMs": 32.96499999999651,
+        "over250Count": 0
+      },
+      "inputTimerSnapshots": []
+    }
+  }
+}

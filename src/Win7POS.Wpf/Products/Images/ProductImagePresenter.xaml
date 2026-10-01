@@ -29,7 +29,7 @@
                 <ProgressBar Width="44"
                              Height="4"
                              Margin="0,0,0,6"
-                             IsIndeterminate="True"
+                             IsIndeterminate="{Binding IsVisible, RelativeSource={RelativeSource Self}}"
                              IsTabStop="False"
                              Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
                 <TextBlock Text="{Binding StatusText}"

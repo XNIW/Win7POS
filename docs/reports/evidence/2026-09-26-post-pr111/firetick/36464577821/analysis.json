@@ -1,0 +1,202 @@
+{
+  "source": "C:\\Dev\\Win7POS-post-pr111-20260926\\firetick-diagnostic-36464577821",
+  "host": {
+    "commit": "165d47f2f53b151687f67af26f9980a648793ea1",
+    "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+    "image": "win25-vs2026",
+    "imageVersion": "20260922.246.2",
+    "system": {
+      "Manufacturer": "Microsoft Corporation",
+      "Model": "Virtual Machine",
+      "TotalPhysicalMemory": 17174360064,
+      "NumberOfLogicalProcessors": 4
+    },
+    "cpu": {
+      "Name": "AMD EPYC 7763 64-Core Processor                ",
+      "NumberOfCores": 2,
+      "NumberOfLogicalProcessors": 4
+    },
+    "qualifiesAsus": false
+  },
+  "arms": {
+    "untraced": {
+      "cycles": 9,
+      "duration": 201.25,
+      "oldestMs": 317.672,
+      "over250": [
+        0,
+        1,
+        2,
+        4,
+        7
+      ],
+      "over250AfterWarmup": [
+        2,
+        4,
+        7
+      ],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      }
+    },
+    "traced": {
+      "cycles": 9,
+      "duration": 201.605,
+      "oldestMs": 303.438,
+      "over250": [
+        0,
+        3
+      ],
+      "over250AfterWarmup": [
+        3
+      ],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      },
+      "traceDropped": 10889,
+      "timerHandlers": [
+        "System.Windows.Controls.PopupControlService+<>c__DisplayClass15_0:System.Windows.Controls.PopupControlService+<>c__DisplayClass15_0.<BeginShowToolTip>b__0",
+        "System.Windows.Controls.PopupControlService:System.Windows.Controls.PopupControlService.OnShowDurationTimerExpired",
+        "System.Windows.Controls.TextBoxView:System.Windows.Controls.TextBoxView.OnThrottleBackgroundTimeout",
+        "System.Windows.Input.InputManager:System.Windows.Input.InputManager.ValidateInputDevices",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.EstimatedNextVSyncTimeExpired",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToInput",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToRender",
+        "Win7POS.Wpf.Pos.PosViewModel:Win7POS.Wpf.Pos.PosViewModel.<.ctor>b__240_0"
+      ],
+      "watchdogLockMaximumMs": 159.466,
+      "actualInputTimerEvents": 1936,
+      "allInputTimerReadyWaits": {
+        "count": 449,
+        "maximumMs": 513.2540000000008,
+        "over250Count": 109
+      },
+      "inputTimerSnapshots": [
+        {
+          "timer": "14",
+          "posted": 22608.474,
+          "promotionHook": 22734.185,
+          "snapshot": 23035.42,
+          "start": 23082.228,
+          "end": 23082.248,
+          "scheduledObservedMs": 125.71100000000297,
+          "readyAtSnapshotMs": 301.23499999999694,
+          "readyToStartMs": 348.04299999999785,
+          "executionMs": 0.020000000000436557,
+          "watchdogDuring": [
+            {
+              "time": 22812.346,
+              "cpu_ms": "2437.500",
+              "allocated": "107307064",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.005"
+            },
+            {
+              "time": 22919.871,
+              "cpu_ms": "2437.500",
+              "allocated": "107470904",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.005"
+            },
+            {
+              "time": 23034.505,
+              "cpu_ms": "2437.500",
+              "allocated": "107659320",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.006"
+            }
+          ],
+          "renderTimerStartsDuring": 23,
+          "slowCallbacksOverlapping": []
+        },
+        {
+          "timer": "14",
+          "posted": 89599.837,
+          "promotionHook": 89726.436,
+          "snapshot": 90016.016,
+          "start": 90049.277,
+          "end": 90049.292,
+          "scheduledObservedMs": 126.59900000000198,
+          "readyAtSnapshotMs": 289.58000000000175,
+          "readyToStartMs": 322.84100000000035,
+          "executionMs": 0.014999999999417923,
+          "watchdogDuring": [
+            {
+              "time": 89753.888,
+              "cpu_ms": "8328.125",
+              "allocated": "361623944",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.004"
+            },
+            {
+              "time": 89860.508,
+              "cpu_ms": "8328.125",
+              "allocated": "361771400",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.003"
+            },
+            {
+              "time": 89968.549,
+              "cpu_ms": "8328.125",
+              "allocated": "361951624",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.002"
+            }
+          ],
+          "renderTimerStartsDuring": 22,
+          "slowCallbacksOverlapping": []
+        }
+      ]
+    },
+    "input-dispatch": {
+      "cycles": 9,
+      "duration": 181.462,
+      "oldestMs": 1.028,
+      "over250": [],
+      "over250AfterWarmup": [],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      },
+      "traceDropped": 0,
+      "timerHandlers": [
+        "System.Windows.Input.InputManager:System.Windows.Input.InputManager.ValidateInputDevices",
+        "static:Win7POS.Wpf.UiSmokeHarness.CartPerformanceDiagnostics.ControlledTick"
+      ],
+      "watchdogLockMaximumMs": 0.966,
+      "actualInputTimerEvents": 2,
+      "allInputTimerReadyWaits": {
+        "count": 0,
+        "maximumMs": null,
+        "over250Count": 0
+      },
+      "inputTimerSnapshots": []
+    }
+  }
+}

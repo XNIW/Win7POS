@@ -1,0 +1,27 @@
+{
+  "commit": "aea65314b9de6f18a46a5ba9aefbeb2de363012d",
+  "runId": "36510437821",
+  "selection": "integrated-12-and-soak-60",
+  "releaseRunId": "36508924895",
+  "image": "win25-vs2026",
+  "imageVersion": "20260922.246.2",
+  "runner": "GitHub Actions 1000004065",
+  "system": {
+    "Manufacturer": "Microsoft Corporation",
+    "Model": "Virtual Machine",
+    "TotalPhysicalMemory": 17174360064,
+    "NumberOfLogicalProcessors": 4
+  },
+  "cpu": {
+    "Name": "AMD EPYC 7763 64-Core Processor                ",
+    "NumberOfCores": 2,
+    "NumberOfLogicalProcessors": 4
+  },
+  "os": {
+    "Caption": "Microsoft Windows Server 2025 Datacenter",
+    "Version": "10.0.26100",
+    "BuildNumber": "26100"
+  },
+  "qualifiesAsus": false,
+  "qualifiesMergeFinal": false
+}

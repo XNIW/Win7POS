@@ -1,0 +1,1 @@
+C3: Fixed 3 minutes, focused plain TextBox with the actual InputManager timer. Remove ONLY our extra 125ms no-op wakeup timer from C2: it may perturb dispatch progress and mask the delay. Leave every WPF callback, caret, input and protection intact. If C3 reproduces while D3 does not, the added QA timer was an invalid control aid; neither control qualifies the POS.

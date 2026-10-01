@@ -1,0 +1,6 @@
+cycle,mode,ordinal,service_ms,ui_return_ms,apply_ms,layout_ms,bitmap_ms,command_overhead_ms,gate_wait_ms,worker_queue_ms,product_lookup_update_ms,snapshot_query_map_ms,snapshot_projection_ms,realized_rows,realized_grid,collection_changes,row_notifications,product_commands,commands_on_dispatcher,focus_scroll_wait_ms
+0,Rows,1,18.814,91.094,0.907,0.001,15.750,52.007,0.168,0.039,0.391,17.784,0.118,13,12,0,22,2,0,26.930
+0,Rows,2,15.234,0.698,0.829,0.001,14.509,20.528,0.004,0.048,0.491,14.486,0.114,14,12,0,22,2,0,15.199
+0,Rows,3,13.567,0.104,0.932,0.001,17.781,17.372,0.001,0.089,0.467,12.807,0.124,14,12,0,22,2,0,12.673
+0,Rows,4,26.536,0.108,1.003,0.001,20.302,21.272,0.001,0.668,0.560,25.102,0.093,14,12,0,22,2,0,13.742
+0,Rows,5,12.823,0.115,0.848,0.001,17.738,14.742,0.001,0.046,0.494,12.035,0.135,14,12,0,22,2,0,9.795

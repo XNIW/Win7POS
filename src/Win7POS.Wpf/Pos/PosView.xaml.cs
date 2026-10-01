@@ -13,6 +13,9 @@ namespace Win7POS.Wpf.Pos
     public partial class PosView : UserControl
     {
         public event Action CatalogWarningDetailsRequested;
+        private DispatcherOperation _focusOperation;
+        private DispatcherOperation _scrollOperation;
+        private ListBox _scrollTarget;
 
         public PosView()
         {
@@ -22,6 +25,17 @@ namespace Win7POS.Wpf.Pos
             vm.StatusToastDetailsRequested += () => CatalogWarningDetailsRequested?.Invoke();
             DataContext = vm;
             Loaded += OnLoaded;
+            Unloaded += OnUnloaded;
+        }
+
+        private void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            // Cancel only this view's replaceable visual work, never input,
+            // workflow commands or operations owned by WPF.
+            _focusOperation?.Abort();
+            _scrollOperation?.Abort();
+            _focusOperation = _scrollOperation = null;
+            _scrollTarget = null;
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
@@ -42,10 +56,7 @@ namespace Win7POS.Wpf.Pos
             if (IsClickFromButton(e))
                 return;
 
-            Dispatcher.BeginInvoke((Action)(() =>
-            {
-                FocusBarcode();
-            }), DispatcherPriority.Input);
+            FocusBarcode();
         }
 
         private static bool IsClickFromButton(MouseButtonEventArgs e)
@@ -183,9 +194,28 @@ namespace Win7POS.Wpf.Pos
         private void CartListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             var list = sender as ListBox;
-            if (list?.SelectedItem != null)
-                list.ScrollIntoView(list.SelectedItem);
+            if (list?.IsVisible != true) return;
+            QueueSelectionScroll(list);
             FocusBarcode();
+        }
+
+        private void CartListBox_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (sender is ListBox list && list.IsVisible) QueueSelectionScroll(list);
+        }
+
+        private void QueueSelectionScroll(ListBox list)
+        {
+            _scrollTarget = list;
+            if (_scrollOperation?.Status == DispatcherOperationStatus.Pending) return;
+            _scrollOperation = Dispatcher.BeginInvoke((Action)(() =>
+            {
+                _scrollOperation = null;
+                var target = _scrollTarget;
+                _scrollTarget = null;
+                if (IsLoaded && target?.IsVisible == true && target.SelectedItem != null)
+                    target.ScrollIntoView(target.SelectedItem);
+            }), DispatcherPriority.Input);
         }
 
         private void ExecuteIfCan(ICommand command)
@@ -197,8 +227,12 @@ namespace Win7POS.Wpf.Pos
 
         private void FocusBarcode()
         {
-            Dispatcher.BeginInvoke((Action)(() =>
+            if (!IsLoaded || _focusOperation?.Status == DispatcherOperationStatus.Pending) return;
+            _focusOperation = Dispatcher.BeginInvoke((Action)(() =>
             {
+                _focusOperation = null;
+                var window = Window.GetWindow(this);
+                if (!IsLoaded || !IsEnabled || !BarcodeBox.IsVisible || window?.IsActive != true) return;
                 Keyboard.Focus(BarcodeBox);
                 BarcodeBox.SelectAll();
             }), DispatcherPriority.Input);

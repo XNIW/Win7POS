@@ -1,0 +1,3 @@
+"run","warm_samples","ui_p50","ui_p95","ui_max","managed_max","private_max","observer_dropped","environment_valid","peak_observed"
+"observer-bounded-v12-20k","80","88.057","131.687","154.352","21291512","143249408","0","0","9558"
+"observer-off-v12-20k","80","81.025","157.974","199.936","17260832","147197952","0","0","0"

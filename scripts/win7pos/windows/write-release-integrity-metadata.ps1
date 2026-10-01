@@ -121,7 +121,9 @@ if ([string]::IsNullOrWhiteSpace($BuildVersion)) {
     $BuildVersion = $ProductVersion
 }
 if ($StageName -eq "development-unsigned") {
-    $expectedDevelopmentVersion = "$ProductVersion-dev.$($CommitSha.Substring(0, 12))"
+    $versionSha = $CommitSha.Substring(0, 12)
+    if ($versionSha -match '^[0-9]+$') { $versionSha = "g$versionSha" }
+    $expectedDevelopmentVersion = "$ProductVersion-dev.$versionSha"
     if (-not [string]::IsNullOrEmpty($ReleaseTag) -or $BuildVersion -ne $expectedDevelopmentVersion) {
         throw "Development integrity evidence requires no release tag and the exact SHA-derived build version."
     }

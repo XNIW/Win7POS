@@ -141,7 +141,7 @@ if (-not [string]::Equals($comparison.manifestB.fileName, $ManifestBFileName, [S
 }
 
 $expectedBuildVersion = [string]$manifestA.buildVersion
-if ($expectedBuildVersion -notmatch '^(?<product>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))(?:-dev\.[0-9a-f]{12})?$') {
+if ($expectedBuildVersion -notmatch '^(?<product>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))(?:-dev\.(?:[0-9a-f]{12}|g[0-9]{12}))?$') {
     throw "Reproducibility manifest build version is invalid."
 }
 $expectedProductVersion = $Matches["product"]

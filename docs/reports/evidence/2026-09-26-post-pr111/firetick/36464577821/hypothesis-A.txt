@@ -1,0 +1,1 @@
+A: Original protocol, trace off. Fixed 3-minute coverage with complete cycles and 20-second idle. Reproduce >250ms ready age; no rerun-until-green. No patch implied by this arm.

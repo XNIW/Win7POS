@@ -1,0 +1,272 @@
+{
+  "cold-1-legacy": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "32.600",
+      "ui_return_ms": "134.383",
+      "apply_ms": "1.266",
+      "layout_ms": "0.001",
+      "bitmap_ms": "21.384",
+      "command_overhead_ms": "215.837",
+      "gate_wait_ms": "0.235",
+      "worker_queue_ms": "0.061",
+      "product_lookup_update_ms": "0.696",
+      "snapshot_query_map_ms": "24.306",
+      "snapshot_projection_ms": "0.102",
+      "realized_rows": "13",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "183.281"
+    },
+    "firstFullUiMs": 384.087,
+    "setup": {
+      "schemaVersion": "win7pos-fixture-setup-v1",
+      "completed": false,
+      "elapsedMs": 0.0,
+      "cartSize": 500,
+      "realizedRows": 0,
+      "legacyDiagnostic": true
+    }
+  },
+  "cold-1-ready": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "18.639",
+      "ui_return_ms": "0.228",
+      "apply_ms": "1.321",
+      "layout_ms": "0.001",
+      "bitmap_ms": "31.993",
+      "command_overhead_ms": "87.241",
+      "gate_wait_ms": "0.220",
+      "worker_queue_ms": "0.065",
+      "product_lookup_update_ms": "0.560",
+      "snapshot_query_map_ms": "17.110",
+      "snapshot_projection_ms": "0.198",
+      "realized_rows": "26",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "60.822"
+    },
+    "firstFullUiMs": 107.42999999999999,
+    "setup": {
+      "schemaVersion": "win7pos-fixture-setup-v1",
+      "completed": true,
+      "elapsedMs": 239.975,
+      "cartSize": 500,
+      "realizedRows": 26,
+      "legacyDiagnostic": false
+    }
+  },
+  "cold-2-legacy": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "11.971",
+      "ui_return_ms": "128.495",
+      "apply_ms": "1.178",
+      "layout_ms": "0.001",
+      "bitmap_ms": "27.118",
+      "command_overhead_ms": "68.114",
+      "gate_wait_ms": "0.196",
+      "worker_queue_ms": "0.062",
+      "product_lookup_update_ms": "0.505",
+      "snapshot_query_map_ms": "10.638",
+      "snapshot_projection_ms": "0.169",
+      "realized_rows": "13",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "40.749"
+    },
+    "firstFullUiMs": 209.75900000000001,
+    "setup": {
+      "schemaVersion": "win7pos-fixture-setup-v1",
+      "completed": false,
+      "elapsedMs": 0.0,
+      "cartSize": 500,
+      "realizedRows": 0,
+      "legacyDiagnostic": true
+    }
+  },
+  "cold-2-ready": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "28.446",
+      "ui_return_ms": "1.976",
+      "apply_ms": "1.220",
+      "layout_ms": "0.001",
+      "bitmap_ms": "29.813",
+      "command_overhead_ms": "81.720",
+      "gate_wait_ms": "0.217",
+      "worker_queue_ms": "0.066",
+      "product_lookup_update_ms": "0.624",
+      "snapshot_query_map_ms": "26.922",
+      "snapshot_projection_ms": "0.171",
+      "realized_rows": "26",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "47.906"
+    },
+    "firstFullUiMs": 113.363,
+    "setup": {
+      "schemaVersion": "win7pos-fixture-setup-v1",
+      "completed": true,
+      "elapsedMs": 216.824,
+      "cartSize": 500,
+      "realizedRows": 26,
+      "legacyDiagnostic": false
+    }
+  },
+  "cold-3-legacy": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "11.589",
+      "ui_return_ms": "137.016",
+      "apply_ms": "1.440",
+      "layout_ms": "0.001",
+      "bitmap_ms": "29.540",
+      "command_overhead_ms": "69.405",
+      "gate_wait_ms": "0.224",
+      "worker_queue_ms": "0.061",
+      "product_lookup_update_ms": "0.556",
+      "snapshot_query_map_ms": "10.222",
+      "snapshot_projection_ms": "0.112",
+      "realized_rows": "13",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "39.311"
+    },
+    "firstFullUiMs": 219.451,
+    "setup": {
+      "schemaVersion": "win7pos-fixture-setup-v1",
+      "completed": false,
+      "elapsedMs": 0.0,
+      "cartSize": 500,
+      "realizedRows": 0,
+      "legacyDiagnostic": true
+    }
+  },
+  "cold-3-ready": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "13.967",
+      "ui_return_ms": "1.087",
+      "apply_ms": "1.447",
+      "layout_ms": "0.001",
+      "bitmap_ms": "25.358",
+      "command_overhead_ms": "69.661",
+      "gate_wait_ms": "0.310",
+      "worker_queue_ms": "0.083",
+      "product_lookup_update_ms": "0.729",
+      "snapshot_query_map_ms": "12.249",
+      "snapshot_projection_ms": "0.104",
+      "realized_rows": "26",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "45.683"
+    },
+    "firstFullUiMs": 86.163,
+    "setup": {
+      "schemaVersion": "win7pos-fixture-setup-v1",
+      "completed": true,
+      "elapsedMs": 247.54,
+      "cartSize": 500,
+      "realizedRows": 26,
+      "legacyDiagnostic": false
+    }
+  }
+}

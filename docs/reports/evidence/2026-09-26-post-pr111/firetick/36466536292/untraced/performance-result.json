@@ -1,0 +1,8 @@
+{
+  "MEASUREMENT_COMPLETED": false,
+  "ENVIRONMENT_VALID": false,
+  "STABILITY_PASS": false,
+  "measurementReasons": [
+    "Performance harness exit=2; inspect preserved harness-error.txt."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "commit": "c24ac7841b4ce6804910bc5e773b207fd7ca3103",
+  "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+  "image": "win25-vs2026",
+  "imageVersion": "20260922.246.2",
+  "system": {
+    "Manufacturer": "Microsoft Corporation",
+    "Model": "Virtual Machine",
+    "TotalPhysicalMemory": 17174360064,
+    "NumberOfLogicalProcessors": 4
+  },
+  "cpu": {
+    "Name": "AMD EPYC 9V74 80-Core Processor                ",
+    "NumberOfCores": 2,
+    "NumberOfLogicalProcessors": 4
+  },
+  "qualifiesAsus": false
+}

@@ -16,7 +16,7 @@ $writer = Join-Path $PSScriptRoot "write-release-integrity-metadata.ps1"
 $validator = Join-Path $PSScriptRoot "test-protected-release-artifacts.ps1"
 $signer = Join-Path $PSScriptRoot "invoke-protected-release-signing.ps1"
 $toolchain = Join-Path $PSScriptRoot "release-signing-toolchain.json"
-$commitSha = "0123456789abcdef0123456789abcdef01234567"
+$commitSha = "01564066369500a38545c890c7bb015332f616ca"
 $version = "1.0.0"
 $releaseTag = "v$version"
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("win7pos-signing-negative-{0}" -f [Guid]::NewGuid().ToString("N"))
@@ -185,7 +185,7 @@ namespace Win7POSSigningFixture { public sealed class Marker { } }
     }
 
     $developmentRoot = Join-Path $publishRoot "development"
-    $developmentVersion = "$version-dev.$($commitSha.Substring(0, 12))"
+    $developmentVersion = "$version-dev.g015640663695"
     & $writer `
         -ArtifactRoot $publishRoot `
         -ArtifactPath @($publishRoot) `

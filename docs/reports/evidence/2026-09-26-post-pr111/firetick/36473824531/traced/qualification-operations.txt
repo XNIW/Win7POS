@@ -1,0 +1,9 @@
+0,Input:InputMarkerMessageHandler:326.6|Render:FireTick:3.2|Background:FireTick:326.8
+1,Input:InputMarkerMessageHandler:18.4
+2,
+3,
+4,Input:InputMarkerMessageHandler:4.8|Background:FireTick:303.9
+5,Background:FireTick:5.9
+6,
+7,Background:FireTick:297.1|Input:InputMarkerMessageHandler:1.9
+8,Input:InputMarkerMessageHandler:8.9|Render:FireTick:0.9

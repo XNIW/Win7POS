@@ -1,0 +1,18 @@
+{
+  "commit": "b512cc1924ce84bafbf386f39bb0df430c976808",
+  "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+  "image": "win25-vs2026",
+  "imageVersion": "20260922.246.2",
+  "system": {
+    "Manufacturer": "Microsoft Corporation",
+    "Model": "Virtual Machine",
+    "TotalPhysicalMemory": 17174360064,
+    "NumberOfLogicalProcessors": 4
+  },
+  "cpu": {
+    "Name": "AMD EPYC 7763 64-Core Processor                ",
+    "NumberOfCores": 2,
+    "NumberOfLogicalProcessors": 4
+  },
+  "qualifiesAsus": false
+}

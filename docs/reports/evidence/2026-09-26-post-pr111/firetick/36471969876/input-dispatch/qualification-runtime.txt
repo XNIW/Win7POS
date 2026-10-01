@@ -1,0 +1,10 @@
+utc=2026-09-28T19:29:16.6117346+00:00
+CLR=4.0.30319.42000
+WPF=PresentationFramework, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35
+FrameworkFileVersion=4.8.9345.0 built by: NET481REL1LAST_25H2_C
+WpfFileVersion=4.8.9347.0
+OS=Microsoft Windows NT 6.2.9200.0
+process_arch=x86
+Stopwatch.Frequency=10000000
+duration_clock=QueryUnbiasedInterruptTime (excludes sleep)
+physical_scan_to_monitor_latency=NOT_MEASURED

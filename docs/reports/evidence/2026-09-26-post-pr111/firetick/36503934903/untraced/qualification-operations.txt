@@ -1,0 +1,12 @@
+FAILED_SCAN_STAGES,cycle=0,mode=Rows,scan=1,expected_qty=2,actual_qty=2,busy=False,service_ms=18.646,apply_ms=1.266,elapsed_ms=609.324,start_tick=5406078683,service_complete_tick=5406553489,observed_tick=5412172317
+VISUAL_SCAN_TIMEOUT,0,Rows,1,Input:<FocusBarcode>b__18_0:572.3|Background:RaiseRequerySuggested:582.2|Input:<QueueSelectionScroll>b__16_0:582.4|ContextIdle:CleanupOperation:530.7|Background:<InitializeViewport>b__0:478.1|Input:ContinueProcessingStagingArea:152.4|Background:OnCleanUp:455.2|Input:InputMarkerMessageHandler:411.5|Render:RenderMessageHandler:86.1
+NATIVE,0,visual_timeout,0x0001,258
+NATIVE,0,visual_timeout,0x0002,258
+NATIVE,0,visual_timeout,0x0004,258
+NATIVE,0,visual_timeout,0x0008,0
+NATIVE,0,visual_timeout,0x0040,258
+NATIVE,0,visual_timeout,0x0400,258
+NATIVE,0,visual_timeout,0x0800,258
+NATIVE,0,visual_timeout,0x1000,258
+NATIVE,0,visual_timeout,0x2000,258
+PEEK,0,visual_timeout,0xC126,window=327836,wParam=0,lParam=0

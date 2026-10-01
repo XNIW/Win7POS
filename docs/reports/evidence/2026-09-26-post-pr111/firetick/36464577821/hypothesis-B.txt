@@ -1,0 +1,1 @@
+B: Same duration/protocol as A. Identify actual timer target/args, Tick handler, promotion/start/end and executing callback during ready delay. If only B stalls inspect trace overhead; if QA sampling occupies the interval patch only that demonstrated producer.

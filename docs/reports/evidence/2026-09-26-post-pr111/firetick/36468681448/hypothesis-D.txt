@@ -1,0 +1,1 @@
+D3: Same focused minimal WPF window, duration and sampler as C3; reintroduce only the extra 125ms QA Background no-op timer from C2. This tests whether the control itself helped queue progress. No internal WPF callback removed, no product qualification or production timer change.

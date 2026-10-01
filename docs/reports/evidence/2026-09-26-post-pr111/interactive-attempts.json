@@ -1,0 +1,65 @@
+[
+  {
+    "run": "integrated-0ed0a061f5d8-20260927-020837",
+    "mode": "Qualification",
+    "observerEnabled": true,
+    "failure": "qualification_visual_scan_timeout",
+    "failedCycle": 0,
+    "failedMode": "Rows",
+    "failedOrdinal": 3,
+    "completedScans": 2,
+    "result": {
+      "MEASUREMENT_COMPLETED": false,
+      "ENVIRONMENT_VALID": false,
+      "STABILITY_PASS": false,
+      "measurementReasons": [
+        "Performance harness exit=2; inspect preserved harness-error.txt."
+      ]
+    },
+    "sourceCommit": "0ed0a061f5d85f3e21097d11c0d5161b5444ccab",
+    "note": "immutable local published-head candidate; not final ReleasePack",
+    "protocolSha256": "9e239a395b6c96037e2759197070b58009541bce9c65524a1e3badaa4f6ce98d"
+  },
+  {
+    "run": "interactive-observer-off-0ed0a06-100k",
+    "mode": "Diagnostic",
+    "observerEnabled": false,
+    "failure": "qualification_visual_scan_timeout",
+    "failedCycle": 0,
+    "failedMode": "Rows",
+    "failedOrdinal": 3,
+    "completedScans": 2,
+    "result": {
+      "MEASUREMENT_COMPLETED": false,
+      "ENVIRONMENT_VALID": false,
+      "STABILITY_PASS": false,
+      "measurementReasons": [
+        "Performance harness exit=2; inspect preserved harness-error.txt."
+      ]
+    },
+    "sourceCommit": "0ed0a061f5d85f3e21097d11c0d5161b5444ccab",
+    "note": "immutable local published-head candidate; not final ReleasePack",
+    "protocolSha256": "b91772f128958c1374d2cdd4bc56341942a07e0aeb372d0f12fd5af30580dff2"
+  },
+  {
+    "run": "interactive-timeout-v16-100k",
+    "mode": "Diagnostic",
+    "observerEnabled": true,
+    "failure": "qualification_visual_scan_timeout",
+    "failedCycle": 0,
+    "failedMode": "Rows",
+    "failedOrdinal": 3,
+    "completedScans": 2,
+    "result": {
+      "MEASUREMENT_COMPLETED": false,
+      "ENVIRONMENT_VALID": false,
+      "STABILITY_PASS": false,
+      "measurementReasons": [
+        "Performance harness exit=2; inspect preserved harness-error.txt."
+      ]
+    },
+    "sourceCommit": "0ed0a061f5d85f3e21097d11c0d5161b5444ccab",
+    "note": "v16 adds failure-only queue evidence; locally rebuilt application and harness, not final ReleasePack",
+    "protocolSha256": "faefee87ceae16082e2073ddf708494e3d37e5fa7413b717f32df373fabe31aa"
+  }
+]

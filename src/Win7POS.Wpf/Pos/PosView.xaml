@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:images="clr-namespace:Win7POS.Wpf.Products.Images"
              xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+             xmlns:pos="clr-namespace:Win7POS.Wpf.Pos"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              PreviewKeyDown="OnViewPreviewKeyDown"
              mc:Ignorable="d"
@@ -58,6 +59,7 @@
                      AutomationProperties.Name="{loc:Loc pos.cart.productHeader}"
                      AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      SelectionChanged="CartListBox_SelectionChanged"
+                     IsVisibleChanged="CartListBox_IsVisibleChanged"
                      Visibility="{Binding IsCartRowsView, Converter={StaticResource BoolToVis}}">
                 <ListBox.Resources>
                     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E9E1F2"/>
@@ -229,11 +231,14 @@
                      Background="Transparent"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     ScrollViewer.CanContentScroll="False"
-                     SelectionChanged="CartListBox_SelectionChanged">
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     SelectionChanged="CartListBox_SelectionChanged"
+                     IsVisibleChanged="CartListBox_IsVisibleChanged">
                 <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <WrapPanel IsItemsHost="True" ItemWidth="184" Orientation="Horizontal"/>
+                        <pos:VirtualizingCartWrapPanel IsItemsHost="True" ItemWidth="184"/>
                     </ItemsPanelTemplate>
                 </ListBox.ItemsPanel>
                 <ListBox.ItemContainerStyle>
@@ -652,7 +657,7 @@
                 Background="#E0FFFFFF" Panel.ZIndex="10"
                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,0,0,12"/>
+                <ProgressBar IsIndeterminate="{Binding IsVisible, RelativeSource={RelativeSource Self}}" Width="200" Height="6" Margin="0,0,0,12"/>
                 <TextBlock Text="{loc:Loc common.loading}" FontSize="14" Foreground="#555"/>
             </StackPanel>
         </Border>

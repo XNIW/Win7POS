@@ -1,0 +1,66 @@
+{
+  "derived": true,
+  "selection": "Unique executed MediaContext callback >=100ms in each fixed five-scan trial; original complete >=2ms callback window retained.",
+  "arms": [
+    {
+      "arm": "cold-1-legacy",
+      "initialRender": {
+        "method": "System.Windows.Media.MediaContext.AnimatedRenderMessageHandler",
+        "durationMs": 158.168,
+        "startRelativeToFirstScanMs": 25.9866,
+        "endRelativeToFirstScanMs": 184.155
+      },
+      "overwritten": 0
+    },
+    {
+      "arm": "cold-1-ready",
+      "initialRender": {
+        "method": "System.Windows.Media.MediaContext.AnimatedRenderMessageHandler",
+        "durationMs": 137.835,
+        "startRelativeToFirstScanMs": -235.3063,
+        "endRelativeToFirstScanMs": -97.471
+      },
+      "overwritten": 0
+    },
+    {
+      "arm": "cold-2-legacy",
+      "initialRender": {
+        "method": "System.Windows.Media.MediaContext.RenderMessageHandler",
+        "durationMs": 138.41,
+        "startRelativeToFirstScanMs": 16.7568,
+        "endRelativeToFirstScanMs": 155.1665
+      },
+      "overwritten": 0
+    },
+    {
+      "arm": "cold-2-ready",
+      "initialRender": {
+        "method": "System.Windows.Media.MediaContext.AnimatedRenderMessageHandler",
+        "durationMs": 135.89,
+        "startRelativeToFirstScanMs": -212.2997,
+        "endRelativeToFirstScanMs": -76.4102
+      },
+      "overwritten": 0
+    },
+    {
+      "arm": "cold-3-legacy",
+      "initialRender": {
+        "method": "System.Windows.Media.MediaContext.AnimatedRenderMessageHandler",
+        "durationMs": 146.572,
+        "startRelativeToFirstScanMs": 18.022,
+        "endRelativeToFirstScanMs": 164.5935
+      },
+      "overwritten": 0
+    },
+    {
+      "arm": "cold-3-ready",
+      "initialRender": {
+        "method": "System.Windows.Media.MediaContext.AnimatedRenderMessageHandler",
+        "durationMs": 142.041,
+        "startRelativeToFirstScanMs": -242.6724,
+        "endRelativeToFirstScanMs": -100.6312
+      },
+      "overwritten": 0
+    }
+  ]
+}

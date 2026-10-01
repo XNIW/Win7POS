@@ -1,0 +1,414 @@
+{
+  "sourceCommit": "aea65314b9de6f18a46a5ba9aefbeb2de363012d",
+  "runId": 36510437821,
+  "releaseRunId": 36508924895,
+  "artifact": {
+    "id": 11011032173,
+    "node_id": "MDg6QXJ0aWZhY3QxMTAxMTAzMjE3Mw==",
+    "name": "Win7POS-Cart-Qualification-36510437821",
+    "size_in_bytes": 246524,
+    "url": "https://api.github.com/repos/XNIW/Win7POS/actions/artifacts/11011032173",
+    "archive_download_url": "https://api.github.com/repos/XNIW/Win7POS/actions/artifacts/11011032173/zip",
+    "expired": false,
+    "digest": "sha256:1f090c1df81602eb3c0b133be80c4ab1422251ef59a2bf68e77a601bd3ab227b",
+    "created_at": "2026-09-29T03:13:32Z",
+    "updated_at": "2026-09-29T03:13:32Z",
+    "expires_at": "2026-10-13T03:13:31Z",
+    "workflow_run": {
+      "id": 36510437821,
+      "repository_id": 1167053625,
+      "head_repository_id": 1167053625,
+      "head_branch": "codex/post-pr111-performance-root-cause-20260926",
+      "head_sha": "aea65314b9de6f18a46a5ba9aefbeb2de363012d"
+    }
+  },
+  "host": {
+    "commit": "aea65314b9de6f18a46a5ba9aefbeb2de363012d",
+    "runId": "36510437821",
+    "selection": "integrated-12-and-soak-60",
+    "releaseRunId": "36508924895",
+    "image": "win25-vs2026",
+    "imageVersion": "20260922.246.2",
+    "runner": "GitHub Actions 1000004065",
+    "system": {
+      "Manufacturer": "Microsoft Corporation",
+      "Model": "Virtual Machine",
+      "TotalPhysicalMemory": 17174360064,
+      "NumberOfLogicalProcessors": 4
+    },
+    "cpu": {
+      "Name": "AMD EPYC 7763 64-Core Processor                ",
+      "NumberOfCores": 2,
+      "NumberOfLogicalProcessors": 4
+    },
+    "os": {
+      "Caption": "Microsoft Windows Server 2025 Datacenter",
+      "Version": "10.0.26100",
+      "BuildNumber": "26100"
+    },
+    "qualifiesAsus": false,
+    "qualifiesMergeFinal": false
+  },
+  "budgetSha256": "63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398",
+  "harnessSha256": "d970d11b5910efb793439f2a6b26ef99355834d0d5b747af837da571a9b54676",
+  "payloadFilesVerified": 41,
+  "releaseDownload": {
+    "status": "PASS",
+    "runId": "36508924895",
+    "commitSha": "aea65314b9de6f18a46a5ba9aefbeb2de363012d",
+    "buildVersion": "1.0.0-dev.aea65314b9de",
+    "archives": [
+      {
+        "name": "Win7POS-1.0.0-dev.aea65314b9de-ReleasePack-x86",
+        "id": 11008313602,
+        "digest": "sha256:fcefc4723755a18e08e0eccb0f8841a5c55fcadadfe147964a5a02ffbcac6df7"
+      },
+      {
+        "name": "Win7POS-1.0.0-dev.aea65314b9de-Setup",
+        "id": 11008023924,
+        "digest": "sha256:ad555f130748478ce69e18a6ffed76f618b8fd1c9d33384f4732ac6ad0c99634"
+      },
+      {
+        "name": "Win7POS-1.0.0-dev.aea65314b9de-dist",
+        "id": 11008158749,
+        "digest": "sha256:a1b2419b6bfe86aa8bb208b267d8f24c6f8cb20808a13de84f604913b7cbebde"
+      }
+    ],
+    "payloadFiles": 41,
+    "setupSha256": "290dc8abae7bfbcc28d57bfed5cba116a23bd408bb2f1b2e48b431d23a443ca1",
+    "payloadZipSha256": "8e6f1c0065bcdf94e29522d725561162924a19557c5133adb8c77c33ab7bc7e8",
+    "signatures": [
+      {
+        "file": "Win7POS\\ClosedXML.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\ClosedXML.Parser.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\Dapper.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\DocumentFormat.OpenXml.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\DocumentFormat.OpenXml.Framework.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\e_sqlite3.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\ExcelDataReader.DataSet.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\ExcelDataReader.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\ExcelNumberFormat.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\Microsoft.Bcl.AsyncInterfaces.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\Microsoft.Bcl.HashCode.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\Microsoft.Data.Sqlite.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\RBush.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\SixLabors.Fonts.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\SQLitePCLRaw.batteries_v2.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\SQLitePCLRaw.core.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\SQLitePCLRaw.provider.e_sqlite3.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\System.Buffers.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\System.Drawing.Common.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\System.IO.Packaging.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\System.Memory.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\System.Numerics.Vectors.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\System.Runtime.CompilerServices.Unsafe.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\System.Text.Encoding.CodePages.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\System.Threading.Tasks.Extensions.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\System.ValueTuple.dll",
+        "status": "Valid"
+      },
+      {
+        "file": "Win7POS\\Win7POS.Core.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\Win7POS.Data.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\Win7POS.Wpf.exe",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\zxing.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\zxing.presentation.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS\\ZXing.Windows.Compatibility.dll",
+        "status": "NotSigned"
+      },
+      {
+        "file": "Win7POS-1.0.0-dev.aea65314b9de-Setup.exe",
+        "status": "NotSigned"
+      }
+    ],
+    "installation": "NOT_EXECUTED"
+  },
+  "independentRevalidation": {
+    "integrated-12": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": true,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [],
+      "metrics": {
+        "isolatedServiceP95Ms": 15.42,
+        "sendProbeP95Ms": 0.098,
+        "elapsedSeconds": 738.848,
+        "RowsServiceP95Ms": 22.103,
+        "RowsUiP95Ms": 64.315,
+        "RowsUiMaximumMs": 104.02600000000001,
+        "RowsBitmapP95Ms": 28.94,
+        "GridServiceP95Ms": 21.38,
+        "GridUiP95Ms": 60.699,
+        "GridUiMaximumMs": 104.663,
+        "GridBitmapP95Ms": 28.815,
+        "maximumManagedWindowGrowthBytes": 0.0
+      }
+    },
+    "premerge-soak-60": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": true,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [],
+      "metrics": {
+        "isolatedServiceP95Ms": 13.115,
+        "sendProbeP95Ms": 0.116,
+        "elapsedSeconds": 3601.349,
+        "RowsServiceP95Ms": 22.268,
+        "RowsUiP95Ms": 60.68,
+        "RowsUiMaximumMs": 134.683,
+        "RowsBitmapP95Ms": 28.612,
+        "GridServiceP95Ms": 21.363,
+        "GridUiP95Ms": 61.15,
+        "GridUiMaximumMs": 133.611,
+        "GridBitmapP95Ms": 29.414,
+        "maximumManagedWindowGrowthBytes": 364053.5999999996
+      }
+    }
+  },
+  "qualifiesAsus": false,
+  "qualifiesMergeFinal": false,
+  "lanes": [
+    {
+      "label": "integrated-12",
+      "stage": "Integrated",
+      "executed": true,
+      "sourceCommit": "aea65314b9de6f18a46a5ba9aefbeb2de363012d",
+      "requiredSeconds": 720,
+      "completedCycles": 33,
+      "completedScans": 660,
+      "environmentSamples": 1353,
+      "protocolVersion": 4,
+      "observerVersion": 2,
+      "protocolFileSha256": "0bd744bbe6fb985342add0a914fd6ad2b56054f93f8d6632f4cc71083a50ed28",
+      "protocolTextSha256": "1c05aebd1d501e57dba87f477fbe23fc7fc3907516743040eec0f8896ccc5c64",
+      "budgetSha256": "63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398",
+      "fixtureSetup": {
+        "schemaVersion": "win7pos-fixture-setup-v1",
+        "completed": true,
+        "elapsedMs": 233.972,
+        "cartSize": 500,
+        "realizedRows": 26,
+        "legacyDiagnostic": false
+      },
+      "result": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": true,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [],
+        "metrics": {
+          "isolatedServiceP95Ms": 15.42,
+          "sendProbeP95Ms": 0.098,
+          "elapsedSeconds": 738.848,
+          "RowsServiceP95Ms": 22.103,
+          "RowsUiP95Ms": 64.315,
+          "RowsUiMaximumMs": 104.02600000000001,
+          "RowsBitmapP95Ms": 28.94,
+          "GridServiceP95Ms": 21.38,
+          "GridUiP95Ms": 60.699,
+          "GridUiMaximumMs": 104.663,
+          "GridBitmapP95Ms": 28.815,
+          "maximumManagedWindowGrowthBytes": 0.0
+        }
+      },
+      "warmIdleMaxima": {
+        "private_bytes": 89874432.0,
+        "managed_bytes": 14138532.0,
+        "pending": 1.0,
+        "oldest_ms": 9.262,
+        "focus_peak": 1.0,
+        "scroll_peak": 1.0,
+        "focus_maximum_wait_ms": 78.594,
+        "scroll_maximum_wait_ms": 68.701,
+        "closed_rooted_windows": 0.0,
+        "observer_dropped": 0.0,
+        "cache_bytes": 0.0,
+        "metadata_entries": 500.0,
+        "input_ms": 21.603,
+        "render_ms": 0.134,
+        "databind_ms": 0.07,
+        "background_ms": 0.074,
+        "realized_grid": 12.0
+      },
+      "allCycleOldestMaximumMs": 9.262
+    },
+    {
+      "label": "premerge-soak-60",
+      "stage": "Integrated",
+      "executed": true,
+      "sourceCommit": "aea65314b9de6f18a46a5ba9aefbeb2de363012d",
+      "requiredSeconds": 3600,
+      "completedCycles": 161,
+      "completedScans": 3220,
+      "environmentSamples": 6601,
+      "protocolVersion": 4,
+      "observerVersion": 2,
+      "protocolFileSha256": "87575fad6b67c3e5d37289335d50abc4afa8d9eb166dd210bb025c8d6541462b",
+      "protocolTextSha256": "1c05aebd1d501e57dba87f477fbe23fc7fc3907516743040eec0f8896ccc5c64",
+      "budgetSha256": "63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398",
+      "fixtureSetup": {
+        "schemaVersion": "win7pos-fixture-setup-v1",
+        "completed": true,
+        "elapsedMs": 230.228,
+        "cartSize": 500,
+        "realizedRows": 26,
+        "legacyDiagnostic": false
+      },
+      "result": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": true,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [],
+        "metrics": {
+          "isolatedServiceP95Ms": 13.115,
+          "sendProbeP95Ms": 0.116,
+          "elapsedSeconds": 3601.349,
+          "RowsServiceP95Ms": 22.268,
+          "RowsUiP95Ms": 60.68,
+          "RowsUiMaximumMs": 134.683,
+          "RowsBitmapP95Ms": 28.612,
+          "GridServiceP95Ms": 21.363,
+          "GridUiP95Ms": 61.15,
+          "GridUiMaximumMs": 133.611,
+          "GridBitmapP95Ms": 29.414,
+          "maximumManagedWindowGrowthBytes": 364053.5999999996
+        }
+      },
+      "warmIdleMaxima": {
+        "private_bytes": 88330240.0,
+        "managed_bytes": 13582744.0,
+        "pending": 2.0,
+        "oldest_ms": 19.229,
+        "focus_peak": 1.0,
+        "scroll_peak": 1.0,
+        "focus_maximum_wait_ms": 94.678,
+        "scroll_maximum_wait_ms": 74.888,
+        "closed_rooted_windows": 0.0,
+        "observer_dropped": 0.0,
+        "cache_bytes": 0.0,
+        "metadata_entries": 500.0,
+        "input_ms": 22.079,
+        "render_ms": 0.197,
+        "databind_ms": 0.227,
+        "background_ms": 30.647,
+        "realized_grid": 12.0
+      },
+      "allCycleOldestMaximumMs": 19.229
+    },
+    {
+      "label": "Asus Integrated",
+      "executed": false,
+      "sourceCommit": "aea65314b9de6f18a46a5ba9aefbeb2de363012d",
+      "durationSeconds": null,
+      "protocolVersion": 4,
+      "budgetSha256": "63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398",
+      "result": "NOT_EXECUTED: trusted QA signing/acceptance channel unavailable; historical scan-3 failure unresolved"
+    },
+    {
+      "label": "Asus Final",
+      "executed": false,
+      "sourceCommit": null,
+      "durationSeconds": null,
+      "protocolVersion": null,
+      "budgetSha256": "63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398",
+      "result": "NOT_EXECUTED: no merge package; Asus Integrated prerequisite missing"
+    }
+  ]
+}

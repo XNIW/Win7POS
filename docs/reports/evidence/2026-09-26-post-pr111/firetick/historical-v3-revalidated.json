@@ -1,0 +1,29 @@
+{
+  "MEASUREMENT_COMPLETED": true,
+  "ENVIRONMENT_VALID": true,
+  "STABILITY_PASS": false,
+  "measurementReasons": [],
+  "environmentReasons": [],
+  "stabilityReasons": [
+    "dispatcher_backlog:cycle=3",
+    "dispatcher_backlog:cycle=12",
+    "dispatcher_backlog:cycle=13",
+    "dispatcher_backlog:cycle=17",
+    "dispatcher_backlog:cycle=18",
+    "dispatcher_backlog:cycle=23"
+  ],
+  "metrics": {
+    "isolatedServiceP95Ms": 12.828,
+    "sendProbeP95Ms": 0.093,
+    "elapsedSeconds": 733.084,
+    "RowsServiceP95Ms": 24.375,
+    "RowsUiP95Ms": 68.496,
+    "RowsUiMaximumMs": 98.94900000000001,
+    "RowsBitmapP95Ms": 24.513,
+    "GridServiceP95Ms": 24.505,
+    "GridUiP95Ms": 61.105000000000004,
+    "GridUiMaximumMs": 98.935,
+    "GridBitmapP95Ms": 24.884,
+    "maximumManagedWindowGrowthBytes": 0.0
+  }
+}

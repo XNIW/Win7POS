@@ -1,0 +1,16 @@
+{
+  "source": "aea65314b9de6f18a46a5ba9aefbeb2de363012d",
+  "ci": 36507133349,
+  "security": 36507133252,
+  "canonicalGates": 49,
+  "coreDataPassed": 1033,
+  "coreDataFailed": 0,
+  "coreDataSkipped": 0,
+  "functionalScenarios": 9,
+  "validatorCases": 38,
+  "runnerPreflightCases": 15,
+  "hostedAggregationCases": 7,
+  "localRuntime": "NOT_EXECUTED; owner trusted signing channel required",
+  "budgetSha256": "63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398",
+  "review": "Only ProductEditDialog.ImageUploadProgress changes in product since cb43; diagnostics, observer, fixture setup and SHA version tooling reviewed; final trace shutdown race fixed with deterministic regression."
+}

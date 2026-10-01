@@ -95,7 +95,10 @@ if ($Ref -match '^refs/tags/(.+)$') {
 }
 
 $shortSha = $CommitSha.Substring(0, 12)
-$buildVersion = if ($isRelease) { $productVersion } else { "$productVersion-dev.$shortSha" }
+# SemVer numeric prerelease identifiers cannot have leading zeroes. A SHA
+# prefix can be entirely decimal; mark that case as textual without losing digits.
+$versionSha = if ($shortSha -match '^[0-9]+$') { "g$shortSha" } else { $shortSha }
+$buildVersion = if ($isRelease) { $productVersion } else { "$productVersion-dev.$versionSha" }
 $informationalVersion = "$buildVersion+sha.$CommitSha"
 $assemblyVersion = "$productVersion.0"
 $installerBaseFilename = "Win7POS-$buildVersion-Setup"

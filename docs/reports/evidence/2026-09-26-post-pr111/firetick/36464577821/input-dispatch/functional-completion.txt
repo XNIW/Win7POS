@@ -1,0 +1,1 @@
+﻿PASS DIAGNOSTIC_COMPLETED minimal WPF control; no application qualification

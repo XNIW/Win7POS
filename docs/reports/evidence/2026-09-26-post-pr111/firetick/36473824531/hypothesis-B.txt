@@ -1,0 +1,1 @@
+B5: Same fixed 3-minute candidate protocol with bounded timer and clock trace. Inspect catalog/image windows before and after close, template animation targets and POS idle. Predict disappearance of the default-rate infinite ProgressBar storyboard and long InputManager ready waits. Compare D5 reintroduction on this same VM; do not infer a cause from source matching alone.

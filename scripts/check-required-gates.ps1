@@ -15,6 +15,7 @@ $sourceGates = @(
     "check-release-supply-chain.ps1",
     "check-product-image-phase-b.ps1",
     "check-pos-cart-grid.ps1",
+    "check-performance-validation.ps1",
     "check-pos-startup-win7-safe.ps1",
     "check-win7pos-startup-no-eager-db.ps1",
     "check-win7pos-legacy-db-migrations.ps1",

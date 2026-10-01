@@ -1,0 +1,16 @@
+System.TimeoutException: qualification_visual_scan_timeout
+   at Win7POS.Wpf.UiSmokeHarness.CartQualificationSmoke.<RunAsync>d__4.MoveNext() in /_/tests/Win7POS.Wpf.UiSmokeHarness/CartQualificationSmoke.cs:line 162
+--- End of stack trace from previous location where exception was thrown ---
+   at System.Runtime.CompilerServices.TaskAwaiter.ThrowForNonSuccess(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.ValidateEnd(Task task)
+   at Win7POS.Wpf.UiSmokeHarness.CartPerformanceSmoke.<RunAsync>d__0.MoveNext() in /_/tests/Win7POS.Wpf.UiSmokeHarness/CartPerformanceSmoke.cs:line 73
+--- End of stack trace from previous location where exception was thrown ---
+   at System.Runtime.CompilerServices.TaskAwaiter.ThrowForNonSuccess(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   at Win7POS.Wpf.UiSmokeHarness.FunctionalCompletionSmoke.<RunAsync>d__1.MoveNext() in /_/tests/Win7POS.Wpf.UiSmokeHarness/FunctionalCompletionSmoke.cs:line 31
+--- End of stack trace from previous location where exception was thrown ---
+   at System.Runtime.CompilerServices.TaskAwaiter.ThrowForNonSuccess(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.ValidateEnd(Task task)
+   at Win7POS.Wpf.UiSmokeHarness.Program.<>c__DisplayClass10_0.<<Main>b__2>d.MoveNext() in /_/tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:line 490

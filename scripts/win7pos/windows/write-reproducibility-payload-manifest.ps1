@@ -86,7 +86,7 @@ function Read-AndNormalizeVersionMetadata {
         throw "VERSION.txt does not contain the authoritative BuildVersion '$ExpectedBuildVersion'."
     }
 
-    $buildMatch = [regex]::Match($ExpectedBuildVersion, '^(?<product>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))(?:-dev\.[0-9a-f]{12})?$')
+    $buildMatch = [regex]::Match($ExpectedBuildVersion, '^(?<product>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))(?:-dev\.(?:[0-9a-f]{12}|g[0-9]{12}))?$')
     $expectedProductVersion = $buildMatch.Groups["product"].Value
     $expectedFourPartVersion = "$expectedProductVersion.0"
     $expectedInformationalVersion = "$ExpectedBuildVersion+sha.$CommitSha"
@@ -194,7 +194,7 @@ if ($ExpectedCommitSha -notmatch '^[0-9a-fA-F]{40}$') {
 }
 $ExpectedCommitSha = $ExpectedCommitSha.ToLowerInvariant()
 
-if ($BuildVersion -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-dev\.[0-9a-f]{12})?$') {
+if ($BuildVersion -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-dev\.(?:[0-9a-f]{12}|g[0-9]{12}))?$') {
     throw "BuildVersion '$BuildVersion' is not a supported authoritative release or exact-SHA development version."
 }
 

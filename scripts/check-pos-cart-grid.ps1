@@ -41,7 +41,8 @@ Require ($viewModel -match 'CartProductImageCacheCapacity\s*=\s*512') "cart imag
 Require ($viewModel -match 'StartsWith\("MANUAL:"' -and $viewModel -match 'DiscountKeys\.IsDiscount') "manual and discount lines are excluded from image lookup"
 Require ($viewModel -match 'UpdateFrom\(item\)' -and $viewModel -notmatch 'CartItems\.Clear\(\);\s*foreach \(var item in snapshot\.Lines\)') "quantity refresh reuses cart row objects"
 Require ($view -match 'x:Name="CartListBox"' -and $view -match 'x:Name="CartGridListBox"') "rows and grid surfaces are present"
-Require ($view -match '<WrapPanel[^>]+ItemWidth="184"') "grid wraps responsively"
+Require ($view -match '<pos:VirtualizingCartWrapPanel[^>]+ItemWidth="184"' -and
+         $view -match 'VirtualizingPanel.VirtualizationMode="Recycling"') "grid wraps responsively with container recycling"
 Require ($view -match 'Product="\{Binding ProductImage\}"') "grid uses the shared product image presenter"
 Require ($view -match 'ThumbnailWidth="156"' -and $view -match 'ThumbnailHeight="94"') "grid keeps uniform thumbnail bounds"
 Require ($view -match 'IncreaseQtyForLineCommand' -and $view -match 'DecreaseQtyForLineCommand' -and $view -match 'RemoveLineForLineCommand' -and $view -match 'OpenChangeQuantityForLineCommand') "grid reuses cart commands"
