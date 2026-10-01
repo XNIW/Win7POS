@@ -85,6 +85,7 @@ namespace Win7POS.Wpf.Pos
         private readonly SettingsRepository _settings;
         private readonly DbMaintenanceRepository _dbMaintenance;
         private readonly SqliteOnlineBackup _onlineBackup;
+        private readonly BackupAutomationService _backupAutomation;
         private readonly CatalogImportOutboxRepository _catalogImportOutbox;
         private readonly SupplierRepository _suppliers;
         private readonly CategoryRepository _categories;
@@ -148,6 +149,8 @@ namespace Win7POS.Wpf.Pos
             _settings = new SettingsRepository(_factory);
             _dbMaintenance = new DbMaintenanceRepository(_factory);
             _onlineBackup = new SqliteOnlineBackup(_factory, LogBackupRestoreDiagnostic);
+            _backupAutomation = BackupAutomationService.GetOrCreate(
+                _factory, AppPaths.BackupsDirectory, LogBackupRestoreDiagnostic);
             _catalogImportOutbox = new CatalogImportOutboxRepository(_factory);
             _suppliers = new SupplierRepository(_factory);
             _categories = new CategoryRepository(_factory);
@@ -157,6 +160,7 @@ namespace Win7POS.Wpf.Pos
         }
 
         public string DbPath => _options.DbPath;
+        public BackupAutomationService BackupAutomation => _backupAutomation;
 
         public async Task<string> GetCartViewModeAsync()
         {
@@ -395,6 +399,8 @@ namespace Win7POS.Wpf.Pos
             if (!File.Exists(backupDbPath))
                 throw new FileNotFoundException("Backup file not found.", backupDbPath);
 
+            using var backupMaintenanceLease = await _backupAutomation
+                .EnterMaintenanceAsync(cancellationToken).ConfigureAwait(false);
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             IDisposable authorizationMaintenanceLease = null;
             IDisposable catalogTransitionLease = null;
@@ -882,17 +888,16 @@ namespace Win7POS.Wpf.Pos
         public async Task<string> BackupDbAsync(
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                DbInitializer.EnsureCreated(_options);
-                cancellationToken.ThrowIfCancellationRequested();
-                var outputPath = AllocateDbBackupPath("pos_backup_");
-
-                await _onlineBackup.CreateVerifiedAsync(outputPath, cancellationToken).ConfigureAwait(false);
-                _logger.LogInfo("POS DB backup created: " + Path.GetFileName(outputPath));
-                return outputPath;
+                var result = await _backupAutomation.BackupNowAsync(cancellationToken).ConfigureAwait(false);
+                if (!result.IsSuccess)
+                {
+                    _logger.LogWarning("POS DB backup result=" + result.Code);
+                    throw new InvalidOperationException("Backup result=" + result.Code);
+                }
+                _logger.LogInfo("POS DB backup created: " + Path.GetFileName(result.Path));
+                return result.Path;
             }
             catch (Exception ex)
             {
@@ -900,10 +905,6 @@ namespace Win7POS.Wpf.Pos
                     null,
                     "POS DB backup failed result=" + GetBackupRestoreFailureCode(ex));
                 throw;
-            }
-            finally
-            {
-                _gate.Release();
             }
         }
 
@@ -1001,6 +1002,7 @@ namespace Win7POS.Wpf.Pos
                 _logger.LogInfo("POS initialize start");
                 await EnsureDemoProductsAsync().ConfigureAwait(false);
                 _logger.LogInfo("POS initialize done");
+                _backupAutomation.Start();
             }
             catch (Exception ex)
             {

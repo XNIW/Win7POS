@@ -33,6 +33,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
@@ -102,8 +103,53 @@
                         </Button>
                     </WrapPanel>
 
-                    <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="DimGray" Text="{loc:Loc dbMaintenance.outputResults}"/>
-                    <Grid Grid.Row="5" Grid.ColumnSpan="2" Margin="0,6,0,0" MinHeight="120">
+                    <StackPanel x:Name="BackupAutomationPanel" Grid.Row="4" Grid.ColumnSpan="2" Margin="0,8,0,12">
+                        <TextBlock Text="{loc:Loc backupAutomation.title}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Grid IsEnabled="{Binding BackupSettingsLoaded}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{loc:Loc backupAutomation.schedule}" Style="{StaticResource FormLabelTextStyle}"/>
+                            <ComboBox Grid.Column="1" Margin="8,0,0,6" ItemsSource="{Binding BackupSchedules}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                      SelectedValue="{Binding BackupSchedule}" AutomationProperties.AutomationId="DbMaintenance.BackupSchedule"/>
+                            <TextBlock Grid.Row="1" Text="{loc:Loc backupAutomation.time}" Style="{StaticResource FormLabelTextStyle}"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Margin="8,0,0,6" MaxLength="5" Text="{Binding BackupTime, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" AutomationProperties.AutomationId="DbMaintenance.BackupTime"/>
+                            <TextBlock Grid.Row="2" Text="{loc:Loc backupAutomation.weekday}" Style="{StaticResource FormLabelTextStyle}"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="8,0,0,6" ItemsSource="{Binding BackupWeekdays}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                      SelectedValue="{Binding BackupWeeklyDay}" AutomationProperties.AutomationId="DbMaintenance.BackupWeekday"/>
+                            <CheckBox Grid.Row="3" Grid.ColumnSpan="2" Margin="0,0,0,8" Content="{loc:Loc backupAutomation.catchUp}" IsChecked="{Binding BackupCatchUp}"/>
+                            <TextBlock Grid.Row="4" Text="{loc:Loc backupAutomation.retention}" Style="{StaticResource FormLabelTextStyle}"/>
+                            <WrapPanel Grid.Row="4" Grid.Column="1" Margin="8,0,0,6">
+                                <TextBox Width="60" MaxLength="3" Text="{Binding BackupRetentionCount, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
+                                         AutomationProperties.AutomationId="DbMaintenance.BackupRetentionCount"/>
+                                <TextBlock Text="{loc:Loc backupAutomation.files}" Margin="6,0,12,0" VerticalAlignment="Center"/>
+                                <TextBox Width="65" MaxLength="4" Text="{Binding BackupRetentionDays, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
+                                         AutomationProperties.AutomationId="DbMaintenance.BackupRetentionDays"/>
+                                <TextBlock Text="{loc:Loc backupAutomation.days}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </WrapPanel>
+                            <TextBlock Grid.Row="5" Text="{loc:Loc backupAutomation.destination}" Style="{StaticResource FormLabelTextStyle}"/>
+                            <ComboBox Grid.Row="5" Grid.Column="1" Margin="8,0,0,6" ItemsSource="{Binding BackupDestinations}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                      SelectedValue="{Binding BackupDestinationKind}" AutomationProperties.AutomationId="DbMaintenance.BackupDestinationKind"/>
+                            <TextBlock Grid.Row="6" Text="{loc:Loc backupAutomation.path}" Style="{StaticResource FormLabelTextStyle}"/>
+                            <TextBox Grid.Row="6" Grid.Column="1" Margin="8,0,0,6" Text="{Binding BackupDestinationPath, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" AutomationProperties.AutomationId="DbMaintenance.BackupDestinationPath"/>
+                        </Grid>
+                        <TextBlock Text="{loc:Loc backupAutomation.help}" TextWrapping="Wrap" Foreground="DimGray" Margin="0,4,0,8"/>
+                        <Button HorizontalAlignment="Left" MinWidth="132" Height="36" Content="{loc:Loc backupAutomation.save}" Command="{Binding SaveBackupSettingsCommand}"
+                                Style="{StaticResource OutlineButtonStyle}" AutomationProperties.AutomationId="DbMaintenance.SaveBackupSettings"/>
+                        <TextBlock Text="{loc:Loc backupAutomation.lastResult}" FontWeight="SemiBold" Margin="0,10,0,4"/>
+                        <TextBlock Text="{Binding LastBackupResult}" TextWrapping="Wrap" AutomationProperties.AutomationId="DbMaintenance.LastBackupResult" AutomationProperties.LiveSetting="Polite"/>
+                    </StackPanel>
+                    <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="DimGray" Text="{loc:Loc dbMaintenance.outputResults}"/>
+                    <Grid Grid.Row="6" Grid.ColumnSpan="2" Margin="0,6,0,0" MinHeight="120">
                         <TextBox Text="{Binding OutputLog}"
                                  IsReadOnly="True"
                                  TextWrapping="Wrap"
