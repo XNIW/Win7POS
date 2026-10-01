@@ -1068,3 +1068,601 @@ ON CONFLICT(id) DO UPDATE SET value=@value;", new { value });
         }
     }
 }
+
+[TestClass]
+public sealed class BackupAutomationTests
+{
+    [TestMethod]
+    [DataRow("backups")]
+    [DataRow("Jos\u00e9")]
+    public async Task DestinationCasingChange_RetainsOneWindowsDirectoryOwnershipSet(string directoryName)
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        var options = new BackupAutomationOptions
+        {
+            DestinationKind = "custom_local", DestinationPath = Path.Combine(files.Root, directoryName),
+            RetentionMaxCount = 3, RetentionMaxAgeDays = 3650
+        };
+        await service.SaveOptionsAsync(options, "test");
+        for (var index = 0; index < 3; index++)
+        {
+            Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
+            files.Clock.Advance(TimeSpan.FromMinutes(1));
+        }
+        options.DestinationPath = options.DestinationPath.ToUpperInvariant();
+        await service.SaveOptionsAsync(options, "test");
+        var newest = await service.BackupNowAsync();
+        Assert.IsTrue(newest.IsSuccess);
+        Assert.IsTrue(File.Exists(newest.Path));
+        Assert.AreEqual(3, Directory.GetFiles(options.DestinationPath, "pos_backup_*.db").Length);
+        Assert.AreEqual(3L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+    }
+
+    [TestMethod]
+    public async Task DestinationChangedAfterFailedManualBackup_FutureScheduleRemainsNotDue()
+    {
+        using var files = new AutomationFiles();
+        var failing = files.Service((path, ct) => throw new IOException("deterministic"));
+        var options = Daily();
+        await failing.SaveOptionsAsync(options, "test");
+        Assert.AreEqual("backup_failed", (await failing.BackupNowAsync()).Code);
+        Directory.CreateDirectory(files.Backups);
+        var userFile = Path.Combine(files.Backups, "pos_backup_user.db");
+        File.WriteAllText(userFile, "user-file-preserved");
+        options.DestinationKind = "custom_local";
+        options.DestinationPath = Path.Combine(files.Root, "new-destination");
+        var service = files.Service();
+        await service.SaveOptionsAsync(options, "test");
+        files.Clock.Advance(TimeSpan.FromMinutes(6));
+        Assert.AreEqual("not_due", (await service.PollAsync()).Code);
+        Assert.IsFalse(Directory.Exists(options.DestinationPath));
+        Assert.AreEqual("user-file-preserved", File.ReadAllText(userFile));
+    }
+
+    [TestMethod]
+    public async Task ReplacedAfterEnginePublish_IsNotRegisteredOrRemovedByRetention()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service(async (path, ct) =>
+        {
+            var validation = await new SqliteOnlineBackup(files.Factory).CreateVerifiedAsync(path, ct);
+            SqliteConnectionFactory.ClearAllPools();
+            File.WriteAllText(path, "replacement-user-file-before-registration");
+            return validation;
+        });
+        await service.SaveOptionsAsync(new BackupAutomationOptions
+        { RetentionMaxCount = 3, RetentionMaxAgeDays = 1 }, "test");
+        var result = await service.BackupNowAsync();
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("published_identity_invalid", result.Code);
+        Assert.AreEqual("replacement-user-file-before-registration", File.ReadAllText(result.Path));
+        Assert.AreEqual(0L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+        Assert.AreEqual(0, result.DeletedCount);
+        Assert.AreEqual(1, files.Snapshots().Length);
+        Assert.IsTrue(files.Query<string>("SELECT pending_id FROM backup_automation_state;").Length > 0);
+    }
+
+    [TestMethod]
+    public async Task ReconciledOldDestination_DoesNotApplyNewDestinationRetentionPolicy()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        var options = Daily();
+        options.RetentionMaxCount = 10;
+        options.RetentionMaxAgeDays = 3650;
+        await service.SaveOptionsAsync(options, "test");
+        for (var index = 0; index < 5; index++)
+            Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
+        var crashing = files.Service(failureHook: point => throw new BackupAutomationCrashException());
+        await Assert.ThrowsExactlyAsync<BackupAutomationCrashException>(() => crashing.BackupNowAsync());
+        options.DestinationKind = "custom_local";
+        options.DestinationPath = Path.Combine(files.Root, "new-destination");
+        options.RetentionMaxCount = 3;
+        await service.SaveOptionsAsync(options, "test");
+        Assert.IsTrue((await files.Service().PollAsync(startup: true)).IsSuccess);
+        Assert.AreEqual(6, files.Snapshots().Length);
+        Assert.IsFalse(Directory.Exists(options.DestinationPath));
+    }
+
+    [TestMethod]
+    public async Task RetentionWithIdenticalClock_PreservesNewestRegistrations()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.SaveOptionsAsync(new BackupAutomationOptions
+        { RetentionMaxCount = 3, RetentionMaxAgeDays = 3650 }, "test");
+        var paths = new List<string>();
+        for (var index = 0; index < 6; index++)
+        {
+            var result = await service.BackupNowAsync();
+            Assert.IsTrue(result.IsSuccess, result.Code);
+            Assert.IsTrue(File.Exists(result.Path), "Just-published snapshot was removed by tied retention ordering.");
+            paths.Add(result.Path);
+        }
+        CollectionAssert.AreEquivalent(paths.Skip(3).ToArray(), files.Snapshots());
+    }
+
+    [TestMethod]
+    public async Task LockedRetentionFile_WarnsAndPreservesVerifiedBackup()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.SaveOptionsAsync(new BackupAutomationOptions
+        { RetentionMaxCount = 3, RetentionMaxAgeDays = 3650 }, "test");
+        var oldest = await service.BackupNowAsync();
+        for (var index = 0; index < 2; index++)
+        {
+            files.Clock.Advance(TimeSpan.FromDays(1));
+            Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
+        }
+        using (var locked = new FileStream(oldest.Path, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            files.Clock.Advance(TimeSpan.FromDays(1));
+            var latest = await service.BackupNowAsync();
+            Assert.IsTrue(latest.IsSuccess);
+            Assert.AreEqual("backup_verified_retention_warning", latest.Code);
+            Assert.IsTrue(File.Exists(latest.Path));
+            Assert.IsTrue(File.Exists(oldest.Path));
+        }
+        Assert.AreEqual(4, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task RestartWithoutCatchUp_SkipsFailedPendingRetryEvenDuringBackoff()
+    {
+        using var files = new AutomationFiles();
+        var options = Daily();
+        options.Schedule.CatchUpOnStartup = false;
+        var failing = files.Service((path, ct) => throw new IOException("deterministic"));
+        await failing.SaveOptionsAsync(options, "test");
+        files.Clock.Advance(TimeSpan.FromHours(2));
+        Assert.AreEqual("backup_failed", (await failing.PollAsync()).Code);
+        files.Clock.Advance(TimeSpan.FromMinutes(1));
+        var restarted = files.Service();
+        Assert.AreEqual("retry_pending", (await restarted.PollAsync(startup: true)).Code);
+        Assert.IsTrue(files.Query<long>("SELECT considered_local FROM backup_automation_state;") > 0);
+        files.Clock.Advance(TimeSpan.FromMinutes(5));
+        Assert.AreEqual("not_due", (await restarted.PollAsync()).Code);
+        Assert.AreEqual(0, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task Daily_DuplicateTicksAndRestartProduceOneSnapshot()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.SaveOptionsAsync(Daily(), "test-operator");
+        files.Clock.Advance(TimeSpan.FromHours(2));
+        Assert.IsTrue((await service.PollAsync()).IsSuccess);
+        Assert.AreEqual("not_due", (await service.PollAsync()).Code);
+        Assert.AreEqual("not_due", (await files.Service().PollAsync(startup: true)).Code);
+        Assert.AreEqual(1, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task Restart_CatchUpCoversOnlyLatestMissedSlot()
+    {
+        using var files = new AutomationFiles();
+        await files.Service().SaveOptionsAsync(Daily(), "test");
+        files.Clock.Advance(TimeSpan.FromDays(8) + TimeSpan.FromHours(3));
+        var restarted = files.Service();
+        Assert.IsTrue((await restarted.PollAsync(startup: true)).IsSuccess);
+        Assert.AreEqual("not_due", (await restarted.PollAsync()).Code);
+        Assert.AreEqual(1, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task Restart_CatchUpDisabledPersistsSkippedTodayAcrossLaterTicks()
+    {
+        using var files = new AutomationFiles();
+        var options = Daily();
+        options.Schedule.CatchUpOnStartup = false;
+        await files.Service().SaveOptionsAsync(options, "test");
+        files.Clock.Advance(TimeSpan.FromDays(2) + TimeSpan.FromHours(3));
+        var restarted = files.Service();
+        Assert.AreEqual("not_due", (await restarted.PollAsync(startup: true)).Code);
+        Assert.AreEqual("not_due", (await restarted.PollAsync()).Code);
+        files.Clock.Advance(TimeSpan.FromDays(1));
+        Assert.IsTrue((await restarted.PollAsync()).IsSuccess);
+        Assert.AreEqual(1, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task LocalClockRollback_DoesNotRepeatCompletedSlot()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.SaveOptionsAsync(Daily(), "test");
+        files.Clock.Advance(TimeSpan.FromHours(2));
+        Assert.IsTrue((await service.PollAsync()).IsSuccess);
+        files.Clock.Local = files.Clock.Local.AddHours(-2);
+        Assert.AreEqual("not_due", (await service.PollAsync()).Code);
+        files.Clock.Local = files.Clock.Local.AddHours(2);
+        Assert.AreEqual("not_due", (await files.Service().PollAsync(startup: true)).Code);
+        Assert.AreEqual(1, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task Weekly_PollsBeforeDayAndTimeDoNotRun()
+    {
+        using var files = new AutomationFiles();
+        var options = Daily();
+        options.Schedule.Mode = Win7POS.Core.Backup.BackupScheduleMode.Weekly;
+        options.Schedule.WeeklyDay = DayOfWeek.Friday;
+        var service = files.Service();
+        await service.SaveOptionsAsync(options, "test");
+        Assert.AreEqual("not_due", (await service.PollAsync()).Code);
+        files.Clock.Advance(TimeSpan.FromDays(1));
+        Assert.AreEqual("not_due", (await service.PollAsync()).Code);
+        files.Clock.Advance(TimeSpan.FromHours(1));
+        Assert.IsTrue((await service.PollAsync()).IsSuccess);
+        Assert.AreEqual("not_due", (await service.PollAsync()).Code);
+    }
+
+    [TestMethod]
+    public async Task ManualAndScheduled_UseSharedNoWaitSingleFlightAcrossInstances()
+    {
+        using var files = new AutomationFiles();
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var service = files.Service(async (path, ct) =>
+        {
+            entered.SetResult(true);
+            await release.Task;
+            return await new SqliteOnlineBackup(files.Factory).CreateVerifiedAsync(path, ct);
+        });
+        await service.SaveOptionsAsync(Daily(), "test");
+        files.Clock.Advance(TimeSpan.FromHours(2));
+        var running = service.PollAsync();
+        await entered.Task;
+        Assert.AreEqual("busy", (await files.Service().BackupNowAsync()).Code);
+        Assert.AreEqual("busy", (await files.Service().PollAsync()).Code);
+        release.SetResult(true);
+        Assert.IsTrue((await running).IsSuccess);
+        Assert.AreEqual(1, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task AdjacentProcessLock_PreventsCompetingPublication()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        using (var processLock = new FileStream(files.Live + ".backup-automation.lock", FileMode.OpenOrCreate,
+            FileAccess.ReadWrite, FileShare.None))
+            Assert.AreEqual("busy", (await service.BackupNowAsync()).Code);
+        Assert.AreEqual(0, files.Snapshots().Length);
+        Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
+    }
+
+    [TestMethod]
+    public async Task MaintenanceLease_BlocksBackupWithoutTakingSalesGate()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        using (await service.EnterMaintenanceAsync())
+            Assert.AreEqual("busy", (await files.Service().BackupNowAsync()).Code);
+        Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
+    }
+
+    [TestMethod]
+    public async Task CancellationBeforePublication_RemovesPartialsAndDoesNotRunRetention()
+    {
+        using var files = new AutomationFiles();
+        using var cancellation = new CancellationTokenSource();
+        var hooks = new BackupRestoreTestHooks
+        {
+            BackupFault = point =>
+            {
+                if (point == BackupFailurePoint.AfterTemporarySnapshotCreation) cancellation.Cancel();
+            }
+        };
+        var service = files.Service((path, ct) =>
+            new SqliteOnlineBackup(files.Factory, null, hooks).CreateVerifiedAsync(path, ct));
+        var result = await service.BackupNowAsync(cancellation.Token);
+        Assert.AreEqual("cancelled", result.Code);
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual(0, files.Snapshots().Length);
+        Assert.AreEqual(0, Directory.GetFiles(files.Backups, "*.partial-*").Length);
+        Assert.AreEqual(0L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+    }
+
+    [TestMethod]
+    public async Task CancellationAfterPublication_FinalizesVerifiedSnapshot()
+    {
+        using var files = new AutomationFiles();
+        using var cancellation = new CancellationTokenSource();
+        var service = files.Service(async (path, ct) =>
+        {
+            var validation = await new SqliteOnlineBackup(files.Factory).CreateVerifiedAsync(path, ct);
+            cancellation.Cancel();
+            return validation;
+        });
+        var result = await service.BackupNowAsync(cancellation.Token);
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual("backup_verified", result.Code);
+        Assert.AreEqual(1L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+        Assert.AreEqual(string.Empty, files.Query<string>("SELECT pending_id FROM backup_automation_state;"));
+    }
+
+    [TestMethod]
+    public async Task RetentionCount_RemovesOnlyRegisteredSnapshotsAndKeepsNewestThree()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        var options = new BackupAutomationOptions { RetentionMaxCount = 3, RetentionMaxAgeDays = 3650 };
+        await service.SaveOptionsAsync(options, "test");
+        Directory.CreateDirectory(files.Backups);
+        var userFile = Path.Combine(files.Backups, "pos_backup_user.db");
+        File.WriteAllText(userFile, "user-file-preserved");
+        var paths = new List<string>();
+        for (var index = 0; index < 6; index++)
+        {
+            var result = await service.BackupNowAsync();
+            Assert.IsTrue(result.IsSuccess, result.Code);
+            paths.Add(result.Path);
+            files.Clock.Advance(TimeSpan.FromDays(1));
+        }
+        Assert.IsTrue(File.Exists(userFile));
+        Assert.AreEqual("user-file-preserved", File.ReadAllText(userFile));
+        CollectionAssert.AreEquivalent(paths.Skip(3).ToArray(), files.Snapshots().Where(path => path != userFile).ToArray());
+        Assert.AreEqual(3L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+    }
+
+    [TestMethod]
+    public async Task RetentionAge_UsesRecordedUtcAndPreservesNewestThree()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.SaveOptionsAsync(new BackupAutomationOptions
+        { RetentionMaxCount = 20, RetentionMaxAgeDays = 1 }, "test");
+        var paths = new List<string>();
+        for (var index = 0; index < 5; index++)
+        {
+            var result = await service.BackupNowAsync();
+            Assert.IsTrue(result.IsSuccess, result.Code);
+            paths.Add(result.Path);
+            File.SetLastWriteTimeUtc(result.Path, DateTime.UtcNow.AddYears(5));
+            files.Clock.Advance(TimeSpan.FromDays(2));
+        }
+        CollectionAssert.AreEquivalent(paths.Skip(2).ToArray(), files.Snapshots());
+    }
+
+    [TestMethod]
+    public async Task Retention_ReplacedRegisteredFileIsDisownedAndNeverDeleted()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.SaveOptionsAsync(new BackupAutomationOptions
+        { RetentionMaxCount = 3, RetentionMaxAgeDays = 3650 }, "test");
+        var first = await service.BackupNowAsync();
+        SqliteConnectionFactory.ClearAllPools();
+        File.WriteAllText(first.Path, "replacement-user-file");
+        for (var index = 0; index < 5; index++)
+        {
+            files.Clock.Advance(TimeSpan.FromDays(1));
+            Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
+        }
+        Assert.AreEqual("replacement-user-file", File.ReadAllText(first.Path));
+        Assert.AreEqual(3L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+        Assert.AreEqual(4, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task FailedBackup_DoesNotApplyNewRetentionPolicy()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.SaveOptionsAsync(new BackupAutomationOptions
+        { RetentionMaxCount = 10, RetentionMaxAgeDays = 3650 }, "test");
+        for (var index = 0; index < 5; index++)
+        {
+            Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
+            files.Clock.Advance(TimeSpan.FromDays(1));
+        }
+        await service.SaveOptionsAsync(new BackupAutomationOptions
+        { RetentionMaxCount = 3, RetentionMaxAgeDays = 1 }, "test");
+        var failing = files.Service((path, ct) => throw new UnauthorizedAccessException("deterministic"));
+        Assert.AreEqual("access_denied", (await failing.BackupNowAsync()).Code);
+        Assert.AreEqual(5, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task AccessDenied_RetryIsThrottledAndMonotonicDespiteUtcRollback()
+    {
+        using var files = new AutomationFiles();
+        var denied = true;
+        var attempts = 0;
+        var service = files.Service(destinationProbe: path =>
+        {
+            attempts++;
+            if (denied) throw new UnauthorizedAccessException("deterministic");
+        });
+        await service.SaveOptionsAsync(Daily(), "test");
+        files.Clock.Advance(TimeSpan.FromHours(2));
+        Assert.AreEqual("access_denied", (await service.PollAsync()).Code);
+        files.Clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.AreEqual("retry_pending", (await service.PollAsync()).Code);
+        Assert.AreEqual(1, attempts);
+        files.Clock.Utc = files.Clock.Utc.AddHours(-8);
+        files.Clock.Elapsed += TimeSpan.FromMinutes(4);
+        denied = false;
+        Assert.IsTrue((await service.PollAsync()).IsSuccess);
+        Assert.AreEqual(2, attempts);
+    }
+
+    [TestMethod]
+    public async Task OfflineUnc_ReturnsWarningAndNeverWritesDefaultDirectory()
+    {
+        using var files = new AutomationFiles();
+        var attempts = 0;
+        var service = files.Service(destinationProbe: path =>
+        {
+            attempts++;
+            Assert.IsTrue(path.StartsWith(@"\\offline-server\share", StringComparison.Ordinal));
+            throw new IOException("deterministic network unavailable");
+        });
+        var options = Daily();
+        options.DestinationKind = "network_share";
+        options.DestinationPath = @"\\offline-server\share\backups";
+        await service.SaveOptionsAsync(options, "test");
+        files.Clock.Advance(TimeSpan.FromHours(2));
+        Assert.AreEqual("network_unavailable", (await service.PollAsync()).Code);
+        Assert.AreEqual("retry_pending", (await service.PollAsync()).Code);
+        Assert.AreEqual(1, attempts);
+        Assert.IsFalse(Directory.Exists(files.Backups));
+        Assert.IsFalse((await service.GetLastResultAsync()).Contains("offline-server", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task SettingsAuditFailure_RollsBackWholeSettingsGroup()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.GetLastResultAsync();
+        files.Execute(@"CREATE TRIGGER deny_policy_audit BEFORE INSERT ON backup_automation_audit
+WHEN NEW.event='settings_saved' BEGIN SELECT RAISE(ABORT,'deterministic'); END;");
+        await Assert.ThrowsExactlyAsync<SqliteException>(() => service.SaveOptionsAsync(Daily(), "test"));
+        Assert.AreEqual(Win7POS.Core.Backup.BackupScheduleMode.Disabled, (await service.GetOptionsAsync()).Schedule.Mode);
+        Assert.AreEqual(0L, files.Query<long>("SELECT COUNT(1) FROM app_settings WHERE key LIKE 'pos.operations.backup.%';"));
+        Assert.AreEqual(0L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_audit WHERE event='settings_saved';"));
+        Assert.AreEqual(0L, files.Query<long>("SELECT activated_local FROM backup_automation_state;"));
+    }
+
+    [TestMethod]
+    public async Task SettingsAudit_UsesCanonicalKeysAndNoDestinationValuesOrCredentials()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        var options = Daily();
+        options.DestinationKind = "custom_local";
+        options.DestinationPath = Path.Combine(files.Root, "custom-secret-path");
+        await service.SaveOptionsAsync(options, @"operator\credential-canary");
+        var audit = files.Query<string>("SELECT event||actor||key_names||before_hash||after_hash||file_name FROM backup_automation_audit WHERE event='settings_saved';");
+        Assert.IsFalse(audit.Contains("custom-secret-path", StringComparison.Ordinal));
+        Assert.IsFalse(audit.Contains("credential-canary", StringComparison.Ordinal));
+        StringAssert.Contains(audit, "pos.operations.backup.schedule");
+        Assert.AreEqual("daily", files.Query<string>("SELECT value FROM app_settings WHERE key='pos.operations.backup.schedule';"));
+        Assert.AreEqual("Sunday", files.Query<string>("SELECT value FROM app_settings WHERE key='pos.operations.backup.weekly_day';"));
+        options.DestinationKind = "local";
+        options.DestinationPath = @"\\user:password@server\share";
+        await service.SaveOptionsAsync(options, "test");
+        Assert.AreEqual(string.Empty, files.Query<string>("SELECT value FROM app_settings WHERE key='pos.operations.backup.destination.path';"));
+    }
+
+    [TestMethod]
+    public async Task CrashAfterPublish_RestartReconcilesVerifiedSnapshotWithoutDuplicate()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service(failureHook: point => throw new BackupAutomationCrashException());
+        await service.SaveOptionsAsync(Daily(), "test");
+        files.Clock.Advance(TimeSpan.FromHours(2));
+        await Assert.ThrowsExactlyAsync<BackupAutomationCrashException>(() => service.PollAsync());
+        Assert.AreEqual(1, files.Snapshots().Length);
+        var engineCalls = 0;
+        var restarted = files.Service((path, ct) => { engineCalls++; throw new IOException("should never create another snapshot"); });
+        Assert.IsTrue((await restarted.PollAsync(startup: true)).IsSuccess);
+        Assert.AreEqual("not_due", (await restarted.PollAsync()).Code);
+        Assert.AreEqual(0, engineCalls);
+        Assert.AreEqual(1, files.Snapshots().Length);
+    }
+
+    [TestMethod]
+    public async Task RegistrationCommitFailure_PreservesPendingIntentForRestartReconciliation()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        await service.SaveOptionsAsync(Daily(), "test");
+        files.Execute(@"CREATE TRIGGER deny_backup_registration BEFORE INSERT ON backup_automation_files
+BEGIN SELECT RAISE(ABORT,'deterministic'); END;");
+        files.Clock.Advance(TimeSpan.FromHours(2));
+        Assert.AreEqual("backup_finalize_pending", (await service.PollAsync()).Code);
+        Assert.IsTrue(files.Query<string>("SELECT pending_id FROM backup_automation_state;").Length > 0);
+        Assert.AreEqual(0L, files.Query<long>("SELECT considered_local FROM backup_automation_state;"));
+        Assert.AreEqual(1, files.Snapshots().Length);
+        files.Execute("DROP TRIGGER deny_backup_registration;");
+        Assert.IsTrue((await files.Service().PollAsync(startup: true)).IsSuccess);
+        Assert.AreEqual(1, files.Snapshots().Length);
+        Assert.AreEqual(1L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+    }
+
+    [TestMethod]
+    public async Task ForeignRestoredIdentity_DisownsExternalFilesWithoutDeletingThem()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        var backup = await service.BackupNowAsync();
+        Assert.IsTrue(backup.IsSuccess);
+        files.Execute("UPDATE backup_automation_state SET db_key='foreign-restored-database';");
+        await files.Service().GetLastResultAsync();
+        Assert.IsTrue(File.Exists(backup.Path));
+        Assert.AreEqual(0L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
+        Assert.AreEqual(string.Empty, files.Query<string>("SELECT pending_id FROM backup_automation_state;"));
+    }
+
+    [TestMethod]
+    public async Task MissingLiveDatabase_PollDoesNotRecreateDatabase()
+    {
+        using var files = new AutomationFiles();
+        var service = files.Service();
+        SqliteConnectionFactory.ClearAllPools();
+        File.Delete(files.Live);
+        Assert.AreEqual("live_database_missing", (await service.PollAsync(startup: true)).Code);
+        Assert.IsFalse(File.Exists(files.Live));
+    }
+
+    private static BackupAutomationOptions Daily() => new BackupAutomationOptions
+    {
+        Schedule = new Win7POS.Core.Backup.BackupScheduleOptions
+        { Mode = Win7POS.Core.Backup.BackupScheduleMode.Daily, LocalTime = "02:00" }
+    };
+
+    private sealed class AutomationClock : IBackupAutomationClock
+    {
+        public DateTime Local { get; set; } = new DateTime(2026, 1, 1, 1, 0, 0, DateTimeKind.Unspecified);
+        public DateTime Utc { get; set; } = new DateTime(2026, 1, 1, 5, 0, 0, DateTimeKind.Utc);
+        public TimeSpan Elapsed { get; set; }
+        public DateTime LocalNow => Local;
+        public DateTime UtcNow => Utc;
+        public TimeSpan MonotonicElapsed => Elapsed;
+        public void Advance(TimeSpan amount) { Local += amount; Utc += amount; Elapsed += amount; }
+    }
+
+    private sealed class AutomationFiles : IDisposable
+    {
+        private readonly List<BackupAutomationService> _services = new List<BackupAutomationService>();
+        public AutomationFiles()
+        {
+            Root = Path.Combine(Path.GetTempPath(), "Win7POS.AutoTests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Root);
+            Live = Path.Combine(Root, "live.db");
+            Backups = Path.Combine(Root, "backups");
+            var options = PosDbOptions.ForPath(Live);
+            DbInitializer.EnsureCreated(options);
+            Factory = new SqliteConnectionFactory(options);
+        }
+        public string Root { get; }
+        public string Live { get; }
+        public string Backups { get; }
+        public SqliteConnectionFactory Factory { get; }
+        public AutomationClock Clock { get; } = new AutomationClock();
+        public BackupAutomationService Service(
+            Func<string, CancellationToken, Task<DatabaseValidationResult>>? snapshot = null,
+            Action<BackupAutomationFailurePoint>? failureHook = null, Action<string>? destinationProbe = null)
+        {
+            var service = new BackupAutomationService(Factory, Backups, Clock, snapshot,
+                failureHook: failureHook, destinationProbe: destinationProbe);
+            _services.Add(service);
+            return service;
+        }
+        public string[] Snapshots() => Directory.Exists(Backups) ? Directory.GetFiles(Backups, "pos_backup_*.db") : Array.Empty<string>();
+        public T Query<T>(string sql) { using var connection = Factory.Open(); return connection.ExecuteScalar<T>(sql)!; }
+        public void Execute(string sql) { using var connection = Factory.Open(); connection.Execute(sql); }
+        public void Dispose()
+        {
+            foreach (var service in _services) service.Dispose();
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(Root, true);
+        }
+    }
+}

@@ -73,6 +73,11 @@ $required = @(
     "src/Win7POS.Data/Backup/SqliteOnlineBackup.cs",
     "src/Win7POS.Data/Backup/SqliteSourceInspector.cs",
     "src/Win7POS.Data/Backup/BackupRestoreProtocol.cs",
+    "src/Win7POS.Data/Backup/BackupAutomationService.cs",
+    "src/Win7POS.Data/Backup/BackupAutomationOptions.cs",
+    "src/Win7POS.Data/Backup/BackupAutomationStore.cs",
+    "src/Win7POS.Data/Backup/BackupAutomationRetention.cs",
+    "src/Win7POS.Core/Backup/BackupSchedulePolicy.cs",
     "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs",
     "src/Win7POS.Data/SqliteConnectionFactory.cs",
     "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs",
@@ -107,6 +112,11 @@ $restoreCoordinator = Read-Text "src/Win7POS.Data/Online/SqliteRestoreCoordinato
 $onlineBackup = Read-Text "src/Win7POS.Data/Backup/SqliteOnlineBackup.cs"
 $sourceInspector = Read-Text "src/Win7POS.Data/Backup/SqliteSourceInspector.cs"
 $backupRestoreProtocol = Read-Text "src/Win7POS.Data/Backup/BackupRestoreProtocol.cs"
+$backupAutomation = Read-Text "src/Win7POS.Data/Backup/BackupAutomationService.cs"
+$backupOptions = Read-Text "src/Win7POS.Data/Backup/BackupAutomationOptions.cs"
+$backupStore = Read-Text "src/Win7POS.Data/Backup/BackupAutomationStore.cs"
+$backupRetention = Read-Text "src/Win7POS.Data/Backup/BackupAutomationRetention.cs"
+$backupSchedulePolicy = Read-Text "src/Win7POS.Core/Backup/BackupSchedulePolicy.cs"
 $connectionFactory = Read-Text "src/Win7POS.Data/SqliteConnectionFactory.cs"
 $persistenceTests = Read-Text "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs"
 $persistenceHardeningTests = Read-Text "tests/Win7POS.Core.Tests/Data/PersistenceFoundationHardeningTests.cs"
@@ -435,7 +445,11 @@ if ($onlineBackup -notmatch "BackupDatabase" -or
     $onlineBackup -notmatch "ValidateAsync" -or
     [regex]::Matches($onlineBackup, "EnsureDestinationIsPublishable\(finalPath\)").Count -lt 2 -or
     $onlineBackup -notmatch "File\.Move\(temporaryPath, finalPath\)" -or
-    $workflow -notmatch "_onlineBackup\.CreateVerifiedAsync\(outputPath, cancellationToken\)" -or
+    $workflow -notmatch '_backupAutomation\s*\.\s*BackupNowAsync\(cancellationToken\)' -or
+    $backupAutomation -notmatch 'new\s+SqliteOnlineBackup\(factory,\s*diagnostics\)' -or
+    $backupAutomation -notmatch '_snapshot\s*=\s*snapshot\s*\?\?\s*engine\.CreateVerifiedAsync' -or
+    $backupAutomation -notmatch 'await\s+_snapshot\(state\.PendingPath,\s*cancellationToken\)' -or
+    $backupAutomation -notmatch 'validation\s*==\s*null\s*\|\|\s*!validation\.IsValid' -or
     $persistenceTests -notmatch "OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues" -or
     $persistenceHardeningTests -notmatch "BackupRejectsPreexistingFinalSidecarWithoutPublishingOrDeletingIt" -or
     $persistenceHardeningTests -notmatch "BackupRejectsFinalSidecarCreatedImmediatelyBeforePublish") {
@@ -528,7 +542,8 @@ if ($backupRestoreProtocol -notmatch "internal enum BackupFailurePoint" -or
     Pass "fault hooks are internal/test-only and cancellation is cooperatively bounded"
 }
 
-$hardeningSources = $backupRestoreProtocol + $sourceInspector + $onlineBackup + $restoreCoordinator + $atomicInstaller
+$hardeningSources = $backupRestoreProtocol + $sourceInspector + $onlineBackup + $restoreCoordinator + $atomicInstaller +
+    $backupAutomation + $backupOptions + $backupStore + $backupRetention + $backupSchedulePolicy
 if ($backupRestoreProtocol -notmatch "Path\.GetFileName" -or
     $backupRestoreProtocol -notmatch "operation_id=" -or
     $backupRestoreProtocol -notmatch "source_kind=" -or
@@ -544,11 +559,60 @@ if ($backupRestoreProtocol -notmatch "Path\.GetFileName" -or
 $backupStart = Index-OrFail $workflow "public async Task<string> BackupDbAsync" "BackupDbAsync missing"
 $backupEnd = Index-OrFail $workflow "private string AllocateDbBackupPath" "BackupDbAsync end marker missing"
 $backupBody = $workflow.Substring($backupStart, $backupEnd - $backupStart)
-if ($backupBody -notmatch "_onlineBackup\.CreateVerifiedAsync\(outputPath, cancellationToken\)" -or
-    $backupBody -match "File\.Copy\(_options\.DbPath") {
-    Fail "manual DB backup must use SQLite online backup and validate the snapshot"
+if ([regex]::Matches($backupBody, '_backupAutomation\s*\.\s*BackupNowAsync\(cancellationToken\)').Count -ne 1 -or
+    $backupBody -match 'File\.Copy\(|_gate\s*\.\s*(?:Wait|WaitAsync|Release)\s*\(') {
+    Fail "manual DB backup must delegate once to verified automation without holding the sales gate"
 } else {
-    Pass "manual DB backup uses a verified SQLite online snapshot"
+    Pass "manual DB backup delegates to verified automation and leaves the sales gate free"
+}
+
+$manualAutomation = @(Get-CSharpMethodSlices $backupAutomation "public" "BackupNowAsync")
+$scheduledAutomation = @(Get-CSharpMethodSlices $backupAutomation "internal" "PollAsync")
+$automationRun = @(Get-CSharpMethodSlices $backupAutomation "private" "RunAsync")
+$automationMaintenance = @(Get-CSharpMethodSlices $backupAutomation "public" "EnterMaintenanceAsync")
+if ($manualAutomation.Count -ne 1 -or $scheduledAutomation.Count -ne 1 -or
+    $automationRun.Count -ne 1 -or $automationMaintenance.Count -ne 1 -or
+    $manualAutomation[0].Text -notmatch 'Task\.Run\(\(\)\s*=>\s*RunAsync\(true,\s*false,\s*cancellationToken\)\)' -or
+    $scheduledAutomation[0].Text -notmatch 'Task\.Run\(\(\)\s*=>\s*RunAsync\(false,\s*startup,\s*cancellationToken\)\)' -or
+    $automationRun[0].Text -notmatch '_flight\.Wait\(0\)' -or
+    $automationRun[0].Text -notmatch 'finally\s*\{\s*_flight\.Release\(\);\s*\}' -or
+    $automationMaintenance[0].Text -notmatch 'await\s+_flight\.WaitAsync\(cancellationToken\)' -or
+    $automationMaintenance[0].Text -notmatch '(?s)var\s+processLock\s*=\s*OpenProcessLock\(\).*?new\s+MaintenanceLease\(_flight,\s*processLock\)' -or
+    $automationMaintenance[0].Text -notmatch 'catch\s*\{\s*processLock\.Dispose\(\);\s*throw;' -or
+    $restoreBody -notmatch '(?s)using\s+var\s+backupMaintenanceLease\s*=\s*await\s+_backupAutomation\s*\.\s*EnterMaintenanceAsync\(cancellationToken\).*?await\s+_gate\.WaitAsync') {
+    Fail "manual, scheduled, settings and restore must share one backup flight gate outside the sales gate"
+} else {
+    Pass "manual, scheduled and restore share one independent backup flight gate"
+}
+
+$workflowInitialize = @(Get-CSharpMethodSlices $workflow "public" "InitializeAsync")
+$automationStartDeclarations = [regex]::Matches($backupAutomation, '(?m)^\s*public\s+void\s+Start\s*\(')
+$automationStartBody = ""
+if ($automationStartDeclarations.Count -eq 1) {
+    $body = Find-CSharpMethodBodyStart $backupAutomation $automationStartDeclarations[0].Index
+    if ($null -ne $body -and $body.Kind -eq "block") {
+        $end = Find-CSharpMatchingDelimiter $backupAutomation $body.Index '{' '}'
+        if ($end -gt $body.Index) {
+            $automationStartBody = $backupAutomation.Substring($body.Index, $end - $body.Index + 1)
+        }
+    }
+}
+if ($workflowInitialize.Count -ne 1 -or $automationStartBody.Length -eq 0 -or
+    $workflowInitialize[0].Text -notmatch '(?s)RecoverInterruptedInstallAsync\(_options\.DbPath\).*?DbInitializer\.EnsureCreated\(_options\).*?_backupAutomation\.Start\(\)' -or
+    $automationStartBody -notmatch 'new\s+Timer\(' -or
+    $automationStartBody -match '\.Wait\(|\.Result\b|Thread\.Sleep\(' -or
+    $maintenanceDialog -match '_backupAutomation\.Start\(') {
+    Fail "backup scheduler must start asynchronously after restore recovery and migrations in application initialization"
+} else {
+    Pass "backup scheduler starts after recovery and migrations without requiring the maintenance dialog"
+}
+
+if ($backupSchedulePolicy -notmatch 'public\s+static\s+class\s+BackupSchedulePolicy' -or
+    $backupSchedulePolicy -notmatch 'GetDueSlot\(' -or
+    $backupSchedulePolicy -match 'using\s+(?:Win7POS\.(?:Data|Wpf)|System\.(?:IO|Threading|Diagnostics))\b|DateTime\.(?:Now|UtcNow)\b|DateTimeOffset\.(?:Now|UtcNow)\b|System\.Timers\b') {
+    Fail "backup schedule policy must stay pure Core with caller-supplied time and no IO or scheduler dependency"
+} else {
+    Pass "backup schedule policy stays pure Core with caller-supplied time"
 }
 
 if ($onlineBackup -notmatch "NativeSnapshotMaximumAttempts\s*=\s*5" -or

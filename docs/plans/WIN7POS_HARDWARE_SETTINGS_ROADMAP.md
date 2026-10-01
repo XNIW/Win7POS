@@ -26,7 +26,7 @@ is the current baseline.
 | Printer | Installed queues expose driver, port, status, offline/paused state and physical-vs-virtual classification; atomic settings and live job-count diagnostics remain follow-up work. | `WindowsPrinterDiscovery.cs`, `WindowsSpoolerPrinterInventory.cs`, `InstalledPrinterInfo.cs` |
 | Receipt | Shared renderers produce direct-spooler receipt, fiscal-boleta and daily-close text at 32/42 columns; copies are strictly 1–3 and no automatic PDF/archive remains. Width selection still uses legacy `pos.useReceipt42` rather than a typed profile. | `PosReceiptTextRenderer.cs`, `FiscalBoletaTextRenderer.cs`, `DailyCloseReceiptTextRenderer.cs`, `ReceiptPrintOptions.cs`, `WindowsSpoolerReceiptPrinter.cs` |
 | Drawer | Disabled by default, protected from virtual targets and restricted to an exact validated ESC/POS pulse shape. | `PrinterSettingsDialog.xaml`, `PrinterHardwareSafety.cs`, `WindowsSpoolerReceiptPrinter.cs` |
-| Backup | Manual online backup is integrity/FK verified; no schedule, retention, or selectable destination exists. | `SqliteOnlineBackup.cs`, `DbMaintenanceRepository.cs` |
+| Backup | OPERATIONS-1: verified online backup with disabled/daily/weekly schedule, latest-slot startup catch-up, managed retention and configurable local/UNC destination. | `BackupSchedulePolicy.cs`, `BackupAutomation*.cs`, `DbMaintenanceDialog.xaml` |
 | Customer display | Typed atomic settings, Win7-safe topology, non-activating window, privacy projection and hot-plug handling already exist. | `CustomerDisplaySettings*.cs`, `CustomerDisplayManager.cs` |
 
 ## PR-H1 — Hardware Center
@@ -133,6 +133,41 @@ Runtime rules:
   migration and user files.
 - Audit basename, result code and counts only; never paths.
 
+OPERATIONS-1 implements these backup options in Database/Maintenance. The
+in-process scheduler starts asynchronously after restore recovery, migrations
+and POS initialization; it polls every 30 seconds and cannot run while the app
+is closed. Schedule is disabled by default. Daily and weekly slots use strict
+invariant `HH:mm` and local wall-clock identities. Only the latest missed slot
+is recovered, bounded by policy activation. A durable monotonic slot watermark
+prevents replay after restart, clock rollback or a repeated DST hour. With
+startup catch-up disabled, the startup slot is deliberately consumed so the
+next ordinary tick cannot replay it.
+
+Manual and scheduled backups share a per-database gate and exclusive file
+lease. Restore holds the same lease; background backup never acquires the POS
+sales gate. Durable pending intents reconcile a verified snapshot published
+before an interrupted result commit. Failures leave the due slot retryable,
+show a safe result code and retry later without changing the configured
+destination. No SMB credential is saved; access is configured in Windows.
+
+Retention runs only after a verified successful snapshot. It combines count
+and recorded UTC age while preserving the newest three verified managed
+files. The ownership registry, content hash and exclusive deletion handle
+prevent deletion of unregistered, renamed/replaced or locked user files,
+including matching-prefix files. Restore/migration backups are unregistered
+and preserved. Retention and retry use persisted monotonic logical UTC, so a
+clock rollback cannot move age/retry calculations backwards. Destination
+validation rejects relative/traversal/device paths, Program Files, credential
+syntax, reparse ancestors and paths exceeding the Win7 snapshot path budget.
+Network destination failure produces an explicit warning; there is no local
+fallback.
+
+Backup policy, activation state and redacted policy audit commit in one
+explicit SQLite transaction with rollback. Result, watermark and managed-file
+registration also commit together. Backup-specific internal state/audit
+tables are created transactionally after database initialization; portable
+profile export/import and generic hardware audit remain follow-up work.
+
 ### Redacted settings profile
 
 Use `*.win7pos-settings.json` with `schemaVersion=1`, application version, UTC,
@@ -211,7 +246,8 @@ Additional behavior:
    and atomic audit.
 3. `PR-H3`: branding, idle content, privacy, test pattern and topology polish.
 
-The current risks (non-atomic printer save, 80 mm bias, no live job-count
-diagnostic, no backup schedule/retention and missing settings audit) remain
-roadmap-level. Copy count and RAW drawer validation were closed by PR #7 and are
+The remaining roadmap risks are non-atomic printer save, 80 mm bias, no live
+job-count diagnostic and generic hardware/settings audit. Backup schedule,
+retention, destination and atomic backup-policy audit are implemented by
+OPERATIONS-1. Copy count and RAW drawer validation were closed by PR #7 and are
 not carried forward as open findings.

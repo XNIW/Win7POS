@@ -2,7 +2,9 @@ using Dapper;
 using System.Reflection;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Win7POS.Core.Backup;
 using Win7POS.Data;
+using Win7POS.Data.Backup;
 using Win7POS.Data.Migrations;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
@@ -388,4 +390,400 @@ INSERT INTO legacy_child(id, parent_id) VALUES(1, 999);");
             try { Directory.Delete(Root, recursive: true); } catch { }
         }
     }
+}
+
+[TestClass]
+public sealed class BackupSchedulePolicyTests
+{
+    [TestMethod]
+    public void Disabled_HasNoSlotOrDueBackup()
+    {
+        var clock = new FakeClock(At(2026, 10, 1, 12));
+        var options = new BackupScheduleOptions();
+
+        Assert.IsNull(BackupSchedulePolicy.GetLatestSlot(options, clock.LocalNow));
+        Assert.IsNull(BackupSchedulePolicy.GetDueSlot(options, clock.LocalNow, null, null, startup: true));
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("2:00")]
+    [DataRow("02:0")]
+    [DataRow("24:00")]
+    [DataRow("23:60")]
+    [DataRow("-1:00")]
+    [DataRow("02:00 ")]
+    [DataRow(" 02:00")]
+    [DataRow("02:00:00")]
+    [DataRow("02.00")]
+    [DataRow("٠٢:٠٠")]
+    public void LocalTime_RejectsNonInvariantOrOutOfRangeValues(string? value)
+    {
+        var options = Daily();
+        options.LocalTime = value!;
+
+        Assert.IsFalse(BackupSchedulePolicy.TryParseLocalTime(value!, out _));
+        Assert.ThrowsExactly<ArgumentException>(() => BackupSchedulePolicy.Validate(options));
+    }
+
+    [TestMethod]
+    [DataRow("00:00", 0, 0)]
+    [DataRow("02:00", 2, 0)]
+    [DataRow("23:59", 23, 59)]
+    public void LocalTime_AcceptsExactBoundaries(string value, int hours, int minutes)
+    {
+        Assert.IsTrue(BackupSchedulePolicy.TryParseLocalTime(value, out var time));
+        Assert.AreEqual(new TimeSpan(hours, minutes, 0), time);
+    }
+
+    [TestMethod]
+    public void InvalidModeAndWeekday_AreRejected()
+    {
+        var options = Daily();
+        options.Mode = (BackupScheduleMode)99;
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => BackupSchedulePolicy.Validate(options));
+        options.Mode = BackupScheduleMode.Weekly;
+        options.WeeklyDay = (DayOfWeek)7;
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => BackupSchedulePolicy.Validate(options));
+        Assert.ThrowsExactly<ArgumentNullException>(() => BackupSchedulePolicy.Validate(null!));
+    }
+
+    [TestMethod]
+    public void Daily_IsDueAtExactTimeAndReturnsOnlyLatestMissedSlot()
+    {
+        var clock = new FakeClock(At(2026, 10, 1, 1, 59));
+        var options = Daily();
+
+        Assert.AreEqual(At(2026, 9, 30, 2), BackupSchedulePolicy.GetLatestSlot(options, clock.LocalNow));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.AreEqual(At(2026, 10, 1, 2), Due(options, clock));
+        clock.Advance(TimeSpan.FromDays(20));
+        Assert.AreEqual(At(2026, 10, 21, 2), Due(options, clock));
+    }
+
+    [TestMethod]
+    public void Weekly_UsesInvariantWeekdayAcrossWeekBoundary()
+    {
+        var options = new BackupScheduleOptions
+        {
+            Mode = BackupScheduleMode.Weekly,
+            LocalTime = "03:30",
+            WeeklyDay = DayOfWeek.Sunday
+        };
+        var clock = new FakeClock(At(2026, 10, 4, 3, 29));
+
+        Assert.AreEqual(At(2026, 9, 27, 3, 30), Due(options, clock));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.AreEqual(At(2026, 10, 4, 3, 30), Due(options, clock));
+        clock.Advance(TimeSpan.FromDays(6));
+        Assert.AreEqual(At(2026, 10, 4, 3, 30), Due(options, clock));
+    }
+
+    [TestMethod]
+    public void RestartCatchUp_OffersOneSlotAndDurableCompletionPreventsDuplicate()
+    {
+        var options = Daily();
+        var clock = new FakeClock(At(2026, 10, 20, 14));
+        var completed = At(2026, 10, 1, 2);
+
+        var due = Due(options, clock, completed, startup: true);
+        Assert.AreEqual(At(2026, 10, 20, 2), due);
+        Assert.IsNull(Due(options, clock, due, startup: true));
+        clock.Advance(TimeSpan.FromHours(1));
+        Assert.IsNull(Due(options, clock, due));
+    }
+
+    [TestMethod]
+    public void FirstActivation_DoesNotBackfillBeforePolicyWasEnabled()
+    {
+        var options = Daily();
+        var clock = new FakeClock(At(2026, 10, 1, 12));
+        var activated = clock.LocalNow;
+
+        Assert.IsNull(Due(options, clock, activatedAt: activated, startup: true));
+        clock.Advance(TimeSpan.FromHours(14));
+        Assert.AreEqual(At(2026, 10, 2, 2), Due(options, clock, activatedAt: activated));
+    }
+
+    [TestMethod]
+    public void CatchUpDisabled_SkippedStartupSlotRemainsSkippedOnLaterTickAndRestart()
+    {
+        var options = Daily();
+        options.CatchUpOnStartup = false;
+        var clock = new FakeClock(At(2026, 10, 1, 12));
+
+        Assert.IsNull(Due(options, clock, startup: true));
+        var consideredThrough = BackupSchedulePolicy.GetLatestSlot(options, clock.LocalNow);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.IsNull(Due(options, clock, consideredThrough));
+        Assert.IsNull(Due(options, clock, consideredThrough, startup: true));
+        clock.LocalNow = At(2026, 10, 2, 2);
+        Assert.AreEqual(clock.LocalNow, Due(options, clock, consideredThrough));
+    }
+
+    [TestMethod]
+    public void CatchUpDisabled_ExactStartupSlotIsDue()
+    {
+        var options = Daily();
+        options.CatchUpOnStartup = false;
+        var clock = new FakeClock(At(2026, 10, 1, 2));
+
+        Assert.AreEqual(clock.LocalNow, Due(options, clock, startup: true));
+    }
+
+    [TestMethod]
+    public void ClockRollback_DoesNotRepeatCompletedOrOlderSlots()
+    {
+        var options = Daily();
+        var completed = At(2026, 10, 10, 2);
+        var clock = new FakeClock(At(2026, 10, 8, 14));
+
+        Assert.IsNull(Due(options, clock, completed, startup: true));
+        clock.LocalNow = At(2026, 10, 10, 2);
+        Assert.IsNull(Due(options, clock, completed));
+        clock.LocalNow = At(2026, 10, 11, 2);
+        Assert.AreEqual(clock.LocalNow, Due(options, clock, completed));
+    }
+
+    [TestMethod]
+    public void BackwardDstOrTimezoneChange_UsesOneWallClockSlotIdentity()
+    {
+        var options = Daily();
+        options.LocalTime = "01:30";
+        var clock = new FakeClock(At(2026, 11, 1, 1, 45));
+        var completed = Due(options, clock);
+
+        clock.LocalNow = At(2026, 11, 1, 1, 15);
+        Assert.IsNull(Due(options, clock, completed));
+        clock.Advance(TimeSpan.FromMinutes(30));
+        Assert.IsNull(Due(options, clock, completed));
+        Assert.AreEqual(DateTimeKind.Unspecified, completed!.Value.Kind);
+    }
+
+    [TestMethod]
+    public void ForwardDstOrTimezoneChange_CatchesSkippedLocalTimeOnce()
+    {
+        var options = Daily();
+        var clock = new FakeClock(At(2026, 3, 8, 1, 59));
+        var completed = At(2026, 3, 7, 2);
+        Assert.IsNull(Due(options, clock, completed));
+
+        clock.LocalNow = At(2026, 3, 8, 3);
+        var due = Due(options, clock, completed);
+        Assert.AreEqual(At(2026, 3, 8, 2), due);
+        Assert.IsNull(Due(options, clock, due));
+    }
+
+    [TestMethod]
+    public void DateTimeKind_DoesNotConvertLocalWallClockAndMinimumDateDoesNotUnderflow()
+    {
+        var options = Daily();
+        var now = DateTime.SpecifyKind(At(2026, 10, 1, 2), DateTimeKind.Utc);
+
+        Assert.AreEqual(At(2026, 10, 1, 2), BackupSchedulePolicy.GetLatestSlot(options, now));
+        Assert.IsNull(BackupSchedulePolicy.GetLatestSlot(options, DateTime.MinValue));
+        options.Mode = BackupScheduleMode.Weekly;
+        Assert.IsNull(BackupSchedulePolicy.GetLatestSlot(options, DateTime.MinValue));
+    }
+
+    private static BackupScheduleOptions Daily() => new BackupScheduleOptions
+    {
+        Mode = BackupScheduleMode.Daily,
+        LocalTime = "02:00"
+    };
+
+    private static DateTime? Due(
+        BackupScheduleOptions options,
+        FakeClock clock,
+        DateTime? consideredThrough = null,
+        DateTime? activatedAt = null,
+        bool startup = false) =>
+        BackupSchedulePolicy.GetDueSlot(options, clock.LocalNow, consideredThrough, activatedAt, startup);
+
+    private static DateTime At(int year, int month, int day, int hour, int minute = 0) =>
+        new DateTime(year, month, day, hour, minute, 0, DateTimeKind.Unspecified);
+
+    private sealed class FakeClock
+    {
+        public FakeClock(DateTime localNow) => LocalNow = localNow;
+        public DateTime LocalNow { get; set; }
+        public void Advance(TimeSpan elapsed) => LocalNow = LocalNow.Add(elapsed);
+    }
+}
+
+[TestClass]
+public sealed class BackupAutomationDestinationTests
+{
+    private const string DefaultDirectory = @"C:\Win7POS\backups";
+    private const string LivePath = @"C:\Win7POS\pos.db";
+
+    [TestMethod]
+    public void Local_UsesApplicationDirectoryWithoutExaminingCustomDestination()
+    {
+        var options = new BackupAutomationOptions { DestinationPath = @"\\offline-server\unused-share" };
+
+        Assert.AreEqual(Full(DefaultDirectory), Resolve(options));
+    }
+
+    [TestMethod]
+    public void CustomLocal_PreservesSelectedAbsoluteDirectory()
+    {
+        var options = Destination("custom_local", @"D:\POS archives\daily");
+
+        Assert.AreEqual(Full(options.DestinationPath), Resolve(options));
+    }
+
+    [TestMethod]
+    [DataRow(@"\\offline-server\pos-archive")]
+    [DataRow(@"\\offline-server\pos-archive\daily")]
+    public void NetworkShare_ResolvesConfiguredUncWithoutLocalFallbackOrNetworkIo(string path)
+    {
+        var options = Destination("network_share", path);
+
+        Assert.AreEqual(Full(path), Resolve(options));
+        Assert.AreNotEqual(Full(DefaultDirectory), Resolve(options));
+    }
+
+    [TestMethod]
+    [DataRow("custom_local", "")]
+    [DataRow("custom_local", "backups")]
+    [DataRow("custom_local", @"..\backups")]
+    [DataRow("custom_local", @"C:backups")]
+    [DataRow("custom_local", @"\backups")]
+    [DataRow("custom_local", @"\\server\share")]
+    [DataRow("network_share", @"C:\backups")]
+    [DataRow("network_share", @"\\server")]
+    [DataRow("network_share", @"\\server\")]
+    [DataRow("network_share", "//server/share")]
+    public void Destination_RejectsRelativeOrWrongKindPaths(string kind, string path)
+    {
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(Destination(kind, path)));
+    }
+
+    [TestMethod]
+    [DataRow(@"C:\POS\..\backups")]
+    [DataRow(@"C:\POS\.\backups")]
+    [DataRow(@"C:\POS\backups.")]
+    [DataRow(@"C:\POS \backups")]
+    [DataRow(@"C:\PROGRA~1\backups")]
+    [DataRow(@"C:\POS\backup:stream")]
+    [DataRow(@"C:\POS\backup?name")]
+    [DataRow(@"C:\POS\backup*name")]
+    [DataRow(@"C:\POS\backup|name")]
+    public void Destination_RejectsTraversalAliasesAndInvalidComponents(string path)
+    {
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(Destination("custom_local", path)));
+    }
+
+    [TestMethod]
+    [DataRow("custom_local", @"\\?\C:\backups")]
+    [DataRow("custom_local", @"\\.\C:\backups")]
+    [DataRow("network_share", @"\\?\UNC\server\share")]
+    [DataRow("network_share", @"\\.\UNC\server\share")]
+    public void Destination_RejectsExtendedAndDevicePaths(string kind, string path)
+    {
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(Destination(kind, path)));
+    }
+
+    [TestMethod]
+    [DataRow(@"\\user:password@server\share")]
+    [DataRow(@"\\user:password\share")]
+    [DataRow(@"\\server\share@password")]
+    [DataRow("smb://user:password@server/share")]
+    public void NetworkShare_RejectsCredentialSyntax(string path)
+    {
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(Destination("network_share", path)));
+    }
+
+    [TestMethod]
+    public void Destination_RejectsLiveDatabaseAsDirectoryCaseInsensitively()
+    {
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            Resolve(Destination("custom_local", @"c:\WIN7POS\POS.DB")));
+    }
+
+    [TestMethod]
+    public void Destination_ReservesSpaceForWin7SnapshotAndTemporaryNames()
+    {
+        var tooLong = @"C:\" + new string('b', 133);
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(Destination("custom_local", tooLong)));
+        var allowed = @"C:\" + new string('b', 132);
+        Assert.AreEqual(Full(allowed), Resolve(Destination("custom_local", allowed)));
+    }
+
+    [TestMethod]
+    public void Destination_RejectsProgramFilesAndChildren()
+    {
+        var protectedDirectories = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            Environment.GetEnvironmentVariable("ProgramW6432")
+        }.Where(directory => !string.IsNullOrWhiteSpace(directory)).Distinct().ToArray();
+        Assert.IsTrue(protectedDirectories.Length > 0, "Windows must expose its Program Files directories.");
+        foreach (var directory in protectedDirectories)
+        {
+            Assert.ThrowsExactly<ArgumentException>(() => Resolve(Destination("custom_local", directory!)));
+            Assert.ThrowsExactly<ArgumentException>(() =>
+                Resolve(Destination("custom_local", Path.Combine(directory!, "POS archives"))));
+        }
+    }
+
+    [TestMethod]
+    [DataRow(2)]
+    [DataRow(366)]
+    public void Retention_RejectsOutOfRangeCount(int count)
+    {
+        var options = new BackupAutomationOptions { RetentionMaxCount = count };
+
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(options));
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(3651)]
+    public void Retention_RejectsOutOfRangeAgeDays(int days)
+    {
+        var options = new BackupAutomationOptions { RetentionMaxAgeDays = days };
+
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(options));
+    }
+
+    [TestMethod]
+    [DataRow(3, 1)]
+    [DataRow(365, 3650)]
+    public void Retention_AcceptsExactBoundaries(int count, int days)
+    {
+        var options = new BackupAutomationOptions { RetentionMaxCount = count, RetentionMaxAgeDays = days };
+
+        Assert.AreEqual(Full(DefaultDirectory), Resolve(options));
+    }
+
+    [TestMethod]
+    public void InvalidOptions_ModeTimeWeekdayAndDestinationKindAreRejected()
+    {
+        var options = new BackupAutomationOptions { DestinationKind = "ftp" };
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(options));
+        options.DestinationKind = "local";
+        options.Schedule.Mode = (BackupScheduleMode)99;
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => Resolve(options));
+        options.Schedule.Mode = BackupScheduleMode.Weekly;
+        options.Schedule.LocalTime = "2:00";
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(options));
+        options.Schedule.LocalTime = "02:00";
+        options.Schedule.WeeklyDay = (DayOfWeek)7;
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => Resolve(options));
+        options.Schedule = null!;
+        Assert.ThrowsExactly<ArgumentException>(() => Resolve(options));
+        Assert.ThrowsExactly<ArgumentException>(() => BackupAutomationDestination.Resolve(null!, DefaultDirectory, LivePath));
+    }
+
+    private static BackupAutomationOptions Destination(string kind, string path) =>
+        new BackupAutomationOptions { DestinationKind = kind, DestinationPath = path };
+
+    private static string Resolve(BackupAutomationOptions options) =>
+        BackupAutomationDestination.Resolve(options, DefaultDirectory, LivePath);
+
+    private static string Full(string path) => Path.GetFullPath(path).TrimEnd('\\', '/');
 }
