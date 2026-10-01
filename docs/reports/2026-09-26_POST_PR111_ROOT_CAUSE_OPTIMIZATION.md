@@ -1,7 +1,26 @@
 # Post-PR111 root cause optimization — ASUS-W7POS-018
 
 Baseline: `bedcf17a97d814a3b098387cc2720ff2b11abbbf` (PR109–111).
-Status, independently verified on 2026-10-01: HOSTED-TIMER-AGE is resolved on
+Software qualification: **PASS**. On 2026-10-01 the owner explicitly authorized
+software closeout, normal PR112 merge after exact-final-HEAD CI/Security PASS,
+and verification of the exact post-merge Release Pack. The owner accepted
+external QA deferral; this decision supersedes the earlier requirement to run
+Asus Integrated before software merge. It does not waive or change any test
+threshold, measured failure, signature/policy control or physical requirement.
+
+| Closeout item | Owner-approved disposition |
+| --- | --- |
+| Qualified source | `aea65314b9de6f18a46a5ba9aefbeb2de363012d`; no src/tests/scripts/.github differences to initial PR HEAD `4a4af8a9afaa7d2d3858e7323b63fc22655b59f9`. |
+| Software evidence | Reuse 1,033 Core/Data tests, nine WPF scenarios, and hosted 12-minute + 60-minute qualification below; both M/E/S=true. Exact updated-HEAD CI/Security and merge-package integrity remain required. |
+| ASUS-THIRD-SCAN | `OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA`; historical scan-3 timeout preserved, root cause **unproven**, no correction or Asus PASS claimed. |
+| Asus physical Integrated / Final | `NOT_EXECUTED / OWNER_DEFERRED`; no M/E/S results. A premerge hosted soak is not Asus Final. |
+| Other external QA | Windows 7 SP1, Xprinter/spooler, barcode scanner, installer install/upgrade/uninstall, staging/image recovery: separately `OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA`. |
+| Production certification | `productionCertified=false`; software qualification and package integrity are not physical or production certification. |
+| Scope and controls | Documentation-only closeout; no signing purchase, license change, SAC bypass, new local execution or budget relaxation. Preserve 55 unrelated worktrees and image checkpoint. |
+| Delivery | Initial main `bedcf17a97d814a3b098387cc2720ff2b11abbbf`; exact final PR checks, normal merge and post-merge package verification pending at this documentation checkpoint. |
+
+Historical status before the owner-deferred decision, independently verified on
+2026-10-01: HOSTED-TIMER-AGE is resolved on
 the hosted QA channel, with same-host causal removal/reintroduction and both
 full qualification lanes passing on `aea65314b9de6f18a46a5ba9aefbeb2de363012d`.
 Protocol-v4 fixture readiness is verified in three paired trials. Historical
@@ -326,8 +345,8 @@ respectively; useful durations below exclude process startup and fixture setup.
 | --- | --- | --- | --- | --- |
 | Hosted Integrated / Integrated | VM above / `aea65314b9de` | 738.848s; 33 cycles, 660 scans | v4, P12 / B | **true / true / true** |
 | Hosted premerge soak / Integrated | Same VM / same `aea65314b9de` | 3601.349s; 161 cycles, 3220 scans | v4, P60 / B | **true / true / true** |
-| Asus Integrated / Integrated | Asus / `aea65314b9de` prepared, not executed | NOT_EXECUTED; acceptance channel unavailable; historical `0ed0a06` scan-3 failure remains open | Planned v4; no run protocol hash / B | not measured |
-| Asus Final / Final | Asus / no merge SHA or final payload exists | NOT_EXECUTED; Asus Integrated prerequisite missing | No run protocol hash / B | not measured |
+| Asus Integrated / Integrated | Asus / `aea65314b9de` prepared, not executed | NOT_EXECUTED / OWNER_DEFERRED; historical `0ed0a06` scan-3 failure remains unproven | Planned v4; no run protocol hash / B | not measured |
+| Asus Final / Final | Asus / exact post-merge payload required for any future execution | NOT_EXECUTED / OWNER_DEFERRED; software closeout does not certify this lane | No run protocol hash / B | not measured |
 
 Both hosted lanes keep 100k products/500 cart lines, all public-command scans,
 Rows/Grid alternation, image/editor workload and the 20-second idle interval.
@@ -571,13 +590,13 @@ the external attestation, rather than being inferred from a predecessor.
 | --- | --- | --- |
 | HOSTED-TIMER-AGE (RESOLVED ON HOSTED QA) | Actual 125ms Background InputManager.ValidateInputDevices waits behind recurring rendering from hidden ProductEditDialog.ImageUploadProgress. Same-host H6 B: 800 waits, max 33.260ms, none >250; D restores only old indeterminate value: 97/723 waits >250, warm snapshot 364.861ms, hidden animation and infinite clock return. | Bind that editor indicator to effective IsVisible; actual lifecycle regression PASS. Consolidated aea6531 CI/Security/Release Pack PASS; full 12+60 hosted qualification M/E/S=true. Historical six v1-budget failures retained. |
 | HOSTED-COLD-SETUP (HARNESS CORRECTION VERIFIED; EXACT OLD TIMEOUT UNATTRIBUTED) | H7 all three first scans start with zero fixture containers and execute initial render 141–146ms inside scan timing. H8 pairs confirm first UI-return 128–137ms legacy versus 0.2–2.0ms after readiness. Exact preceding A6 timeout cause remains unproven. | v4 records bounded rendered-fixture setup before useful clock, no warmup scans or changed latency budgets. All six H8 arms complete; consolidated full hosted 12+60 subsequently passes. |
-| ASUS-THIRD-SCAN (REOPENED) | Earlier cycle-0 scan-3 Input-probe timeout remains distinct from later SAC denial. One targeted channel check this turn: SAC On, unsigned candidate, no repository signing secrets/environments. | No unsigned retry or policy change. Local reproduction requires existing authorized trusted signing/acceptance channel; hosted investigation continues independently. |
+| ASUS-THIRD-SCAN (OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA) | Earlier cycle-0 scan-3 Input-probe timeout remains distinct from later SAC denial. The preserved channel check found SAC On, unsigned candidate and no configured trusted channel. Root cause remains unproven. | Owner explicitly defers this external Asus QA on 2026-10-01. No unsigned retry, policy change or false PASS. Any future reproduction still requires an authorized accepted candidate. |
 | PERF-LATENCY | Resetting 500 identities each cycle repeatedly realizes all 500 hidden Grid cards. Removing only the hidden Grid ItemsSource eliminates multi-second Rows stalls; restoring it reproduces them. A visibility guard alone does not. Ordinary scans have zero collection changes. | Replace eager WrapPanel with a recycling, variable-height, multi-column `VirtualizingCartWrapPanel`. Preserve card width, selection, scrolling and resize. Runtime regression checks attached visible containers at indices 0/250/499, four widths, both views, removal/empty/re-add and public commands. Corrected an initially detached recycled-container implementation before accepting measurements. |
 | PERF-QUEUE | 501 invisible ProgressBars remain indeterminate. Original mixed control leaves 96 operations, oldest 38,262ms after four cycles; disabling only invisible indicators leaves two, oldest 18ms. Reintroduction reproduces accumulation. Producer stacks identify TextEditor.OnTextViewUpdated during arrange. | Bind IsIndeterminate to actual IsVisible in the cart busy indicator and ProductImagePresenter. Test loading-visible, ancestor-hidden and completed-image states. Do not abort, reprioritize or remove internal WPF operations. |
 | PERF-MEMORY | Pending Background InitTextStore delegates retain TextEditor._uiScope → TextBox → dialog parents → closed ProductEditDialog → VM. Animated rendering repeatedly allocates while the controls are invisible; removing that work drains the demonstrated root chain. Eager card trees also retain 500 control subtrees. | Same two application fixes. Observe natural GC, post-idle heap/private bytes, known closed-window root chains and decoded cache pixel bytes. No forced GC. This establishes those paths, not an exhaustive heap census. |
 | PERF-VALIDATION | Previous runner verified process/sample/duration completion but no stability predicate. Legacy observer scans a weak-reference list on completion; replacement has fixed capacity and O(1) normal completion. Replacing constructor VM disconnects real focus wiring. Reset stress and chained high-priority continuations are harness artifacts. | Preserve real PosView composition, persistent identities, alternating mode order, explicit Input completion inside scan timing, separate bitmap timing, bounded observer and three independent result flags. Synthetic negative vectors cover stalls, partial recovery, invalid/missing data, environment, timeouts, roots, overflow and visual waits. |
-| INTERACTIVE-RESIDUAL | Asus cycle 0 / Rows scan 3 times out even without the observer, with valid foreground/desktop samples. Pending UpdatePeer callbacks do not identify the executed blocker. Hosted controls do not reproduce it. | No residual production fix claimed. Bounded executed-operation timeline and short public-scan controls are available; Asus attribution and equivalent before/after remain missing. |
-| QA-EXECUTION | SAC rejects v17 before process creation; separate from the earlier running-process timeout. Existing signing assessment finds no configured trusted channel. | Independent hosted source builds now execute successfully under their own QA policy. Asus acceptance/signing remains external; no bypass, merge or qualification exception. |
+| INTERACTIVE-RESIDUAL (OWNER_DEFERRED_EXTERNAL_QA) | Asus cycle 0 / Rows scan 3 times out even without the observer, with valid foreground/desktop samples. Pending UpdatePeer callbacks do not identify the executed blocker. Hosted controls do not reproduce it. | No residual production fix claimed. Asus attribution and equivalent before/after remain missing; owner accepts deferral for software closeout, not a measured PASS. |
+| QA-EXECUTION (OWNER_DEFERRED_EXTERNAL_QA) | SAC rejects v17 before process creation; separate from the earlier running-process timeout. Existing signing assessment finds no configured trusted channel. | Hosted builds remain in their independent QA channel. Owner permits software merge based on exact-HEAD gates while deferring Asus acceptance; no execution/policy bypass or physical certification. |
 
 Equivalent visual requests also had an independently reproduced defect: 250
 RestoreScannerFocus calls posted 250 Input operations. PosView now keeps at
@@ -764,13 +783,13 @@ Asus attempt failed; current hosted Integrated and premerge soak subsequently
 pass as recorded above. Asus Integrated and downloaded merge-package Final
 remain pending. No final performance PASS is claimed.
 
-Next authorized sequence: activate an accepted Asus QA harness through the owner
-channel below, identify and correct the separate interactive third-scan timeout,
-then pass a 12-minute Integrated qualification against the
-unchanged preregistered budget; then exact-head CI/normal merge, download and
-validate the merge Release Pack, repeat 20k/100k measurements and run at least
-60 useful minutes of Final qualification. Neither the remaining timeout nor
-the executable policy block is an accepted exception; no final soak has started.
+Owner-approved sequence on 2026-10-01: audit only PR112's delta, reuse unchanged
+software evidence, record external QA deferral, require CI/Security PASS on the
+exact final PR HEAD, merge normally, then download and canonically verify the
+Release Pack for that exact merge SHA. No redundant long qualification is
+required for this documentation-only closeout. Production certification remains
+false. Any future Asus diagnostic/Integrated/Final follows the preserved owner
+activation protocol and unchanged budgets; it is not executed by this closeout.
 
 ## External prerequisites — checked once
 
@@ -792,8 +811,9 @@ or renewed staging denial attempt is part of this local performance work.
 | Article staging and image recovery / Admin deployment and shop owner | Provide current typed readiness plus authorized recovery/cleanup handoff. No new readiness or cleanup is invented. Existing DPAPI checkpoint and `cleanupPending` remain unchanged. | Canonical staging/image runner only after local performance is stabilized. |
 | Installer and Windows 7 / QA host and hardware owner | Provide disposable VM/snapshot for install/upgrade/uninstall and an authorized Win7 SP1 net48/x86 target. Scanner/IME and printer/drawer need their real hardware/driver checks and operational consent. | Exact verified merge package, economic/offline/restart/backup checks. Hosted Windows QA does not certify Win7. |
 
-Only the first row is the immediate owner action; the other rows describe
-separate external resource prerequisites. The locally compiled candidate has
+These rows are preserved prerequisites for future owner-authorized external QA,
+all now owner-deferred; none is an immediate activation or software-merge gate.
+The locally compiled candidate has
 source `aea65314b9de6f18a46a5ba9aefbeb2de363012d` and has **not been executed**.
 File: `C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\bin\x86\Release\net48\Win7POS.Wpf.UiSmokeHarness.exe`.
 Unsigned SHA256: `ddb03639b9c3f2f3ddc60d00096d597ab0e58689b4dcf176f2498f846462c951`.

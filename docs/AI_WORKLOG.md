@@ -4,6 +4,12 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-10-01 – PR112 software closeout with owner-deferred external QA
+
+- Owner decision: close PR112 as software-qualified and merge normally after exact-final-HEAD CI/Security PASS; verify the exact post-merge Release Pack. ASUS-THIRD-SCAN is `OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA`, with root cause still unproven. Asus Integrated/Final remain `NOT_EXECUTED / OWNER_DEFERRED`; `productionCertified=false`.
+- Initial main `bedcf17a97d814a3b098387cc2720ff2b11abbbf`, initial PR head `4a4af8a9afaa7d2d3858e7323b63fc22655b59f9`, clean 0/0. Compared with qualified source `aea65314b9de6f18a46a5ba9aefbeb2de363012d`, src/tests/scripts/.github are unchanged. Reuse 1,033 Core/Data tests, nine WPF scenarios, and hosted run `36510437821`: 738.848s/660 scans plus 3601.349s/3220 scans, both M/E/S=true. No repeat of the long qualification or claim that hosted evidence certifies Asus/Win7.
+- Separate deferred QA: Asus physical Integrated/Final, Windows 7 SP1, Xprinter/spooler, barcode scanner, installer lifecycle, staging/image recovery. No product changes, paid signing, license change, unsigned retry, SAC change or threshold/budget relaxation. Preserve all historical failures, 55 unrelated worktrees and the image checkpoint. Exact final checks, merge SHA and downloaded-package receipt will be recorded after verification.
+
 ## 2026-09-26 – Post-PR111 root cause optimization (ASUS-W7POS-018, in corso)
 
 - Baseline `bedcf17a97d8`, 56 worktree inizialmente puliti; candidati e checkpoint esterni preservati.
