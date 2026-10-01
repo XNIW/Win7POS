@@ -37,7 +37,8 @@ The unresolved Asus scan-3 observation is deferred external QA, not a resolved d
 | --- | --- |
 | Setup EXE | `cdd0f1a222559e0a7a898524ebcc6e5c2ff0c6f21dafd0b2cb86c771f8c33e39` |
 | Payload ZIP | `f45351a91a1bea6ba8df40f36ec43b9ca88e4c675d29c68d2870af18e1a63b7d` |
-| RELEASE-ARTIFACTS-SHA256.txt | `7d52b473d9a0e346bdc786df6401bab87b5a00b12a0c1ad8551debff01cbc2b9` |
+| RELEASE-ARTIFACTS-SHA256.txt | `1bf42d4d0f9b14e9cc17e7827ce330baa87366b30494c5a93abeaf7b6ae35176` |
+| release-checksums.json | `7d52b473d9a0e346bdc786df6401bab87b5a00b12a0c1ad8551debff01cbc2b9` |
 | SLSA provenance | `8fc4e33383cffc168be9430621ae01c4715740241a050affc06ab59c9d63a1f5` |
 
 Stage remains `development-unsigned`: Setup is `NotSigned`; the signature inventory
