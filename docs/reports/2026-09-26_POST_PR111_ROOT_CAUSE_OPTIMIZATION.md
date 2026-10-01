@@ -822,8 +822,10 @@ Its 33 exe/DLL hashes and signature states are recorded privately in
 the single operational card is `ASUS-OWNER-ACTIVATION.md` in that same directory.
 This is a signing/acceptance handoff, not authorization to retry an unsigned file.
 
-After owner-channel acceptance and signature/chain verification, resume from
-the repository root with the existing runner and a new output directory:
+The following activation commands are retained for future owner-authorized Asus
+QA only. They are not executed by this software closeout and are not its merge
+gate. After owner-channel acceptance and signature/chain verification, resume
+from the repository root with the existing runner and a new output directory:
 
 ```powershell
 pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -HarnessDirectory 'C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\bin\x86\Release\net48' -OutputDirectory ('C:\Dev\Win7POS-post-pr111-20260926\asus-accepted-aea6531-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss'))
@@ -842,8 +844,9 @@ unchanged budget hash stated above:
 pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Qualification -Stage Integrated -Products 100000 -SoakMinutes 12 -HarnessDirectory $HarnessDir -BudgetPath $Budget -PayloadBindingPath $Binding -ExpectedCommit $HeadSha -OutputDirectory $IntegratedOut
 ```
 
-Require all three flags true before normal merge and exact-merge ReleasePack
-download/verification. Final needs that new package's harness/binding and at
-least 60 useful minutes. Current hosted Integrated and premerge soak both pass;
-Asus qualification completion and Final remain unexecuted for this candidate.
-PR112 stays draft with no merge while the Asus residual remains open.
+Any future Asus physical qualification requires all three flags true, the
+properly bound candidate and, for Final, the exact merge package with at least
+60 useful minutes. Current hosted Integrated and premerge soak both pass;
+Asus Integrated/Final remain NOT_EXECUTED / OWNER_DEFERRED. Under the explicit
+2026-10-01 owner decision, PR112 may leave draft and merge normally after
+exact-final-HEAD CI/Security PASS and delta audit, with productionCertified=false.
