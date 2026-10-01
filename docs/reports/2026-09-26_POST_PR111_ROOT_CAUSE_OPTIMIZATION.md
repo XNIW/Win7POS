@@ -10,14 +10,50 @@ threshold, measured failure, signature/policy control or physical requirement.
 
 | Closeout item | Owner-approved disposition |
 | --- | --- |
-| Qualified source | `aea65314b9de6f18a46a5ba9aefbeb2de363012d`; no src/tests/scripts/.github differences to initial PR HEAD `4a4af8a9afaa7d2d3858e7323b63fc22655b59f9`. |
-| Software evidence | Reuse 1,033 Core/Data tests, nine WPF scenarios, and hosted 12-minute + 60-minute qualification below; both M/E/S=true. Exact updated-HEAD CI/Security and merge-package integrity remain required. |
+| Qualified source | `aea65314b9de6f18a46a5ba9aefbeb2de363012d`; identical src/tests/scripts/.github trees at qualified source, final PR HEAD and merge; initial PR HEAD `4a4af8a9afaa7d2d3858e7323b63fc22655b59f9`. |
+| Software evidence | Reuse 1,033 Core/Data tests, nine WPF scenarios, and hosted 12-minute + 60-minute qualification below; both M/E/S=true. Exact final-PR and merge CI/Security PASS; exact-merge package integrity verified below. |
 | ASUS-THIRD-SCAN | `OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA`; historical scan-3 timeout preserved, root cause **unproven**, no correction or Asus PASS claimed. |
 | Asus physical Integrated / Final | `NOT_EXECUTED / OWNER_DEFERRED`; no M/E/S results. A premerge hosted soak is not Asus Final. |
 | Other external QA | Windows 7 SP1, Xprinter/spooler, barcode scanner, installer install/upgrade/uninstall, staging/image recovery: separately `OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA`. |
 | Production certification | `productionCertified=false`; software qualification and package integrity are not physical or production certification. |
 | Scope and controls | Documentation-only closeout; no signing purchase, license change, SAC bypass, new local execution or budget relaxation. Preserve 55 unrelated worktrees and image checkpoint. |
-| Delivery | Initial main `bedcf17a97d814a3b098387cc2720ff2b11abbbf`; exact final PR checks, normal merge and post-merge package verification pending at this documentation checkpoint. |
+| Delivery | DONE_SOFTWARE. Initial main `bedcf17a97d814a3b098387cc2720ff2b11abbbf`; final PR `272d5f1dd18b2c6a8b587bd4624b80b40367cf4a`; normal merge `c3af7f2177c4df8aba8407baa06dfe0f74871044`. Exact-head checks and exact-merge Release Pack verification PASS below. |
+
+## Final software delivery receipt — 2026-10-01
+
+`WIN7POS_PR112_OWNER_DEFERRED_FINAL_CLOSEOUT_RESULT`: software qualification **PASS**,
+software blockers **0** in the owner-approved software scope, `productionCertified=false`.
+The unresolved Asus scan-3 observation is deferred external QA, not a resolved defect.
+
+- Initial main: `bedcf17a97d814a3b098387cc2720ff2b11abbbf`.
+- Final PR112 HEAD: `272d5f1dd18b2c6a8b587bd4624b80b40367cf4a`.
+- Qualified source: `aea65314b9de6f18a46a5ba9aefbeb2de363012d`; `src`, `tests`, `scripts` and `.github` Git trees are identical at qualified source, final PR and merge. Existing 1,033 tests, nine WPF scenarios and hosted run `36510437821` remain applicable: 738.848 useful seconds / 660 scans and 3601.349 seconds / 3220 scans, both M/E/S=true. These are premerge hosted Integrated lanes; they certify neither Asus nor physical Final.
+- Delta audit **PASS**: 32 changed product/harness/script/workflow files reviewed; no security finding, secret, unexpected binary/temporary path or unintended diagnostic activation. Subsequent closeout changes are limited to the three authorized documentation files. Codex Security scan `93212a8d-d460-450d-a05c-3cb95068932f` completed with zero findings.
+- Exact-final-PR [CI `36908943636`](https://github.com/XNIW/Win7POS/actions/runs/36908943636) and [Security `36908943627`](https://github.com/XNIW/Win7POS/actions/runs/36908943627): **PASS**. Required canonical gates and WPF Release x86/net48 checks completed; 1,033 Core/Data tests and nine functional scenarios PASS.
+- Normal two-parent merge: `c3af7f2177c4df8aba8407baa06dfe0f74871044`; parents are the initial main and final PR HEAD above. Exact-merge [CI `36911424442`](https://github.com/XNIW/Win7POS/actions/runs/36911424442) and [Security `36911424816`](https://github.com/XNIW/Win7POS/actions/runs/36911424816): **PASS**.
+- Exact-merge [Release Pack `36911424362`](https://github.com/XNIW/Win7POS/actions/runs/36911424362): **PASS**, version `1.0.0-dev.c3af7f2177c4`. Canonical command `pwsh -NoProfile -File scripts/win7pos/windows/test-downloaded-release-pack.ps1 -RunId 36911424362 -ExpectedCommitSha c3af7f2177c4df8aba8407baa06dfe0f74871044 -OutputDirectory <existing-closeout-evidence>/merge-c3af7f2-pack-36911424362`, exit **0**. Manifest/checksums, three GitHub artifact archive digests, 41-file ZIP/payload/dist equality, Setup equality, SLSA v1/in-toto provenance and attestation/SBOM binding verified. Build report confirms **Release / x86 / net48** and exact merge informational version.
+
+| Verified artifact | SHA256 |
+| --- | --- |
+| Setup EXE | `cdd0f1a222559e0a7a898524ebcc6e5c2ff0c6f21dafd0b2cb86c771f8c33e39` |
+| Payload ZIP | `f45351a91a1bea6ba8df40f36ec43b9ca88e4c675d29c68d2870af18e1a63b7d` |
+| RELEASE-ARTIFACTS-SHA256.txt | `7d52b473d9a0e346bdc786df6401bab87b5a00b12a0c1ad8551debff01cbc2b9` |
+| SLSA provenance | `8fc4e33383cffc168be9430621ae01c4715740241a050affc06ab59c9d63a1f5` |
+
+Stage remains `development-unsigned`: Setup is `NotSigned`; the signature inventory
+has 19 NotSigned and 14 Valid entries. Installation is `NOT_EXECUTED`.
+This verification proves delivery integrity; installer lifecycle and physical
+acceptance remain deferred. No signing purchase, license change, SAC bypass,
+denied executable retry, product patch or threshold/budget relaxation occurred.
+
+The owner decision is recorded as `ASUS-THIRD-SCAN=OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA`,
+with root cause **UNPROVEN**. Asus physical Integrated and Final are both
+`NOT_EXECUTED / OWNER_DEFERRED`, with no duration/scans/M-E-S result asserted.
+Separate deferred items are **Windows 7 SP1**, **Xprinter/spooler**, **barcode scanner**,
+**installer lifecycle**, and **staging/image recovery**. The 55 unrelated worktrees
+and image checkpoint remain preserved. The existing external `closeout-receipt.json`
+and final result record the documentation publication SHA and final main clean 0/0;
+the verified Release Pack remains bound to the merge SHA above.
 
 Historical status before the owner-deferred decision, independently verified on
 2026-10-01: HOSTED-TIMER-AGE is resolved on
