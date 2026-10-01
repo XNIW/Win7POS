@@ -1073,24 +1073,29 @@ ON CONFLICT(id) DO UPDATE SET value=@value;", new { value });
 public sealed class BackupAutomationTests
 {
     [TestMethod]
-    public async Task DestinationCasingChange_RetainsOneWindowsDirectoryOwnershipSet()
+    [DataRow("backups")]
+    [DataRow("Jos\u00e9")]
+    public async Task DestinationCasingChange_RetainsOneWindowsDirectoryOwnershipSet(string directoryName)
     {
         using var files = new AutomationFiles();
         var service = files.Service();
-        var options = new BackupAutomationOptions { RetentionMaxCount = 3, RetentionMaxAgeDays = 3650 };
+        var options = new BackupAutomationOptions
+        {
+            DestinationKind = "custom_local", DestinationPath = Path.Combine(files.Root, directoryName),
+            RetentionMaxCount = 3, RetentionMaxAgeDays = 3650
+        };
         await service.SaveOptionsAsync(options, "test");
         for (var index = 0; index < 3; index++)
         {
             Assert.IsTrue((await service.BackupNowAsync()).IsSuccess);
             files.Clock.Advance(TimeSpan.FromMinutes(1));
         }
-        options.DestinationKind = "custom_local";
-        options.DestinationPath = files.Backups.ToUpperInvariant();
+        options.DestinationPath = options.DestinationPath.ToUpperInvariant();
         await service.SaveOptionsAsync(options, "test");
         var newest = await service.BackupNowAsync();
         Assert.IsTrue(newest.IsSuccess);
         Assert.IsTrue(File.Exists(newest.Path));
-        Assert.AreEqual(3, files.Snapshots().Length);
+        Assert.AreEqual(3, Directory.GetFiles(options.DestinationPath, "pos_backup_*.db").Length);
         Assert.AreEqual(3L, files.Query<long>("SELECT COUNT(1) FROM backup_automation_files;"));
     }
 
