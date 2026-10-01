@@ -1,0 +1,1 @@
+A3: One fixed 3-minute original-protocol control, trace off. Preserve first-scan timeout if it recurs, now with quantity/busy/service/apply and monotonic failure-stage values. Do not repeat until green or classify it as Asus. Compare with B3 on this same VM.

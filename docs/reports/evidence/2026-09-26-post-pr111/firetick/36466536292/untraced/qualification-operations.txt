@@ -1,0 +1,11 @@
+VISUAL_SCAN_TIMEOUT,0,Rows,1,ContextIdle:CleanupOperation:973.7|Input:<QueueSelectionScroll>b__16_0:1278.7|Input:InputMarkerMessageHandler:991.1|Loaded:Run:999.5|Render:FireTick:854.9|Background:RaiseRequerySuggested:1306.1|DataBind:Run:1007.7|Input:HitTestInvalidatedAsyncCallback:1315.7|Input:<FocusBarcode>b__18_0:1315.6|Background:<InitializeViewport>b__0:952.5|Normal:OnTextViewUpdatedWorker:180.9|Loaded:UpdateCaretStateWorker:181.3|Loaded:BroadcastLoadedEvent:181.8|Loaded:BroadcastUnloadedEvent:181.8|Loaded:BroadcastLoadedEvent:182.0|Loaded:BroadcastUnloadedEvent:182.0|Normal:GrantLockHandler:915.2|Loaded:Run:919.6|DataBind:Run:919.6|Background:OnCleanUp:953.8|Render:RenderMessageHandler:920.1|Loaded:UpdateCaretStateWorker:944.5
+NATIVE,0,visual_timeout,0x0001,258
+NATIVE,0,visual_timeout,0x0002,258
+NATIVE,0,visual_timeout,0x0004,258
+NATIVE,0,visual_timeout,0x0008,0
+NATIVE,0,visual_timeout,0x0040,258
+NATIVE,0,visual_timeout,0x0400,258
+NATIVE,0,visual_timeout,0x0800,258
+NATIVE,0,visual_timeout,0x1000,258
+NATIVE,0,visual_timeout,0x2000,0
+PEEK,0,visual_timeout,0xC14C,window=524432,wParam=0,lParam=0

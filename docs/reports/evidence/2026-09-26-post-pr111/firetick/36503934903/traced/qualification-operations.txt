@@ -1,0 +1,8 @@
+0,Input:InputMarkerMessageHandler:18.0|Render:FireTick:3.2
+1,
+2,Render:FireTick:1.0|Input:InputMarkerMessageHandler:7.8
+3,
+4,Input:InputMarkerMessageHandler:18.1|Render:FireTick:1.2
+5,Input:InputMarkerMessageHandler:20.0|Render:FireTick:1.1
+6,
+7,Input:ContinueProcessingStagingArea:1.3

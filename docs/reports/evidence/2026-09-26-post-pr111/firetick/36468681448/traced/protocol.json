@@ -1,0 +1,153 @@
+{
+  "products": 100000,
+  "soakMinutes": 3,
+  "mode": "Diagnostic",
+  "stage": "Final",
+  "startedUtc": "2026-09-28T19:01:17.5358705+00:00",
+  "protocol": "win7pos-public-scan-v3: persistent 500 line identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement",
+  "benchmarkProtocol": "31 service samples per size: first call 0, warm 1..30; rendered-view bitmap is not monitor latency",
+  "budgetSha256": null,
+  "observerEnabled": true,
+  "diagnosticScanCount": 0,
+  "diagnosticInputDispatch": false,
+  "hostOperatingSystem": {
+    "Caption": "Microsoft Windows Server 2025 Datacenter",
+    "Version": "10.0.26100",
+    "BuildNumber": "26100",
+    "OSArchitecture": "64-bit"
+  },
+  "binaries": [
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\ClosedXML.dll",
+      "sha256": "09a44f24d983ad8392f1255dbce493a8dc124b5da8331687bea07cd512158eec"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\ClosedXML.Parser.dll",
+      "sha256": "a7276a119c09a7200ade269ffd4a4637a82c41c34a56b02d715be84235f5ef41"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\Dapper.dll",
+      "sha256": "2e47c22dba7665268e40ca9ffe7c86c7cfe41e11dfc7be8e0bc92a1f9efddd3b"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\DocumentFormat.OpenXml.dll",
+      "sha256": "bb6a988dcc8dc1c73f3caeccfeeac63d44faac051da8a8494664a4c69d174200"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\DocumentFormat.OpenXml.Framework.dll",
+      "sha256": "d22ed8044cb3f50b608cdf6d2b0b52b477524a87cedee3e9fed332c531e2ea79"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\e_sqlite3.dll",
+      "sha256": "8d76b5d0faa6f3a3c6204605d1a3d31dad57a0104b92fce3df19b12bdd983ae7"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\ExcelDataReader.DataSet.dll",
+      "sha256": "9abf059409351e762e3d8c3e6a009c1d49454eb39983db809eebd1f53eccc4a6"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\ExcelDataReader.dll",
+      "sha256": "03050036badc7651f357a57cdc150451fc021cdb56e31918f6a92d8d6629b844"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\ExcelNumberFormat.dll",
+      "sha256": "03ccc71a42833102ef54ae9ecf39d9d62c0491c17359aa37d1d2ef0ec7397d04"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\Microsoft.Bcl.AsyncInterfaces.dll",
+      "sha256": "9d605e925b4885eca8b0abd3203e8d7b70ab077baecff496fea13cf531abf66d"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\Microsoft.Bcl.HashCode.dll",
+      "sha256": "76b1260ce747a317e9b514433b89a81b038411fcabddc6f9c7dbabb0742d8b81"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\Microsoft.Data.Sqlite.dll",
+      "sha256": "e3ca42644ce012c350ef84675f399a9164d6b3492bc9a435aa7e75ae27ff1db5"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\RBush.dll",
+      "sha256": "1bd688a5e886d4bc0785a943a82c7f77b8e28799e0749d9b27e75e989b39466c"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\SixLabors.Fonts.dll",
+      "sha256": "3d811d1c37a1f0e17f365f00603029eb53e240526537e2cd99fe4227aabf36aa"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\SQLitePCLRaw.batteries_v2.dll",
+      "sha256": "1ee3c6ff4d39171690d6ff6f84b4d876ed038ca28e39bb6e74995f52d2aacf8b"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\SQLitePCLRaw.core.dll",
+      "sha256": "4eb1f407f1a8ef795853c95af73edfb9aa7777e8c11aafe04612691337ccea08"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\SQLitePCLRaw.provider.e_sqlite3.dll",
+      "sha256": "23983a4d4beff2ed2d902936de2c25b82d4da694946dcb945e2d7b7fb1af8c06"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.Buffers.dll",
+      "sha256": "2d78d770c9cb997199154ae8c018b9f1d1efbc86729f7264dde6dbad2a12cac3"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.Drawing.Common.dll",
+      "sha256": "82536a746c4ac8b2372e2e5c9e28b5a573a213f98e9400c4d959bab415fb6b77"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.IO.Packaging.dll",
+      "sha256": "d9c9c13f0642a44e6faf1627cabff97e41c1ddd1f952bbe751e33e17dfbf08a3"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.Memory.dll",
+      "sha256": "d5e8e4866f9cfa66f7765660f84b210198893e55335487afe5ebda342c0e913d"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.Numerics.Vectors.dll",
+      "sha256": "20c2fa81b8c70d651099d762954f285fd4f942e63b2d7217c145dab8d4b2f4c9"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.Runtime.CompilerServices.Unsafe.dll",
+      "sha256": "08cbd7278b66f1e68425a82d4b97181a4130d93e3dd91831407aba7212ccdacf"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.Text.Encoding.CodePages.dll",
+      "sha256": "b77ee852824a6e8098fbade000beb42ce9df32fa4189a00d5e7f472f6c6a5030"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.Threading.Tasks.Extensions.dll",
+      "sha256": "af4e13ef418fd89b432de20cd1dfb7fa10a7179c8dd049c9856316e50c5949ca"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\System.ValueTuple.dll",
+      "sha256": "e905d102585b22c6df04f219af5cbdbfa7bc165979e9788b62df6dcc165e10f4"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\Win7POS.Core.dll",
+      "sha256": "3cb2ed262406523f10a6f50495eba65e6d745b86c891f6a9f3fb1980cf5d135b"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\Win7POS.Data.dll",
+      "sha256": "96b08dcf51ff258da724692be6ff94dbbcae88ffacec57702dc31d03d68c456d"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\Win7POS.Wpf.exe",
+      "sha256": "eb02472c603d77d90a9fb19f9499c105858b9f5d8846fd6548234d5a57942524"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\Win7POS.Wpf.UiSmokeHarness.exe",
+      "sha256": "a7115d22beeb1128e6764892a638c93ae3fc60da09ed19ca2989201e4e7b1639"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\zxing.dll",
+      "sha256": "52f00a43f9574a411009899a6236f3efb5b597fbae0f3163dfec9cbb0c1f4d38"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\zxing.presentation.dll",
+      "sha256": "87c4a489fff4924e798ee360064cab52011238b4ee8642fdd8e102db4615752c"
+    },
+    {
+      "file": "D:\\a\\Win7POS\\Win7POS\\tests\\Win7POS.Wpf.UiSmokeHarness\\bin\\x86\\Release\\net48\\ZXing.Windows.Compatibility.dll",
+      "sha256": "dbb103d00654c980e436489d7949f54a1033164e74476e78dd41ff4f58184e9d"
+    }
+  ]
+}

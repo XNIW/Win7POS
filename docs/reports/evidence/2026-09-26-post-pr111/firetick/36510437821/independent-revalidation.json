@@ -1,0 +1,46 @@
+{
+  "integrated-12": {
+    "MEASUREMENT_COMPLETED": true,
+    "ENVIRONMENT_VALID": true,
+    "STABILITY_PASS": true,
+    "measurementReasons": [],
+    "environmentReasons": [],
+    "stabilityReasons": [],
+    "metrics": {
+      "isolatedServiceP95Ms": 15.42,
+      "sendProbeP95Ms": 0.098,
+      "elapsedSeconds": 738.848,
+      "RowsServiceP95Ms": 22.103,
+      "RowsUiP95Ms": 64.315,
+      "RowsUiMaximumMs": 104.02600000000001,
+      "RowsBitmapP95Ms": 28.94,
+      "GridServiceP95Ms": 21.38,
+      "GridUiP95Ms": 60.699,
+      "GridUiMaximumMs": 104.663,
+      "GridBitmapP95Ms": 28.815,
+      "maximumManagedWindowGrowthBytes": 0.0
+    }
+  },
+  "premerge-soak-60": {
+    "MEASUREMENT_COMPLETED": true,
+    "ENVIRONMENT_VALID": true,
+    "STABILITY_PASS": true,
+    "measurementReasons": [],
+    "environmentReasons": [],
+    "stabilityReasons": [],
+    "metrics": {
+      "isolatedServiceP95Ms": 13.115,
+      "sendProbeP95Ms": 0.116,
+      "elapsedSeconds": 3601.349,
+      "RowsServiceP95Ms": 22.268,
+      "RowsUiP95Ms": 60.68,
+      "RowsUiMaximumMs": 134.683,
+      "RowsBitmapP95Ms": 28.612,
+      "GridServiceP95Ms": 21.363,
+      "GridUiP95Ms": 61.15,
+      "GridUiMaximumMs": 133.611,
+      "GridBitmapP95Ms": 29.414,
+      "maximumManagedWindowGrowthBytes": 364053.5999999996
+    }
+  }
+}

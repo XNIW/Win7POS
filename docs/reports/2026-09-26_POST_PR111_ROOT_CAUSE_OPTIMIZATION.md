@@ -1,8 +1,12 @@
 # Post-PR111 root cause optimization — ASUS-W7POS-018
 
 Baseline: `bedcf17a97d814a3b098387cc2720ff2b11abbbf` (PR109–111).
-Status: full hosted Integrated measured on 2026-09-28, **M=true, E=true,
-S=false**; Asus residual still open. PR112 remains draft, with no merge or Final.
+Status, independently verified on 2026-10-01: HOSTED-TIMER-AGE is resolved on
+the hosted QA channel, with same-host causal removal/reintroduction and both
+full qualification lanes passing on `aea65314b9de6f18a46a5ba9aefbeb2de363012d`.
+Protocol-v4 fixture readiness is verified in three paired trials. Historical
+Integrated on 2026-09-28 remains **M=true, E=true, S=false**; the distinct Asus
+residual is still open. PR112 remains draft, with no merge or Final.
 The historical b794 soak remains STABILITY=FAIL. Candidate package binding is
 verified for the hosted run below; exact published-head delivery is recorded in
 the single external interim attestation.
@@ -39,7 +43,339 @@ valid early environment samples do not certify an incomplete run. The previously
 completed diagnostic control remains separate. Further causal work requires a
 QA harness accepted through the Asus host's authorized approval/signing channel.
 
-## Full hosted Integrated qualification — 2026-09-28
+## FireTick investigation — 2026-09-28
+
+The historical 733.084-second run was revalidated with the current validator:
+M/E remain true and S remains false at cycles **3/12/13/17/18/23**. Its CSVs,
+payload and frozen v1 budget bytes were not changed. No new Release Pack was
+created to repeat that analysis. Product source remained unchanged through the
+first four measured experiments. Candidate `b512cc1` tested the catalog loading
+indicator and was **disproved** as the cause; that product change was reverted.
+Candidate `a69b275` corrects the actually observed hidden animated control in
+ProductEditDialog. Same-host removal/reintroduction confirms the application
+cause; the consolidated candidate subsequently passes the full hosted
+qualification recorded below. Other changes concern QA,
+the existing workflow and SHA-derived development-version build tooling.
+
+### Fixed diagnostic experiments, with all outcomes retained
+
+| Source / hosted run | Original untraced workload | Traced workload | Comparison control / reintroduction |
+| --- | --- | --- | --- |
+| `165d47f2f53b151687f67af26f9980a648793ea1` / [36464577821](https://github.com/XNIW/Win7POS/actions/runs/36464577821) | 201.250s, 9 cycles/180 scans; raw oldest 317.672ms, warm failures 2/4/7 | 201.605s, 9 cycles/180 scans; warm cycle 3 oldest 289.593ms; trace reached its 32,768-line limit at about 148s, 10,889 drops retained | Initially unfocused TextBox plus QA 125ms timer: 181.462s, 9 cycles, oldest 1.028ms; not equivalent recurrent InputManager activity |
+| `c24ac7841b4ce6804910bc5e773b207fd7ca3103` / [36466536292](https://github.com/XNIW/Win7POS/actions/runs/36466536292) | **FAIL** at Rows scan 1, Input visual probe timeout; 0 complete scans/cycles, M/E/S=false overall; recorded environment valid | 199.312s, 9 cycles/180 scans; warm cycle 8 oldest 339.984ms; **zero trace drops** | Focused TextBox plus QA 125ms timer: 181.289s, 9 cycles, oldest snapshot 18.381ms; actual InputManager timer maximum ready-to-start 32.965ms, zero trace drops |
+| `a9ed5d072e11526ad7157625693be40eac5539d7` / [36468681448](https://github.com/XNIW/Win7POS/actions/runs/36468681448) | 200.338s, 9 cycles/180 scans; warm cycle 7 exceeds 250ms, raw max 256.123ms | 201.316s, 9 cycles/180 scans; warm cycle 4 oldest 357.174ms; zero trace drops | C without additional QA timer: 181.400s, oldest 10.519ms, actual InputManager max ready-to-start 34.119ms; D reintroduces only that timer: 181.368s, oldest 17.171ms, InputManager max 41.865ms. Both 9 cycles, zero drops |
+| `cd396537830451e2678cd822540304074004c2c2` / [36471969876](https://github.com/XNIW/Win7POS/actions/runs/36471969876) | Not repeated for the read-only clock comparison | 198.584s, 9 cycles/180 scans; warm cycle 4 oldest 300.493ms, raw max 360.028ms, zero drops | Focused plain TextBox, 181.417s, 9 cycles, oldest snapshot 14.190ms, actual InputManager max ready-to-start 33.139ms, zero drops |
+| `b512cc1924ce84bafbf386f39bb0df430c976808` / [36473824531](https://github.com/XNIW/Win7POS/actions/runs/36473824531) | 201.107s, 9 cycles/180 scans; oldest 284.814ms, warm failures 5/8 | 201.059s, 9 cycles/180 scans; oldest 326.770ms, warm failures 4/7; actual InputManager ready max 552.877ms, 161 waits over 250ms, zero drops | D restores catalog indicator constant true: 201.431s, 9 cycles/180 scans, raw oldest 362.286ms; no warm snapshot failure, but InputManager ready max 566.547ms and 108 waits over 250ms; zero drops. Catalog-indicator hypothesis disproved, no rerun to obtain another result |
+| `a69b2755ca871ac78830e440fa9b5b88115a9559` / [36503934903](https://github.com/XNIW/Win7POS/actions/runs/36503934903) | **FAIL** at cold Rows scan 1, quantity applied, IsBusy=false, 0 complete scans/cycles | Fixed editor: 180.508s, 8 cycles/160 scans, oldest 20.013ms; 800 actual InputManager waits, maximum 33.260ms, none over 250ms, zero drops | D restores only editor ImageUploadProgress constant true: 201.431s, 9 cycles/180 scans, oldest 364.861ms, warm cycle 6 fails; 723 actual waits, maximum 484.189ms, 97 over 250ms, zero drops. Hidden editor animation and infinite storyboard return |
+
+All completed Diagnostic arms report S=false by design and certify neither the
+application nor Asus. A/B/C/D are serial on the same VM within each run;
+runs use different VMs (EPYC 7763 or EPYC 9V74), each four logical CPUs and
+the same `win25-vs2026 / 20260922.246.2` image. Cross-run timing is not a causal
+before/after comparison. Hypotheses are written into artifacts before each arm.
+The failed cold untraced arm is not discarded or labelled an Asus reproduction.
+
+The runtime trace identifies the actual timer through `DispatcherOperation`
+delegate target, with operation argument fields also inspected as a fallback:
+**System.Windows.Input.InputManager.ValidateInputDevices**, interval **125ms**,
+Background priority. IDs are ephemeral weak-key identities; only type/method
+metadata and scalar timestamps are retained. Creation is explicitly recorded as
+first observation, not an invented constructor timestamp. Native due offsets
+are approximate modulo-2^32 deltas; acceptance ages use Stopwatch alone.
+
+For the first traced warm failure, timer 14 was posted at 89599.837ms, its
+promotion hook occurred at 89726.436ms, the snapshot at 90016.016ms and execution
+started at 90049.277ms. Thus scheduled/promotion time was 126.599ms, ready wait
+was 289.580ms at the snapshot and 322.841ms at start; execution took 0.015ms.
+Twenty-two MediaContext Render timer callbacks started within that ready wait;
+no executed callback exceeding 10ms overlapped it. The final environment sample
+took 0.873ms. This separates a waiting InputManager callback from its brief
+execution, but does not by itself identify the producer of repeated rendering.
+
+The second traced run confirms the sequence with complete trace coverage:
+posted 199599.807ms, promotion 199732.016ms, snapshot 200071.980ms, start
+200072.382ms, end 200072.394ms. The warm ready wait remains 339.964ms before
+the snapshot, followed by 0.012ms execution. The initial plain control does not
+justify an environment/contract classification: investigation continues with
+the active animation clocks and render state compared against the minimal control.
+
+The third fixed experiment **disproves** the extra QA wakeup timer hypothesis:
+C and D both remain below 250ms, while original A and traced B reproduce.
+At B cycle 4 the InputManager timer was posted at 111967.431ms, promoted at
+112093.267ms, sampled at 112450.421ms, started at 112452.453ms and ended at
+112452.471ms: 125.836ms scheduled, 357.154ms ready at sampling, 359.186ms to
+start, 0.018ms execution. Twenty-four MediaContext Render timer callbacks occur
+during that wait, without an overlapping callback exceeding 10ms. The scene has
+1,456 nodes, 13 ProgressBars with **zero** visible or hidden indeterminate bars;
+only CaretElement/CaretSubElement report animated visual properties. This does
+not inspect animations on brushes/resources. No hidden-animation product patch
+is repeated, and no environmental exception is justified by C/D.
+
+The next predeclared B4/C4 comparison reads existing MediaContext/TimeManager
+clock metadata on the UI thread, bounded to 1,024 clocks/128 records per snapshot,
+without creating a context or retaining clock/target objects. Its first dispatch
+[36471405297](https://github.com/XNIW/Win7POS/actions/runs/36471405297) never reached
+measurement: source `01564066369500a38545c890c7bb015332f616ca` exposed an existing
+build bug, since `1.0.0-dev.015640663695` is invalid NuGet SemVer. Commit `cd39653`
+prefixes entirely decimal SHA identifiers with `g`, preserves exact SHA binding,
+and updates integrity/reproducibility readers. Alphabetic SHA prefixes and tagged
+release versions are unchanged. Three deterministic decimal-prefix vectors pass,
+as does a real locked NuGet restore of the formerly rejected version. All 49
+canonical local gates pass; the existing signing fixture now covers that exact
+numeric-prefix identity in hosted Security (local SignTool is unavailable). The
+unexecuted dispatch is retained separately and is not a performance FAIL/PASS.
+
+The completed B4/C4 comparison identifies a concrete difference: POS idle retains
+an **active infinite Storyboard with DoubleAnimationUsingKeyFrames and
+PointAnimationUsingKeyFrames at default frame rate**; the plain control has only
+the caret clock at desired 10fps. At the failing warm cycle 4, the additional
+storyboard is still active. InputManager was posted at 110827.751ms, promoted at
+110948.989ms, sampled at 111249.447ms and started at 111312.179ms: ready age at
+snapshot 300.458ms, 363.190ms to start, execution 0.009ms, 24 Render timer starts,
+no overlapping executed callback over 10ms. Clock inventory is not truncated.
+
+The [official Aero2 theme reference](https://github.com/dotnet/wpf/blob/main/src/Microsoft.DotNet.Wpf/src/Themes/PresentationFramework.Aero2/Themes/Aero2.NormalColor.xaml)
+contains that pair in the indeterminate ProgressBar storyboard. Following this
+lead finds `ProductsView`'s catalog-loading indicator still set to constant
+`IsIndeterminate=True`, including while the auxiliary image-list window is hidden
+or closed. This is a separate indicator from the previously fixed POS/image
+presenter controls. Candidate `b512cc1` binds only this indicator to effective
+visibility. Its lifecycle regression exercises visible loading, completion,
+restart, hidden/restored ancestor and window close. B5/D5 will compare the fix
+with the exact former property value reintroduced on this control alone, using
+three fixed minutes per arm and the unchanged full workload. No internal WPF
+operation is removed, reprioritized or mutated; no budget is widened. B5/D5 **disproves that attribution**: the delay and the same infinite storyboard
+persist with the catalog indicator corrected. The catalog change and its specific
+regression were reverted; it is not presented as a performance fix.
+
+The added window inventory provides stronger localization: immediately before
+close, the catalog window has two progress controls and zero hidden indeterminate
+ones; the **image editor** has one hidden indeterminate control and a hidden
+animated `System.Windows.Shapes.Rectangle`. The active clock targets are
+`Animation`, transform scale and RenderTransformOrigin, matching the theme
+storyboard. This survives closure and is still present in the failing POS idle.
+Candidate `a69b275` binds only `ProductEditDialog.ImageUploadProgress` to effective
+visibility; the other behavior and the catalog source remain unchanged. Its
+functional regression checks the actual editor template through idle, public
+control visibility, hidden/restored ancestor and close without initiating an
+upload or modifying VM internals. A6/B6/D6 repeat a fixed three minutes per arm,
+with D6 restoring **only that editor control** to its old constant true state.
+The completed B6/D6 comparison demonstrates an **APP lifecycle defect**: keeping
+the hidden editor progress indeterminate leaves its template animation clock
+active after the editor closes. D6 directly identifies the animated Rectangle's
+TemplatedParent as `ProgressBar`, name `ImageUploadProgress`. Restoring that one
+property restores both the extra infinite default-rate storyboard and delayed
+InputManager execution; with the fix, idle retains only the normal caret clock.
+The timer is the victim, not a long-running handler. At warm D6 cycle 6: posted
+156535.850ms, promotion hook 156651.354ms, snapshot 157016.192ms, start
+157018.412ms, end 157018.434ms. Scheduled interval is 115.504ms; ready-to-start
+367.058ms; execution 0.022ms. Twenty-four MediaContext Render timer starts occur
+during the ready wait, with no overlapping callback exceeding 10ms. No callback,
+caret, input service or accessibility support was removed. Budget v1 is unchanged.
+
+A6 also preserves a **distinct cold first-scan failure** before any image editor
+work: expected/actual quantity 2, IsBusy=false, service 18.646ms, apply 1.266ms,
+elapsed at failure 609.324ms. Pending viewport/text/render/input work is not an
+executed-cause attribution. This is the 250ms visual probe, not the 10-second
+command timeout, permanent deadlock or evidence explaining Asus scan 3.
+
+### Cold fixture setup investigation
+
+[H7 run 36505406765](https://github.com/XNIW/Win7POS/actions/runs/36505406765),
+source `fb863af8436f4d8b200713249a8e4003b27d02cd`, preregistered exactly three
+fresh-process five-scan trials. All complete, M/E=true, S=false (Diagnostic).
+The light observer retains only the last 256 completed callbacks >=2ms, no
+timer reflection/watchdog/full trace; no window is overwritten in these trials.
+All three start the first scan with **zero realized fixture rows**. Executed
+initial render callbacks take 146.102/143.468/140.635ms inside the first scan;
+first-scan UI-return delays are 137.124/134.317/131.706ms. Parent layout validity
+alone did not establish that asynchronous ItemsSource/layout had completed.
+This demonstrates a harness setup boundary defect. It does not reproduce or
+fully attribute the exact prior H2/A6 timeout, and those failures remain visible.
+
+Protocol v4 checks the rendered 500-line fixture using a bounded ContextIdle
+setup predicate before starting the useful clock. It records setup duration
+and realized rows separately in `fixture-setup.json`; inability to become ready
+within 10 seconds fails the run. No warmup scans, forced layout, discarded work,
+changed public-command priority or increased 250ms probe timeout are introduced.
+All subsequent scans, mode transitions, dialog/image work, idle samples and
+budgets remain unchanged. The validator still evaluates historical v3 receipts
+unchanged and requires the extra readiness receipt for v4. Negative vectors
+reject missing/empty/legacy/timed-out setup receipts and Qualification rejects
+the legacy-setup Diagnostic option.
+
+[H8 run 36506234856](https://github.com/XNIW/Win7POS/actions/runs/36506234856),
+source `07b154346ad5c362fc170b7072066dc8788df985`, preregisters exactly three
+pairs, alternating legacy/ready order, identical light capture and five public
+scans per process. The hypothesis is displacement of initial fixture render
+into recorded setup and lower first-scan UI return; all outcomes are retained.
+All six arms complete (M/E=true, S=false Diagnostic). Legacy setup has zero
+realized rows in every trial; ready setup has 26 rows and takes
+239.975/216.824/247.540ms, all recorded outside useful duration. First-scan
+UI-return delay falls from 134.383/128.495/137.016ms to 0.228/1.976/1.087ms.
+First visual probe waits are 183.281/40.749/39.311ms legacy versus
+60.822/47.906/45.683ms ready: not every component improves and no timeout is
+reproduced in this pair set. This confirms correct separation of setup work,
+not the exact cause of historical cold or Asus timeouts. The subsequent full
+hosted qualification passes independently; Asus attribution remains missing.
+The executed-callback windows also localize the change: the single initial
+MediaContext callback >=100ms ends 155–184ms **after** first-scan start in all
+legacy arms and 76–101ms **before** it in all ready arms. All six bounded windows
+have zero overwritten records; original callbacks and derived localization are
+preserved together.
+
+### Observer correction and regression evidence
+
+The actual Framework 4.8 runtime raises `OperationPriorityChanged` **before**
+publishing the new `operation.Priority`. The previous observer correctly dated
+the first Inactive promotion, so this does **not** erase the historical six
+failures. However, retaining the old priority could reset eligibility on a later
+ready-to-ready reprioritization. The observer now retains the event timestamp,
+resolves its destination on the next observation/start/hook and preserves the
+age of work that was already ready. Missing or conflicting transitions invalidate
+data rather than inventing an eligibility time. Finish reconciliation and
+duplicate-start handling release each owned visual counter at most once.
+
+Controlled-clock tests exercise long Inactive then fast execution, real ready
+delay over 250ms, multiple priorities and Inactive re-entry, stop/restart,
+aborted/completed-before-posted events, duplicate start/finish, missing finish,
+missing/racing promotion, concurrent snapshots/completions and native tick wrap.
+They do not sleep hundreds of milliseconds to simulate queue age. The existing
+6,000 real synchronous Send completion-race regression remains active.
+
+Canonical [CI 36466542659](https://github.com/XNIW/Win7POS/actions/runs/36466542659)
+and [Security 36466542686](https://github.com/XNIW/Win7POS/actions/runs/36466542686)
+both passed on `c24ac7841b4ce6804910bc5e773b207fd7ca3103`: 1,033 Core/Data tests,
+zero failed/skipped; all nine functional WPF scenarios including the controlled
+observer checks; canonical gates and the other existing runtime smokes. New
+minimal-control options are rejected in Qualification. These observer comparisons
+preserve workload protocol v3, the 250ms budget and all other acceptance predicates; observer
+version 2 is recorded in new measurement receipts.
+Canonical CI [36468688836](https://github.com/XNIW/Win7POS/actions/runs/36468688836)
+and Security [36468688896](https://github.com/XNIW/Win7POS/actions/runs/36468688896)
+also pass on `a9ed5d072e11526ad7157625693be40eac5539d7`.
+CI [36473831061](https://github.com/XNIW/Win7POS/actions/runs/36473831061) and Security
+[36473831125](https://github.com/XNIW/Win7POS/actions/runs/36473831125) pass on
+`b512cc1`; that validates its tests, not the disproved causal hypothesis. The
+`cd39653` Security run 36471976922 passed; its canonical CI 36471976935 was
+cancelled by the later source push after Core/Data passed, not reported as a
+complete canonical PASS.
+CI [36503939032](https://github.com/XNIW/Win7POS/actions/runs/36503939032) and
+Security [36503939044](https://github.com/XNIW/Win7POS/actions/runs/36503939044)
+pass on `a69b275`, including the actual editor lifecycle regression. Local
+protocol-v4 harness build passes with zero warnings/errors, all 49 canonical
+gates pass and validator/preflight/aggregation vectors pass. Asus was not used
+to execute any newly built harness.
+
+Raw CSVs, outcomes, protocol/binary hashes, full-file manifests and selected
+consecutive timer intervals are retained under [firetick evidence](evidence/2026-09-26-post-pr111/firetick/).
+Full synthetic timelines remain in their workflow artifacts and the private
+`C:\Dev\Win7POS-post-pr111-20260926` evidence directories; excerpts are labelled
+derived and never replace the complete files. Reflection compatibility failures
+are labelled unknown; no WPF internal state, priority or callback is changed.
+Trace formatting/I/O is kept outside the UI-observer lock; writer shutdown drains
+an already-captured batch. Startup observer-lock cost is reported separately
+from the failing idle interval and is not mistaken for exclusive application CPU.
+Review found a shutdown race in the diagnostic tail: a concurrent producer could
+mutate the final enumerated queue. `aea6531` unsubscribes hooks, drains the writer,
+copies the final batch under lock and rejects producers after observation ends.
+A deterministic regression invokes a producer from another thread during the
+last record's formatting and verifies the final batch/drop receipt. No acceptance
+path or product behavior changes. Earlier `07b1543` canonical CI was superseded
+by this correction; its partial results are not presented as a complete PASS.
+Consolidated [CI 36507133349](https://github.com/XNIW/Win7POS/actions/runs/36507133349)
+and [Security 36507133252](https://github.com/XNIW/Win7POS/actions/runs/36507133252)
+both PASS on `aea65314b9de6f18a46a5ba9aefbeb2de363012d`, including all nine
+WPF scenarios, the shutdown/setup regressions and 1,033 Core/Data tests with
+zero failed/skipped. Release Pack 36508924895 is the new exact-source candidate
+pack; its final verification and qualification results are recorded below.
+
+Microsoft documents that DispatcherTimer execution depends on other queued work
+and priority, with no punctual-execution guarantee. This is context, **not a
+qualification waiver**. [Framework 4.8 API](https://learn.microsoft.com/en-us/dotnet/api/system.windows.threading.dispatchertimer?view=netframework-4.8),
+[InputManager source reference](https://github.com/dotnet/wpf/blob/main/src/Microsoft.DotNet.Wpf/src/PresentationCore/System/Windows/Input/InputManager.cs)
+and [MediaContext source reference](https://github.com/dotnet/wpf/blob/main/src/Microsoft.DotNet.Wpf/src/PresentationCore/System/Windows/Media/MediaContext.cs)
+were compared with observed runtime handler identities and hook order; modern
+source alone is not treated as proof of the installed Framework binary.
+
+## Consolidated hosted qualification — completed 2026-09-29 UTC, verified 2026-10-01
+
+[Existing qualification run 36510437821](https://github.com/XNIW/Win7POS/actions/runs/36510437821)
+completed both requested lanes on the unchanged source
+`aea65314b9de6f18a46a5ba9aefbeb2de363012d`, after its canonical CI/Security and
+[Release Pack 36508924895](https://github.com/XNIW/Win7POS/actions/runs/36508924895)
+passed. The 60-minute lane started only after all three 12-minute flags passed.
+Both lanes used the same GitHub Actions runner `1000004065`, Microsoft VM,
+Windows Server 2025 build 26100, image `win25-vs2026/20260922.246.2`, AMD EPYC
+7763 (2 cores/4 logical processors), 16GiB RAM and 96DPI. No concurrent build,
+extra tracing, diagnostic ablation, forced GC or budget change was used during
+measurement. The local host pause did not interrupt the cloud run.
+
+M/E/S means MEASUREMENT_COMPLETED / ENVIRONMENT_VALID / STABILITY_PASS.
+For the table, B is the unchanged budget SHA256
+`63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398`.
+P12/P60 identify the actual protocol.json bytes:
+`0bd744bbe6fb985342add0a914fd6ad2b56054f93f8d6632f4cc71083a50ed28` /
+`87575fad6b67c3e5d37289335d50abc4afa8d9eb166dd210bb025c8d6541462b`.
+They share public-scan v4 / observer v2 and protocol-text SHA256
+`1c05aebd1d501e57dba87f477fbe23fc7fc3907516743040eec0f8896ccc5c64`.
+Setup is recorded separately, with 26 rendered rows and 233.972/230.228ms
+respectively; useful durations below exclude process startup and fixture setup.
+
+| Lane / stage | Host / source | Useful duration / workload | Protocol / budget | M / E / S |
+| --- | --- | --- | --- | --- |
+| Hosted Integrated / Integrated | VM above / `aea65314b9de` | 738.848s; 33 cycles, 660 scans | v4, P12 / B | **true / true / true** |
+| Hosted premerge soak / Integrated | Same VM / same `aea65314b9de` | 3601.349s; 161 cycles, 3220 scans | v4, P60 / B | **true / true / true** |
+| Asus Integrated / Integrated | Asus / `aea65314b9de` prepared, not executed | NOT_EXECUTED; acceptance channel unavailable; historical `0ed0a06` scan-3 failure remains open | Planned v4; no run protocol hash / B | not measured |
+| Asus Final / Final | Asus / no merge SHA or final payload exists | NOT_EXECUTED; Asus Integrated prerequisite missing | No run protocol hash / B | not measured |
+
+Both hosted lanes keep 100k products/500 cart lines, all public-command scans,
+Rows/Grid alternation, image/editor workload and the 20-second idle interval.
+All 1,353/6,601 environment samples confirm the expected active input/thread
+desktop, own foreground, visible window, AC power and no suspend/interruption.
+Independent revalidation from downloaded raw CSV/receipts with the current
+validator, RequiredSeconds 720/3600 and ExpectedProducts 100000 reproduces
+every stored metric and all three positive flags with empty reason arrays.
+
+| Warm metric (cycles >=2) | Hosted 12 | Hosted 60 |
+| --- | --- | --- |
+| Rows / Grid public UI p95 | 64.315 / 60.699ms | 60.680 / 61.150ms |
+| Rows / Grid public UI maximum | 104.026 / 104.663ms | 134.683 / 133.611ms |
+| Ready queue maximum / oldest eligible maximum | 1 / 9.262ms | 2 / 19.229ms |
+| Private / managed idle peak | 89,874,432 / 14,138,532 bytes | 88,330,240 / 13,582,744 bytes |
+| Maximum five-cycle managed mean growth | 0 bytes | 364,053.6 bytes |
+| Grid containers / metadata entries / decoded cache | 12 / 500 / 0 bytes | 12 / 500 / 0 bytes |
+| Closed-window observed roots / observer drops | 0 / 0 | 0 / 0 |
+
+The six historical v3 failures remain unchanged. H6 supplies the causal
+before/after test for the editor animation; this full v4 run establishes
+candidate qualification after the separately proven setup correction. It does
+not identify the cause of the distinct earlier Asus timeout or certify Windows 7.
+
+Release binding was independently cross-checked against all 41 downloaded
+payload files and both lanes' identical binary inventories. Hosted harness
+SHA256 is `d970d11b5910efb793439f2a6b26ef99355834d0d5b747af837da571a9b54676`;
+the locally compiled, unexecuted Asus harness has the separate hash in the owner
+card. Setup SHA256 is
+`290dc8abae7bfbcc28d57bfed5cba116a23bd408bb2f1b2e48b431d23a443ca1`;
+payload ZIP SHA256 is
+`8e6f1c0065bcdf94e29522d725561162924a19557c5133adb8c77c33ab7bc7e8`.
+The pack is **development-unsigned**, not a production-signed release.
+Archive digests, signature states, raw run/host/binding/setup receipts, CSVs and
+independent calculations are retained in the
+[verified summary](evidence/2026-09-26-post-pr111/firetick/36510437821/verified-summary.json)
+and its 38-file raw-byte manifest. Qualification artifact SHA256 is
+`1f090c1df81602eb3c0b133be80c4ab1422251ef59a2bf68e77a601bd3ab227b`.
+Downloaded installer integrity passes; install/upgrade/uninstall, physical
+Win7/peripherals, staging and image recovery remain **NOT_EXECUTED**.
+
+Publication after this measured source changes only documentation/evidence.
+Its head and exact checks are recorded in the external interim attestation,
+without rebinding these measurements to newly built documentation-head bytes.
+PR112 remains OPEN/DRAFT; `origin/main` is still
+`bedcf17a97d814a3b098387cc2720ff2b11abbbf`. No merge or Final is claimed.
+
+## Historical full hosted Integrated qualification — 2026-09-28
 
 Resumed from `8111c8f9357d09a68343613080bf0b47041efc09`. The only new code is
 the existing CI workflow's explicit hosted qualification path and seven tests
@@ -233,6 +569,9 @@ the external attestation, rather than being inferred from a predecessor.
 
 | Finding | Supported cause and discriminating evidence | Change and regression |
 | --- | --- | --- |
+| HOSTED-TIMER-AGE (RESOLVED ON HOSTED QA) | Actual 125ms Background InputManager.ValidateInputDevices waits behind recurring rendering from hidden ProductEditDialog.ImageUploadProgress. Same-host H6 B: 800 waits, max 33.260ms, none >250; D restores only old indeterminate value: 97/723 waits >250, warm snapshot 364.861ms, hidden animation and infinite clock return. | Bind that editor indicator to effective IsVisible; actual lifecycle regression PASS. Consolidated aea6531 CI/Security/Release Pack PASS; full 12+60 hosted qualification M/E/S=true. Historical six v1-budget failures retained. |
+| HOSTED-COLD-SETUP (HARNESS CORRECTION VERIFIED; EXACT OLD TIMEOUT UNATTRIBUTED) | H7 all three first scans start with zero fixture containers and execute initial render 141–146ms inside scan timing. H8 pairs confirm first UI-return 128–137ms legacy versus 0.2–2.0ms after readiness. Exact preceding A6 timeout cause remains unproven. | v4 records bounded rendered-fixture setup before useful clock, no warmup scans or changed latency budgets. All six H8 arms complete; consolidated full hosted 12+60 subsequently passes. |
+| ASUS-THIRD-SCAN (REOPENED) | Earlier cycle-0 scan-3 Input-probe timeout remains distinct from later SAC denial. One targeted channel check this turn: SAC On, unsigned candidate, no repository signing secrets/environments. | No unsigned retry or policy change. Local reproduction requires existing authorized trusted signing/acceptance channel; hosted investigation continues independently. |
 | PERF-LATENCY | Resetting 500 identities each cycle repeatedly realizes all 500 hidden Grid cards. Removing only the hidden Grid ItemsSource eliminates multi-second Rows stalls; restoring it reproduces them. A visibility guard alone does not. Ordinary scans have zero collection changes. | Replace eager WrapPanel with a recycling, variable-height, multi-column `VirtualizingCartWrapPanel`. Preserve card width, selection, scrolling and resize. Runtime regression checks attached visible containers at indices 0/250/499, four widths, both views, removal/empty/re-add and public commands. Corrected an initially detached recycled-container implementation before accepting measurements. |
 | PERF-QUEUE | 501 invisible ProgressBars remain indeterminate. Original mixed control leaves 96 operations, oldest 38,262ms after four cycles; disabling only invisible indicators leaves two, oldest 18ms. Reintroduction reproduces accumulation. Producer stacks identify TextEditor.OnTextViewUpdated during arrange. | Bind IsIndeterminate to actual IsVisible in the cart busy indicator and ProductImagePresenter. Test loading-visible, ancestor-hidden and completed-image states. Do not abort, reprioritize or remove internal WPF operations. |
 | PERF-MEMORY | Pending Background InitTextStore delegates retain TextEditor._uiScope → TextBox → dialog parents → closed ProductEditDialog → VM. Animated rendering repeatedly allocates while the controls are invisible; removing that work drains the demonstrated root chain. Eager card trees also retain 500 control subtrees. | Same two application fixes. Observe natural GC, post-idle heap/private bytes, known closed-window root chains and decoded cache pixel bytes. No forced GC. This establishes those paths, not an exhaustive heap census. |
@@ -400,7 +739,7 @@ nonpositive for environment; it is not a preregistered qualification run.
 ## Scope and validation
 
 Application changes are limited to PosView (selection/focus and Grid panel),
-ProductImagePresenter (invisible animation), and opt-in stage instrumentation
+ProductImagePresenter and ProductEditDialog (invisible animations), and opt-in stage instrumentation
 in implicated AddByBarcode/BuildSnapshot/ApplySnapshot methods. The measurement
 scope has no SQL text, barcode logging or production I/O and is inactive normally.
 The test helpers separate factorial reproductions, functional regression,
@@ -408,7 +747,7 @@ environment and bounded observation from qualification orchestration.
 The runner, validator and canonical gate connect these checks to existing CI;
 no long soak is added to every commit.
 
-Serial locked restore, 49/49 gates, solution/WPF/harness builds, 1,033/1,033
+Initial local validation: serial locked restore, 49/49 gates, solution/WPF/harness builds, 1,033/1,033
 Core/Data tests (zero skipped), CLI self-test and image profile/serialization
 smoke pass. After the panel first-layout correction, all 50 visual captures and
 eight existing functional scenarios pass. The new structural/public-command
@@ -421,11 +760,11 @@ including wrong dataset/cart receipts, numerically duplicate sample identifiers,
 non-finite required duration and the old soak rejection. These initial local
 focus failures were followed by successful exact-head CI and unlocked-Asus
 functional checks on `0ed0a06`, as recorded above. The subsequent Integrated
-attempt failed; valid integrated and downloaded final-package qualification
+Asus attempt failed; current hosted Integrated and premerge soak subsequently
+pass as recorded above. Asus Integrated and downloaded merge-package Final
 remain pending. No final performance PASS is claimed.
 
-Next authorized sequence: attribute the recorded hosted idle timer delay before
-repeating qualification; activate an accepted Asus QA harness through the owner
+Next authorized sequence: activate an accepted Asus QA harness through the owner
 channel below, identify and correct the separate interactive third-scan timeout,
 then pass a 12-minute Integrated qualification against the
 unchanged preregistered budget; then exact-head CI/normal merge, download and
@@ -455,11 +794,11 @@ or renewed staging denial attempt is part of this local performance work.
 
 Only the first row is the immediate owner action; the other rows describe
 separate external resource prerequisites. The locally compiled candidate has
-source `cb43fd4b23cd26859ab2f370d1c0cfe47aaff205` and has **not been executed**.
+source `aea65314b9de6f18a46a5ba9aefbeb2de363012d` and has **not been executed**.
 File: `C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\bin\x86\Release\net48\Win7POS.Wpf.UiSmokeHarness.exe`.
-Unsigned SHA256: `b47a2fd3eca47e0865e0013bb9b5ed6a5915a86f94a6f7bd82f053ebca0c53ce`.
+Unsigned SHA256: `ddb03639b9c3f2f3ddc60d00096d597ab0e58689b4dcf176f2498f846462c951`.
 Its 33 exe/DLL hashes and signature states are recorded privately in
-`C:\Dev\Win7POS-post-pr111-20260926\owner-activation-20260928.json`;
+`C:\Dev\Win7POS-post-pr111-20260926\owner-activation-aea6531.json`;
 the single operational card is `ASUS-OWNER-ACTIVATION.md` in that same directory.
 This is a signing/acceptance handoff, not authorization to retry an unsigned file.
 
@@ -467,7 +806,7 @@ After owner-channel acceptance and signature/chain verification, resume from
 the repository root with the existing runner and a new output directory:
 
 ```powershell
-pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -HarnessDirectory 'C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\bin\x86\Release\net48' -OutputDirectory ('C:\Dev\Win7POS-post-pr111-20260926\asus-accepted-cb43fd4-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss'))
+pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticScanCount 5 -Products 100000 -HarnessDirectory 'C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\bin\x86\Release\net48' -OutputDirectory ('C:\Dev\Win7POS-post-pr111-20260926\asus-accepted-aea6531-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss'))
 if ($LASTEXITCODE -ne 0) { throw 'Preserve the Asus failure and identify its first cause.' }
 ```
 
@@ -485,6 +824,6 @@ pwsh -NoProfile -File scripts/run-cart-performance.ps1 -Mode Qualification -Stag
 
 Require all three flags true before normal merge and exact-merge ReleasePack
 download/verification. Final needs that new package's harness/binding and at
-least 60 useful minutes. Hosted Integrated completed but failed stability;
-hosted premerge soak, Asus qualification completion and Final remain unpassed.
+least 60 useful minutes. Current hosted Integrated and premerge soak both pass;
+Asus qualification completion and Final remain unexecuted for this candidate.
 PR112 stays draft with no merge while the Asus residual remains open.

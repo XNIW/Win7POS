@@ -1,0 +1,22 @@
+{
+  "MEASUREMENT_COMPLETED": true,
+  "ENVIRONMENT_VALID": true,
+  "STABILITY_PASS": true,
+  "measurementReasons": [],
+  "environmentReasons": [],
+  "stabilityReasons": [],
+  "metrics": {
+    "isolatedServiceP95Ms": 15.42,
+    "sendProbeP95Ms": 0.098,
+    "elapsedSeconds": 738.848,
+    "RowsServiceP95Ms": 22.103,
+    "RowsUiP95Ms": 64.315,
+    "RowsUiMaximumMs": 104.02600000000001,
+    "RowsBitmapP95Ms": 28.94,
+    "GridServiceP95Ms": 21.38,
+    "GridUiP95Ms": 60.699,
+    "GridUiMaximumMs": 104.663,
+    "GridBitmapP95Ms": 28.815,
+    "maximumManagedWindowGrowthBytes": 0.0
+  }
+}

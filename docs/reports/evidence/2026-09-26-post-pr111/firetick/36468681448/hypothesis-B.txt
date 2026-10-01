@@ -1,0 +1,1 @@
+B3: Fixed 3 minutes. Actual InputManager timer still waits >250ms after corrected promotion accounting; minimal C2 did not. Inventory visible/hidden indeterminate indicators and animated visual types once per cycle to identify the POS render producer. No UI values/text collected. No app patch until a producer is demonstrated.

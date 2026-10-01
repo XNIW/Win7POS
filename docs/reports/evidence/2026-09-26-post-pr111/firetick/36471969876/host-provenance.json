@@ -1,0 +1,18 @@
+{
+  "commit": "cd396537830451e2678cd822540304074004c2c2",
+  "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+  "image": "win25-vs2026",
+  "imageVersion": "20260922.246.2",
+  "system": {
+    "Manufacturer": "Microsoft Corporation",
+    "Model": "Virtual Machine",
+    "TotalPhysicalMemory": 17174360064,
+    "NumberOfLogicalProcessors": 4
+  },
+  "cpu": {
+    "Name": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "NumberOfCores": 2,
+    "NumberOfLogicalProcessors": 4
+  },
+  "qualifiesAsus": false
+}

@@ -1,0 +1,2 @@
+# Raw diagnostic receipts and derived excerpts retain their recorded bytes.
+*.txt -text

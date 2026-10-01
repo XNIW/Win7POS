@@ -1,0 +1,192 @@
+[
+  {
+    "file": "artifacts.json",
+    "bytes": 768,
+    "sha256": "d77ec916b251f2b7efa391b51ba92a849c9006c127592f610f89e0d3331873ed"
+  },
+  {
+    "file": "download-verification.json",
+    "bytes": 4095,
+    "sha256": "fcc330659594e71d5652ff4e885ce59cbb86c9293ce08c932f1e39cb58805f01"
+  },
+  {
+    "file": "host-provenance.json",
+    "bytes": 790,
+    "sha256": "3d315ce6983e2ac81e969a118548a0928cc51d0c2ce83b72774bdd00a7b75084"
+  },
+  {
+    "file": "hosted-attestation.json",
+    "bytes": 1941,
+    "sha256": "20edd6d294770aa0970dd75965618a96002c34922eb3cd3006dd50a255a5fde6"
+  },
+  {
+    "file": "independent-revalidation.json",
+    "bytes": 1349,
+    "sha256": "64617afc8368153bddbab3728c55db5aca7d9b0fc625969c58f3e0160477aac6"
+  },
+  {
+    "file": "integrated-12/cart-performance.csv",
+    "bytes": 8155,
+    "sha256": "742232ba6aa63ce8b7b6fa50a0c755b717f48e8dbc3d4d26235c0a14fb4c548d"
+  },
+  {
+    "file": "integrated-12/fixture-setup.json",
+    "bytes": 139,
+    "sha256": "ff9fff8ef885260a9ee2c65cb4990d107dc6167e040dfa0e8f45e31716ebd239"
+  },
+  {
+    "file": "integrated-12/flow-performance.csv",
+    "bytes": 7278,
+    "sha256": "23928f952099f0fd3fc6908aeb3dd3e044672dbd0b51d9ce8648b3be6c7bf082"
+  },
+  {
+    "file": "integrated-12/functional-completion.txt",
+    "bytes": 100,
+    "sha256": "a6b8ce784680480d9f138a9adbd672558da53b37b4be0576ab156635a3a88213"
+  },
+  {
+    "file": "integrated-12/payload-binding.json",
+    "bytes": 6177,
+    "sha256": "252d460dd9a57da8373c6cf113b41987164f5a0baeed786c7db8060d4a6418a7"
+  },
+  {
+    "file": "integrated-12/performance-result.json",
+    "bytes": 606,
+    "sha256": "7b7b318e99046406f9ceb355e124a8f8f54def839f0729b541e5e6d39f49d632"
+  },
+  {
+    "file": "integrated-12/preregistered-budget.json",
+    "bytes": 1303,
+    "sha256": "63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398"
+  },
+  {
+    "file": "integrated-12/protocol.json",
+    "bytes": 8597,
+    "sha256": "0bd744bbe6fb985342add0a914fd6ad2b56054f93f8d6632f4cc71083a50ed28"
+  },
+  {
+    "file": "integrated-12/qualification-environment.csv",
+    "bytes": 98751,
+    "sha256": "31778a8ac94df42a8dbbc8b576979b5767ccd03d9f008e03058012ce7502723c"
+  },
+  {
+    "file": "integrated-12/qualification-idle.csv",
+    "bytes": 4994,
+    "sha256": "bb2e82e822b68a722351754fe263d1c3ab160b37292996ea83c6c805ac0d6bbe"
+  },
+  {
+    "file": "integrated-12/qualification-measurement.json",
+    "bytes": 227,
+    "sha256": "d5aeb23342f32ff971d945aa6bb8f26307fe2d78f8652461b6f97ce865e93c11"
+  },
+  {
+    "file": "integrated-12/qualification-operations.txt",
+    "bytes": 450,
+    "sha256": "e23272854213495547f4a6aba420fdb66b12c8d66ee70a5431e22ad5e1f15eb0"
+  },
+  {
+    "file": "integrated-12/qualification-runtime.txt",
+    "bytes": 427,
+    "sha256": "1a109482793eea56661307ee8ceff8aedf662914e7ebfc9f36a8640b4695579c"
+  },
+  {
+    "file": "integrated-12/qualification-scans.csv",
+    "bytes": 67934,
+    "sha256": "ea6ebe0bad9e8894727aac7d01a70af1dcc667217bb8d3efc307341d8941eb7d"
+  },
+  {
+    "file": "integrated-12/render-stages.csv",
+    "bytes": 1378,
+    "sha256": "2a05e802111ac16a9365f26633c3ca735830520c6bcaa31d078545f2e9c453d6"
+  },
+  {
+    "file": "payload-binding.json",
+    "bytes": 6177,
+    "sha256": "252d460dd9a57da8373c6cf113b41987164f5a0baeed786c7db8060d4a6418a7"
+  },
+  {
+    "file": "premerge-soak-60/cart-performance.csv",
+    "bytes": 8155,
+    "sha256": "b5dde3b2ca2182f77bd769f65e734ae84bd5b7e521c87b8641f289228beb4a23"
+  },
+  {
+    "file": "premerge-soak-60/fixture-setup.json",
+    "bytes": 139,
+    "sha256": "b71d7fa87bc80a2e79b23b3de1f46e066e74d43186347c3c21e0da6bf2f0939e"
+  },
+  {
+    "file": "premerge-soak-60/flow-performance.csv",
+    "bytes": 7276,
+    "sha256": "4d43d75d09f810cec657da821aa62b4a251af5a4800e6d1faf5216c5fc6da0d3"
+  },
+  {
+    "file": "premerge-soak-60/functional-completion.txt",
+    "bytes": 100,
+    "sha256": "a6b8ce784680480d9f138a9adbd672558da53b37b4be0576ab156635a3a88213"
+  },
+  {
+    "file": "premerge-soak-60/payload-binding.json",
+    "bytes": 6177,
+    "sha256": "252d460dd9a57da8373c6cf113b41987164f5a0baeed786c7db8060d4a6418a7"
+  },
+  {
+    "file": "premerge-soak-60/performance-result.json",
+    "bytes": 611,
+    "sha256": "be2e6d5335cf60e86c62fb801cd168f032328c392eda06d08dcc323381c2411f"
+  },
+  {
+    "file": "premerge-soak-60/preregistered-budget.json",
+    "bytes": 1303,
+    "sha256": "63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398"
+  },
+  {
+    "file": "premerge-soak-60/protocol.json",
+    "bytes": 8597,
+    "sha256": "87575fad6b67c3e5d37289335d50abc4afa8d9eb166dd210bb025c8d6541462b"
+  },
+  {
+    "file": "premerge-soak-60/qualification-environment.csv",
+    "bytes": 486624,
+    "sha256": "53f278f8d4cc36343356b8e32e219a1dcb9e08fc6ef18b83bb346acf43f9a183"
+  },
+  {
+    "file": "premerge-soak-60/qualification-idle.csv",
+    "bytes": 23259,
+    "sha256": "3557a2ac55e3fc9c4be68f53ddd6cd2cbd40b0f87ded32ef2327c99ef9645a6d"
+  },
+  {
+    "file": "premerge-soak-60/qualification-measurement.json",
+    "bytes": 228,
+    "sha256": "9742f24322335af3afc43e2d739564dcfa4a125b5b249f39fda39abebf4efe75"
+  },
+  {
+    "file": "premerge-soak-60/qualification-operations.txt",
+    "bytes": 2364,
+    "sha256": "9a25f1ec510c1d41532e31dbb3bcd4b4ab3c4f9ff8e1fadf2c02f392de620b78"
+  },
+  {
+    "file": "premerge-soak-60/qualification-runtime.txt",
+    "bytes": 427,
+    "sha256": "85b315e6c0852e60429eef922dfdc656de6e0cd97fa338ea6423cd30445b5a9e"
+  },
+  {
+    "file": "premerge-soak-60/qualification-scans.csv",
+    "bytes": 331927,
+    "sha256": "d48a73ce9fe2668f7221ddb3d614d1806eae616a3a07ee33a3261d000cfb508f"
+  },
+  {
+    "file": "premerge-soak-60/render-stages.csv",
+    "bytes": 1376,
+    "sha256": "8eafa272967489bf8cc9e0e8e18e4d1d2ee4f31e0f4240a54d9fad0670169d0e"
+  },
+  {
+    "file": "run.json",
+    "bytes": 11676,
+    "sha256": "d0e48507c4aeba2c5c9d714e46dd25bce93cabfdfa88fbd46a86d6b22dec15b9"
+  },
+  {
+    "file": "sdk.txt",
+    "bytes": 5581,
+    "sha256": "e985c8c837dc58e7089d04ac68bded9dc7be5ddf8483927d38078aa2a9b4eb5a"
+  }
+]

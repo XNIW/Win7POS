@@ -1,0 +1,1 @@
+A5: Fixed 3 minutes, unchanged full public workload without trace; candidate binds ONLY ProductsView loading progress to effective visibility. Hypothesis: that auxiliary indicator was the infinite default-rate storyboard left active during POS idle. Preserve all failures, including scan-stage timeouts. No budget, input, priority or GC change.

@@ -1,0 +1,232 @@
+{
+  "source": "C:\\Dev\\Win7POS-post-pr111-20260926\\firetick-clocks-36471969876",
+  "host": {
+    "commit": "cd396537830451e2678cd822540304074004c2c2",
+    "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+    "image": "win25-vs2026",
+    "imageVersion": "20260922.246.2",
+    "system": {
+      "Manufacturer": "Microsoft Corporation",
+      "Model": "Virtual Machine",
+      "TotalPhysicalMemory": 17174360064,
+      "NumberOfLogicalProcessors": 4
+    },
+    "cpu": {
+      "Name": "INTEL(R) XEON(R) PLATINUM 8573C",
+      "NumberOfCores": 2,
+      "NumberOfLogicalProcessors": 4
+    },
+    "qualifiesAsus": false
+  },
+  "arms": {
+    "traced": {
+      "cycles": 9,
+      "duration": 198.584,
+      "oldestMs": 360.028,
+      "over250": [
+        0,
+        4
+      ],
+      "over250AfterWarmup": [
+        4
+      ],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      },
+      "traceDropped": 0,
+      "timerHandlers": [
+        "System.Windows.Controls.TextBoxView:System.Windows.Controls.TextBoxView.OnThrottleBackgroundTimeout",
+        "System.Windows.Input.InputManager:System.Windows.Input.InputManager.ValidateInputDevices",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.EstimatedNextVSyncTimeExpired",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToInput",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToRender",
+        "Win7POS.Wpf.Pos.PosViewModel:Win7POS.Wpf.Pos.PosViewModel.<.ctor>b__240_0"
+      ],
+      "watchdogLockMaximumMs": 168.471,
+      "actualInputTimerEvents": 2999,
+      "allInputTimerReadyWaits": {
+        "count": 699,
+        "maximumMs": 536.1819999999998,
+        "over250Count": 108
+      },
+      "inputTimerSnapshots": [
+        {
+          "timer": "6",
+          "posted": 22885.513,
+          "promotionHook": 23016.351,
+          "snapshot": 23373.808,
+          "start": 23407.963,
+          "end": 23407.977,
+          "scheduledObservedMs": 130.83799999999974,
+          "readyAtSnapshotMs": 357.45700000000215,
+          "readyToStartMs": 391.612000000001,
+          "executionMs": 0.013999999999214197,
+          "watchdogDuring": [
+            {
+              "time": 23028.431,
+              "cpu_ms": "2062.500",
+              "allocated": "106884616",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.006"
+            },
+            {
+              "time": 23136.462,
+              "cpu_ms": "2062.500",
+              "allocated": "107040264",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.008"
+            },
+            {
+              "time": 23244.495,
+              "cpu_ms": "2062.500",
+              "allocated": "107220488",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.007"
+            },
+            {
+              "time": 23360.521,
+              "cpu_ms": "2062.500",
+              "allocated": "107384328",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.007"
+            }
+          ],
+          "renderTimerStartsDuring": 25,
+          "slowCallbacksOverlapping": [
+            "OP_TRACE,13.217,0.000,98328,Send,Send:System.Threading.Tasks.SynchronizationContextAwaitTaskContinuation+<>c:<.cctor>b__8_0,start_ms=23372.888,end_ms=23386.118"
+          ]
+        },
+        {
+          "timer": "6",
+          "posted": 110827.751,
+          "promotionHook": 110948.989,
+          "snapshot": 111249.447,
+          "start": 111312.179,
+          "end": 111312.188,
+          "scheduledObservedMs": 121.23799999999756,
+          "readyAtSnapshotMs": 300.4579999999987,
+          "readyToStartMs": 363.1900000000023,
+          "executionMs": 0.008999999990919605,
+          "watchdogDuring": [
+            {
+              "time": 111026.22,
+              "cpu_ms": "8203.125",
+              "allocated": "434804396",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.007"
+            },
+            {
+              "time": 111140.463,
+              "cpu_ms": "8203.125",
+              "allocated": "435001004",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.005"
+            },
+            {
+              "time": 111248.556,
+              "cpu_ms": "8203.125",
+              "allocated": "435148460",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.008"
+            }
+          ],
+          "renderTimerStartsDuring": 24,
+          "slowCallbacksOverlapping": []
+        },
+        {
+          "timer": "6",
+          "posted": 155072.837,
+          "promotionHook": 155200.252,
+          "snapshot": 155218.883,
+          "start": 155220.313,
+          "end": 155220.323,
+          "scheduledObservedMs": 127.41500000000815,
+          "readyAtSnapshotMs": 18.630999999993946,
+          "readyToStartMs": 20.06099999998696,
+          "executionMs": 0.010000000009313226,
+          "watchdogDuring": [],
+          "renderTimerStartsDuring": 2,
+          "slowCallbacksOverlapping": []
+        }
+      ]
+    },
+    "input-dispatch": {
+      "cycles": 9,
+      "duration": 181.417,
+      "oldestMs": 14.19,
+      "over250": [],
+      "over250AfterWarmup": [],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      },
+      "traceDropped": 0,
+      "timerHandlers": [
+        "System.Windows.Controls.TextBoxView:System.Windows.Controls.TextBoxView.OnThrottleBackgroundTimeout",
+        "System.Windows.Input.InputManager:System.Windows.Input.InputManager.ValidateInputDevices",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.EstimatedNextVSyncTimeExpired",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToInput",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToRender"
+      ],
+      "watchdogLockMaximumMs": 0.854,
+      "actualInputTimerEvents": 3754,
+      "allInputTimerReadyWaits": {
+        "count": 907,
+        "maximumMs": 33.138999999995576,
+        "over250Count": 0
+      },
+      "inputTimerSnapshots": [
+        {
+          "timer": "1",
+          "posted": 20110.628,
+          "promotionHook": 20236.731,
+          "snapshot": 20237.597,
+          "start": 20256.382,
+          "end": 20256.424,
+          "scheduledObservedMs": 126.10299999999916,
+          "readyAtSnapshotMs": 0.8660000000018044,
+          "readyToStartMs": 19.65100000000166,
+          "executionMs": 0.04199999999764259,
+          "watchdogDuring": [],
+          "renderTimerStartsDuring": 0,
+          "slowCallbacksOverlapping": []
+        },
+        {
+          "timer": "1",
+          "posted": 120893.407,
+          "promotionHook": 121019.284,
+          "snapshot": 121033.47,
+          "start": 121034.475,
+          "end": 121034.488,
+          "scheduledObservedMs": 125.87699999999313,
+          "readyAtSnapshotMs": 14.186000000001513,
+          "readyToStartMs": 15.19100000000617,
+          "executionMs": 0.012999999991734512,
+          "watchdogDuring": [],
+          "renderTimerStartsDuring": 2,
+          "slowCallbacksOverlapping": []
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+0,Background:FireTick:270.5|Input:InputMarkerMessageHandler:279.9
+1,Background:FireTick:252.6|Render:FireTick:1.1|Input:InputMarkerMessageHandler:20.6
+2,Render:FireTick:1.0|Input:InputMarkerMessageHandler:17.2|Background:FireTick:238.2
+3,
+4,Render:FireTick:1.0|Background:FireTick:219.5|Input:InputMarkerMessageHandler:20.0
+5,Render:FireTick:1.1|Background:FireTick:267.3|Input:InputMarkerMessageHandler:16.1
+6,Background:FireTick:68.1|Input:InputMarkerMessageHandler:5.1
+7,Background:FireTick:227.2|Input:InputMarkerMessageHandler:6.4
+8,Input:InputMarkerMessageHandler:22.1|Background:FireTick:284.8|Render:FireTick:1.2

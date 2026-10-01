@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "win7pos-performance-budget-v1",
+  "registeredUtc": "2026-09-27T00:29:01.0036452+00:00",
+  "control": "clean-control-v12-100k",
+  "controlEnvironmentQualified": false,
+  "controlSummarySha256": "39a1a3321d90aee10e5dbdf2637bddaf9eb170e062840617cde9020ff8fc985e",
+  "warmupCycles": 2,
+  "serviceP95Ms": 50,
+  "sendP95Ms": 16,
+  "uiP95Ms": 250,
+  "uiMaximumMs": 1000,
+  "probeMaximumMs": 200,
+  "visualMaximumWaitMs": 250,
+  "pendingMaximum": 8,
+  "oldestMaximumMs": 250,
+  "privateMaximumBytes": 201326592,
+  "managedMaximumBytes": 33554432,
+  "managedWindowGrowthBytes": 8388608,
+  "memoryWindowCycles": 5,
+  "cacheMaximumBytes": 8388608,
+  "realizedGridMaximum": 32,
+  "rationale": "Fixed latency limits are unchanged. Noninteractive diagnostic control: warm managed 14.3..17.2 MiB, private maximum 146.7 MiB, max five-cycle growth 0.37 MiB, ready queue <=3/26.1ms, visual wait <=190.7ms, priority probes <=66.9ms. Ceilings allow GC/native variability while requiring zero closed-window roots, zero lost observations, <=1 owned visual operation per category and full owned drain. Cache pixel ceiling 8 MiB applies to this synthetic image workload, not to all shop data. Input desktop validity remains independently mandatory; control is not qualification."
+}

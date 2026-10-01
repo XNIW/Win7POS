@@ -1,0 +1,1 @@
+C: Fixed 3 minutes, same window size/foreground, environment sampler and 20-second idle blocks. Plain TextBox plus controlled 125ms Background timer; no POS view/cart/service. Identical delay without POS separates QA/runtime from app; handler equivalence must be checked against B before claiming cause. Synthetic control never qualifies app.

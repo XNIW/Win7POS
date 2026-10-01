@@ -1,0 +1,314 @@
+{
+  "source": "C:\\Dev\\Win7POS-post-pr111-20260926\\firetick-products-36473824531",
+  "host": {
+    "commit": "b512cc1924ce84bafbf386f39bb0df430c976808",
+    "source": "Independent GitHub-hosted Windows QA build; no Asus binaries transferred",
+    "image": "win25-vs2026",
+    "imageVersion": "20260922.246.2",
+    "system": {
+      "Manufacturer": "Microsoft Corporation",
+      "Model": "Virtual Machine",
+      "TotalPhysicalMemory": 17174360064,
+      "NumberOfLogicalProcessors": 4
+    },
+    "cpu": {
+      "Name": "AMD EPYC 7763 64-Core Processor                ",
+      "NumberOfCores": 2,
+      "NumberOfLogicalProcessors": 4
+    },
+    "qualifiesAsus": false
+  },
+  "arms": {
+    "untraced": {
+      "cycles": 9,
+      "duration": 201.107,
+      "oldestMs": 284.814,
+      "over250": [
+        0,
+        1,
+        5,
+        8
+      ],
+      "over250AfterWarmup": [
+        5,
+        8
+      ],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      }
+    },
+    "traced": {
+      "cycles": 9,
+      "duration": 201.059,
+      "oldestMs": 326.77,
+      "over250": [
+        0,
+        4,
+        7
+      ],
+      "over250AfterWarmup": [
+        4,
+        7
+      ],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      },
+      "traceDropped": 0,
+      "timerHandlers": [
+        "System.Windows.Controls.PopupControlService+<>c__DisplayClass15_0:System.Windows.Controls.PopupControlService+<>c__DisplayClass15_0.<BeginShowToolTip>b__0",
+        "System.Windows.Controls.PopupControlService:System.Windows.Controls.PopupControlService.OnBetweenShowDelay",
+        "System.Windows.Controls.PopupControlService:System.Windows.Controls.PopupControlService.OnForceClose",
+        "System.Windows.Controls.PopupControlService:System.Windows.Controls.PopupControlService.OnShowDurationTimerExpired",
+        "System.Windows.Controls.Primitives.Popup:System.Windows.Controls.Primitives.Popup.<HideWindow>b__136_0",
+        "System.Windows.Controls.TextBoxView:System.Windows.Controls.TextBoxView.OnThrottleBackgroundTimeout",
+        "System.Windows.Input.InputManager:System.Windows.Input.InputManager.ValidateInputDevices",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.EstimatedNextVSyncTimeExpired",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToInput",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToRender",
+        "Win7POS.Wpf.Pos.PosViewModel:Win7POS.Wpf.Pos.PosViewModel.<.ctor>b__240_0"
+      ],
+      "watchdogLockMaximumMs": 83.734,
+      "actualInputTimerEvents": 2686,
+      "allInputTimerReadyWaits": {
+        "count": 620,
+        "maximumMs": 552.8770000000004,
+        "over250Count": 161
+      },
+      "inputTimerSnapshots": [
+        {
+          "timer": "14",
+          "posted": 22702.689,
+          "promotionHook": 22828.574,
+          "snapshot": 23153.137,
+          "start": 23169.543,
+          "end": 23169.572,
+          "scheduledObservedMs": 125.88500000000204,
+          "readyAtSnapshotMs": 324.5629999999983,
+          "readyToStartMs": 340.96900000000096,
+          "executionMs": 0.02899999999863212,
+          "watchdogDuring": [
+            {
+              "time": 22918.276,
+              "cpu_ms": "2656.250",
+              "allocated": "110503920",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.005"
+            },
+            {
+              "time": 23032.325,
+              "cpu_ms": "2656.250",
+              "allocated": "110725104",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.006"
+            },
+            {
+              "time": 23140.236,
+              "cpu_ms": "2656.250",
+              "allocated": "110880752",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.005"
+            }
+          ],
+          "renderTimerStartsDuring": 22,
+          "slowCallbacksOverlapping": [
+            "OP_TRACE,16.230,0.000,98328,Send,Send:System.Threading.Tasks.SynchronizationContextAwaitTaskContinuation+<>c:<.cctor>b__8_0,start_ms=23152.132,end_ms=23168.378"
+          ]
+        },
+        {
+          "timer": "14",
+          "posted": 111874.459,
+          "promotionHook": 111996.699,
+          "snapshot": 112300.618,
+          "start": 112302.342,
+          "end": 112302.359,
+          "scheduledObservedMs": 122.23999999999069,
+          "readyAtSnapshotMs": 303.91900000000896,
+          "readyToStartMs": 305.64300000001094,
+          "executionMs": 0.01699999999254942,
+          "watchdogDuring": [
+            {
+              "time": 112013.915,
+              "cpu_ms": "10140.625",
+              "allocated": "461610900",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.006"
+            },
+            {
+              "time": 112121.876,
+              "cpu_ms": "10140.625",
+              "allocated": "461815700",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.004"
+            },
+            {
+              "time": 112236.868,
+              "cpu_ms": "10140.625",
+              "allocated": "462036884",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.004"
+            }
+          ],
+          "renderTimerStartsDuring": 20,
+          "slowCallbacksOverlapping": []
+        },
+        {
+          "timer": "14",
+          "posted": 134438.963,
+          "promotionHook": 134558.958,
+          "snapshot": 134564.789,
+          "start": 134566.389,
+          "end": 134566.405,
+          "scheduledObservedMs": 119.99500000002445,
+          "readyAtSnapshotMs": 5.830999999976484,
+          "readyToStartMs": 7.430999999982305,
+          "executionMs": 0.01600000000325963,
+          "watchdogDuring": [],
+          "renderTimerStartsDuring": 1,
+          "slowCallbacksOverlapping": []
+        },
+        {
+          "timer": "14",
+          "posted": 178764.06,
+          "promotionHook": 178889.438,
+          "snapshot": 179186.486,
+          "start": 179188.196,
+          "end": 179188.214,
+          "scheduledObservedMs": 125.37799999999697,
+          "readyAtSnapshotMs": 297.0480000000098,
+          "readyToStartMs": 298.75800000000163,
+          "executionMs": 0.01800000001094304,
+          "watchdogDuring": [
+            {
+              "time": 178971.621,
+              "cpu_ms": "15890.625",
+              "allocated": "718020712",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.003"
+            },
+            {
+              "time": 179078.715,
+              "cpu_ms": "15890.625",
+              "allocated": "718217320",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.004"
+            },
+            {
+              "time": 179185.758,
+              "cpu_ms": "15890.625",
+              "allocated": "718446696",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.004"
+            }
+          ],
+          "renderTimerStartsDuring": 20,
+          "slowCallbacksOverlapping": []
+        }
+      ]
+    },
+    "legacy-products": {
+      "cycles": 9,
+      "duration": 201.431,
+      "oldestMs": 362.286,
+      "over250": [
+        0
+      ],
+      "over250AfterWarmup": [],
+      "measurement": {
+        "MEASUREMENT_COMPLETED": true,
+        "ENVIRONMENT_VALID": true,
+        "STABILITY_PASS": false,
+        "measurementReasons": [],
+        "environmentReasons": [],
+        "stabilityReasons": [
+          "diagnostic_mode_not_qualified"
+        ]
+      },
+      "traceDropped": 0,
+      "timerHandlers": [
+        "System.Windows.Controls.PopupControlService+<>c__DisplayClass15_0:System.Windows.Controls.PopupControlService+<>c__DisplayClass15_0.<BeginShowToolTip>b__0",
+        "System.Windows.Controls.PopupControlService:System.Windows.Controls.PopupControlService.OnBetweenShowDelay",
+        "System.Windows.Controls.PopupControlService:System.Windows.Controls.PopupControlService.OnForceClose",
+        "System.Windows.Controls.PopupControlService:System.Windows.Controls.PopupControlService.OnShowDurationTimerExpired",
+        "System.Windows.Controls.Primitives.Popup:System.Windows.Controls.Primitives.Popup.<HideWindow>b__136_0",
+        "System.Windows.Controls.TextBoxView:System.Windows.Controls.TextBoxView.OnThrottleBackgroundTimeout",
+        "System.Windows.Input.InputManager:System.Windows.Input.InputManager.ValidateInputDevices",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.EstimatedNextVSyncTimeExpired",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToInput",
+        "System.Windows.Media.MediaContext:System.Windows.Media.MediaContext.PromoteRenderOpToRender",
+        "Win7POS.Wpf.Pos.PosViewModel:Win7POS.Wpf.Pos.PosViewModel.<.ctor>b__240_0"
+      ],
+      "watchdogLockMaximumMs": 0.966,
+      "actualInputTimerEvents": 2996,
+      "allInputTimerReadyWaits": {
+        "count": 700,
+        "maximumMs": 566.5469999999987,
+        "over250Count": 108
+      },
+      "inputTimerSnapshots": [
+        {
+          "timer": "16",
+          "posted": 22313.848,
+          "promotionHook": 22437.562,
+          "snapshot": 22797.627,
+          "start": 22802.132,
+          "end": 22802.151,
+          "scheduledObservedMs": 123.71399999999994,
+          "readyAtSnapshotMs": 360.0649999999987,
+          "readyToStartMs": 364.5699999999997,
+          "executionMs": 0.01900000000023283,
+          "watchdogDuring": [
+            {
+              "time": 22503.376,
+              "cpu_ms": "2515.625",
+              "allocated": "110644244",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.004"
+            },
+            {
+              "time": 22610.747,
+              "cpu_ms": "2515.625",
+              "allocated": "110808084",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.004"
+            },
+            {
+              "time": 22718.348,
+              "cpu_ms": "2515.625",
+              "allocated": "110996500",
+              "active": "",
+              "active_ms": "0.000",
+              "observer_lock_ms": "0.003"
+            }
+          ],
+          "renderTimerStartsDuring": 24,
+          "slowCallbacksOverlapping": []
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+C4: Fixed 3 minutes, focused plain TextBox with the actual InputManager timer and no added wakeup timer. Same active-clock and MediaContext snapshot as B4. Compare active timeline types and desired frame rate to isolate why minimal WPF did not reproduce. No internal callbacks, protections, caret or input changed. Diagnostic only.

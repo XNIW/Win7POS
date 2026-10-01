@@ -1,0 +1,113 @@
+{
+  "cold-1": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "16.305",
+      "ui_return_ms": "137.124",
+      "apply_ms": "13.076",
+      "layout_ms": "0.001",
+      "bitmap_ms": "16.461",
+      "command_overhead_ms": "190.565",
+      "gate_wait_ms": "0.200",
+      "worker_queue_ms": "0.057",
+      "product_lookup_update_ms": "0.420",
+      "snapshot_query_map_ms": "9.780",
+      "snapshot_projection_ms": "0.106",
+      "realized_rows": "13",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "161.452"
+    },
+    "firstFullUiMs": 357.07099999999997
+  },
+  "cold-2": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "11.068",
+      "ui_return_ms": "134.317",
+      "apply_ms": "1.174",
+      "layout_ms": "0.001",
+      "bitmap_ms": "24.461",
+      "command_overhead_ms": "69.761",
+      "gate_wait_ms": "0.199",
+      "worker_queue_ms": "0.057",
+      "product_lookup_update_ms": "0.497",
+      "snapshot_query_map_ms": "9.794",
+      "snapshot_projection_ms": "0.095",
+      "realized_rows": "13",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "40.381"
+    },
+    "firstFullUiMs": 216.321
+  },
+  "cold-3": {
+    "result": {
+      "MEASUREMENT_COMPLETED": true,
+      "ENVIRONMENT_VALID": true,
+      "STABILITY_PASS": false,
+      "measurementReasons": [],
+      "environmentReasons": [],
+      "stabilityReasons": [
+        "diagnostic_mode_not_qualified"
+      ]
+    },
+    "completedScans": 5,
+    "firstScan": {
+      "cycle": "0",
+      "mode": "Rows",
+      "ordinal": "1",
+      "service_ms": "10.847",
+      "ui_return_ms": "131.706",
+      "apply_ms": "1.150",
+      "layout_ms": "0.001",
+      "bitmap_ms": "29.824",
+      "command_overhead_ms": "61.744",
+      "gate_wait_ms": "0.195",
+      "worker_queue_ms": "0.057",
+      "product_lookup_update_ms": "0.377",
+      "snapshot_query_map_ms": "9.660",
+      "snapshot_projection_ms": "0.122",
+      "realized_rows": "13",
+      "realized_grid": "12",
+      "collection_changes": "0",
+      "row_notifications": "22",
+      "product_commands": "2",
+      "commands_on_dispatcher": "0",
+      "focus_scroll_wait_ms": "34.693"
+    },
+    "firstFullUiMs": 205.44799999999998
+  }
+}
