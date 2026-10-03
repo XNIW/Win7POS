@@ -46,6 +46,33 @@ namespace Win7POS.Wpf.Printing
         private const uint PrinterEnumConnections = 0x00000004;
         private const int ErrorInsufficientBuffer = 122;
 
+        internal static PrinterQueueDiagnostic ReadDiagnostic(string name)
+        {
+            var result = new PrinterQueueDiagnostic { QueueName = name };
+            if (!TryGetPrinterDetailsSafely(name, out var details)) return result;
+            result.DriverName = Normalize(details.DriverName);
+            result.PortName = Normalize(details.PortName);
+            result.Status = details.Status;
+            result.JobCount = details.JobCount;
+            result.Available = true;
+            IntPtr handle;
+            if (!OpenPrinterW(name, out handle, IntPtr.Zero) || handle == IntPtr.Zero) return result;
+            try
+            {
+                uint needed, count;
+                var probe = EnumJobsW(handle, 0, 4096, 1, IntPtr.Zero, 0, out needed, out count);
+                if (!probe && Marshal.GetLastWin32Error() != ErrorInsufficientBuffer) return result;
+                if (needed == 0) { result.JobsAvailable = true; return result; }
+                // Bound allocations even when a driver or a large operational queue reports excessive metadata.
+                if (needed > 16 * 1024 * 1024) return result;
+                var buffer = Marshal.AllocHGlobal((int)needed);
+                try { result.JobsAvailable = EnumJobsW(handle, 0, 4096, 1, buffer, needed, out needed, out count); }
+                finally { Marshal.FreeHGlobal(buffer); }
+                return result;
+            }
+            finally { ClosePrinter(handle); }
+        }
+
         internal static bool TryGetInstalledPrinters(out IReadOnlyList<WindowsSpoolerPrinterInfo> printers)
         {
             var result = new List<WindowsSpoolerPrinterInfo>();
@@ -178,7 +205,7 @@ namespace Win7POS.Wpf.Printing
                 if (!firstCallSucceeded && Marshal.GetLastWin32Error() != ErrorInsufficientBuffer)
                     return false;
 
-                if (bytesNeeded == 0 || bytesNeeded > int.MaxValue)
+                if (bytesNeeded == 0 || bytesNeeded > 16 * 1024 * 1024)
                     return false;
 
                 // A queue can change between the size probe and the read. Retry
@@ -197,7 +224,7 @@ namespace Win7POS.Wpf.Printing
 
                         if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer ||
                             bytesNeeded == 0 ||
-                            bytesNeeded > int.MaxValue ||
+                            bytesNeeded > 16 * 1024 * 1024 ||
                             bytesNeeded <= allocatedSize)
                         {
                             return false;
@@ -312,6 +339,10 @@ namespace Win7POS.Wpf.Printing
         [DllImport("winspool.drv", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GetDefaultPrinterW(StringBuilder printerName, ref uint characterCount);
+
+        [DllImport("winspool.drv", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool EnumJobsW(IntPtr printer, uint firstJob, uint numberOfJobs, uint level, IntPtr jobs, uint bufferSize, out uint bytesNeeded, out uint jobsReturned);
     }
 
     internal sealed class WindowsSpoolerPrinterInfo

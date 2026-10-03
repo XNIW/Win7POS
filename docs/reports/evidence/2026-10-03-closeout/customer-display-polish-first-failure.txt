@@ -1,0 +1,2 @@
+﻿FAIL
+FAIL CUSTOMERDISPLAY_polish logo_pixels

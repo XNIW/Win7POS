@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Globalization;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
+using Win7POS.Core.Hardware;
 using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
@@ -181,30 +182,16 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<bool?> GetUseReceipt42Async()
         {
-            await _gate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                return await _settings.GetBoolAsync("pos.useReceipt42").ConfigureAwait(false);
-            }
-            finally
-            {
-                _gate.Release();
-            }
+            var settings = await GetPrinterSettingsAsync().ConfigureAwait(false);
+            return ReceiptProfilePolicy.Columns(settings.ReceiptProfile) == 42;
         }
 
-        public async Task SetUseReceipt42Async(bool value)
+        public async Task SetUseReceipt42Async(bool value, Action demandPermission = null, string actor = "")
         {
-            await _gate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                await _settings.SetBoolAsync("pos.useReceipt42", value).ConfigureAwait(false);
-            }
-            finally
-            {
-                _gate.Release();
-            }
+            var settings = await GetPrinterSettingsAsync().ConfigureAwait(false);
+            settings.ReceiptProfile = ReceiptProfilePolicy.FromLegacy(value);
+            await SetPrinterSettingsAsync(settings, demandPermission, actor).ConfigureAwait(false);
         }
-
         public async Task<PosPrinterSettings> GetPrinterSettingsAsync()
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -218,7 +205,7 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task SetPrinterSettingsAsync(PosPrinterSettings settings)
+        public async Task SetPrinterSettingsAsync(PosPrinterSettings settings, Action demandPermission = null, string actor = "")
         {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
             settings = settings.Copy();
@@ -243,37 +230,21 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var copies = settings.Copies;
-                var cashDrawerMode = string.Equals(settings.CashDrawerMode, CashDrawerModePrinterKick, StringComparison.OrdinalIgnoreCase)
-                    ? CashDrawerModePrinterKick
-                    : CashDrawerModeDisabled;
-                var rawCashDrawerCommand = settings.CashDrawerCommand ?? string.Empty;
-                if (rawCashDrawerCommand.Length > WindowsSpoolerReceiptPrinter.MaximumCashDrawerCommandLength)
-                    throw new InvalidOperationException(PosLocalization.T("printer.testInvalidCommand"));
-                var cashDrawerCommand = rawCashDrawerCommand.Trim();
-                var cashDrawerActive = settings.CashDrawerEnabled &&
-                                       string.Equals(cashDrawerMode, CashDrawerModePrinterKick, StringComparison.OrdinalIgnoreCase);
-                if (cashDrawerActive && !WindowsSpoolerReceiptPrinter.IsCashDrawerCommandValid(rawCashDrawerCommand))
-                    throw new InvalidOperationException(PosLocalization.T("printer.testInvalidCommand"));
-
-                await _settings.SetStringsAsync(new Dictionary<string, string>
+                var hardware = settings.ToHardwareSettings();
+                var validation = hardware.Validate();
+                if (validation.Count != 0)
+                    throw new InvalidOperationException(PosLocalization.T("hardware.invalidSettings") + " " + string.Join(", ", validation));
+                if (demandPermission == null)
+                    throw new InvalidOperationException(PosLocalization.T("common.userPermissionDenied"));
+                demandPermission();
+                if (hardware.ReceiptEnabled || hardware.CashDrawerMode == "printer_kick")
                 {
-                    [KeyPrinterName] = settings.PrinterName ?? string.Empty,
-                    [KeyPrinterCopies] = copies.ToString(CultureInfo.InvariantCulture),
-                    [KeyReceiptEnabled] = settings.ReceiptEnabled ? "1" : "0",
-                    [KeyAutoPrint] = settings.AutoPrint ? "1" : "0",
-                    [KeyAllowWindowsDefault] = settings.AllowWindowsDefault ? "1" : "0",
-                    [KeyAllowVirtualPrinters] = settings.AllowVirtualPrinters ? "1" : "0",
-                    [KeyCashDrawerCommand] = cashDrawerCommand,
-                    [KeyCashDrawerEnabled] = settings.CashDrawerEnabled ? "1" : "0",
-                    [KeyCashDrawerMode] = cashDrawerMode,
-                    [KeyCashDrawerPrinterName] = settings.CashDrawerPrinterName ?? string.Empty,
-                    [KeyCashDrawerOpenOnCashSale] = settings.CashDrawerOpenOnCashSale ? "1" : "0",
-                    [LegacyKeyPrinterName] = settings.PrinterName ?? string.Empty,
-                    [LegacyKeyPrinterCopies] = copies.ToString(CultureInfo.InvariantCulture),
-                    [LegacyKeyAutoPrint] = settings.AutoPrint ? "1" : "0",
-                    [LegacyKeyCashDrawerCommand] = cashDrawerCommand,
-                }).ConfigureAwait(false);
+                    var inventory = await GetInstalledPrintersAsync().ConfigureAwait(false);
+                    if (hardware.ReceiptEnabled)
+                        ResolveReceiptPrinterOrThrow(settings, inventory, hardware.AutoPrint, explicitUserAction: !hardware.AutoPrint);
+                    if (hardware.CashDrawerMode == "printer_kick") ResolveCashDrawerPrinterOrThrow(settings, inventory);
+                }
+                await new HardwareSettingsRepository(_settings).SaveAsync(hardware, actor, demandPermission).ConfigureAwait(false);
             }
             finally
             {
@@ -287,11 +258,11 @@ namespace Win7POS.Wpf.Pos
             return settings.AutoPrint;
         }
 
-        public async Task SetAutoPrintAsync(bool value)
+        public async Task SetAutoPrintAsync(bool value, Action demandPermission = null, string actor = "")
         {
             var settings = await GetPrinterSettingsAsync().ConfigureAwait(false);
             settings.AutoPrint = value;
-            await SetPrinterSettingsAsync(settings).ConfigureAwait(false);
+            await SetPrinterSettingsAsync(settings, demandPermission, actor).ConfigureAwait(false);
         }
 
         public async Task<IReadOnlyList<InstalledPrinterInfo>> GetInstalledPrintersAsync()
@@ -367,8 +338,10 @@ namespace Win7POS.Wpf.Pos
         public async Task TestReceiptPrinterAsync(
             PosPrinterSettings settings,
             string receiptText,
-            bool use42)
+            bool use42,
+            Action demandPermission = null)
         {
+            DemandHardwareTestPermission(demandPermission);
             PrinterHardwareSafety.DemandHardwareOutputAllowed();
             if (settings == null) throw new ArgumentNullException(nameof(settings));
             if (string.IsNullOrWhiteSpace(receiptText))
@@ -379,6 +352,8 @@ namespace Win7POS.Wpf.Pos
                 installedPrinters,
                 automaticAfterSale: false,
                 explicitUserAction: true);
+            DemandHardwareTestPermission(demandPermission);
+            PrinterHardwareSafety.DemandHardwareOutputAllowed();
             await _receiptPrinter.PrintAsync(receiptText, new ReceiptPrintOptions
             {
                 PrinterName = resolvedPrinter.Name,
@@ -2578,65 +2553,9 @@ namespace Win7POS.Wpf.Pos
 
         private async Task<PosPrinterSettings> ReadPrinterSettingsNoLockAsync()
         {
-            var values = await _settings.GetStringsAsync(new[] { KeyPrinterName, LegacyKeyPrinterName, KeyPrinterCopies, LegacyKeyPrinterCopies, KeyReceiptEnabled, KeyAutoPrint, LegacyKeyAutoPrint, KeyAllowWindowsDefault, KeyAllowVirtualPrinters, KeyCashDrawerCommand, LegacyKeyCashDrawerCommand, KeyCashDrawerEnabled, KeyCashDrawerMode, KeyCashDrawerPrinterName, KeyCashDrawerOpenOnCashSale }).ConfigureAwait(false);
-            string ReadString(string key) => values.TryGetValue(key, out var value) ? value : null;
-            int? ReadInt(string key) => int.TryParse(ReadString(key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? (int?)value : null;
-            bool? ReadBool(string key)
-            {
-                var raw = ReadString(key);
-                if (raw == "1" || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) || string.Equals(raw, "yes", StringComparison.OrdinalIgnoreCase)) return true;
-                if (raw == "0" || string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || string.Equals(raw, "no", StringComparison.OrdinalIgnoreCase)) return false;
-                return null;
-            }
-            var printerName = ReadString(KeyPrinterName);
-            if (printerName == null)
-                printerName = ReadString(LegacyKeyPrinterName);
-            printerName = printerName ?? string.Empty;
-
-            var copies = ReadInt(KeyPrinterCopies);
-            if (!copies.HasValue)
-                copies = ReadInt(LegacyKeyPrinterCopies);
-            var persistedCopies = copies ?? ReceiptPrintOptions.MinimumCopies;
-            var copyCount = ReceiptPrintOptions.IsValidCopyCount(persistedCopies)
-                ? persistedCopies
-                : ReceiptPrintOptions.MinimumCopies;
-
-            var receiptEnabled = ReadBool(KeyReceiptEnabled);
-            var autoPrint = ReadBool(KeyAutoPrint);
-            if (!autoPrint.HasValue)
-                autoPrint = ReadBool(LegacyKeyAutoPrint);
-            var allowWindowsDefault = ReadBool(KeyAllowWindowsDefault);
-            var allowVirtualPrinters = ReadBool(KeyAllowVirtualPrinters);
-            var cashDrawerCmd = ReadString(KeyCashDrawerCommand);
-            if (cashDrawerCmd == null)
-                cashDrawerCmd = ReadString(LegacyKeyCashDrawerCommand);
-            if (cashDrawerCmd == null)
-                cashDrawerCmd = DefaultCashDrawerCommand;
-            var cashDrawerEnabled = ReadBool(KeyCashDrawerEnabled);
-            var cashDrawerMode = ReadString(KeyCashDrawerMode);
-            if (string.IsNullOrWhiteSpace(cashDrawerMode))
-                cashDrawerMode = cashDrawerEnabled == true ? CashDrawerModePrinterKick : CashDrawerModeDisabled;
-            if (!string.Equals(cashDrawerMode, CashDrawerModePrinterKick, StringComparison.OrdinalIgnoreCase))
-                cashDrawerMode = CashDrawerModeDisabled;
-            var cashDrawerPrinterName = ReadString(KeyCashDrawerPrinterName) ?? string.Empty;
-            var cashDrawerOpenOnCashSale = ReadBool(KeyCashDrawerOpenOnCashSale);
-
-            return new PosPrinterSettings
-            {
-                PrinterName = printerName,
-                Copies = copyCount,
-                ReceiptEnabled = receiptEnabled ?? false,
-                AutoPrint = autoPrint ?? false,
-                AllowWindowsDefault = allowWindowsDefault ?? false,
-                AllowVirtualPrinters = allowVirtualPrinters ?? false,
-                CashDrawerCommand = cashDrawerCmd,
-                CashDrawerEnabled = cashDrawerEnabled ?? false,
-                CashDrawerMode = cashDrawerMode,
-                CashDrawerPrinterName = cashDrawerPrinterName,
-                CashDrawerOpenOnCashSale = cashDrawerOpenOnCashSale ?? true
-            };
+            var model = await new HardwareSettingsRepository(_settings).LoadAsync().ConfigureAwait(false);
+            return PosPrinterSettings.FromHardwareSettings(model);
         }
-
         private async Task<ReceiptPrintRequest> CreateReceiptPrintRequestNoLockAsync(
             string receiptText,
             bool use42,
@@ -2705,8 +2624,9 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Testa il cassetto portamonete con i parametri forniti (senza salvare in impostazioni). Non usa fallback sulla stampante predefinita.</summary>
-        public async Task TestCashDrawerAsync(string printerName, string cashDrawerCommand)
+        public async Task TestCashDrawerAsync(string printerName, string cashDrawerCommand, Action demandPermission = null)
         {
+            DemandHardwareTestPermission(demandPermission);
             PrinterHardwareSafety.DemandHardwareOutputAllowed();
             var installedPrinters = await GetInstalledPrintersAsync().ConfigureAwait(false);
             var resolvedPrinter = ResolvePrinterNameOrThrow(
@@ -2720,11 +2640,20 @@ namespace Win7POS.Wpf.Pos
                 throw new InvalidOperationException(PosLocalization.T("printer.testInvalidCommand"));
             var cmd = rawCommand.Trim();
 
+            DemandHardwareTestPermission(demandPermission);
+            PrinterHardwareSafety.DemandHardwareOutputAllowed();
             await _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
             {
                 PrinterName = resolvedPrinter.Name,
                 CashDrawerCommand = cmd
             }).ConfigureAwait(false);
+        }
+
+        private static void DemandHardwareTestPermission(Action demandPermission)
+        {
+            if (demandPermission == null)
+                throw new InvalidOperationException(PosLocalization.T("common.userPermissionDenied"));
+            demandPermission();
         }
 
         private static InstalledPrinterInfo ResolveReceiptPrinterOrThrow(
@@ -3256,7 +3185,28 @@ namespace Win7POS.Wpf.Pos
 
     public sealed class PosPrinterSettings
     {
-        public PosPrinterSettings Copy() => (PosPrinterSettings)MemberwiseClone();
+        public ScannerInputSettings Scanner { get; set; } = new ScannerInputSettings();
+        public ReceiptProfile ReceiptProfile { get; set; } = ReceiptProfile.Thermal80mm42col;
+        public string CashDrawerPreset { get; set; } = string.Empty;
+        public HardwareSettings ToHardwareSettings()
+        {
+            var preset = CashDrawerPresetPolicy.TryParse(CashDrawerPreset, out var parsed) ? parsed : CashDrawerPresetPolicy.FromLegacyCommand(CashDrawerCommand);
+            return new HardwareSettings
+            {
+                Scanner = Scanner?.Copy(), ReceiptProfile = ReceiptProfile, PrinterName = PrinterName, Copies = Copies,
+                ReceiptEnabled = ReceiptEnabled, AutoPrint = AutoPrint, AllowWindowsDefault = AllowWindowsDefault, AllowVirtualPrinters = AllowVirtualPrinters,
+                CashDrawerMode = CashDrawerMode, CashDrawerPrinterName = CashDrawerPrinterName, CashDrawerOpenOnCashSale = CashDrawerOpenOnCashSale,
+                CashDrawerPreset = preset, CashDrawerCustomCommand = CashDrawerCommand
+            };
+        }
+        public static PosPrinterSettings FromHardwareSettings(HardwareSettings model) => new PosPrinterSettings
+        {
+            Scanner = model.Scanner.Copy(), ReceiptProfile = model.ReceiptProfile, PrinterName = model.PrinterName, Copies = model.Copies,
+            ReceiptEnabled = model.ReceiptEnabled, AutoPrint = model.AutoPrint, AllowWindowsDefault = model.AllowWindowsDefault, AllowVirtualPrinters = model.AllowVirtualPrinters,
+            CashDrawerMode = model.CashDrawerMode, CashDrawerEnabled = model.CashDrawerMode == "printer_kick", CashDrawerPrinterName = model.CashDrawerPrinterName,
+            CashDrawerOpenOnCashSale = model.CashDrawerOpenOnCashSale, CashDrawerPreset = CashDrawerPresetPolicy.Serialize(model.CashDrawerPreset), CashDrawerCommand = model.CashDrawerCommand
+        };
+        public PosPrinterSettings Copy() { var copy = (PosPrinterSettings)MemberwiseClone(); copy.Scanner = Scanner?.Copy(); return copy; }
         public string PrinterName { get; set; } = string.Empty;
         public int Copies { get; set; } = 1;
         public bool ReceiptEnabled { get; set; }

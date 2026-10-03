@@ -17,6 +17,7 @@ namespace Win7POS.Data.Repositories
         public const string Prefix = "pos.customer_display.";
 
         private readonly SqliteConnectionFactory _factory;
+        public string DatabasePath => _factory.DbPath;
 
         public CustomerDisplaySettingsRepository(SqliteConnectionFactory factory)
         {
@@ -43,6 +44,19 @@ namespace Win7POS.Data.Repositories
             settings.FollowCashierMinimize = Bool(values, "follow_minimize", settings.FollowCashierMinimize);
             settings.ShowShopName = Bool(values, "show_shop_name", settings.ShowShopName);
             settings.ShowBarcode = Bool(values, "show_barcode", settings.ShowBarcode);
+            settings.BarcodeMode = Choice(values, "privacy.barcode_mode", settings.BarcodeMode,
+                new[] { "hidden", "last4", "full" });
+            settings.LogoFile = Text(values, "branding.logo_file");
+            settings.LogoHash = Text(values, "branding.logo_hash");
+            if (!CustomerDisplayContentPolicy.IsManagedLogoReference(settings.LogoFile, settings.LogoHash))
+                settings.LogoFile = settings.LogoHash = string.Empty;
+            settings.LogoPosition = Choice(values, "branding.logo_position", settings.LogoPosition, new[] { "left", "center" });
+            settings.IdleMode = Choice(values, "idle.mode", settings.IdleMode, new[] { "welcome", "custom_message", "clock" });
+            settings.IdleMessage = values.TryGetValue(Prefix + "idle.message", out var message) ? message : string.Empty;
+            if (!CustomerDisplayContentPolicy.IsSafeMessage(settings.IdleMessage)) settings.IdleMessage = string.Empty;
+            settings.ShowPaidAmount = Bool(values, "privacy.show_paid_amount", false);
+            settings.ShowChangeAmount = Bool(values, "privacy.show_change_amount", true);
+            settings.TestPatternDurationSeconds = Clamp(Int(values, "test_pattern.duration_seconds", 15), 5, 60);
             settings.ShowUnitPrice = Bool(values, "show_unit_price", settings.ShowUnitPrice);
             settings.ShowLineTotal = Bool(values, "show_line_total", settings.ShowLineTotal);
             settings.ShowSubtotal = Bool(values, "show_subtotal", settings.ShowSubtotal);
@@ -56,8 +70,11 @@ namespace Win7POS.Data.Repositories
             return settings;
         }
 
-        public async Task SaveAsync(CustomerDisplaySettings settings)
+        public async Task SaveAsync(CustomerDisplaySettings settings, Action demandPermission = null,
+            string actor = "operator", string operationId = null)
         {
+            if (demandPermission == null) throw new UnauthorizedAccessException("settings.printer permission required.");
+            demandPermission();
             if (settings == null) throw new ArgumentNullException(nameof(settings));
             var validation = settings.Validate();
             if (validation.Count > 0)
@@ -76,6 +93,15 @@ namespace Win7POS.Data.Repositories
                 ["follow_minimize"] = Bit(settings.FollowCashierMinimize),
                 ["show_shop_name"] = Bit(settings.ShowShopName),
                 ["show_barcode"] = Bit(settings.ShowBarcode),
+                ["privacy.barcode_mode"] = new[] { "hidden", "last4", "full" }[(int)settings.BarcodeMode],
+                ["branding.logo_file"] = settings.LogoFile,
+                ["branding.logo_hash"] = settings.LogoHash,
+                ["branding.logo_position"] = settings.LogoPosition == CustomerDisplayLogoPosition.Center ? "center" : "left",
+                ["idle.mode"] = new[] { "welcome", "custom_message", "clock" }[(int)settings.IdleMode],
+                ["idle.message"] = settings.IdleMessage,
+                ["privacy.show_paid_amount"] = Bit(settings.ShowPaidAmount),
+                ["privacy.show_change_amount"] = Bit(settings.ShowChangeAmount),
+                ["test_pattern.duration_seconds"] = settings.TestPatternDurationSeconds.ToString(CultureInfo.InvariantCulture),
                 ["show_unit_price"] = Bit(settings.ShowUnitPrice),
                 ["show_line_total"] = Bit(settings.ShowLineTotal),
                 ["show_subtotal"] = Bit(settings.ShowSubtotal),
@@ -88,16 +114,16 @@ namespace Win7POS.Data.Repositories
                 ["reopen_on_return"] = Bit(settings.ReopenWhenMonitorReturns)
             };
 
-            using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction();
-            foreach (var pair in values)
-            {
-                await conn.ExecuteAsync(@"
-INSERT INTO app_settings(key, value) VALUES(@key, @value)
-ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-                    new { key = Prefix + pair.Key, value = pair.Value }, tx).ConfigureAwait(false);
-            }
-            tx.Commit();
+            await new SettingsRepository(_factory).SetStringsAuditedAsync(
+                values.ToDictionary(pair => Prefix + pair.Key, pair => pair.Value, StringComparer.Ordinal),
+                "HardwareSettingsUpdate", actor, "customer_display", demandPermission, operationId).ConfigureAwait(false);
+        }
+
+        private static T Choice<T>(IReadOnlyDictionary<string, string> values, string suffix, T fallback, string[] tokens) where T : struct
+        {
+            if (!values.TryGetValue(Prefix + suffix, out var raw)) return fallback;
+            var index = Array.IndexOf(tokens, raw);
+            return index < 0 ? (T)Enum.ToObject(typeof(T), 0) : (T)Enum.ToObject(typeof(T), index);
         }
 
         private static string Text(IReadOnlyDictionary<string, string> values, string suffix)

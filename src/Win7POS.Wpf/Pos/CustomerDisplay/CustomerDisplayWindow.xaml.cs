@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using Win7POS.Core.Pos;
 using Win7POS.Wpf.Infrastructure.Displays;
 
@@ -28,7 +29,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         public void PrepareDisplay(
             CustomerDisplaySnapshot snapshot,
             CustomerDisplaySettings settings,
-            DisplayMonitorInfo monitor)
+            DisplayMonitorInfo monitor, BitmapSource logo = null)
         {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
             if (monitor == null) throw new ArgumentNullException(nameof(monitor));
@@ -37,7 +38,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             var layout = CustomerDisplayLayoutPolicy.Determine(
                 useWorkingArea ? monitor.WorkingWidth : monitor.Width,
                 useWorkingArea ? monitor.WorkingHeight : monitor.Height);
-            _viewModel.Apply(snapshot, settings, layout);
+            _viewModel.Apply(snapshot, settings, layout, logo);
             Topmost = settings.AlwaysOnTop;
             _preparedMonitor = monitor;
             _preparedUseWorkingArea = useWorkingArea;
@@ -50,11 +51,17 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         public void UpdateDisplay(
             CustomerDisplaySnapshot snapshot,
             CustomerDisplaySettings settings,
-            DisplayMonitorInfo monitor)
+            DisplayMonitorInfo monitor, BitmapSource logo = null)
         {
-            PrepareDisplay(snapshot, settings, monitor);
+            PrepareDisplay(snapshot, settings, monitor, logo);
             ApplyPreparedPlacement(showWindow: true);
         }
+
+        public void RefreshClockAndPattern(DateTimeOffset now, int seconds) => _viewModel.RefreshClockAndPattern(now, seconds);
+
+        public void SetPatternMonitor(int ordinal, DisplayMonitorInfo monitor) => _viewModel.RefreshClockAndPattern(DateTimeOffset.Now, 0,
+            "#" + ordinal + " " + monitor.Width + "x" + monitor.Height + " " + monitor.Orientation + "\n" +
+            "bounds " + monitor.BoundsLeft + "," + monitor.BoundsTop + "  work " + monitor.WorkAreaLeft + "," + monitor.WorkAreaTop + " " + monitor.WorkingWidth + "x" + monitor.WorkingHeight);
 
         private void ApplyPreparedPlacement(bool showWindow)
         {

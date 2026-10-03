@@ -12,7 +12,8 @@ namespace Win7POS.Core.Pos
         Payment,
         Completed,
         Locked,
-        Unavailable
+        Unavailable,
+        TestPattern
     }
 
     public enum CustomerDisplayLineKind

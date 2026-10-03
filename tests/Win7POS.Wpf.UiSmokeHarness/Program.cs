@@ -1322,7 +1322,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     displaySettings.Enabled = false;
                     var displayRepository = new CustomerDisplaySettingsRepository(
                         new SqliteConnectionFactory(PosDbOptions.Default()));
-                    await displayRepository.SaveAsync(displaySettings).ConfigureAwait(true);
+                    await displayRepository.SaveAsync(displaySettings, () => { }, "qa_fixture").ConfigureAwait(true);
                     for (var managerCycle = 0; managerCycle < 50; managerCycle++)
                     {
                         _status.Text = "Lifecycle customer display managers " +
@@ -1330,7 +1330,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         using (var manager = new CustomerDisplayManager(
                             new FakeDisplayTopologyProvider(),
                             displayRepository,
-                            Dispatcher))
+                            Dispatcher, () => { }, () => "qa_fixture"))
                         {
                             await manager.InitializeAsync().ConfigureAwait(true);
                         }
@@ -4608,7 +4608,7 @@ WHERE id = @id;",
                         await ExpectInvalidOperationAsync(() => service.TestReceiptPrinterAsync(
                             blockedSettings,
                             "QA MUST NOT PRINT",
-                            false)).ConfigureAwait(true) &&
+                            false, () => { })).ConfigureAwait(true) &&
                         await ExpectInvalidOperationAsync(() => service.PrintReceiptTextAsync(
                             "QA MUST NOT PRINT",
                             false,
@@ -4617,9 +4617,9 @@ WHERE id = @id;",
                         await ExpectInvalidOperationAsync(() => service.OpenCashDrawerAsync()).ConfigureAwait(true) &&
                         await ExpectInvalidOperationAsync(() => service.TestCashDrawerAsync(
                             "QA MUST NOT REACH HARDWARE",
-                            "27,112,0,25,250")).ConfigureAwait(true) &&
+                            "27,112,0,25,250", () => { })).ConfigureAwait(true) &&
                         await ExpectInvalidOperationAsync(() => service.SetPrinterSettingsAsync(
-                            blockedSettings)).ConfigureAwait(true);
+                            blockedSettings, () => { }, "qa_fixture")).ConfigureAwait(true);
 
                     var inventory = await service.GetInstalledPrintersAsync().ConfigureAwait(true);
                     var spooler = new WindowsSpoolerReceiptPrinter();
@@ -4690,7 +4690,7 @@ WHERE id = @id;",
                     {
                         var invalid = ClonePrinterSettings(before);
                         invalid.Copies = invalidCopies;
-                        if (!await ExpectInvalidOperationAsync(() => service.SetPrinterSettingsAsync(invalid))
+                        if (!await ExpectInvalidOperationAsync(() => service.SetPrinterSettingsAsync(invalid, () => { }, "qa_fixture"))
                                 .ConfigureAwait(true))
                         {
                             return false;
@@ -4702,7 +4702,7 @@ WHERE id = @id;",
 
                     var maximum = ClonePrinterSettings(before);
                     maximum.Copies = ReceiptPrintOptions.MaximumCopies;
-                    await service.SetPrinterSettingsAsync(maximum).ConfigureAwait(true);
+                    await service.SetPrinterSettingsAsync(maximum, () => { }, "qa_fixture").ConfigureAwait(true);
                     var maximumRoundTrip = await service.GetPrinterSettingsAsync().ConfigureAwait(true);
                     if (maximumRoundTrip.Copies != ReceiptPrintOptions.MaximumCopies) return false;
 
@@ -5115,7 +5115,7 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
 
                 try
                 {
-                    await service.SetPrinterSettingsAsync(invalid).ConfigureAwait(true);
+                    await service.SetPrinterSettingsAsync(invalid, () => { }, "qa_fixture").ConfigureAwait(true);
                     return false;
                 }
                 catch (InvalidOperationException)
@@ -6891,7 +6891,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                     CashDrawerEnabled = false,
                     CashDrawerMode = "disabled",
                     CashDrawerOpenOnCashSale = false
-                }).ConfigureAwait(false);
+                }, () => { }, "qa_fixture").ConfigureAwait(false);
 
                 using (var conn = factory.Open())
                 {

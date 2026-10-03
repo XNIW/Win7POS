@@ -168,8 +168,6 @@ namespace Win7POS.Wpf.Printing
 
         private const int PrintAttemptTimeoutMilliseconds = 5000;
         private const int MaximumReceiptPages = 128;
-        private const int ThermalPaper80mmMin = 300;
-        private const int ThermalPaper80mmMax = 330;
         private const int DefaultCharactersPerLine = 42;
         private const int MinimumCharactersPerLine = 16;
         private const int MaximumCharactersPerLine = 96;
@@ -286,18 +284,13 @@ namespace Win7POS.Wpf.Printing
                 // Margini a zero; offset reale da HardMargin (area non stampabile driver)
                 doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
 
-                // Carta 80mm se disponibile (larghezza ~315 centesimi di pollice)
+                // Match the selected receipt profile by measured width; keep the driver default if no form matches.
                 try
                 {
-                    foreach (PaperSize ps in doc.PrinterSettings.PaperSizes)
-                    {
-                        if (ps.Width >= ThermalPaper80mmMin && ps.Width <= ThermalPaper80mmMax ||
-                            (ps.PaperName != null && ps.PaperName.IndexOf("80", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            doc.DefaultPageSettings.PaperSize = ps;
-                            break;
-                        }
-                    }
+                    var papers = doc.PrinterSettings.PaperSizes.Cast<PaperSize>().ToArray();
+                    var profile = Win7POS.Core.Hardware.ReceiptProfilePolicy.FromLegacy(opt.CharactersPerLine != 32);
+                    var paperIndex = Win7POS.Core.Hardware.ReceiptProfilePolicy.SelectPaperIndex(profile, papers.Select(paper => paper.Width).ToArray());
+                    if (paperIndex >= 0) doc.DefaultPageSettings.PaperSize = papers[paperIndex];
                 }
                 catch { /* fallback default paper */ }
 

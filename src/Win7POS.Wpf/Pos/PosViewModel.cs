@@ -13,6 +13,8 @@ using System.Windows.Media;
 using System.Globalization;
 using System.Windows.Threading;
 using Win7POS.Core.Models;
+using Win7POS.Core.Hardware;
+using Win7POS.Data.Repositories;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Security;
 using Win7POS.Core.Util;
@@ -35,6 +37,40 @@ namespace Win7POS.Wpf.Pos
         private readonly IOperatorSession _operatorSession;
         private readonly IOverrideAuthService _overrideAuthService;
         private readonly Win7POS.Data.Repositories.UserRepository _userRepo;
+        private readonly Dispatcher _settingsDispatcher = Dispatcher.CurrentDispatcher;
+        private bool _hardwareReloadRequested;
+        private bool _hardwareReloadRunning;
+        private bool _isBarcodeSubmissionInProgress;
+
+        public bool AcceptsScannerTerminator(ScannerTerminator key) => ScannerInputPolicy.Accepts(_printerSettings.Scanner, key);
+
+        private void OnSettingsCommitted(object sender, SettingsCommittedEventArgs args)
+        {
+            if (_disposed) return;
+            if (!string.Equals(args.DatabasePath, _service.DbPath, StringComparison.OrdinalIgnoreCase)) return;
+            if (!args.Keys.Any(key => key.StartsWith("pos.scanner.", StringComparison.Ordinal) || key.StartsWith("pos.printer.", StringComparison.Ordinal) || key.StartsWith("pos.cashdrawer.", StringComparison.Ordinal) || key == "pos.useReceipt42")) return;
+            if (_settingsDispatcher.HasShutdownStarted) return;
+            _settingsDispatcher.BeginInvoke(new Action(() => { if (_disposed) return; _hardwareReloadRequested = true; if (!_hardwareReloadRunning) _ = ReloadHardwareSettingsAsync(); }));
+        }
+
+        private async Task ReloadHardwareSettingsAsync()
+        {
+            _hardwareReloadRunning = true;
+            try
+            {
+                while (_hardwareReloadRequested && !_disposed)
+                {
+                    _hardwareReloadRequested = false;
+                    var settings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                    if (_disposed) return;
+                    _printerSettings = settings;
+                    _useReceipt42 = ReceiptProfilePolicy.Columns(settings.ReceiptProfile) == 42;
+                    OnPropertyChanged(nameof(UseReceipt42)); RaiseCanExecuteChanged();
+                }
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Hardware settings reload failed"); }
+            finally { _hardwareReloadRunning = false; }
+        }
         private const int CartProductImageCacheCapacity = 512;
         private readonly Dictionary<string, ProductDetailsRow> _cartProductImageCache =
             new Dictionary<string, ProductDetailsRow>(StringComparer.OrdinalIgnoreCase);
@@ -62,7 +98,6 @@ namespace Win7POS.Wpf.Pos
         private long _lastSnapshotRevision;
         private string _receiptPreview = string.Empty;
         private bool _useReceipt42 = true;
-        private bool _isLoadingSettings;
         private PosPrinterSettings _printerSettings = new PosPrinterSettings();
         private string _lastPrintFailureMessage = string.Empty;
         private CartViewMode _cartViewMode = CartViewMode.Rows;
@@ -251,8 +286,6 @@ namespace Win7POS.Wpf.Pos
                 if (_useReceipt42 == value) return;
                 _useReceipt42 = value;
                 OnPropertyChanged();
-                if (!_isLoadingSettings)
-                    _ = SaveUseReceipt42Async(value);
             }
         }
 
@@ -353,6 +386,7 @@ namespace Win7POS.Wpf.Pos
             _operatorSession = operatorSession;
             _overrideAuthService = overrideAuthService;
             _userRepo = userRepo;
+            SettingsRepository.SettingsChanged += OnSettingsCommitted;
             _statusToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
             _statusToastTickHandler = (_, __) =>
             {
@@ -364,7 +398,7 @@ namespace Win7POS.Wpf.Pos
             DismissStatusToastCommand = new RelayCommand(_ => DismissStatusToast());
             StatusToastDetailsCommand = new RelayCommand(_ => ShowStatusToastDetails());
 
-            AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy, _logger);
+            AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy && !_isBarcodeSubmissionInProgress, _logger);
             PayCommand = new AsyncRelayCommand(PayAsync, _ => !IsBusy, _logger);
             ReceiptPreviewCommand = new AsyncRelayCommand(ShowReceiptPreviewAsync, _ => !IsBusy, _logger);
             LoadRecentSalesCommand = new AsyncRelayCommand(LoadRecentSalesAsync, _ => !IsBusy, _logger);
@@ -472,19 +506,9 @@ namespace Win7POS.Wpf.Pos
             {
                 await _service.InitializeAsync().ConfigureAwait(true);
                 await LoadCartViewModeAsync().ConfigureAwait(true);
-                _isLoadingSettings = true;
-                try
-                {
-                    var savedUse42 = await _service.GetUseReceipt42Async().ConfigureAwait(true);
-                    if (savedUse42.HasValue)
-                        _useReceipt42 = savedUse42.Value;
-                    OnPropertyChanged(nameof(UseReceipt42));
-                }
-                finally
-                {
-                    _isLoadingSettings = false;
-                }
                 _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                _useReceipt42 = ReceiptProfilePolicy.Columns(_printerSettings.ReceiptProfile) == 42;
+                OnPropertyChanged(nameof(UseReceipt42));
                 RaiseCanExecuteChanged();
                 var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
                 ApplySnapshot(snapshot);
@@ -533,51 +557,140 @@ namespace Win7POS.Wpf.Pos
                 StartCartProductImageHydration();
         }
 
-        private async Task SaveUseReceipt42Async(bool value)
-        {
-            try
-            {
-                await _service.SetUseReceipt42Async(value).ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "POS VM save UseReceipt42 failed");
-            }
-        }
-
         private async Task AddBarcodeAsync()
         {
-            try { _permissionService.Demand(PermissionCodes.PosSell, PosLocalization.Current.Text("sales.kind.sale")); }
-            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
-            var input = (BarcodeInput ?? string.Empty).Trim();
-            if (input.Length == 0)
-                return;
-
-            if (await TryHandleQuantityInputAsync(input).ConfigureAwait(true))
+            if (_isBarcodeSubmissionInProgress) return;
+            _isBarcodeSubmissionInProgress = true;
+            RaiseCanExecuteChanged();
+            try
             {
-                PendingInputQuantity = null;
-                BarcodeInput = string.Empty;
-                RequestFocusBarcode();
-                return;
-            }
+                try { _permissionService.Demand(PermissionCodes.PosSell, PosLocalization.Current.Text("sales.kind.sale")); }
+                catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+                var raw = BarcodeInput ?? string.Empty;
+                if (raw.Length == 0)
+                    return;
+                IsBusy = true;
+                // A keyboard wedge cannot distinguish typing from a scan. Keep the existing
+                // explicit quantity commands and numeric CLP price priority for raw input.
+                // Scanner affixes/length apply to the remaining barcode lookup path.
+                var input = raw.Trim();
 
-            var inputQty = PendingInputQuantity.GetValueOrDefault(1);
+                if (await TryHandleQuantityInputAsync(input).ConfigureAwait(true))
+                {
+                    PendingInputQuantity = null;
+                    BarcodeInput = string.Empty;
+                    RequestFocusBarcode();
+                    return;
+                }
 
-            if (TryParseQuantityPrefix(input, out var qty, out var barcodePart))
-            {
+                var inputQty = PendingInputQuantity.GetValueOrDefault(1);
+
+                if (TryParseQuantityPrefix(input, out var qty, out var barcodePart))
+                {
+                    IsBusy = true;
+                    try
+                    {
+                        await _service.AddByBarcodeAsync(barcodePart).ConfigureAwait(true);
+                        var snapshot = await _service.SetQtyAsync(barcodePart, qty).ConfigureAwait(true);
+                        ApplySnapshot(snapshot, barcodePart);
+                        SetStatus(PosLocalization.Current.Format("pos.status.added", barcodePart, qty), PosNoticeSeverity.Success);
+                        PendingInputQuantity = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
+                        _logger.LogError(ex, "POS VM add with qty failed");
+                    }
+                    finally
+                    {
+                        PendingInputQuantity = null;
+                        BarcodeInput = string.Empty;
+                        IsBusy = false;
+                        RequestFocusBarcode();
+                    }
+                    return;
+                }
+
+                if (TryParseManualPriceClp(input, out var priceMinor))
+                {
+                    IsBusy = true;
+                    try
+                    {
+                        var manualKey = DiscountKeys.ManualPrefix + priceMinor;
+                        var snapshot = await _service.AddManualPriceAsync(priceMinor).ConfigureAwait(true);
+                        if (PendingInputQuantity.HasValue && inputQty > 1)
+                        snapshot = await _service.SetQtyAsync(manualKey, inputQty).ConfigureAwait(true);
+                        ApplySnapshot(snapshot, manualKey);
+                        SetStatus(PosLocalization.Current.Format("pos.status.manualAdded", MoneyClp.Format(priceMinor)), PosNoticeSeverity.Success);
+                        return;
+                    }
+                    catch (PosException ex) when (ex.Code == PosErrorCode.InvalidPrice)
+                    {
+                        SetStatus(ex.Message, PosNoticeSeverity.Error);
+                        return;
+                    }
+                    finally
+                    {
+                        PendingInputQuantity = null;
+                        BarcodeInput = string.Empty;
+                        IsBusy = false;
+                        RequestFocusBarcode();
+                    }
+                }
+
+                // Read one complete committed settings snapshot before barcode lookup.
+                var scanner = (await _service.GetPrinterSettingsAsync().ConfigureAwait(true)).Scanner;
+                if (!ScannerInputPolicy.TryNormalize(raw, scanner, out input, out var scannerError))
+                {
+                    SetStatus(PosLocalization.T(scannerError), PosNoticeSeverity.Warning);
+                    BarcodeInput = string.Empty; RequestFocusBarcode(); return;
+                }
+
                 IsBusy = true;
                 try
                 {
-                    await _service.AddByBarcodeAsync(barcodePart).ConfigureAwait(true);
-                    var snapshot = await _service.SetQtyAsync(barcodePart, qty).ConfigureAwait(true);
-                    ApplySnapshot(snapshot, barcodePart);
-                    SetStatus(PosLocalization.Current.Format("pos.status.added", barcodePart, qty), PosNoticeSeverity.Success);
-                    PendingInputQuantity = null;
+                    var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
+                    if (PendingInputQuantity.HasValue && inputQty > 1)
+                    snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
+                    ApplySnapshot(snapshot, input);
+                    SetStatus(PosLocalization.Current.Format("pos.status.productAdded", input), PosNoticeSeverity.Success);
+                }
+                catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
+                {
+                    SetStatus(PosLocalization.Current.Format("pos.status.productNotFoundQuickCreate", input), PosNoticeSeverity.Warning);
+
+                    if (!(await TryDemandOrOverrideAsync(PermissionCodes.CatalogEdit, PosLocalization.Current.Text("pos.status.quickProductCreate")).ConfigureAwait(true)))
+                    return;
+
+                    var productsService = new ProductsWorkflowService();
+                    var draft = new ProductDetailsRow { Barcode = input };
+                    var ok = await ProductEditDialog.ShowAsync(ProductEditMode.New, draft, productsService).ConfigureAwait(true);
+
+                    if (ok)
+                    {
+                        try
+                        {
+                            var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
+                            if (PendingInputQuantity.HasValue && inputQty > 1)
+                                snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
+                            ApplySnapshot(snapshot, input);
+                            SetStatus(PosLocalization.Current.Format("pos.status.productCreatedAdded", input), PosNoticeSeverity.Success);
+                        }
+                        catch (Exception createEx)
+                        {
+                            SetStatus(PosLocalization.Current.Format("common.errorWithMessage", createEx.Message), PosNoticeSeverity.Error);
+                            _logger.LogError(createEx, "POS VM add after create failed");
+                        }
+                    }
+                }
+                catch (PosException ex)
+                {
+                    SetStatus(ex.Message, PosNoticeSeverity.Error);
                 }
                 catch (Exception ex)
                 {
-                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
-                    _logger.LogError(ex, "POS VM add with qty failed");
+                    SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
+                    _logger.LogError(ex, "POS VM add barcode failed");
                 }
                 finally
                 {
@@ -586,88 +699,12 @@ namespace Win7POS.Wpf.Pos
                     IsBusy = false;
                     RequestFocusBarcode();
                 }
-                return;
-            }
-
-            if (TryParseManualPriceClp(input, out var priceMinor))
-            {
-                IsBusy = true;
-                try
-                {
-                    var manualKey = DiscountKeys.ManualPrefix + priceMinor;
-                    var snapshot = await _service.AddManualPriceAsync(priceMinor).ConfigureAwait(true);
-                    if (PendingInputQuantity.HasValue && inputQty > 1)
-                        snapshot = await _service.SetQtyAsync(manualKey, inputQty).ConfigureAwait(true);
-                    ApplySnapshot(snapshot, manualKey);
-                    SetStatus(PosLocalization.Current.Format("pos.status.manualAdded", MoneyClp.Format(priceMinor)), PosNoticeSeverity.Success);
-                    return;
-                }
-                catch (PosException ex) when (ex.Code == PosErrorCode.InvalidPrice)
-                {
-                    SetStatus(ex.Message, PosNoticeSeverity.Error);
-                    return;
-                }
-                finally
-                {
-                    PendingInputQuantity = null;
-                    BarcodeInput = string.Empty;
-                    IsBusy = false;
-                    RequestFocusBarcode();
-                }
-            }
-
-            IsBusy = true;
-            try
-            {
-                var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
-                if (PendingInputQuantity.HasValue && inputQty > 1)
-                    snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
-                ApplySnapshot(snapshot, input);
-                SetStatus(PosLocalization.Current.Format("pos.status.productAdded", input), PosNoticeSeverity.Success);
-            }
-            catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
-            {
-                SetStatus(PosLocalization.Current.Format("pos.status.productNotFoundQuickCreate", input), PosNoticeSeverity.Warning);
-
-                if (!(await TryDemandOrOverrideAsync(PermissionCodes.CatalogEdit, PosLocalization.Current.Text("pos.status.quickProductCreate")).ConfigureAwait(true)))
-                    return;
-
-                var productsService = new ProductsWorkflowService();
-                var draft = new ProductDetailsRow { Barcode = input };
-                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.New, draft, productsService).ConfigureAwait(true);
-
-                if (ok)
-                {
-                    try
-                    {
-                        var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
-                        if (PendingInputQuantity.HasValue && inputQty > 1)
-                            snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
-                        ApplySnapshot(snapshot, input);
-                        SetStatus(PosLocalization.Current.Format("pos.status.productCreatedAdded", input), PosNoticeSeverity.Success);
-                    }
-                    catch (Exception createEx)
-                    {
-                        SetStatus(PosLocalization.Current.Format("common.errorWithMessage", createEx.Message), PosNoticeSeverity.Error);
-                        _logger.LogError(createEx, "POS VM add after create failed");
-                    }
-                }
-            }
-            catch (PosException ex)
-            {
-                SetStatus(ex.Message, PosNoticeSeverity.Error);
-            }
-            catch (Exception ex)
-            {
-                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
-                _logger.LogError(ex, "POS VM add barcode failed");
             }
             finally
             {
-                PendingInputQuantity = null;
-                BarcodeInput = string.Empty;
+                _isBarcodeSubmissionInProgress = false;
                 IsBusy = false;
-                RequestFocusBarcode();
+                RaiseCanExecuteChanged();
             }
         }
 
@@ -1364,7 +1401,8 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
-            if (!(await TryDemandOrOverrideAsync(PermissionCodes.SettingsPrinter, PosLocalization.Current.Text("printer.title")).ConfigureAwait(true))) { RequestFocusBarcode(); return; }
+            try { _permissionService.Demand(PermissionCodes.SettingsPrinter, PosLocalization.T("printer.title")); }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); RequestFocusBarcode(); return; }
             var vm = new PrinterSettingsViewModel
             {
                 PrinterName = _printerSettings.PrinterName,
@@ -1378,8 +1416,22 @@ namespace Win7POS.Wpf.Pos
                 CashDrawerMode = _printerSettings.CashDrawerMode,
                 CashDrawerPrinterName = _printerSettings.CashDrawerPrinterName,
                 CashDrawerOpenOnCashSale = _printerSettings.CashDrawerOpenOnCashSale,
+                ReceiptProfile = _printerSettings.ReceiptProfile,
                 TestReceiptPreview = await _service.BuildPrinterTestReceiptAsync(UseReceipt42).ConfigureAwait(true)
             };
+            vm.LoadScannerSettings(_printerSettings.Scanner);
+            if (CashDrawerPresetPolicy.TryParse(_printerSettings.CashDrawerPreset, out var preset)) vm.DrawerPreset = preset;
+            Action profileChangedHandler = async () =>
+            {
+                var selectedProfile = vm.ReceiptProfile;
+                try
+                {
+                    var preview = await _service.BuildPrinterTestReceiptAsync(ReceiptProfilePolicy.Columns(selectedProfile) == 42).ConfigureAwait(true);
+                    if (selectedProfile == vm.ReceiptProfile) vm.TestReceiptPreview = preview;
+                }
+                catch (Exception ex) { _logger.LogError(ex, "Hardware test preview failed"); }
+            };
+            vm.ReceiptProfileChanged += profileChangedHandler;
             Func<Task> refreshPrintersHandler = null;
             Func<Task> testPrintHandler = null;
             Func<string, string, Task> testCashDrawerHandler = null;
@@ -1404,10 +1456,13 @@ namespace Win7POS.Wpf.Pos
                 {
                     try
                     {
+                        var demandPermission = CreateBoundHardwarePermissionDemand();
+                        demandPermission();
+                        var testSettings = ToPrinterSettings(vm);
+                        var use42 = ReceiptProfilePolicy.Columns(testSettings.ReceiptProfile) == 42;
+                        vm.TestReceiptPreview = await _service.BuildPrinterTestReceiptAsync(use42).ConfigureAwait(true);
                         await _service.TestReceiptPrinterAsync(
-                            ToPrinterSettings(vm),
-                            vm.TestReceiptPreview,
-                            UseReceipt42).ConfigureAwait(true);
+                            testSettings, vm.TestReceiptPreview, use42, demandPermission).ConfigureAwait(true);
                         SetStatus(PosLocalization.Current.Text("printer.testPrintSent"), PosNoticeSeverity.Success);
                     }
                     catch (Exception ex)
@@ -1420,11 +1475,15 @@ namespace Win7POS.Wpf.Pos
                 {
                     try
                     {
-                        await _service.TestCashDrawerAsync(name, cmd).ConfigureAwait(true);
+                        var demandPermission = CreateBoundHardwarePermissionDemand();
+                        demandPermission();
+                        await _service.TestCashDrawerAsync(name, cmd, demandPermission).ConfigureAwait(true);
+                        vm.RecordDrawerCommandSent(true);
                         SetStatus(PosLocalization.Current.Text("printer.commandSent"), PosNoticeSeverity.Success);
                     }
                     catch (Exception ex)
                     {
+                        vm.RecordDrawerCommandSent(false);
                         SetStatus(PosLocalization.Current.Format("printer.testError", ex.Message), PosNoticeSeverity.Error);
                         ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("printer.testDrawer"), ex.Message);
                     }
@@ -1447,12 +1506,22 @@ namespace Win7POS.Wpf.Pos
                     return;
                 }
 
-                _printerSettings = ToPrinterSettings(vm);
+                var pendingSettings = ToPrinterSettings(vm);
+                var savingActorId = _operatorSession?.CurrentUser?.Id;
+                var savingActor = (savingActorId ?? 0).ToString(CultureInfo.InvariantCulture);
 
                 try
                 {
-                    await _service.SetPrinterSettingsAsync(_printerSettings).ConfigureAwait(true);
+                    await _service.SetPrinterSettingsAsync(pendingSettings,
+                        () =>
+                        {
+                            if (_operatorSession?.CurrentUser?.Id != savingActorId)
+                                throw new InvalidOperationException(PosLocalization.T("common.userPermissionDenied"));
+                            _permissionService.Demand(PermissionCodes.SettingsPrinter, PosLocalization.T("printer.title"));
+                        }, savingActor).ConfigureAwait(true);
                     _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                    _useReceipt42 = ReceiptProfilePolicy.Columns(_printerSettings.ReceiptProfile) == 42;
+                    OnPropertyChanged(nameof(UseReceipt42));
                     SetStatus(PosLocalization.Current.Text("printer.settingsSaved"), PosNoticeSeverity.Success);
                     RaiseCanExecuteChanged();
                 }
@@ -1475,6 +1544,7 @@ namespace Win7POS.Wpf.Pos
                 if (testCashDrawerHandler != null)
                     vm.TestCashDrawerRequested -= testCashDrawerHandler;
                 vm.Dispose();
+                vm.ReceiptProfileChanged -= profileChangedHandler;
             }
         }
 
@@ -1530,6 +1600,17 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        private Action CreateBoundHardwarePermissionDemand()
+        {
+            var actorId = _operatorSession?.CurrentUser?.Id;
+            return () =>
+            {
+                if (_operatorSession?.CurrentUser?.Id != actorId)
+                    throw new InvalidOperationException(PosLocalization.T("common.userPermissionDenied"));
+                _permissionService.Demand(PermissionCodes.SettingsPrinter, PosLocalization.T("printer.title"));
+            };
+        }
+
         private static PosPrinterSettings ToPrinterSettings(PrinterSettingsViewModel vm)
         {
             return new PosPrinterSettings
@@ -1544,7 +1625,8 @@ namespace Win7POS.Wpf.Pos
                 CashDrawerEnabled = vm.CashDrawerEnabled,
                 CashDrawerMode = vm.CashDrawerEnabled ? "printer_kick" : "disabled",
                 CashDrawerPrinterName = vm.CashDrawerPrinterName,
-                CashDrawerOpenOnCashSale = vm.CashDrawerOpenOnCashSale
+                CashDrawerOpenOnCashSale = vm.CashDrawerOpenOnCashSale,
+                Scanner = vm.ScannerSettings, ReceiptProfile = vm.ReceiptProfile, CashDrawerPreset = CashDrawerPresetPolicy.Serialize(vm.DrawerPreset)
             };
         }
 
@@ -2558,6 +2640,7 @@ namespace Win7POS.Wpf.Pos
 
         public void Dispose()
         {
+            SettingsRepository.SettingsChanged -= OnSettingsCommitted;
             if (_disposed) return;
             _disposed = true;
             _cartProductImageLifetime.Cancel();

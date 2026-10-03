@@ -147,6 +147,20 @@
                                 Style="{StaticResource OutlineButtonStyle}" AutomationProperties.AutomationId="DbMaintenance.SaveBackupSettings"/>
                         <TextBlock Text="{loc:Loc backupAutomation.lastResult}" FontWeight="SemiBold" Margin="0,10,0,4"/>
                         <TextBlock Text="{Binding LastBackupResult}" TextWrapping="Wrap" AutomationProperties.AutomationId="DbMaintenance.LastBackupResult" AutomationProperties.LiveSetting="Polite"/>
+                        <Separator Margin="0,16,0,12"/>
+                        <TextBlock Text="{loc:Loc settingsProfile.title}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Loc settingsProfile.help}" TextWrapping="Wrap" Foreground="DimGray" Margin="0,0,0,8"/>
+                        <WrapPanel>
+                            <Button Content="{loc:Loc settingsProfile.export}" Command="{Binding ExportProfileCommand}" Height="36" Margin="0,0,8,8" Padding="12,0" Style="{StaticResource OutlineButtonStyle}" AutomationProperties.AutomationId="DbMaintenance.ExportSettingsProfile"/>
+                            <Button Content="{loc:Loc settingsProfile.preview}" Command="{Binding PreviewProfileCommand}" Height="36" Margin="0,0,8,8" Padding="12,0" Style="{StaticResource OutlineButtonStyle}" AutomationProperties.AutomationId="DbMaintenance.PreviewSettingsProfile"/>
+                            <Button Content="{loc:Loc settingsProfile.apply}" Command="{Binding ApplyProfileCommand}" Height="36" Margin="0,0,8,8" Padding="12,0" Style="{StaticResource OutlineButtonStyle}" AutomationProperties.AutomationId="DbMaintenance.ApplySettingsProfile"/>
+                            <Button Content="{loc:Loc settingsProfile.audit}" Command="{Binding ViewSettingsAuditCommand}" Height="36" Margin="0,0,8,8" Padding="12,0" Style="{StaticResource OutlineButtonStyle}" AutomationProperties.AutomationId="DbMaintenance.SettingsAudit"/>
+                        </WrapPanel>
+                        <TextBox Text="{Binding ProfilePreview, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="160" VerticalScrollBarVisibility="Auto" Style="{StaticResource ModernTextBoxStyle}" AutomationProperties.AutomationId="DbMaintenance.SettingsProfileDiff"/>
+                        <WrapPanel Margin="0,8,0,0">
+                            <ComboBox Width="190" ItemsSource="{Binding DefaultsScopes}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding DefaultsScope}" Margin="0,0,8,0" AutomationProperties.AutomationId="DbMaintenance.DefaultsScope"/>
+                            <Button Content="{loc:Loc settingsProfile.reset}" Command="{Binding RestoreDefaultsCommand}" Height="36" Padding="12,0" Style="{StaticResource OutlineButtonStyle}" AutomationProperties.AutomationId="DbMaintenance.ResetSettingsDefaults"/>
+                        </WrapPanel>
                     </StackPanel>
                     <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="DimGray" Text="{loc:Loc dbMaintenance.outputResults}"/>
                     <Grid Grid.Row="6" Grid.ColumnSpan="2" Margin="0,6,0,0" MinHeight="120">

@@ -86,6 +86,11 @@
                                               FontWeight="SemiBold"
                                               Margin="0,0,0,12"/>
 
+                                    <TextBlock Text="{loc:Loc hardware.receiptProfile}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,0,5"/>
+                                    <ComboBox AutomationProperties.AutomationId="PrinterSettings.ReceiptProfile" MinHeight="34" Margin="0,0,0,12"
+                                              ItemsSource="{Binding ReceiptProfiles}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                              SelectedValue="{Binding ReceiptProfile, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+
                                     <TextBlock Text="{loc:Loc printer.receiptPrinter}"
                                                Style="{StaticResource FormLabelTextStyle}"
                                                Margin="0,0,0,5"/>
@@ -105,6 +110,7 @@
                                                    Style="{StaticResource TypeCaptionStyle}"
                                                    TextWrapping="Wrap"/>
                                     </Border>
+                                    <TextBlock Text="{Binding PrinterHealth}" TextWrapping="Wrap" Margin="0,7,0,0" AutomationProperties.LiveSetting="Polite"/>
 
                                     <Grid Margin="0,14,0,0">
                                         <Grid.ColumnDefinitions>
@@ -130,6 +136,34 @@
                                                   Margin="0,0,0,8"/>
                                     </Grid>
                                 </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,10" Padding="14,12">
+                                <Expander AutomationProperties.AutomationId="PrinterSettings.Scanner" IsExpanded="False">
+                                    <Expander.Header><TextBlock Text="{loc:Loc hardware.scanner}" Style="{StaticResource TypeSubtitleStyle}"/></Expander.Header>
+                                    <StackPanel Margin="0,12,0,2">
+                                        <TextBlock Text="{loc:Loc hardware.scannerHelp}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                        <TextBlock Text="{loc:Loc hardware.terminator}" Style="{StaticResource FormLabelTextStyle}"/>
+                                        <ComboBox MinHeight="34" ItemsSource="{Binding ScannerTerminators}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ScannerTerminator, Mode=TwoWay}"/>
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <StackPanel><TextBlock Text="{loc:Loc hardware.prefix}"/><TextBox Text="{Binding ScannerPrefix, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" Style="{StaticResource ModernTextBoxStyle}"/></StackPanel>
+                                            <StackPanel Grid.Column="2"><TextBlock Text="{loc:Loc hardware.suffix}"/><TextBox Text="{Binding ScannerSuffix, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" Style="{StaticResource ModernTextBoxStyle}"/></StackPanel>
+                                        </Grid>
+                                        <CheckBox Content="{loc:Loc hardware.trim}" IsChecked="{Binding ScannerTrim}" Margin="0,10,0,10"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <StackPanel><TextBlock Text="{loc:Loc hardware.minLength}"/><TextBox Text="{Binding ScannerMinimum, UpdateSourceTrigger=PropertyChanged}" MaxLength="3" Style="{StaticResource ModernTextBoxStyle}"/></StackPanel>
+                                            <StackPanel Grid.Column="2"><TextBlock Text="{loc:Loc hardware.maxLength}"/><TextBox Text="{Binding ScannerMaximum, UpdateSourceTrigger=PropertyChanged}" MaxLength="3" Style="{StaticResource ModernTextBoxStyle}"/></StackPanel>
+                                        </Grid>
+                                        <Button x:Name="ArmScannerTestButton" Content="{loc:Loc hardware.armScannerTest}" Command="{Binding ArmScannerTestCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,12,0,7"/>
+                                        <TextBox x:Name="ScannerTestInput" AutomationProperties.AutomationId="PrinterSettings.ScannerTestInput" MaxLength="1024" IsEnabled="{Binding ScannerTestArmed}"
+                                                 PreviewKeyDown="OnScannerTestPreviewKeyDown" TextChanged="OnScannerTestTextChanged" Style="{StaticResource ModernTextBoxStyle}"/>
+                                        <TextBlock Text="{Binding ScannerNormalized}" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                                        <TextBlock Text="{Binding ScannerTestDetails}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding ScannerHealth}" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                                    </StackPanel>
+                                </Expander>
                             </Border>
 
                             <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,10" Padding="14,12">
@@ -219,8 +253,12 @@
                                             <TextBlock Text="{loc:Loc printer.drawerInstruction}"
                                                        Style="{StaticResource FormLabelTextStyle}"
                                                        Margin="0,11,0,5"/>
+                                            <ComboBox AutomationProperties.AutomationId="PrinterSettings.DrawerPreset" MinHeight="34" Margin="0,0,0,7"
+                                                      ItemsSource="{Binding DrawerPresets}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                                      SelectedValue="{Binding DrawerPreset, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                             <TextBox MinHeight="34"
                                                      MaxLength="64"
+                                                     IsEnabled="{Binding IsCustomDrawerPreset}"
                                                      Text="{Binding CashDrawerCommand, UpdateSourceTrigger=PropertyChanged}"
                                                      Style="{StaticResource ModernTextBoxStyle}"
                                                      ToolTip="{loc:Loc printer.drawerCommandTooltip}"/>
@@ -240,6 +278,8 @@
                                                     <TextBlock Text="{loc:Loc printer.testDrawer}" Margin="8,0,0,0"/>
                                                 </StackPanel>
                                             </Button>
+                                            <Button Content="{loc:Loc hardware.drawerOpened}" Command="{Binding ConfirmDrawerTestCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,8,0,0"/>
+                                            <TextBlock Text="{Binding DrawerHealth}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                             <TextBlock Text="{Binding TestCashDrawerStatusMessage}"
                                                        Style="{StaticResource TypeCaptionStyle}"
                                                        TextWrapping="Wrap"
@@ -290,6 +330,8 @@
                                                 </StackPanel>
                                             </Button>
                                         </Grid>
+                                        <Button Content="{loc:Loc hardware.queueDiagnostics}" Command="{Binding QueueDiagnosticsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,0,7"/>
+                                        <TextBlock Text="{Binding DiagnosticDetails}" TextWrapping="Wrap" Margin="0,0,0,10" AutomationProperties.LiveSetting="Polite"/>
 
                                         <ScrollViewer MaxHeight="210"
                                                       VerticalScrollBarVisibility="Auto"

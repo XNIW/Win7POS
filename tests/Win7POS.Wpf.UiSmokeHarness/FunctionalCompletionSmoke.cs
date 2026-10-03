@@ -32,6 +32,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var results = new List<string>();
             await CheckAsync(results, "PERF_visual_lifetime_and_public_commands", CartPerformanceRegressionSmoke.RunAsync);
             await CheckAsync(results, "INTEGRATED_login_sale_retry_receipt_restart", FunctionalSaleSmoke.RunAsync);
+            await CheckAsync(results, "LOAD_sync_backup_x86", SyncBackupLoadSmoke.RunAsync);
             await CheckAsync(results, "F06_reversed_preview_delete_close", HeldCartsViewModelSmoke.RunAsync);
             await CheckAsync(results, "F01_export_gate", async () =>
             {
@@ -63,6 +64,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 await Task.WhenAll(service.ExportDailyCsvAsync(DateTime.Today), service.ExportDailyCsvAsync(DateTime.Today), service.GetPrinterSettingsAsync());
             });
+            await CheckAsync(results, "HARDWARE_settings_scanner", HardwareSettingsSmoke.RunAsync);
+            await CheckAsync(results, "CUSTOMERDISPLAY_polish", CustomerDisplayPolishSmoke.RunAsync);
             await CheckAsync(results, "STOCK_fractional_input", async () =>
             {
                 var vm = new ProductEditViewModel(ProductEditMode.Edit,
@@ -84,13 +87,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             await CheckAsync(results, "F07_settings_rollback", async () =>
             {
                 var service = new PosWorkflowService();
-                await service.SetPrinterSettingsAsync(new PosPrinterSettings { PrinterName = "before", Copies = 1, CashDrawerMode = "disabled" });
+                await service.SetPrinterSettingsAsync(new PosPrinterSettings { PrinterName = "before", Copies = 1, CashDrawerMode = "disabled" }, () => { }, "qa_fixture");
                 var factory = new SqliteConnectionFactory(options);
                 using (var conn = factory.Open())
                     conn.Execute(@"CREATE TRIGGER fail_printer_setting BEFORE UPDATE ON app_settings
 WHEN NEW.key = 'printer.copies' BEGIN SELECT RAISE(ABORT, 'injected settings failure'); END;");
                 var failed = false;
-                try { await service.SetPrinterSettingsAsync(new PosPrinterSettings { PrinterName = "after", Copies = 2, CashDrawerMode = "disabled" }); }
+                try { await service.SetPrinterSettingsAsync(new PosPrinterSettings { PrinterName = "after", Copies = 2, CashDrawerMode = "disabled" }, () => { }, "qa_fixture"); }
                 catch { failed = true; }
                 using (var conn = factory.Open()) conn.Execute("DROP TRIGGER fail_printer_setting");
                 Require(failed, "fault not injected");

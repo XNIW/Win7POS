@@ -59,6 +59,8 @@ namespace Win7POS.Wpf
         private bool _closeConfirmationOpen;
         private bool _cleanupCompleted;
         private EventHandler _languageChangedHandler;
+        private int _languageReloadQueued;
+        private bool _languageReloadRunning;
         private IOperatorSession _observedOperatorSession;
         private Action _operatorSessionChangedHandler;
         public static readonly DependencyProperty ShellTitleProperty = DependencyProperty.Register(
@@ -233,6 +235,7 @@ namespace Win7POS.Wpf
         {
             if (_cleanupCompleted) return;
             _cleanupCompleted = true;
+            SettingsRepository.SettingsChanged -= OnSettingsCommitted;
             try { Application.Current.SessionEnding -= OnApplicationSessionEnding; } catch { }
             try
             {
@@ -273,6 +276,31 @@ namespace Win7POS.Wpf
                 QueueSyncStatusRefresh(_languageSettingsFactory);
             };
             PosLocalization.Current.LanguageChanged += _languageChangedHandler;
+            SettingsRepository.SettingsChanged += OnSettingsCommitted;
+        }
+
+        private void OnSettingsCommitted(object sender, SettingsCommittedEventArgs args)
+        {
+            if (_cleanupCompleted || args == null || !args.Keys.Contains(AppSettingKeys.UiLanguage) ||
+                !string.Equals(args.DatabasePath, _languageSettingsFactory?.DbPath, StringComparison.OrdinalIgnoreCase)) return;
+            if (Interlocked.Exchange(ref _languageReloadQueued, 1) == 0)
+                Dispatcher.BeginInvoke(new Action(ReloadCommittedLanguageAsync), DispatcherPriority.Background);
+        }
+
+        private async void ReloadCommittedLanguageAsync()
+        {
+            if (_languageReloadRunning || _cleanupCompleted) return;
+            _languageReloadRunning = true;
+            try
+            {
+                while (!_cleanupCompleted && Interlocked.Exchange(ref _languageReloadQueued, 0) != 0)
+                {
+                    var factory = _languageSettingsFactory;
+                    if (factory != null) await LoadLanguagePreferenceAsync(factory).ConfigureAwait(true);
+                }
+            }
+            catch (Exception ex) { _logger.LogWarning("category=operations language_reload=failed", ex); }
+            finally { _languageReloadRunning = false; }
         }
 
         private async Task LoadLanguagePreferenceAsync(SqliteConnectionFactory factory)
@@ -349,6 +377,15 @@ namespace Win7POS.Wpf
                     _logger.LogInfo);
                 var factory = _startupCoordinator.Initialize();
                 StartupTrace.Write("DB init end");
+                try
+                {
+                    await Win7POS.Data.Operations.SettingsOperationsService.ObserveApplicationVersionAsync(
+                        factory, PosApplicationVersion.GetCurrent()).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("category=operations version_observation=failed", ex);
+                }
                 await LoadLanguagePreferenceAsync(factory).ConfigureAwait(true);
                 await RefreshShellTitleAsync(factory).ConfigureAwait(true);
                 if (App.IsSafeStart)
@@ -2102,7 +2139,13 @@ namespace Win7POS.Wpf
                 var manager = new CustomerDisplayManager(
                     new WindowsDisplayTopologyProvider(),
                     new CustomerDisplaySettingsRepository(factory),
-                    Dispatcher);
+                    Dispatcher,
+                    () =>
+                    {
+                        if (!HasCurrentPermission(PermissionCodes.SettingsPrinter))
+                            throw new UnauthorizedAccessException("settings.printer permission required.");
+                    },
+                    () => OperatorSessionHolder.Current?.CurrentUser?.Username ?? "operator");
                 manager.WarningRaised += code =>
                     GetPosViewModel()?.SetStatus(
                         PosLocalization.Current.Text("customerDisplay.error." + (code ?? "actionFailed")),
@@ -2249,13 +2292,17 @@ namespace Win7POS.Wpf
             var topology = new WindowsDisplayTopologyProvider();
             var vm = new CustomerDisplaySettingsViewModel(
                 _customerDisplayManager.Settings,
-                topology.GetMonitors());
+                topology.GetMonitors(),
+                path => _customerDisplayManager.ImportLogoAsync(path));
             var dialog = new CustomerDisplaySettingsDialog(
                 vm,
                 () => _customerDisplayManager.IdentifyMonitors(),
                 () => _customerDisplayManager.Preview(),
                 () => _customerDisplayManager.OpenDisplay(),
-                () => _customerDisplayManager.CloseDisplay())
+                () => _customerDisplayManager.CloseDisplay(),
+                settings => _customerDisplayManager.Preview(settings),
+                settings => _customerDisplayManager.StartTestPattern(settings),
+                () => _customerDisplayManager.StopPreview())
             {
                 Owner = DialogOwnerHelper.GetSafeOwner(this)
             };

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "repository": "Win7POS",
+  "package": "H3 logo runtime causal correction",
+  "reviewer": "/root/operations",
+  "date": "2026-10-03",
+  "recordedAtUtc": "2026-10-03T17:45:18.5019914+00:00",
+  "reviewedBaseCommit": "9ca46dc1c6d8842a85d1a45393729527ea3f416c",
+  "reviewBinding": "Uncommitted two-file correction against reviewedBaseCommit; exact working source bound by SHA256 manifest.",
+  "status": "NO_UNRESOLVED_FINDINGS_IN_REVIEWED_DELTA",
+  "scope": "Only CustomerDisplayLogoStore.cs fallback exception filter and CustomerDisplayPolishSmoke.cs matching-hash managed invalid fixtures / expected exception helper delta.",
+  "independence": "Correction authored by /root/backup; reviewer did not author H3 or this correction.",
+  "cause": {
+    "evidencePath": "docs/reports/evidence/2026-10-03-closeout/customer-display-polish-first-failure.txt",
+    "observed": "FAIL CUSTOMERDISPLAY_polish logo_pixels",
+    "source": "InspectLogoHeader and bounded logo readers/decoder intentionally throw InvalidDataException for malformed/oversized content. The previous expected-failure helper and runtime fallback filter did not include that exception explicitly."
+  },
+  "findings": [],
+  "checks": [
+    "Production adds only explicit InvalidDataException handling within LoadSafeAsync; it removes the affected cache entry and returns null. There is no catch-all and unrelated unexpected exception types continue to propagate.",
+    "ImportAsync validation, header inspection, file identity/hash checks, size limits and strict decoding are unchanged and still reject invalid content.",
+    "MustFailAsync now recognizes the policy exception. It still requires an exception, so accepting malformed input continues to fail the assertion.",
+    "Six managed fixtures cover PNG/JPG/BMP with truncated bytes and excessive header dimensions. Correct SHA256 and matching managed filenames ensure the identity guard cannot make these tests pass before content validation.",
+    "Each new fixture requires LoadSafeAsync to return null. Existing valid frozen 2x2 decode, locked/replaced/missing-file fallback, import rejection, partial residue, privacy and lifecycle assertions remain unchanged.",
+    "The correction changes no size thresholds, delays, timeout values or acceptance assertions."
+  ],
+  "manifest": [
+    {
+      "path": "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayLogoStore.cs",
+      "sha256": "7d9e197003a5c2f2e8e5fea2fc875e6d96e19d7cfbcadb5500afcf489a2babf2"
+    },
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/CustomerDisplayPolishSmoke.cs",
+      "sha256": "1d5276eb00f661ff2aacd705662bd43d1abdb80d6bf270313ecc61a86d2ac610"
+    }
+  ],
+  "validation": {
+    "buildOrTestRunByReviewer": false,
+    "activity": "Read-only final delta and immediate policy/fixture context; writes only this receipt.",
+    "runtimeRerunOwner": "/root",
+    "physicalOrWin7AcceptanceClaimed": false
+  }
+}

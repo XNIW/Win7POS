@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Win7POS.Core.Hardware;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Printing;
@@ -38,6 +39,126 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private Task _activeTestOperation = Task.CompletedTask;
         private Task _activeRefreshOperation = Task.CompletedTask;
         private bool _disposed;
+        private ReceiptProfile _receiptProfile = ReceiptProfile.Thermal80mm42col;
+        private CashDrawerPreset _drawerPreset = CashDrawerPreset.EscposPin2;
+        private ScannerTerminator _scannerTerminator;
+        private string _scannerPrefix = string.Empty, _scannerSuffix = string.Empty, _scannerMinimum = "1", _scannerMaximum = "128";
+        private bool _scannerTrim = true, _scannerTestArmed, _diagnosticInProgress;
+        private string _scannerNormalized = string.Empty, _scannerTestDetails = string.Empty, _diagnosticDetails = string.Empty;
+        private DateTimeOffset? _scannerPassedAt, _drawerPassedAt;
+        private bool _drawerCommandSent;
+        private bool _drawerTestFailed;
+
+        public sealed class HardwareOption<T>
+        {
+            public T Value { get; }
+            public string Label { get; }
+            public HardwareOption(T value, string key) { Value = value; Label = PosLocalization.T(key); }
+        }
+        public IReadOnlyList<HardwareOption<ReceiptProfile>> ReceiptProfiles => new[]
+        {
+            new HardwareOption<ReceiptProfile>(ReceiptProfile.Thermal58mm32col, "hardware.receipt58"),
+            new HardwareOption<ReceiptProfile>(ReceiptProfile.Thermal80mm42col, "hardware.receipt80")
+        };
+        public IReadOnlyList<HardwareOption<ScannerTerminator>> ScannerTerminators => new[]
+        {
+            new HardwareOption<ScannerTerminator>(ScannerTerminator.Enter, "hardware.enter"), new HardwareOption<ScannerTerminator>(ScannerTerminator.Tab, "hardware.tab"),
+            new HardwareOption<ScannerTerminator>(ScannerTerminator.EnterOrTab, "hardware.enterOrTab")
+        };
+        public IReadOnlyList<HardwareOption<CashDrawerPreset>> DrawerPresets => new[]
+        {
+            new HardwareOption<CashDrawerPreset>(CashDrawerPreset.EscposPin2, "hardware.pin2"), new HardwareOption<CashDrawerPreset>(CashDrawerPreset.EscposPin5, "hardware.pin5"),
+            new HardwareOption<CashDrawerPreset>(CashDrawerPreset.Custom, "hardware.custom")
+        };
+        public ReceiptProfile ReceiptProfile
+        {
+            get => _receiptProfile;
+            set { _receiptProfile = value; OnPropertyChanged(); ReceiptProfileChanged?.Invoke(); }
+        }
+        public CashDrawerPreset DrawerPreset
+        {
+            get => _drawerPreset;
+            set { _drawerPreset = value; if (value != CashDrawerPreset.Custom) CashDrawerCommand = CashDrawerPresetPolicy.Command(value, null); OnPropertyChanged(); OnPropertyChanged(nameof(IsCustomDrawerPreset)); }
+        }
+        public bool IsCustomDrawerPreset => DrawerPreset == CashDrawerPreset.Custom;
+        public ScannerTerminator ScannerTerminator { get => _scannerTerminator; set { _scannerTerminator = value; ScannerSettingsChanged(); } }
+        public string ScannerPrefix { get => _scannerPrefix; set { _scannerPrefix = value ?? string.Empty; ScannerSettingsChanged(); } }
+        public string ScannerSuffix { get => _scannerSuffix; set { _scannerSuffix = value ?? string.Empty; ScannerSettingsChanged(); } }
+        public bool ScannerTrim { get => _scannerTrim; set { _scannerTrim = value; ScannerSettingsChanged(); } }
+        public string ScannerMinimum { get => _scannerMinimum; set { _scannerMinimum = value ?? string.Empty; ScannerSettingsChanged(); } }
+        public string ScannerMaximum { get => _scannerMaximum; set { _scannerMaximum = value ?? string.Empty; ScannerSettingsChanged(); } }
+        public ScannerInputSettings ScannerSettings => new ScannerInputSettings
+        {
+            Terminator = ScannerTerminator, Prefix = ScannerPrefix, Suffix = ScannerSuffix, TrimWhitespace = ScannerTrim,
+            MinimumLength = int.TryParse(ScannerMinimum, NumberStyles.None, CultureInfo.InvariantCulture, out var min) ? min : 0,
+            MaximumLength = int.TryParse(ScannerMaximum, NumberStyles.None, CultureInfo.InvariantCulture, out var max) ? max : 0
+        };
+        public bool ScannerTestArmed => _scannerTestArmed;
+        public string ScannerNormalized => _scannerNormalized;
+        public string ScannerTestDetails => _scannerTestDetails;
+        public string ScannerHealth => _scannerPassedAt.HasValue ? PosLocalization.Current.Format("hardware.testPassedAt", _scannerPassedAt.Value.ToLocalTime()) : PosLocalization.T("hardware.unknownNeedsTest");
+        public string DrawerHealth => !CashDrawerEnabled ? PosLocalization.T("hardware.disabled") : _drawerTestFailed ? PosLocalization.T("hardware.testFailed") : _drawerPassedAt.HasValue ? PosLocalization.Current.Format("hardware.testPassedAt", _drawerPassedAt.Value.ToLocalTime()) : PosLocalization.T("hardware.configuredNeedsTest");
+        public string PrinterHealth
+        {
+            get
+            {
+                if (!ReceiptEnabled) return PosLocalization.T("hardware.disabled");
+                var queue = ResolveReceiptPrinter();
+                if (queue == null) return PosLocalization.T("hardware.warningQueue");
+                if (!queue.IsInventoryFresh || queue.OutputKind == PrinterOutputKind.Unknown) return PosLocalization.T("hardware.unknownNeedsTest");
+                if (!queue.IsAvailable || queue.IsOffline || queue.IsPaused || queue.IsVirtual) return PosLocalization.T("hardware.warningQueue");
+                return PosLocalization.T("hardware.configuredNeedsTest");
+            }
+        }
+        public string DiagnosticDetails => _diagnosticDetails;
+        public ICommand ArmScannerTestCommand { get; }
+        public ICommand QueueDiagnosticsCommand { get; }
+        public ICommand ConfirmDrawerTestCommand { get; }
+        public event Action FocusScannerTestRequested;
+        public event Action ReceiptProfileChanged;
+
+        public void LoadScannerSettings(ScannerInputSettings value)
+        {
+            value = value ?? new ScannerInputSettings();
+            ScannerTerminator = value.Terminator; ScannerPrefix = value.Prefix; ScannerSuffix = value.Suffix; ScannerTrim = value.TrimWhitespace;
+            ScannerMinimum = value.MinimumLength.ToString(CultureInfo.InvariantCulture); ScannerMaximum = value.MaximumLength.ToString(CultureInfo.InvariantCulture);
+        }
+        private void ScannerSettingsChanged([CallerMemberName] string property = null)
+        {
+            _scannerPassedAt = null; _scannerTestArmed = false; _scannerNormalized = string.Empty; _scannerTestDetails = string.Empty;
+            OnPropertyChanged(property); OnPropertyChanged(nameof(IsValid)); OnPropertyChanged(nameof(ScannerTestArmed));
+            OnPropertyChanged(nameof(ScannerHealth)); OnPropertyChanged(nameof(ScannerNormalized)); OnPropertyChanged(nameof(ScannerTestDetails));
+            RaiseCanExecuteChanged();
+        }
+        public void CompleteScannerTest(string raw, ScannerTerminator key, long elapsedMilliseconds)
+        {
+            if (!_scannerTestArmed || !ScannerInputPolicy.Accepts(ScannerSettings, key)) return;
+            _scannerTestArmed = false;
+            var valid = ScannerInputPolicy.TryNormalize(raw, ScannerSettings, out _scannerNormalized, out var error);
+            _scannerPassedAt = valid ? DateTimeOffset.Now : (DateTimeOffset?)null;
+            _scannerTestDetails = valid ? PosLocalization.Current.Format("hardware.scannerResult", key == ScannerTerminator.Enter ? PosLocalization.T("hardware.enter") : PosLocalization.T("hardware.tab"), elapsedMilliseconds) : PosLocalization.T(error);
+            OnPropertyChanged(nameof(ScannerTestArmed)); OnPropertyChanged(nameof(ScannerNormalized)); OnPropertyChanged(nameof(ScannerTestDetails)); OnPropertyChanged(nameof(ScannerHealth));
+        }
+        public void RecordDrawerCommandSent(bool sent)
+        {
+            _drawerCommandSent = sent; _drawerPassedAt = null; _drawerTestFailed = !sent;
+            OnPropertyChanged(nameof(DrawerHealth)); (ConfirmDrawerTestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+        private async Task ReadQueueDiagnosticsAsync()
+        {
+            _diagnosticInProgress = true; RaiseCanExecuteChanged();
+            try
+            {
+                var result = await WindowsPrinterDiagnostics.ReadAsync(ResolveReceiptPrinter()?.Name ?? PrinterName).ConfigureAwait(true);
+                if (_disposed) return;
+                var queue = result.Value;
+                _diagnosticDetails = result.Completed && queue?.Available == true
+                    ? PosLocalization.Current.Format("hardware.queueDetails", queue.QueueName, queue.DriverName, queue.PortName, queue.Status.ToString("X8", CultureInfo.InvariantCulture), queue.JobCount, queue.JobsAvailable ? PosLocalization.T("hardware.jobsRead") : PosLocalization.T("hardware.jobsUnknown"))
+                    : PosLocalization.T("hardware.diagnostic." + (result.Completed ? "unavailable" : result.ResultCode));
+                OnPropertyChanged(nameof(DiagnosticDetails));
+            }
+            finally { _diagnosticInProgress = false; if (!_disposed) RaiseCanExecuteChanged(); }
+        }
 
         public ObservableCollection<InstalledPrinterInfo> InstalledPrinters { get; } =
             new ObservableCollection<InstalledPrinterInfo>();
@@ -47,9 +168,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
             get => _printerName;
             set
             {
-                _printerName = value ?? string.Empty;
+                var next = value ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(CashDrawerPrinterName) &&
+                    !string.Equals(_printerName.Trim(), next.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    _drawerPassedAt = null; _drawerCommandSent = false; _drawerTestFailed = false;
+                    OnPropertyChanged(nameof(DrawerHealth));
+                    (ConfirmDrawerTestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                }
+                _printerName = next;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(SelectedPrinterSummary));
+                OnPropertyChanged(nameof(PrinterHealth));
                 OnPropertyChanged(nameof(CanTestPrint));
                 OnPropertyChanged(nameof(CanTestCashDrawer));
                 OnPropertyChanged(nameof(TestPrintStatusMessage));
@@ -77,6 +207,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 _receiptEnabled = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(IsValid));
+                OnPropertyChanged(nameof(PrinterHealth));
                 OnPropertyChanged(nameof(CanTestPrint));
                 OnPropertyChanged(nameof(TestPrintStatusMessage));
                 RaiseCanExecuteChanged();
@@ -86,7 +218,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool AutoPrint
         {
             get => _autoPrint;
-            set { _autoPrint = value; OnPropertyChanged(); }
+            set { _autoPrint = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsValid)); RaiseCanExecuteChanged(); }
         }
 
         public bool AllowWindowsDefault
@@ -142,7 +274,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set
             {
                 _cashDrawerCommand = value ?? string.Empty;
+                _drawerPassedAt = null; _drawerCommandSent = false; _drawerTestFailed = false;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(DrawerHealth));
                 OnPropertyChanged(nameof(IsCashDrawerCommandValid));
                 OnPropertyChanged(nameof(IsValid));
                 OnPropertyChanged(nameof(CanTestCashDrawer));
@@ -176,6 +310,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _cashDrawerEnabled = string.Equals(_cashDrawerMode, PrinterKickMode, StringComparison.OrdinalIgnoreCase);
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(CashDrawerEnabled));
+                _drawerPassedAt = null; _drawerCommandSent = false; _drawerTestFailed = false; OnPropertyChanged(nameof(DrawerHealth));
                 OnPropertyChanged(nameof(IsCashDrawerCommandValid));
                 OnPropertyChanged(nameof(IsValid));
                 OnPropertyChanged(nameof(CanTestCashDrawer));
@@ -190,7 +325,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set
             {
                 _cashDrawerPrinterName = value ?? string.Empty;
+                _drawerPassedAt = null; _drawerCommandSent = false; _drawerTestFailed = false;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(DrawerHealth));
                 OnPropertyChanged(nameof(CanTestCashDrawer));
                 OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
                 RaiseCanExecuteChanged();
@@ -220,7 +357,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
              WindowsSpoolerReceiptPrinter.IsCashDrawerCommandValid(CashDrawerCommand));
         public bool IsValid => ParsedCopies >= 1 &&
                                ParsedCopies <= ReceiptPrintOptions.MaximumCopies &&
-                               IsCashDrawerCommandValid;
+                               IsCashDrawerCommandValid && ScannerInputPolicy.Validate(ScannerSettings).Count == 0 &&
+                               (!AutoPrint || ReceiptEnabled);
         public bool IsTestOperationInProgress => _isTestOperationInProgress;
         public Task ActiveTestOperation => _activeTestOperation;
         public Task ActiveRefreshOperation => _activeRefreshOperation;
@@ -279,6 +417,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public PrinterSettingsViewModel()
         {
+            ArmScannerTestCommand = new RelayCommand(_ =>
+            {
+                _scannerTestArmed = true; _scannerNormalized = string.Empty; _scannerTestDetails = string.Empty;
+                OnPropertyChanged(nameof(ScannerTestArmed)); OnPropertyChanged(nameof(ScannerNormalized)); OnPropertyChanged(nameof(ScannerTestDetails));
+                FocusScannerTestRequested?.Invoke();
+            }, _ => !_disposed && ScannerInputPolicy.Validate(ScannerSettings).Count == 0);
+            QueueDiagnosticsCommand = new RelayCommand(_ => { _ = ReadQueueDiagnosticsAsync(); }, _ => !_disposed && !_diagnosticInProgress);
+            ConfirmDrawerTestCommand = new RelayCommand(_ =>
+            {
+                _drawerPassedAt = DateTimeOffset.Now; _drawerCommandSent = false; _drawerTestFailed = false; OnPropertyChanged(nameof(DrawerHealth));
+                (ConfirmDrawerTestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }, _ => !_disposed && _drawerCommandSent);
             ConfirmCommand = new RelayCommand(
                 _ => RequestClose?.Invoke(true),
                 _ => IsValid && !IsTestOperationInProgress && !_isRefreshingPrinters);
@@ -403,6 +553,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             OnPropertyChanged(nameof(SelectedPrinterSummary));
+            OnPropertyChanged(nameof(PrinterHealth));
             OnPropertyChanged(nameof(CanTestPrint));
             OnPropertyChanged(nameof(CanTestCashDrawer));
             OnPropertyChanged(nameof(TestPrintStatusMessage));
@@ -454,6 +605,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
             OnPropertyChanged(nameof(TestPrintStatusMessage));
             OnPropertyChanged(nameof(SelectedPrinterSummary));
+            OnPropertyChanged(nameof(PrinterHealth));
+            OnPropertyChanged(nameof(ScannerHealth)); OnPropertyChanged(nameof(DrawerHealth));
+            OnPropertyChanged(nameof(ReceiptProfiles)); OnPropertyChanged(nameof(ScannerTerminators)); OnPropertyChanged(nameof(DrawerPresets));
         }
 
         public void Dispose()
@@ -466,6 +620,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             TestPrintRequested = null;
             RefreshPrintersRequested = null;
             PropertyChanged = null;
+            FocusScannerTestRequested = null;
+            ReceiptProfileChanged = null;
+            _scannerNormalized = string.Empty;
         }
 
         private void RaiseCanExecuteChanged()
@@ -475,6 +632,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (TestCashDrawerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (TestPrintCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (RefreshPrintersCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ArmScannerTestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (QueueDiagnosticsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "package": "C/H3",
+  "date": "2026-10-03",
+  "baseSha": "42afc8817422a5d1c3ed06e0ca50f7fb44a3207b",
+  "status": "LOCAL_CORE_DATA_AND_WPF_SCENARIO_PASS_PHYSICAL_ACCEPTANCE_OPEN",
+  "features": [
+    "Canonical typed logo position, welcome/custom/clock idle, bounded 120-character Unicode message, barcode hidden/last4/full, paid/change privacy, 5-60-second test duration.",
+    "Legacy show_barcode compatibility maps absent canonical mode to full/hidden and malformed canonical mode fails closed.",
+    "Managed content-bound logo basename/hash; PNG/JPEG/BMP headers bound to 2 MiB/4 million pixels before off-UI frozen detached decode; no UNC/URL/reparse paths or network content.",
+    "Settings plus redacted audit commit atomically with permission checked in service and actor captured before await and fenced through commit.",
+    "Finite unsaved preview uses synthetic content; pattern has no sale fields, shows color grid/topology/countdown, restores previous projection and prior open/manual-close state.",
+    "Clock/preview timers stop when not required; dispose detaches timer and static settings/SystemEvents/POS hooks; settings reload is coalesced single-flight.",
+    "Copied topology diagnostics hash raw device identifiers; preserve existing Win7 physical placement/nonactivating window/topology policy.",
+    "IT/EN/ES/ZH translation entries and existing dialog shell/footer standards retained."
+  ],
+  "causalFinding": {
+    "id": "H3-PORTRAIT-PRIVACY",
+    "cause": "Existing portrait XAML ignored ShowUnitPrice and ShowLineTotal while landscape respected them.",
+    "fix": "Apply those same visibility flags to the portrait money fields.",
+    "status": "PASS_SOURCE_AND_WPF_PRIVACY_REGRESSION"
+  },
+  "tests": {
+    "coreDataNewDeclaredRows": 12,
+    "coreDataFilter": "FullyQualifiedName~CustomerDisplay",
+    "coreDataStatus": "PASS_IN_1201_OF_1201_FINAL_CORE_SUITE",
+    "wpfScenario": "CUSTOMERDISPLAY_polish",
+    "wpfMethod": "CustomerDisplayPolishSmoke.RunAsync",
+    "wpfStatus": "PASS_CUSTOMERDISPLAY_POLISH_CANONICAL_FUNCTIONAL_RUN",
+    "wpfCoverage": [
+      "Actual PNG/JPG/BMP valid/truncated/header-bomb/locked/replaced/missing managed image cases.",
+      "Oversize bytes, UNC/URL and partial-publication rejection.",
+      "Completed paid/change privacy, last4 and reserved barcode suppression.",
+      "Unsaved synthetic preview, finite 5-second pattern expiry, previous projection restoration and no focus change if a focused element is present.",
+      "Clock tick, display close/disposal timer cleanup, subscription count restoration.",
+      "Invalid duration text and copied diagnostic identifier redaction.",
+      "Allowed operator switch at pre-commit callback rolls back settings.",
+      "Cashier already minimized before pattern start:5-second expiry, no window activation, expiry timer cleanup."
+    ],
+    "staticCustomerDisplaySafetyGate": "PASS",
+    "gitDiffCheck": "PASS"
+  },
+  "modifiedFiles": [
+    "src/Win7POS.Core/Pos/CustomerDisplaySettings.cs",
+    "src/Win7POS.Core/Pos/CustomerDisplaySnapshot.cs",
+    "src/Win7POS.Core/Pos/CustomerDisplayContentPolicy.cs",
+    "src/Win7POS.Data/Repositories/CustomerDisplaySettingsRepository.cs",
+    "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayLogoStore.cs",
+    "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayManager.cs",
+    "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayViewModel.cs",
+    "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayWindow.xaml",
+    "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplaySettingsViewModel.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplaySettingsDialog.xaml",
+    "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplaySettingsDialog.xaml.cs",
+    "src/Win7POS.Wpf/Localization/PosTranslations.CustomerDisplayPolish.cs",
+    "scripts/check-pos-customer-display-safety.ps1",
+    "tests/Win7POS.Core.Tests/Pos/CustomerDisplayContentPolicyTests.cs",
+    "tests/Win7POS.Core.Tests/Data/CustomerDisplaySettingsCloseoutTests.cs",
+    "tests/Win7POS.Wpf.UiSmokeHarness/CustomerDisplayPolishSmoke.cs"
+  ],
+  "parentIntegration": [
+    "MainWindow permission/actor callback and unsaved preview/pattern/logo import dialog wiring.",
+    "CreateTranslations AddCustomerDisplayPolishTranslations invocation.",
+    "FunctionalCompletionSmoke CUSTOMERDISPLAY_polish hook and runner scenario.",
+    "Legacy Program fixture SaveAsync explicit permission callback."
+  ],
+  "externalAcceptance": {
+    "state": "NOT_EXECUTED",
+    "environment": "Actual dual monitors, duplicate/extended/hot-plug, scanner focus, portrait/DPI on Windows 7 SP1 x86",
+    "prerequisite": "Available Win7 target with identified authorized displays and scanner."
+  },
+  "limitations": [
+    "Synthetic topology harness is not physical-monitor certification.",
+    "Managed logo files are immutable by content identity and prior frozen images hold no source file locks; disk changes are revalidated on initialization/settings reload.",
+    "No post-Win7 DPI APIs or framework upgrades."
+  ],
+  "runtimeCorrection": {
+    "failure": "CUSTOMERDISPLAY_polish logo_pixels",
+    "artifact": "customer-display-polish-first-failure.txt",
+    "artifactSha256": "8e3f3e38c63fb53dbb117d25d1d7d21a1a9da6098cadf8b214ce748f3741c36f",
+    "runnerLog": "C:\\Dev\\_codex-evidence\\win7pos-closeout-20261003\\ui-functional.log",
+    "runnerLogSha256": "278c7eca89bf86b4f884da138b37290222136888bfa8a35e505c894492e029b9",
+    "cause": "InvalidDataException derives from SystemException, not IOException. The expected dimension-bomb rejection escaped the fixture exception filter; managed-load fallback had the same explicit type omission.",
+    "fix": "Explicit InvalidDataException filters in expected rejection helper and LoadSafeAsync; add matching-content-hash malformed/header-bomb managed fallback fixtures for PNG/JPEG/BMP.",
+    "paths": [
+      "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayLogoStore.cs",
+      "tests/Win7POS.Wpf.UiSmokeHarness/CustomerDisplayPolishSmoke.cs"
+    ],
+    "status": "PASS_CANONICAL_WPF_SCENARIO_AFTER_CORRECTION",
+    "preserved": "All byte/pixel/frame/hash/privacy/focus/finite expiry assertions and timeouts retained."
+  }
+}

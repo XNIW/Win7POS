@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "repository": "Win7POS",
+  "package": "H1 public input runtime causal correction",
+  "reviewer": "/root/operations",
+  "date": "2026-10-03",
+  "recordedAtUtc": "2026-10-03T17:47:40.7815894+00:00",
+  "reviewedBaseCommit": "9ca46dc1c6d8842a85d1a45393729527ea3f416c",
+  "observedRepositoryHead": "d7111f1b8f58710e9e858949f927e18e248bf740",
+  "reviewBinding": "Two-file working-source correction against reviewedBaseCommit; exact reviewed source bound by SHA256 manifest. Concurrent repository commits do not extend the review to other files.",
+  "status": "NO_UNRESOLVED_FINDINGS_IN_REVIEWED_DELTA",
+  "scope": "Only PosView.xaml BarcodeBox event binding and PosView.xaml.cs forwarding handler/handled guard; relevant unchanged public scanner loop and submission guard context.",
+  "independence": "Correction authored by /root/hardware; reviewer did not author H1 or this correction.",
+  "cause": {
+    "evidencePath": "docs/reports/evidence/2026-10-03-closeout/H1-public-scan-first-failure.txt",
+    "observed": "public scan 1; System.InvalidOperationException: public scanner command lost input; CartPerformanceRegressionSmoke.RunAsync line108",
+    "source": "The unchanged public regression loop raises Keyboard.KeyDownEvent on BarcodeBox. The previous H1 XAML registered PreviewKeyDown only, so a directly raised bubbling KeyDown did not reach the scanner command. A failure on the first scan is consistent with a missing event binding rather than submission-guard release after a previous scan."
+  },
+  "findings": [],
+  "checks": [
+    "BarcodeBox registers both PreviewKeyDown and the restored KeyDown surface. KeyDown forwards to the same scanner handler rather than duplicating scanner parsing or command logic.",
+    "The common handler returns immediately when e.Handled is set. Non-empty accepted input is marked handled before command execution; therefore a consumed preview cannot submit again through the bubbling path.",
+    "Preview handling remains in place for configured Tab before focus navigation. Empty input and configured terminator behavior remain unchanged.",
+    "IME composition, repeat, modifier and scanner-terminator guards remain unchanged after the new handled guard.",
+    "The existing asynchronous VM command and submission-in-progress guard remain unchanged.",
+    "No regression assertions, fixture input event, timeouts, delays or scanner settings were weakened or changed by this correction.",
+    "The delta is limited to two XAML additions/one removal and eight code-behind additions; no scanner normalization or sale workflow changes."
+  ],
+  "manifest": [
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosView.xaml",
+      "sha256": "f5ac7d8e996f5d49ced8784bf517bb5ffcba1bfb9db863502babb4d58db278d5"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosView.xaml.cs",
+      "sha256": "14ff68c240a0d44ed08f67de2ef91be98257ed9717549f656e1860dd23710902"
+    }
+  ],
+  "contextManifest": [
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/CartPerformanceRegressionSmoke.cs",
+      "sha256": "ffa7f2ecd32f90ac29e5be0c16acd95ac327f53490ff6521e900b45599f21b92"
+    },
+    {
+      "path": "docs/reports/evidence/2026-10-03-closeout/H1-public-scan-first-failure.txt",
+      "sha256": "1963eca12e60280c32403663cf3264f19f0df5e4693cfa67bb873f1b70bbb4e5"
+    }
+  ],
+  "validation": {
+    "buildOrTestRunByReviewer": false,
+    "activity": "Read-only delta and immediate public-event regression/handler context; writes only this receipt.",
+    "runtimeRerunOwner": "/root",
+    "fullRunnerResultClaimed": false,
+    "physicalScannerAcceptanceClaimed": false
+  }
+}

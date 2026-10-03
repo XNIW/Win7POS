@@ -61,6 +61,11 @@ $settingsDialogCode = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplay
 $settingsHub = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
 $settingsHubCode = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml.cs"
 $translations = Read-Required "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
+$contentPolicy = Read-Required "src/Win7POS.Core/Pos/CustomerDisplayContentPolicy.cs"
+$logoStore = Read-Required "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayLogoStore.cs"
+$displaySettings = Read-Required "src/Win7POS.Core/Pos/CustomerDisplaySettings.cs"
+$settingsRepository = Read-Required "src/Win7POS.Data/Repositories/CustomerDisplaySettingsRepository.cs"
+$polishTranslations = Read-Required "src/Win7POS.Wpf/Localization/PosTranslations.CustomerDisplayPolish.cs"
 
 if ($windowXaml.TrimStart().StartsWith("<Window ", [StringComparison]::Ordinal) -and
     $windowXaml.IndexOf("DialogShellWindow", [StringComparison]::Ordinal) -lt 0) {
@@ -142,8 +147,49 @@ Require-All "customer display initialization is best-effort" $mainWindow @(
 
 Require-Ordered "customer display is prepared before first visibility" $manager @(
     '_window = new CustomerDisplayWindow();',
-    '_window.PrepareDisplay(displaySnapshot, settings, monitor);',
+    '_window.PrepareDisplay(displaySnapshot, settings, monitor, logo);',
     '_window.Show();'
+)
+
+Require-All "customer display managed raster logo is bounded and identity verified" ($contentPolicy + $logoStore) @(
+    'MaximumLogoBytes = 2 * 1024 * 1024',
+    'MaximumLogoPixels = 4000000',
+    'InspectLogoHeader(bytes, out var width, out var height)',
+    'BitmapCreateOptions.DelayCreation',
+    'BitmapCacheOption.OnLoad',
+    'PngBitmapDecoder', 'JpegBitmapDecoder', 'BmpBitmapDecoder',
+    'bitmap.Freeze()',
+    'Hash(bytes) != settings.LogoHash',
+    'File.Move(partial, final)',
+    'RejectReparseAncestors',
+    'logo_local_path'
+)
+
+Require-Ordered "pixel header bound precedes import decoder allocation" $logoStore @(
+    'InspectLogoHeader(bytes, out var width, out var height)',
+    'var bitmap = Decode(bytes, width, height);'
+)
+
+Require-All "customer display privacy and finite unsaved preview" ($displaySettings + $contentPolicy + $manager + $viewModel) @(
+    'CustomerDisplayBarcodeMode.Last4',
+    'MANUAL:', 'DISC:', 'TAX:',
+    '_settings.ShowPaidAmount', '_settings.ShowChangeAmount',
+    'TestPatternDurationSeconds < 5 || TestPatternDurationSeconds > 60',
+    'CustomerDisplayState.TestPattern',
+    'Array.Empty<CustomerDisplayLine>()',
+    '_previewWatch.Elapsed.TotalSeconds >= _previewSettings.TestPatternDurationSeconds',
+    '_previewPriorOpen', '_previewPriorManuallyClosed',
+    'public void StopPreview()',
+    '_contentTimer.Tick -= OnContentTimer',
+    'SettingsRepository.SettingsChanged -= OnSettingsCommitted',
+    'PermissionFence(actor)',
+    'settings actor changed during operation.'
+)
+
+Require-All "customer display audited service save and localized controls" ($settingsRepository + $settingsDialog + $polishTranslations) @(
+    'SetStringsAuditedAsync', 'demandPermission', 'HardwareSettingsUpdate',
+    'customerDisplay.polish.testPattern', 'customerDisplay.polish.importLogo',
+    '客户标志', 'Logo cliente', 'Logo de cliente'
 )
 
 Require-All "customer display first-frame placement and failure cleanup" ($windowCode + $placement + $manager) @(

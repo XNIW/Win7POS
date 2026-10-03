@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "package": "H2 independent review",
+  "reviewer": "/root/backup",
+  "date": "2026-10-03",
+  "status": "NO_BLOCKING_FINDINGS_IN_REVIEWED_SOURCE",
+  "findings": [],
+  "manifest": [
+    {
+      "Path": "src/Win7POS.Core/Operations/PortableSettingsPolicy.cs",
+      "SHA256": "390a4c402e606b184c80e57190e955473945da329ad2c694c823b5b1d7e2e34b"
+    },
+    {
+      "Path": "src/Win7POS.Core/Operations/PortableSettingsProfile.cs",
+      "SHA256": "c43fe357bda440eec084f00b923786892628ba8e7f12a04d6105ff2325b2f32d"
+    },
+    {
+      "Path": "src/Win7POS.Data/Operations/SettingsOperationsService.cs",
+      "SHA256": "c7d9df3ee0525b74e82aa2fd8cf2a571ada0c543defbdfbe0cf879a8e7ac1c50"
+    },
+    {
+      "Path": "src/Win7POS.Data/Repositories/SettingsRepository.cs",
+      "SHA256": "b643e108cbd6225fd257d2920db346f71232e1253892ac7a6c1ae1461078458a"
+    },
+    {
+      "Path": "src/Win7POS.Data/Repositories/SettingsAuditEntry.cs",
+      "SHA256": "a3d630c33048c51b4e20a1c0316fc45c6772bd8d5013101989d1a6f3f61841a1"
+    },
+    {
+      "Path": "src/Win7POS.Data/Backup/BackupAutomationService.cs",
+      "SHA256": "30574c845c8baf03476011c61c9189ae506e8320de291263902197fccdc34bc0"
+    },
+    {
+      "Path": "src/Win7POS.Data/Backup/BackupAutomationStore.cs",
+      "SHA256": "bfee4a76bc662bfc9459f8280a4016000f3b1cb3aa2e2f499c54d66da7dc37f2"
+    },
+    {
+      "Path": "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs",
+      "SHA256": "dd44d235e6d2c0aafb4e0bb628df20d8038f577df76f892497cf4593ff6d3ad4"
+    },
+    {
+      "Path": "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml",
+      "SHA256": "3accfc8d9ff4fa11f6c7ce01e2b48df57a8b1df571ebb0c33c5249f0c56170d5"
+    },
+    {
+      "Path": "src/Win7POS.Wpf/MainWindow.xaml.cs",
+      "SHA256": "87c7a94e59a9dc791e723e775b86861d57ff706043089937d8501a2a2e5505d0"
+    },
+    {
+      "Path": "tests/Win7POS.Core.Tests/Data/SettingsOperationsTests.cs",
+      "SHA256": "be6ff8846c9694a10222a75720fda20180d048fcc343997edc4e9d5cb96bc834"
+    }
+  ],
+  "checks": [
+    "Portable allowlist and bounded strict profile parser; redacted values and their digests excluded.",
+    "Settings, canonical/legacy aliases, audit and backup activation watermark committed atomically.",
+    "Entry, transaction and pre-commit permission checks; UI actor bound to current operator across awaits.",
+    "Import disables receipt/drawer activation; local queue, device, destination, logo, idle text and secret settings remain local.",
+    "Backup maintenance gate/store reused; schedule enabled only with valid existing local destination.",
+    "Version observation emits first/upgrade/downgrade and suppresses same-version audit in transaction.",
+    "MainWindow language notification filtered by database/key, coalesced and unsubscribed during cleanup."
+  ],
+  "validation": "Root reports first Core suite1199/1200; sole B writer failure unrelated to H2. No independent build/test during review.",
+  "scopeLimit": "Version classification reviewed within supported single-instance application startup. Physical hardware and network-share acceptance not executed."
+}
