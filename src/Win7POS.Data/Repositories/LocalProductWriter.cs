@@ -54,7 +54,7 @@ SELECT last_insert_rowid();", p).ConfigureAwait(false);
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty)
+            decimal stockQty)
         {
             using var conn = _factory.Open();
             await conn.ExecuteAsync(@"
@@ -81,7 +81,7 @@ VALUES(@barcode, '', '', @purchasePrice, 0, 0, @supplierId, @supplierName, @cate
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty)
+            decimal stockQty)
         {
             using var conn = _factory.Open();
             await conn.ExecuteAsync(@"
@@ -128,7 +128,8 @@ WHERE barcode = @barcode
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty)
+            decimal stockQty,
+            bool preserveExistingStock = false)
         {
             if (p == null) throw new ArgumentNullException(nameof(p));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
@@ -139,6 +140,12 @@ WHERE barcode = @barcode
                 using var tx = conn.BeginTransaction();
                 try
                 {
+                    // An import that omits stock must preserve the value observed after
+                    // taking the mutation gate, in the same transaction as its rename.
+                    if (preserveExistingStock)
+                        stockQty = await conn.ExecuteScalarAsync<decimal?>(
+                            "SELECT stock_qty FROM product_meta WHERE barcode = @Barcode LIMIT 1",
+                            new { p.Barcode }, tx).ConfigureAwait(false) ?? stockQty;
                     var id = await UpsertProductAndMetaInTransactionCoreAsync(
                         conn,
                         tx,
@@ -181,7 +188,7 @@ WHERE barcode = @barcode
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty)
+            decimal stockQty)
         {
             if (conn == null) throw new ArgumentNullException(nameof(conn));
             if (p == null) throw new ArgumentNullException(nameof(p));
@@ -245,7 +252,7 @@ WHERE m.barcode = @Barcode
             var stockQtyToWrite = stockQty;
             if (hasPendingLocalStock)
             {
-                var existingStock = await conn.ExecuteScalarAsync<int?>(@"
+                var existingStock = await conn.ExecuteScalarAsync<decimal?>(@"
 SELECT stock_qty
 FROM product_meta
 WHERE barcode = @Barcode
@@ -289,7 +296,7 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty)
+            decimal stockQty)
         {
             if (productId <= 0) throw new ArgumentException("invalid product id");
             SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
@@ -347,7 +354,7 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty,
+            decimal stockQty,
             string source)
         {
             if (productId <= 0) throw new ArgumentException("invalid product id");

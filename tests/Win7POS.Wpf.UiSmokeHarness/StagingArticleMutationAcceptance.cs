@@ -984,7 +984,7 @@ WHERE local_product_id = @id
             string name,
             int retail,
             int purchase,
-            int stock,
+            decimal stock,
             string itemNumber)
         {
             viewModel.Barcode = barcode;

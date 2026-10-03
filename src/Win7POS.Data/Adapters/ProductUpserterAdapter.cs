@@ -97,6 +97,9 @@ SELECT last_insert_rowid();", product, _tx).ConfigureAwait(false);
                         "SELECT purchase_price FROM product_meta WHERE barcode = @barcode",
                         new { barcode },
                         _tx).ConfigureAwait(false);
+                if (!row.Stock.HasValue && existing != null)
+                    stockQty = await _conn.ExecuteScalarAsync<decimal?>(
+                        "SELECT stock_qty FROM product_meta WHERE barcode = @barcode", new { barcode }, _tx).ConfigureAwait(false) ?? 0;
 
                 var updated = await _conn.ExecuteAsync(@"
 UPDATE products SET name = @name, unitPrice = @unitPrice WHERE barcode = @barcode",
@@ -136,7 +139,8 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
                 null,
                 categoryName,
                 stockQty,
-                ProductWriteOrigin.SupplierImportApply).ConfigureAwait(false);
+                ProductWriteOrigin.SupplierImportApply,
+                preserveExistingStock: !row.Stock.HasValue).ConfigureAwait(false);
             return existingP == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
         }
 

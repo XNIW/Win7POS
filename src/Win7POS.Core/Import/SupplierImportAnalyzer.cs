@@ -2096,7 +2096,7 @@ namespace Win7POS.Core.Import
                 SecondProductName = secondProductName,
                 PurchasePrice = existing == null ? NumberTextOrEmpty(row.PurchasePrice, false) : ToIntOrExistingText(row.PurchasePrice, existing.PurchasePrice),
                 RetailPrice = existing == null ? NumberTextOrEmpty(row.RetailPrice, true) : ToLongOrExistingText(row.RetailPrice, existing.UnitPrice),
-                Quantity = existing == null ? NumberTextOrEmpty(row.Quantity, false) : ToIntOrExistingText(row.Quantity, existing.StockQty),
+                Quantity = QuantityText(row.Quantity, existing == null ? (decimal?)null : existing.StockQty),
                 Supplier = ChooseText(row.Supplier, existing == null ? null : existing.SupplierName),
                 Category = ChooseText(row.Category, existing == null ? null : existing.CategoryName)
             };
@@ -2112,8 +2112,8 @@ namespace Win7POS.Core.Import
             if (editable.HasPurchasePriceSource && purchase.HasValue && existing.PurchasePrice != purchase.Value) return true;
             var retail = ToLongNullable(editable.RetailPrice, existing.UnitPrice);
             if (!string.IsNullOrWhiteSpace(editable.RetailPrice) && retail.HasValue && existing.UnitPrice != retail.Value) return true;
-            var quantity = ToIntNullable(editable.Quantity, existing.StockQty);
-            if (editable.HasQuantitySource && quantity.HasValue && existing.StockQty != quantity.Value) return true;
+            decimal quantity;
+            if (editable.HasQuantitySource && StockQuantityPolicy.TryParseImport(editable.Quantity, out quantity) && existing.StockQty != quantity) return true;
             if (editable.HasSupplierSource && !TextEquals(existing.SupplierName, ChooseText(editable.Supplier, existing.SupplierName))) return true;
             if (editable.HasCategorySource && !TextEquals(existing.CategoryName, ChooseText(editable.Category, existing.CategoryName))) return true;
             return false;
@@ -2153,8 +2153,15 @@ namespace Win7POS.Core.Import
                 ok = false;
             if (!ValidateOptionalNumber(row.RetailPrice, row.RowNumber, barcode, "retailPrice", preview))
                 ok = false;
-            if (!ValidateOptionalNumber(row.Quantity, row.RowNumber, barcode, "quantity", preview))
+            decimal quantity;
+            var quantityValid = string.IsNullOrWhiteSpace(row.Quantity)
+                ? existing == null || StockQuantityPolicy.IsValid(existing.StockQty) && existing.StockQty <= StockQuantityPolicy.MaximumImportQuantity
+                : StockQuantityPolicy.TryParseImport(row.Quantity, out quantity);
+            if (!quantityValid)
+            {
+                preview.Errors.Add(new SupplierImportError("Valore numerico non valido per quantity (0..999999999, massimo 3 decimali).", row.RowNumber, barcode));
                 ok = false;
+            }
 
             if (existing != null &&
                 !string.IsNullOrWhiteSpace(row.PurchasePrice) &&
@@ -2205,7 +2212,7 @@ namespace Win7POS.Core.Import
                 SecondProductName = secondProductName,
                 PurchasePrice = existing == null ? NumberTextOrEmpty(row.PurchasePrice, false) : ToIntOrExistingText(row.PurchasePrice, existing.PurchasePrice),
                 RetailPrice = existing == null ? NumberTextOrEmpty(row.RetailPrice, true) : ToLongOrExistingText(row.RetailPrice, existing.UnitPrice),
-                Quantity = existing == null ? NumberTextOrEmpty(row.Quantity, false) : ToIntOrExistingText(row.Quantity, existing.StockQty),
+                Quantity = QuantityText(row.Quantity, existing == null ? (decimal?)null : existing.StockQty),
                 Supplier = ChooseText(row.Supplier, existing == null ? null : existing.SupplierName),
                 Category = ChooseText(row.Category, existing == null ? null : existing.CategoryName)
             };
@@ -2305,6 +2312,14 @@ namespace Win7POS.Core.Import
             return trimmed.Length == 0
                 ? string.Empty
                 : string.Join(" ", trimmed.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        private static string QuantityText(string value, decimal? existing)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return existing.HasValue ? existing.Value.ToString(CultureInfo.InvariantCulture) : string.Empty;
+            decimal quantity;
+            // Analysis retains invalid source text for correction; final preview adds row errors.
+            return StockQuantityPolicy.TryParseImport(value, out quantity) ? quantity.ToString(CultureInfo.InvariantCulture) : value.Trim();
         }
 
         private static int? ToIntNullable(string value, int existing)

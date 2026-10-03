@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "package": "A omitted-stock preservation under concurrent mutation",
+  "workspace": "C:\\Users\\xniw9\\.codex\\worktrees\\closeout-sync-baseline\\Win7POS",
+  "runner": "C:\\Dev\\.dotnet-sdk-10.0.301\\dotnet.exe",
+  "test": "CsvAbsentStockConcurrencyTests.OmittedStockRenamePreservesMutationCommittedWhileWaitingForGate",
+  "before": {
+    "baselineAdapterSha256": "B0E88F16A4199F9FC3F2FD9C148C00CD2965195729C1910D120ECC91A8C346A2",
+    "classification": "Original baseline adapter assigned omitted stock0; it did not contain the subsequent root outside-transaction preservation read.",
+    "steps": "Hold CatalogMutationGate; start adapter rename with absent stock; directly commit preceding fixture stock3.456; release gate; reopen database",
+    "expected": "Stock3.456",
+    "actual": "Stock0",
+    "result": "FAIL1/1"
+  },
+  "after": {
+    "fix": "Optional preserveExistingStock flag passes omission into LocalProductWriter; reads stock after acquiring CatalogMutationGate and inside same transaction as rename.",
+    "result": "PASS3/3: one concurrency test and two root CSV sequential preservation cases",
+    "limitation": "Actual process restart and external backend not executed."
+  },
+  "excludedAttempts": [
+    {
+      "receipt": "A-omitted-stock-concurrency-copy-failed.trx",
+      "classification": "Harness setup error: relative source path resolved in isolated checkout instead of shared checkout; copy failed, filter matched zero tests. Not product evidence."
+    },
+    {
+      "classification": "One isolated incremental build failure CS0266 because copied ImportRow modification timestamp predated cached Core DLL, so adapter compiled against stale int? property; forced copied Core timestamps and recompiled. Not source compile failure in shared checkout."
+    }
+  ],
+  "receipts": [
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-omitted-stock-concurrency-copy-failed.trx",
+      "sha256": "54DC528507C5D04AF6A539950942892B5E1E7884733181E24353EBB5AB468010",
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-omitted-stock-concurrency-red.trx",
+      "sha256": "5FA3D44BA53DCC593DF0AC6E271D30DB258574F635FCE433738F75183D0F826C",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0
+    },
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-omitted-stock-concurrency-green.trx",
+      "sha256": "40A06A6F42F1D38A4C455C263A9C939A5F7A8F603397FB04B831C74AE0E13785",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    }
+  ]
+}

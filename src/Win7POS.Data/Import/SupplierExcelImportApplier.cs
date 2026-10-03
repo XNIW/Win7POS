@@ -599,7 +599,7 @@ ORDER BY p.barcode ASC;";
                                 ArticleCode = ReadString(reader, 6),
                                 Name2 = ReadString(reader, 7),
                                 PurchasePrice = Convert.ToInt32(reader.GetInt64(8)),
-                                StockQty = Convert.ToInt32(reader.GetInt64(9)),
+                                StockQty = reader.GetDecimal(9),
                                 SupplierId = reader.IsDBNull(10) ? (int?)null : Convert.ToInt32(reader.GetInt64(10)),
                                 SupplierName = ReadString(reader, 11),
                                 CategoryId = reader.IsDBNull(12) ? (int?)null : Convert.ToInt32(reader.GetInt64(12)),
@@ -727,10 +727,10 @@ ORDER BY key ASC;";
 
             int purchase;
             long retail;
-            int stock;
+            decimal stock;
             if (!TryParseIntOrExisting(row?.PurchasePrice, existing == null ? 0 : existing.PurchasePrice, out purchase) ||
                 !TryParseLongOrExisting(row?.RetailPrice, existing == null ? 0 : existing.UnitPrice, out retail) ||
-                !TryParseIntOrExisting(row?.Quantity, existing == null ? 0 : existing.StockQty, out stock))
+                !TryParseQuantityOrExisting(row?.Quantity, existing == null ? 0 : existing.StockQty, out stock))
             {
                 AddError(result, "Valore numerico non valido per barcode " + barcode);
                 return null;
@@ -771,6 +771,13 @@ ORDER BY key ASC;";
                 existing.StockQty != merged.StockQty ||
                 !TextEquals(existing.SupplierName, merged.SupplierName) ||
                 !TextEquals(existing.CategoryName, merged.CategoryName);
+        }
+
+        private static bool TryParseQuantityOrExisting(string value, decimal existing, out decimal parsed)
+        {
+            parsed = existing;
+            if (string.IsNullOrWhiteSpace(value)) return StockQuantityPolicy.IsValid(parsed) && parsed <= StockQuantityPolicy.MaximumImportQuantity;
+            return StockQuantityPolicy.TryParseImport(value, out parsed);
         }
 
         private static bool TryParseIntOrExisting(string value, int existing, out int parsed)
@@ -902,7 +909,7 @@ VALUES(
                 AddParameter(command, "@SupplierName", SqliteType.Text);
                 AddParameter(command, "@CategoryId", SqliteType.Integer);
                 AddParameter(command, "@CategoryName", SqliteType.Text);
-                AddParameter(command, "@StockQty", SqliteType.Integer);
+                AddParameter(command, "@StockQty", SqliteType.Real);
                 command.Prepare();
                 return command;
             }

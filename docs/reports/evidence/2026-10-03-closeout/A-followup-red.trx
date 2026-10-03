@@ -1,0 +1,205 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="ba0b6e50-c762-4bd4-a6e1-f5d744d3e94b" name="xniw9@MIN-ASUS 2026-10-03 13:47:59" runUser="MIN-ASUS\xniw9" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-03T13:47:59.1788187-03:00" queuing="2026-10-03T13:47:59.1788194-03:00" start="2026-10-03T13:47:57.3587983-03:00" finish="2026-10-03T13:48:01.5954521-03:00" />
+  <TestSettings name="default" id="c0df97d1-f296-4981-96ba-e50dd7038cca">
+    <Deployment runDeploymentRoot="xniw9_MIN-ASUS_2026-10-03_13_47_59" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="d4f023ef-c239-4fc7-a9b0-b88ee4f19668" testId="11234eca-3b50-83db-87dc-59cd5d994268" testName="SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity (&quot;&quot;)" computerName="MIN-ASUS" duration="00:00:00.3795350" startTime="2026-10-03T13:48:00.3396309-03:00" endTime="2026-10-03T13:48:00.7192722-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d4f023ef-c239-4fc7-a9b0-b88ee4f19668">
+      <Output>
+        <ErrorInfo>
+          <Message>Assertion failed. Expected values to be equal.&#xD;
+&#xD;
+expected: 0&#xD;
+actual:   1&#xD;
+&#xD;
+Assert.AreEqual(0, result.Errors)</Message>
+          <StackTrace>   at Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity(String quantity) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\Data\FractionalStockCloseoutTests.cs:line 61&#xD;
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="f54fc58c-388d-4c3d-aa02-9b436cfa9dce" testId="1b356fc0-3da6-8070-8041-e48b387155d6" testName="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;Infinity&quot;)" computerName="MIN-ASUS" duration="00:00:00.0001316" startTime="2026-10-03T13:48:00.7303367-03:00" endTime="2026-10-03T13:48:00.7304978-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f54fc58c-388d-4c3d-aa02-9b436cfa9dce">
+      <Output>
+        <ErrorInfo>
+          <Message>Test method Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError threw exception:&#xD;
+System.OverflowException: Value was either too large or too small for a Decimal.</Message>
+          <StackTrace>   at System.Number.ThrowOverflowException(String message)&#xD;
+   at System.Decimal.DecCalc.VarDecFromR8(Double input, DecCalc&amp; result)&#xD;
+   at System.Convert.ToDecimal(Double value)&#xD;
+   at Win7POS.Core.Import.SupplierImportAnalyzer.QuantityText(String value, Nullable`1 existing) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 2314&#xD;
+   at Win7POS.Core.Import.SupplierImportAnalyzer.ToFinalCanonicalRow(SupplierImportEditableRow row, ProductDetailsRow existing) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 2199&#xD;
+   at Win7POS.Core.Import.SupplierImportAnalyzer.BuildSyncPreview(IEnumerable`1 finalRows, IEnumerable`1 existingProducts) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 434&#xD;
+   at Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError(String quantity) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\Data\FractionalStockCloseoutTests.cs:line 82&#xD;
+   at InvokeStub_FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError(Object, Span`1)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)&#xD;
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e1dc809d-b003-402f-bb66-95991052ceca" testId="192f0265-2878-80a0-b42b-52aa757d3490" testName="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;-1&quot;)" computerName="MIN-ASUS" duration="00:00:00.0002860" startTime="2026-10-03T13:48:00.7305081-03:00" endTime="2026-10-03T13:48:00.7308132-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e1dc809d-b003-402f-bb66-95991052ceca" />
+    <UnitTestResult executionId="8c9e842e-6a86-4b6e-95b7-ff765e7835a1" testId="16ffde5d-dc00-8b34-a7b0-c3c5994c3858" testName="OlderDeltaCannotResurrectProductAfterTombstone" computerName="MIN-ASUS" duration="00:00:00.6078019" startTime="2026-10-03T13:47:57.7810439-03:00" endTime="2026-10-03T13:47:58.4003353-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8c9e842e-6a86-4b6e-95b7-ff765e7835a1" />
+    <UnitTestResult executionId="edf450ec-b3a2-49c1-be48-b09090839800" testId="15c73048-e96d-8fd8-b07c-5d0e3acac768" testName="SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity (&quot;1.234&quot;)" computerName="MIN-ASUS" duration="00:00:00.4081959" startTime="2026-10-03T13:47:59.9300477-03:00" endTime="2026-10-03T13:48:00.3395678-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="edf450ec-b3a2-49c1-be48-b09090839800">
+      <Output>
+        <ErrorInfo>
+          <Message>Assertion failed. Expected values to be equal.&#xD;
+&#xD;
+expected: 0&#xD;
+actual:   1&#xD;
+&#xD;
+Assert.AreEqual(0, result.Errors)</Message>
+          <StackTrace>   at Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity(String quantity) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\Data\FractionalStockCloseoutTests.cs:line 61&#xD;
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="10eedafd-0937-4ca7-b2fc-fcbd91f34f80" testId="1e3b2474-05c5-8073-942c-722e442775da" testName="SQLiteStockRoundtripPreservesThreeFractionsNearLocalMaximum" computerName="MIN-ASUS" duration="00:00:00.3938990" startTime="2026-10-03T13:48:01.1397615-03:00" endTime="2026-10-03T13:48:01.5349620-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="10eedafd-0937-4ca7-b2fc-fcbd91f34f80" />
+    <UnitTestResult executionId="149af2a1-18f2-479e-913a-4331271afe14" testId="12eebe59-b7eb-87a8-8282-2d13f9e54c54" testName="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;2147483648&quot;)" computerName="MIN-ASUS" duration="00:00:00.0081994" startTime="2026-10-03T13:48:00.7193166-03:00" endTime="2026-10-03T13:48:00.7275961-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="149af2a1-18f2-479e-913a-4331271afe14">
+      <Output>
+        <ErrorInfo>
+          <Message>Test method Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError threw exception:&#xD;
+System.ArgumentException: Invalid stock quantity.</Message>
+          <StackTrace>   at Win7POS.Core.Import.SupplierImportAnalyzer.QuantityText(String value, Nullable`1 existing) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 2315&#xD;
+   at Win7POS.Core.Import.SupplierImportAnalyzer.ToFinalCanonicalRow(SupplierImportEditableRow row, ProductDetailsRow existing) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 2199&#xD;
+   at Win7POS.Core.Import.SupplierImportAnalyzer.BuildSyncPreview(IEnumerable`1 finalRows, IEnumerable`1 existingProducts) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 434&#xD;
+   at Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError(String quantity) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\Data\FractionalStockCloseoutTests.cs:line 82&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)&#xD;
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="c387ea4b-7f83-4d32-bbe9-da84abcb3522" testId="13f6e000-c797-80ea-a5b4-57619d592a84" testName="OlderTombstoneCannotDeleteNewerReactivation" computerName="MIN-ASUS" duration="00:00:00.3766691" startTime="2026-10-03T13:47:58.4030681-03:00" endTime="2026-10-03T13:47:58.7799942-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c387ea4b-7f83-4d32-bbe9-da84abcb3522" />
+    <UnitTestResult executionId="011802fb-f2ee-4752-8bb9-7cd45b215109" testId="17bc4dce-f4db-82f3-9209-15a22ef0fcdc" testName="ProductDetailsReadDoesNotTruncateExistingFractionalStock" computerName="MIN-ASUS" duration="00:00:00.3546441" startTime="2026-10-03T13:47:59.5752677-03:00" endTime="2026-10-03T13:47:59.9299865-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="011802fb-f2ee-4752-8bb9-7cd45b215109" />
+    <UnitTestResult executionId="0cc68efc-8353-488d-858e-7a77a7b0ebff" testId="10fa7df2-bd68-8877-bdea-62fce1eb0f32" testName="CatalogMapperAndRepositoryPreserveFractionalStock" computerName="MIN-ASUS" duration="00:00:00.3945062" startTime="2026-10-03T13:47:59.1805963-03:00" endTime="2026-10-03T13:47:59.5752162-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0cc68efc-8353-488d-858e-7a77a7b0ebff" />
+    <UnitTestResult executionId="68461766-f965-47b6-a65b-cc4d8b890b3f" testId="1850f8c0-efae-8fc8-a5cd-c4a0c77afbe0" testName="ReopenPreservesFractionalLocalStockDeltaAndDurableOutbox" computerName="MIN-ASUS" duration="00:00:00.4088427" startTime="2026-10-03T13:48:00.7308252-03:00" endTime="2026-10-03T13:48:01.1397111-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="68461766-f965-47b6-a65b-cc4d8b890b3f" />
+    <UnitTestResult executionId="2fb7e190-ddc3-42b9-a436-e1c27a817851" testId="18170e57-7ced-8105-8568-70f02c456dea" testName="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;NaN&quot;)" computerName="MIN-ASUS" duration="00:00:00.0013031" startTime="2026-10-03T13:48:00.7289740-03:00" endTime="2026-10-03T13:48:00.7303160-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2fb7e190-ddc3-42b9-a436-e1c27a817851">
+      <Output>
+        <ErrorInfo>
+          <Message>Test method Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError threw exception:&#xD;
+System.OverflowException: Value was either too large or too small for a Decimal.</Message>
+          <StackTrace>   at System.Number.ThrowOverflowException(String message)&#xD;
+   at System.Decimal.DecCalc.VarDecFromR8(Double input, DecCalc&amp; result)&#xD;
+   at System.Convert.ToDecimal(Double value)&#xD;
+   at Win7POS.Core.Import.SupplierImportAnalyzer.QuantityText(String value, Nullable`1 existing) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 2314&#xD;
+   at Win7POS.Core.Import.SupplierImportAnalyzer.ToFinalCanonicalRow(SupplierImportEditableRow row, ProductDetailsRow existing) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 2199&#xD;
+   at Win7POS.Core.Import.SupplierImportAnalyzer.BuildSyncPreview(IEnumerable`1 finalRows, IEnumerable`1 existingProducts) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\src\Win7POS.Core\Import\SupplierImportAnalyzer.cs:line 434&#xD;
+   at Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError(String quantity) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\Data\FractionalStockCloseoutTests.cs:line 82&#xD;
+   at InvokeStub_FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError(Object, Span`1)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)&#xD;
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="38e345ee-311b-422d-824d-5c2320163a8c" testId="16cf2707-0500-87b4-8811-8fe6513dfc0e" testName="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;1.2345&quot;)" computerName="MIN-ASUS" duration="00:00:00.0012341" startTime="2026-10-03T13:48:00.7276485-03:00" endTime="2026-10-03T13:48:00.7289508-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="38e345ee-311b-422d-824d-5c2320163a8c">
+      <Output>
+        <ErrorInfo>
+          <Message>Assertion failed. Expected condition to be false.&#xD;
+&#xD;
+actual: true&#xD;
+&#xD;
+Assert.IsFalse(preview.CanApply)</Message>
+          <StackTrace>   at Win7POS.Core.Tests.Data.FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError(String quantity) in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\Data\FractionalStockCloseoutTests.cs:line 86&#xD;
+   at InvokeStub_FractionalStockCloseoutTests.SupplierPreviewRejectsUnsupportedQuantityAsRowError(Object, Span`1)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="f9589d4f-4ae4-40f3-a348-1b52a5135d7f" testId="1ab9a2d8-e815-827e-b4a9-9154cc6fe763" testName="SamePageDescendingRevisionsKeepNewestBusinessAndShadow" computerName="MIN-ASUS" duration="00:00:00.3993318" startTime="2026-10-03T13:47:58.7803260-03:00" endTime="2026-10-03T13:47:59.1805471-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f9589d4f-4ae4-40f3-a348-1b52a5135d7f">
+      <Output>
+        <ErrorInfo>
+          <Message>Assertion failed. Expected strings to be equal.&#xD;
+Strings have different lengths (expected: 6, actual: 5) and differ at 1 location(s). First difference at index 0.&#xD;
+&#xD;
+expected: "Newest"&#xD;
+actual:   "Older"&#xD;
+&#xD;
+Assert.AreEqual("Newest", await connection.ExecuteScalarAsync&lt;string&gt;("SELECT name FROM products WHERE remote_product_id=@RemoteId", new { RemoteId }))</Message>
+          <StackTrace>   at Win7POS.Core.Tests.Data.CatalogProductRevisionCloseoutTests.SamePageDescendingRevisionsKeepNewestBusinessAndShadow() in C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\Data\CatalogProductRevisionCloseoutTests.cs:line 73&#xD;
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;Infinity&quot;)" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1b356fc0-3da6-8070-8041-e48b387155d6">
+      <Execution id="f54fc58c-388d-4c3d-aa02-9b436cfa9dce" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="SupplierPreviewRejectsUnsupportedQuantityAsRowError" />
+    </UnitTest>
+    <UnitTest name="ReopenPreservesFractionalLocalStockDeltaAndDurableOutbox" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1850f8c0-efae-8fc8-a5cd-c4a0c77afbe0">
+      <Execution id="68461766-f965-47b6-a65b-cc4d8b890b3f" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="ReopenPreservesFractionalLocalStockDeltaAndDurableOutbox" />
+    </UnitTest>
+    <UnitTest name="SQLiteStockRoundtripPreservesThreeFractionsNearLocalMaximum" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1e3b2474-05c5-8073-942c-722e442775da">
+      <Execution id="10eedafd-0937-4ca7-b2fc-fcbd91f34f80" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="SQLiteStockRoundtripPreservesThreeFractionsNearLocalMaximum" />
+    </UnitTest>
+    <UnitTest name="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;1.2345&quot;)" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="16cf2707-0500-87b4-8811-8fe6513dfc0e">
+      <Execution id="38e345ee-311b-422d-824d-5c2320163a8c" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="SupplierPreviewRejectsUnsupportedQuantityAsRowError" />
+    </UnitTest>
+    <UnitTest name="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;2147483648&quot;)" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="12eebe59-b7eb-87a8-8282-2d13f9e54c54">
+      <Execution id="149af2a1-18f2-479e-913a-4331271afe14" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="SupplierPreviewRejectsUnsupportedQuantityAsRowError" />
+    </UnitTest>
+    <UnitTest name="OlderTombstoneCannotDeleteNewerReactivation" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="13f6e000-c797-80ea-a5b4-57619d592a84">
+      <Execution id="c387ea4b-7f83-4d32-bbe9-da84abcb3522" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.CatalogProductRevisionCloseoutTests" name="OlderTombstoneCannotDeleteNewerReactivation" />
+    </UnitTest>
+    <UnitTest name="SamePageDescendingRevisionsKeepNewestBusinessAndShadow" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1ab9a2d8-e815-827e-b4a9-9154cc6fe763">
+      <Execution id="f9589d4f-4ae4-40f3-a348-1b52a5135d7f" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.CatalogProductRevisionCloseoutTests" name="SamePageDescendingRevisionsKeepNewestBusinessAndShadow" />
+    </UnitTest>
+    <UnitTest name="ProductDetailsReadDoesNotTruncateExistingFractionalStock" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="17bc4dce-f4db-82f3-9209-15a22ef0fcdc">
+      <Execution id="011802fb-f2ee-4752-8bb9-7cd45b215109" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="ProductDetailsReadDoesNotTruncateExistingFractionalStock" />
+    </UnitTest>
+    <UnitTest name="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;-1&quot;)" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="192f0265-2878-80a0-b42b-52aa757d3490">
+      <Execution id="e1dc809d-b003-402f-bb66-95991052ceca" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="SupplierPreviewRejectsUnsupportedQuantityAsRowError" />
+    </UnitTest>
+    <UnitTest name="SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity (&quot;1.234&quot;)" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="15c73048-e96d-8fd8-b07c-5d0e3acac768">
+      <Execution id="edf450ec-b3a2-49c1-be48-b09090839800" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity" />
+    </UnitTest>
+    <UnitTest name="SupplierPreviewRejectsUnsupportedQuantityAsRowError (&quot;NaN&quot;)" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="18170e57-7ced-8105-8568-70f02c456dea">
+      <Execution id="2fb7e190-ddc3-42b9-a436-e1c27a817851" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="SupplierPreviewRejectsUnsupportedQuantityAsRowError" />
+    </UnitTest>
+    <UnitTest name="CatalogMapperAndRepositoryPreserveFractionalStock" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="10fa7df2-bd68-8877-bdea-62fce1eb0f32">
+      <Execution id="0cc68efc-8353-488d-858e-7a77a7b0ebff" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="CatalogMapperAndRepositoryPreserveFractionalStock" />
+    </UnitTest>
+    <UnitTest name="SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity (&quot;&quot;)" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="11234eca-3b50-83db-87dc-59cd5d994268">
+      <Execution id="d4f023ef-c239-4fc7-a9b0-b88ee4f19668" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.FractionalStockCloseoutTests" name="SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity" />
+    </UnitTest>
+    <UnitTest name="OlderDeltaCannotResurrectProductAfterTombstone" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="16ffde5d-dc00-8b34-a7b0-c3c5994c3858">
+      <Execution id="8c9e842e-6a86-4b6e-95b7-ff765e7835a1" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.CatalogProductRevisionCloseoutTests" name="OlderDeltaCannotResurrectProductAfterTombstone" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="11234eca-3b50-83db-87dc-59cd5d994268" executionId="d4f023ef-c239-4fc7-a9b0-b88ee4f19668" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1b356fc0-3da6-8070-8041-e48b387155d6" executionId="f54fc58c-388d-4c3d-aa02-9b436cfa9dce" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="192f0265-2878-80a0-b42b-52aa757d3490" executionId="e1dc809d-b003-402f-bb66-95991052ceca" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16ffde5d-dc00-8b34-a7b0-c3c5994c3858" executionId="8c9e842e-6a86-4b6e-95b7-ff765e7835a1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="15c73048-e96d-8fd8-b07c-5d0e3acac768" executionId="edf450ec-b3a2-49c1-be48-b09090839800" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1e3b2474-05c5-8073-942c-722e442775da" executionId="10eedafd-0937-4ca7-b2fc-fcbd91f34f80" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="12eebe59-b7eb-87a8-8282-2d13f9e54c54" executionId="149af2a1-18f2-479e-913a-4331271afe14" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="13f6e000-c797-80ea-a5b4-57619d592a84" executionId="c387ea4b-7f83-4d32-bbe9-da84abcb3522" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="17bc4dce-f4db-82f3-9209-15a22ef0fcdc" executionId="011802fb-f2ee-4752-8bb9-7cd45b215109" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="10fa7df2-bd68-8877-bdea-62fce1eb0f32" executionId="0cc68efc-8353-488d-858e-7a77a7b0ebff" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1850f8c0-efae-8fc8-a5cd-c4a0c77afbe0" executionId="68461766-f965-47b6-a65b-cc4d8b890b3f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="18170e57-7ced-8105-8568-70f02c456dea" executionId="2fb7e190-ddc3-42b9-a436-e1c27a817851" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16cf2707-0500-87b4-8811-8fe6513dfc0e" executionId="38e345ee-311b-422d-824d-5c2320163a8c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1ab9a2d8-e815-827e-b4a9-9154cc6fe763" executionId="f9589d4f-4ae4-40f3-a348-1b52a5135d7f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="14" executed="14" passed="7" failed="7" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>

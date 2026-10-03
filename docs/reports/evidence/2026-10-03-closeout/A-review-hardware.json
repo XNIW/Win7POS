@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "package": "A",
+  "reviewer": "hardware",
+  "reviewKind": "independent read-only working-tree delta review",
+  "baseSha": "42afc8817422a5d1c3ed06e0ca50f7fb44a3207b",
+  "status": "PASS_NO_REMAINING_FINDINGS_IN_REVIEWED_SCOPE",
+  "sourceSnapshot": [
+    {
+      "path": "src/Win7POS.Core/Models/StockQuantityPolicy.cs",
+      "sha256": "41f3baae0ab11aa3af4ee242ebe7ca667ba1c6d6f04f12d704e31d6df512ee15"
+    },
+    {
+      "path": "src/Win7POS.Core/Models/ProductDetailsRow.cs",
+      "sha256": "1d027ac7132bb912db3b8844d7f64abaed99141ab195cda88ae049b9fd435ee9"
+    },
+    {
+      "path": "src/Win7POS.Core/Import/CsvImportParser.cs",
+      "sha256": "ca48b4dc72365784643003e173b27a8e077a528c4977d276172378ac78973c7d"
+    },
+    {
+      "path": "src/Win7POS.Core/Import/ImportRow.cs",
+      "sha256": "a7ba6d2beef5a02d2ea4e02b0cba5817a8d95cec3b4d94dc2e8130a70b4804af"
+    },
+    {
+      "path": "src/Win7POS.Core/Import/SupplierExcelImportModels.cs",
+      "sha256": "ec6150f8bfcd599cca16d1d1e5f4ebb7036d68b3698faef92bfaa9a9a632d0a4"
+    },
+    {
+      "path": "src/Win7POS.Core/Import/SupplierImportAnalyzer.cs",
+      "sha256": "955322f5e00db0a1b345fd368ff828e1b592c5511cf8480b09f8e74d67e048a5"
+    },
+    {
+      "path": "src/Win7POS.Core/ImportDb/ProductDbWorkbook.cs",
+      "sha256": "e51f151bf5b85936466f8b3db2b8c0adf5cb482e46344e4d6d161e8f5882c86a"
+    },
+    {
+      "path": "src/Win7POS.Data/Adapters/ProductUpserterAdapter.cs",
+      "sha256": "77a2c01b429cad25e970b72523e31e3c0373b951e8e40548a20ec36d6798f419"
+    },
+    {
+      "path": "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs",
+      "sha256": "c5b71759946e5cf66acec38835dd73e6399ccf99d76894e75b23c83ec0206fe2"
+    },
+    {
+      "path": "src/Win7POS.Data/ImportDb/ProductDbExcelReader.cs",
+      "sha256": "4b1fd4b34cc8287f97fd63a3461774b36561ab75e10a67bbdfa7ca5184396d8b"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/LocalArticleMutationWriteModels.cs",
+      "sha256": "7b52db3210e59fa38a39f622b7fbfd1ab0673653607f0b09f976a01b3edc08f4"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/LocalArticleMutationWriter.cs",
+      "sha256": "b3e44b88816ea5f24994b73e75bc605876aab9b60544b8ca5365a7ce0dcb266d"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/LocalProductWriter.cs",
+      "sha256": "9c5abd7e621b2197edf1b8d9f5e58053bc571fb0a62437b5b1aae930699625c4"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/ProductRepository.cs",
+      "sha256": "216079da8cb5b86e4798dc7ce35a28320bcd0e7656b969eca29e803c72bd789d"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/RemoteCatalogBatchMapper.cs",
+      "sha256": "a64a739c1e1bd2bfc2d068d1e7567b696bc0f61682fca81f611a42ee6caf7ec3"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
+      "sha256": "d99f0636194c8ba8f92deca854e6118bfcee5554beaea274f22d7f5f185d319d"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/RemoteCatalogProductWriter.cs",
+      "sha256": "acd73ce129b06d71a2738b66749e6a4811f252d66899932fa0ca157227c33627"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Products/ProductEditViewModel.cs",
+      "sha256": "96a337534a9092a66d894339f2de706ecba6609cd87c1ea3c548a3df71659015"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Products/ProductsWorkflowService.cs",
+      "sha256": "4cc1c1350c6c48574d0ab4b098691d7a6da4d05e74bfbb97aef3ebcbdd04acd0"
+    },
+    {
+      "path": "tests/Win7POS.Core.Tests/Data/CatalogProductRevisionCloseoutTests.cs",
+      "sha256": "2cc01849218d2e2b6e4a613eeb6a4b33d41a45d5ebb7aa36bf6f7a062a800fbc"
+    },
+    {
+      "path": "tests/Win7POS.Core.Tests/Data/FractionalStockCloseoutTests.cs",
+      "sha256": "8ae880c254d2dd487f6c707f9dfd8dd46933b9e143804eefa7320c3ea38ca147"
+    },
+    {
+      "path": "tests/Win7POS.Core.Tests/Data/CsvFractionalStockCloseoutTests.cs",
+      "sha256": "7c552aaaa4b910576cccc14295b144c286186f47b5ec80eef0d9c05c9913be47"
+    },
+    {
+      "path": "tests/Win7POS.Core.Tests/Import/CsvStockQuantityCloseoutTests.cs",
+      "sha256": "719a371227bd0582fcb78e34a13177df706065610740d826d1460e2c2764ed2d"
+    },
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/ArticleMutationLoopbackHarness.cs",
+      "sha256": "f9f3176f1d1ea59bfc1b85f5ad3a052a1caf4e6c126d94253f97c5bee34cdcb6"
+    },
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/StagingArticleMutationAcceptance.cs",
+      "sha256": "8f6e482337af28313140a15785c34354d10adabceca673f87b786372fc9bfd29"
+    },
+    {
+      "path": "tests/Win7POS.Core.Tests/Data/CsvAbsentStockConcurrencyTests.cs",
+      "sha256": "58ab9ead117dacd3793444ee39495d716de5356f0ba5221a341e3009e2de1e6e"
+    },
+    {
+      "path": "src/Win7POS.Cli/Program.cs",
+      "sha256": "eddff7407c8a3bf874376bd56c8f33045d327f267e766cabe0917c558611bee7"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Localization/PosLocalization.StockQuantity.cs",
+      "sha256": "0699112bf736fc5d9e4b8f3108a844aec0911ad2d0b638cfe7b884bc444c94f0"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
+      "sha256": "275a538afd22ca54de1ce4fe0ec320ab19b6052a54cd2d6ba8e2b63029caed48"
+    },
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/FunctionalCompletionSmoke.cs",
+      "sha256": "ce820209e2f83ea5114c7207345922a6627b25947b065f66b4801b9e53fb6e7f"
+    }
+  ],
+  "scope": [
+    "Product revision fence against inactive identities, tombstones and same-page accepted generations; full-refresh stale row skip accounting.",
+    "Stock decimal propagation through catalog, business/shadow reads and writes, local mutation intent/outbox, supplier imports, ProductDB/CSV adapters and editor validation.",
+    "CLI and shared PosWorkflowService/harness files: stock type adapters and STOCKUI regression only, not their entire unrelated delta."
+  ],
+  "resolvedFinding": {
+    "problem": "Repository CSV adapter captured omitted stock before obtaining CatalogMutationGate and could overwrite a newer committed stock during a rename.",
+    "correction": "The adapter passes preserveExistingStock; LocalProductWriter reads the current quantity after acquiring the gate, inside the same rename transaction. Remote origins reject the local preservation flag.",
+    "regression": "CsvAbsentStockConcurrencyTests controls the gate, queues a rename, commits 3.456, releases the gate and verifies rename and quantity after reopen without sleeps."
+  },
+  "reviewedBoundaries": [
+    "Timestamp product revision comparison does not order opaque catalog watermarks; legacy unversioned rows remain compatible.",
+    "Full-refresh stale products are skipped before business, shadow, reference and image changes; persisted inactive identities are included in the page fence.",
+    "Stock retains decimal fractions. CLP retail/purchase fields and sale-line quantities retain their existing integer types.",
+    "Local stock validates nonnegative quantities up to Int32.MaxValue at three fractional digits; import applies its narrower 999999999 backend limit; remote reads preserve additional fractional digits.",
+    "Invalid supplied import quantities are row errors; omitted quantities preserve existing stock and new products retain zero default."
+  ],
+  "limits": [
+    "No build or tests executed by this reviewer; parent-owned runtime evidence qualifies these changes separately.",
+    "This manifest hashes working-tree file bytes. Commit-bound verification must recheck these hashes and the final package diff."
+  ]
+}

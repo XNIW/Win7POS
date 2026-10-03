@@ -268,7 +268,7 @@ namespace Win7POS.Core.Import
         public string ItemNumber { get; set; } = string.Empty;
         public string SecondProductName { get; set; } = string.Empty;
         public int PurchasePrice { get; set; }
-        public int Quantity { get; set; }
+        public decimal Quantity { get; set; }
         public int? SupplierId { get; set; }
         public string Supplier { get; set; } = string.Empty;
         public int? CategoryId { get; set; }

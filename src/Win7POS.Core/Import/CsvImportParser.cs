@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Win7POS.Core.Models;
 
 namespace Win7POS.Core.Import
 {
@@ -72,14 +73,21 @@ namespace Win7POS.Core.Import
                 }
 
                 int? cost = null;
-                int? stock = null;
+                decimal? stock = null;
                 var supplierName = cols.Length > 8 ? cols[8].Trim() : string.Empty;
                 var categoryName = cols.Length > 9 ? cols[9].Trim() : string.Empty;
                 if (cols.Length >= 6 && int.TryParse(cols[5].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var c)) cost = c;
                 else if (cols.Length >= 4 && int.TryParse(cols[3].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var c3)) cost = c3;
-                if (cols.Length > 10 && int.TryParse(cols[10].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var s)) stock = s;
-                else if (cols.Length == 5 && int.TryParse(cols[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var s4)) stock = s4; // legacy: 5th = stock
-                else if (cols.Length >= 4 && cols.Length < 6 && int.TryParse(cols[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var s4b)) stock = s4b;
+                var stockText = cols.Length > 10 ? cols[10].Trim() : cols.Length == 5 ? cols[4].Trim() : string.Empty;
+                if (stockText.Length != 0)
+                {
+                    if (!StockQuantityPolicy.TryParse(stockText, out var quantity))
+                    {
+                        result.Errors.Add(new ImportParseError { LineNumber = lineNumber, Message = "InvalidStock: non-negative quantity with at most three decimal places required." });
+                        continue;
+                    }
+                    stock = quantity;
+                }
 
                 result.Rows.Add(new ImportRow
                 {

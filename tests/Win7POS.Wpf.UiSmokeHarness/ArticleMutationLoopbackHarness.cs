@@ -600,7 +600,7 @@ WHERE state = 'completed'
             string name,
             int retail,
             int purchase,
-            int stock,
+            decimal stock,
             string itemNumber)
         {
             viewModel.Barcode = barcode;
