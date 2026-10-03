@@ -76,8 +76,16 @@ namespace Win7POS.Wpf.Pos
             return false;
         }
 
+        private void BarcodeBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            // Keep the existing public KeyDown surface. Real keys share their handled
+            // state with PreviewKeyDown, so a consumed preview cannot submit twice.
+            BarcodeBox_PreviewKeyDown(sender, e);
+        }
+
         private void BarcodeBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Handled) return;
             if (e.Key == Key.Escape || (e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Escape)) _barcodeComposing = false;
             if (_barcodeComposing || e.Key == Key.ImeProcessed || e.IsRepeat || Keyboard.Modifiers != ModifierKeys.None) return;
             var key = e.Key == Key.System ? e.SystemKey : e.Key;

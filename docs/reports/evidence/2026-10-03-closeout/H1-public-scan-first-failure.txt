@@ -1,0 +1,8 @@
+public scan 1
+System.InvalidOperationException: public scanner command lost input
+   at Win7POS.Wpf.UiSmokeHarness.CartPerformanceRegressionSmoke.<WaitAsync>d__2.MoveNext() in C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\CartPerformanceRegressionSmoke.cs:line 57
+--- End of stack trace from previous location where exception was thrown ---
+   at System.Runtime.CompilerServices.TaskAwaiter.ThrowForNonSuccess(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.ValidateEnd(Task task)
+   at Win7POS.Wpf.UiSmokeHarness.CartPerformanceRegressionSmoke.<RunAsync>d__5.MoveNext() in C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\CartPerformanceRegressionSmoke.cs:line 108
