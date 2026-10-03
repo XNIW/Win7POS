@@ -38,6 +38,7 @@
                                 <TextBlock Text="{loc:Loc customerDisplay.settings.status}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
                             </DockPanel>
                             <TextBlock Text="{Binding TopologyText}" Style="{StaticResource MutedTextStyle}" Margin="0,7,0,0"/>
+                            <Button Style="{StaticResource OutlineButtonStyle}" Click="OnCopyDiagnosticsClick" Margin="0,6,0,0" Content="{loc:Loc customerDisplay.polish.copyDiagnostics}"/>
                             <ItemsControl ItemsSource="{Binding Monitors}" Margin="0,6,0,0">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate><TextBlock Text="{Binding DisplayName}" Margin="0,2" TextWrapping="Wrap"/></DataTemplate>
@@ -79,7 +80,11 @@
                                 <Button Style="{StaticResource OutlineButtonStyle}" Click="OnPreviewClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.preview}"/>
                                 <Button Style="{StaticResource OutlineButtonStyle}" Click="OnOpenClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.open}"/>
                                 <Button Style="{StaticResource OutlineButtonStyle}" Click="OnCloseDisplayClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.close}"/>
+                                <Button Style="{StaticResource OutlineButtonStyle}" Click="OnTestPatternClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.polish.testPattern}"/>
+                                <Button Style="{StaticResource OutlineButtonStyle}" Click="OnStopPreviewClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.polish.stopPreview}"/>
                             </UniformGrid>
+                            <TextBlock Text="{loc:Loc customerDisplay.polish.duration}" Style="{StaticResource FormLabelTextStyle}" Margin="0,8,0,4"/>
+                            <TextBox Text="{Binding TestPatternDurationText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MaxLength="2"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -90,13 +95,16 @@
                             <TextBlock Text="{loc:Loc customerDisplay.settings.content}" FontSize="16" FontWeight="SemiBold"/>
                             <UniformGrid Columns="2" Margin="0,9,0,0">
                                 <CheckBox Content="{loc:Loc customerDisplay.settings.showShop}" IsChecked="{Binding ShowShopName}" Margin="0,3"/>
-                                <CheckBox Content="{loc:Loc customerDisplay.settings.showBarcode}" IsChecked="{Binding ShowBarcode}" Margin="0,3"/>
                                 <CheckBox Content="{loc:Loc customerDisplay.settings.showUnit}" IsChecked="{Binding ShowUnitPrice}" Margin="0,3"/>
                                 <CheckBox Content="{loc:Loc customerDisplay.settings.showLine}" IsChecked="{Binding ShowLineTotal}" Margin="0,3"/>
                                 <CheckBox Content="{loc:Loc customerDisplay.settings.showSubtotal}" IsChecked="{Binding ShowSubtotal}" Margin="0,3"/>
                                 <CheckBox Content="{loc:Loc customerDisplay.settings.showDiscount}" IsChecked="{Binding ShowDiscount}" Margin="0,3"/>
                                 <CheckBox Content="{loc:Loc customerDisplay.settings.showCount}" IsChecked="{Binding ShowItemCount}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.polish.showPaid}" IsChecked="{Binding ShowPaidAmount}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.polish.showChange}" IsChecked="{Binding ShowChangeAmount}" Margin="0,3"/>
                             </UniformGrid>
+                            <TextBlock Text="{loc:Loc customerDisplay.polish.barcodeMode}" Style="{StaticResource FormLabelTextStyle}" Margin="0,8,0,4"/>
+                            <ComboBox ItemsSource="{Binding BarcodeModes}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding BarcodeMode}"/>
                         </StackPanel>
                     </Border>
 
@@ -111,6 +119,16 @@
                                 <CheckBox Content="{loc:Loc customerDisplay.settings.followMinimize}" IsChecked="{Binding FollowMinimize}" Margin="0,3"/>
                                 <CheckBox Content="{loc:Loc customerDisplay.settings.reopen}" IsChecked="{Binding ReopenOnReturn}" Margin="0,3"/>
                             </UniformGrid>
+                            <TextBlock Text="{loc:Loc customerDisplay.polish.logo}" Style="{StaticResource FormLabelTextStyle}" Margin="0,10,0,4"/>
+                            <TextBlock Text="{Binding LogoFile}" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis"/>
+                            <UniformGrid Columns="2" Margin="-4,4,-4,4">
+                                <Button Margin="4" Style="{StaticResource OutlineButtonStyle}" IsEnabled="{Binding CanImportLogo}" Click="OnImportLogoClick" Content="{loc:Loc customerDisplay.polish.importLogo}"/>
+                                <Button Margin="4" Style="{StaticResource OutlineButtonStyle}" IsEnabled="{Binding CanSave}" Click="OnRemoveLogoClick" Content="{loc:Loc customerDisplay.polish.removeLogo}"/>
+                            </UniformGrid>
+                            <ComboBox ItemsSource="{Binding LogoPositions}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding LogoPosition}"/>
+                            <TextBlock Text="{loc:Loc customerDisplay.polish.idleMode}" Style="{StaticResource FormLabelTextStyle}" Margin="0,10,0,4"/>
+                            <ComboBox ItemsSource="{Binding IdleModes}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding IdleMode}"/>
+                            <TextBox Text="{Binding IdleMessage, UpdateSourceTrigger=PropertyChanged}" MaxLength="120" Style="{StaticResource ModernTextBoxStyle}" Margin="0,6,0,0"/>
                         </StackPanel>
                     </Border>
 
@@ -142,7 +160,7 @@
         </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button Style="{StaticResource DialogActionButtonStyle}" Click="OnSaveClick" Margin="0,0,8,0" Content="{loc:Loc common.save}"/>
+            <Button Style="{StaticResource DialogActionButtonStyle}" Click="OnSaveClick" IsEnabled="{Binding CanSave}" Margin="0,0,8,0" Content="{loc:Loc common.save}"/>
             <Button Style="{StaticResource DialogCancelButtonStyle}" IsCancel="True" Click="OnCancelClick" Content="{loc:Loc common.cancel}"/>
         </StackPanel>
     </Grid>
