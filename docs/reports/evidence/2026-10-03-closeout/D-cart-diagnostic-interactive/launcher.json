@@ -1,0 +1,12 @@
+{
+  "mode": "Diagnostic",
+  "stage": "Integrated",
+  "startedUtc": "2026-10-03T18:46:46.7630905+00:00",
+  "launcherProcessId": 22144,
+  "sessionId": 1,
+  "outputDirectory": "C:\\Dev\\_codex-evidence\\win7pos-closeout-20261003\\cart-diagnostic-interactive",
+  "status": "FAILED",
+  "failure": "Performance harness exit=2; inspect preserved harness-error.txt.",
+  "completedUtc": "2026-10-03T18:46:54.8125404+00:00",
+  "exitCode": 1
+}

@@ -1,0 +1,1 @@
+PASS product_image_profile_dpapi_isolated=true shared_unchanged=true plaintext_secrets=false offline_authority_cloned=false supervisor_profile_injected=true cleanup_exact=true staging_diagnostic_redacted=true net48_request_serialization=true net48_json_stringify_response=true net48_storage_error_mapping=true

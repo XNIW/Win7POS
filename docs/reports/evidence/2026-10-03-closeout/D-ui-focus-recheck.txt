@@ -1,0 +1,2 @@
+﻿FAIL
+FAIL PERF_visual_lifetime_and_public_commands scanner focus missing; hostActive=False; hostVisible=True; viewLoaded=True

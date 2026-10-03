@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "package": "A",
+  "reviewer": "hardware",
+  "reviewKind": "commit-bound staging verification following independent source review",
+  "status": "PASS_NO_REMAINING_FINDINGS_IN_REVIEWED_DELTA",
+  "reviewedBase": "7158e3a92351ff76809ef60f024417f206e97007",
+  "reviewedCommit": "441bd0cbdf6473c6cadc03612ad1815625f0638b",
+  "reviewedTree": "94fc10d1acd41cbf7eaa655bcbf811e106bd297c",
+  "canonicalDiff": {
+    "command": "git diff --binary --no-ext-diff --no-color 7158e3a92351ff76809ef60f024417f206e97007 441bd0cbdf6473c6cadc03612ad1815625f0638b",
+    "sha256": "ec352a0099f390a6dd3d44d89cf5dc57aae8f0791f3e2de0c3b8f5ee88cb6047"
+  },
+  "codeFiles": 33,
+  "evidenceFiles": 12,
+  "priorReview": "docs/reports/evidence/2026-10-03-closeout/A-review-hardware.json",
+  "commitBindingNote": "The prior receipt records a mixed working-tree snapshot. This acknowledgment binds the reviewed A-only delta to its immutable commit and tree without rewriting that historical receipt.",
+  "verification": [
+    "The 28 A source/test files outside shared partial-stage paths are unchanged between A commit and reviewed C head 9ca46dc.",
+    "The five shared partial-stage paths contain only stock projection decimal types, stock localization registration, the fractional editor regression and its runner hook.",
+    "The omitted-stock preservation flag, inside-transaction read after CatalogMutationGate, remote-origin guard and deterministic gate-controlled regression are present in committed A.",
+    "The immutable A diff has 33 code/test/runner files and 12 A-only evidence files; no scanner, hardware test authorization, profiles or customer-display implementation delta is included.",
+    "git diff --check for the immutable reviewed delta returned exit code zero."
+  ],
+  "sharedFileBindings": [
+    {
+      "path": "scripts/run-functional-completion-smoke.ps1",
+      "gitBlob": "3def8ef010b6ccfae5eca925fab4bb1f6265ec50"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Localization/PosLocalization.cs",
+      "gitBlob": "6a2c53c0f505b076b96301f202acc9338c1ec44d"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosViewModel.cs",
+      "gitBlob": "a5475566a890612114ee14339b348b0bc57f45c2"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
+      "gitBlob": "93957cacb085567d1bf1c1af6931465750d96f41"
+    },
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/FunctionalCompletionSmoke.cs",
+      "gitBlob": "42b4fcdc9189ec040b4b3e2b6740f8142f6c45ca"
+    }
+  ],
+  "limits": [
+    "Verification followed the already completed independent A source review; no new build/test was executed, and parent validation remains separate.",
+    "No source or existing committed receipt was modified."
+  ]
+}

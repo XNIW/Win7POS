@@ -1191,3 +1191,25 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   invariato: 10/25 PASS storici, 15 open/partial, 0 nuove chiusure.
 - Classificazione: `BLOCKED_EXTERNAL`. Report:
   `docs/QA/WIN7POS_PHYSICAL_WIN7_HARDWARE_ACCEPTANCE_2026-08-09.md`.
+
+## 2026-10-03 - Functional, sync and operations closeout
+
+- Corretti ordinamento revisioni/tombstone, stock frazionario e preservazione
+  stock CSV nel gate/transaction; completati Hardware Center, profili/default/
+  audit e display, riusando W7-F07 e OPERATIONS-1.
+- PR #114/#115/#116 integrate dopo review distinta e CI/Security dell'HEAD
+  esatto. Core/Data locale 1201/1201, zero skip; build net48/x86 senza warning/
+  errori; regressioni WPF hosted PASS. Conservate prove causali FAIL.
+  La successiva CI main37145182291 fallisce PERF Background-progress dopo
+  dodici scenari PASS: prova distinta, da non cancellare col PASS della PR.
+  Il runner ora stampa i file fase/stack sintetici già prodotti dal harness
+  prima dello stesso throw: nessun cambio a timeout, asserzioni o comportamento.
+- Catalogo sintetico e load integrity separati dal live. Diagnostic Asus
+  ENVIRONMENT_VALID=false/STABILITY_PASS=false; Asus disponibile secondo
+  l'utente, Win7/share TEST assenti. Il launcher Interactive/Limited risolve
+  il desktop ma il probe visuale scan1 fallisce; conservato il callback WPF
+  TextEditor 528.877ms osservato, senza causa sottostante inventata.
+  Nessuna nuova deferizione o accettazione hardware/produzione.
+- Package D, SHA finale, readiness e ReleasePack verificato sono tracciati da
+  `reports/2026-10-03_FUNCTIONAL_SYNC_OPERATIONS_CLOSEOUT.md` e dal receipt
+  machine-readable post-merge indicato nel report.

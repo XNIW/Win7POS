@@ -7,6 +7,16 @@ does not change `CatalogSyncPolicy`, `CatalogSyncCoordinator`, `MainWindow`
 scheduling, sales/catalog-import services, repository paging, HTTP contracts,
 payload/hash, idempotency or reversal economics.
 
+The 2026-10-03 closeout adds causal revision fences and fractional-stock
+preservation to the existing catalog paths; it does not replace the supervisor
+or change polling. Its current source, TEST readiness and actual acceptance
+are recorded in `../reports/2026-10-03_FUNCTIONAL_SYNC_OPERATIONS_CLOSEOUT.md`.
+Known product revisions fence stale updates/tombstones, including duplicates
+within one page; rows without a known revision retain legacy compatibility.
+Fractional stock survives SQLite, DTOs and import transport, and absent CSV
+stock is preserved inside the catalog mutation transaction. Sale quantities
+and CLP price semantics remain unchanged.
+
 Every future contract field is optional. If the current Admin server omits it,
 Win7POS must preserve the current 24–36 second catalog cadence, five-second
 partial-resume behavior, trusted-session validation, incremental-first policy,

@@ -41,6 +41,13 @@ if (-not $process.WaitForExit(60000)) {
 $result = Join-Path $dataDir 'functional-completion.txt'
 if (Test-Path -LiteralPath $result) { Get-Content -LiteralPath $result }
 if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $result)) {
+    foreach ($diagnosticName in @('cart-regression-error.txt','harness-error.txt')) {
+        $diagnosticPath = Join-Path $dataDir $diagnosticName
+        if (Test-Path -LiteralPath $diagnosticPath -PathType Leaf) {
+            Write-Host "FUNCTIONAL_FAILURE_DIAGNOSTIC=$diagnosticName"
+            Get-Content -LiteralPath $diagnosticPath
+        }
+    }
     throw "Functional completion smoke failed (exit=$($process.ExitCode)). Evidence: $dataDir"
 }
 if (-not ([IO.File]::ReadAllText($result).StartsWith('PASS'))) { throw "Functional completion smoke did not pass: $result" }

@@ -1,0 +1,31 @@
+  RID is: win-x86
+  Platform is: AnyCPU
+  RID is: win-x86
+  Platform is: AnyCPU
+  RID is: win-x86
+  Platform is: AnyCPU
+  RID is: win-x86
+  Platform is: AnyCPU
+  Win7POS.Core -> C:\Dev\Win7POS\src\Win7POS.Core\bin\Release\netstandard2.0\Win7POS.Core.dll
+  Win7POS.Data -> C:\Dev\Win7POS\src\Win7POS.Data\bin\Release\netstandard2.0\Win7POS.Data.dll
+  Win7POS.CatalogPerformance -> C:\Dev\Win7POS\tests\Win7POS.CatalogPerformance\bin\Release\net48\Win7POS.CatalogPerformance.exe
+  Win7POS.CatalogPerformance -> C:\Dev\Win7POS\tests\Win7POS.CatalogPerformance\bin\Release\net10.0\Win7POS.CatalogPerformance.dll
+  Win7POS.Core.Tests -> C:\Dev\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll
+  Win7POS.Cli -> C:\Dev\Win7POS\src\Win7POS.Cli\bin\Release\net10.0\Win7POS.Cli.dll
+  Win7POS.Wpf -> C:\Dev\Win7POS\src\Win7POS.Wpf\bin\Release\net48\Win7POS.Wpf.exe
+C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\ArticleMutationLoopbackHarness.cs(418,25): error CS1503: Argument 6: cannot convert from 'decimal' to 'int' [C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj]
+C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\ArticleMutationLoopbackHarness.cs(481,25): error CS1503: Argument 6: cannot convert from 'decimal' to 'int' [C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj]
+C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\StagingArticleMutationAcceptance.cs(657,21): error CS1503: Argument 6: cannot convert from 'decimal' to 'int' [C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj]
+C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\StagingArticleMutationAcceptance.cs(764,21): error CS1503: Argument 6: cannot convert from 'decimal' to 'int' [C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj]
+  Win7POS.Wpf.Imaging.Tests -> C:\Dev\Win7POS\tests\Win7POS.Wpf.Imaging.Tests\bin\Release\net48\win-x86\Win7POS.Wpf.Imaging.Tests.dll
+
+Build FAILED.
+
+C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\ArticleMutationLoopbackHarness.cs(418,25): error CS1503: Argument 6: cannot convert from 'decimal' to 'int' [C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj]
+C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\ArticleMutationLoopbackHarness.cs(481,25): error CS1503: Argument 6: cannot convert from 'decimal' to 'int' [C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj]
+C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\StagingArticleMutationAcceptance.cs(657,21): error CS1503: Argument 6: cannot convert from 'decimal' to 'int' [C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj]
+C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\StagingArticleMutationAcceptance.cs(764,21): error CS1503: Argument 6: cannot convert from 'decimal' to 'int' [C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj]
+    0 Warning(s)
+    4 Error(s)
+
+Time Elapsed 00:00:04.52

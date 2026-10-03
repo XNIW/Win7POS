@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "authorization": "USER_CONFIRMED_ASUS_DESKTOP_AVAILABLE_WIN7_SMB_UNAVAILABLE",
+  "launcher": "WINDOWS_TASK_SCHEDULER_INTERACTIVE_LIMITED_EXISTING_USER",
+  "passwordProvided": false,
+  "elevated": false,
+  "recurringTriggers": false,
+  "observerBypassed": false,
+  "budgetOrAssertionChanged": false,
+  "tasks": [
+    "Win7POS-Closeout-Interactive-Diagnostic-20261003",
+    "Win7POS-Closeout-Interactive-Capture-20261003",
+    "Win7POS-Closeout-Interactive-Trace-20261003"
+  ],
+  "ownedTaskCleanup": "UNREGISTERED_AFTER_TERMINAL",
+  "sourceCommit": "8a25bd217362b3143ff1045b110b3fc9c9c6f7fc",
+  "sourceTreesUnchangedFrom508ba21": true,
+  "firstAttempt": "DESKTOP_MATCHES_1_FOREGROUND_1_FIRST_SCAN_APPLIED_THEN_VISUAL_PROBE_TIMEOUT",
+  "capture": "SAME_TIMEOUT_TEXTEDITOR_ONTEXTVIEWUPDATEDWORKER_528_877_MS_OBSERVED_UNDERLYING_CAUSE_NOT_INFERRED",
+  "qualification": "NOT_PASSED",
+  "production": false,
+  "trace": {
+    "failure": "SAME_FIRST_SCAN_VISUAL_PROBE_TIMEOUT",
+    "callbackMilliseconds": 527.258,
+    "appDomainCpuMilliseconds": 109.375,
+    "appDomainAllocatedBytes": 1787176,
+    "workersIncludedInCpuAndAllocation": true,
+    "observerLockMillisecondsMaximumInDisplayedWatchdogs": 0.01,
+    "underlyingCause": "NOT_DEMONSTRATED"
+  }
+}

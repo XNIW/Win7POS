@@ -1,0 +1,39 @@
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=DuringSourceSnapshotIdentityGuard result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterSourceSnapshot result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterCandidateMigration result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterCandidateIntegrityForeignKey result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterPreliminaryShopValidation result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=WhileFenceWait result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterFencedLiveRevalidation result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterFencedCandidateRevalidation result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=DuringVerifiedPreBackup result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterPreBackupBeforePrepared result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterPreparedBeforeSwap result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=ImmediatelyAfterReplace result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=DuringPostMigration result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=DuringPostIntegrity result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=DuringPostForeignKey result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=BeforeCommitted result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=AfterCommittedBeforeCleanup result=pass terminal=new_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=restore point=PartialCleanupFailure result=pass terminal=new_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=before result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=after_snapshot result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=after_candidate_validation result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=fence_wait result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=after_prebackup result=pass terminal=old_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=after_prepared result=pass terminal=new_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=after_swap result=pass terminal=new_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=cancellation_case operation=restore point=during_post_swap result=pass terminal=new_valid retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=recovery_case point=AfterPreparedBeforeSwap result=pass terminal=old_valid double_recovery=pass residue=0
+BACKUP_RESTORE_RESULT mode=recovery_case point=ImmediatelyAfterReplace result=pass terminal=old_valid double_recovery=pass residue=0
+BACKUP_RESTORE_RESULT mode=recovery_case point=AfterCommittedBeforeCleanup result=pass terminal=new_valid double_recovery=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=backup point=BeforeSourceOpen result=pass final_published=false retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=backup point=AfterTemporarySnapshotCreation result=pass final_published=false retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=backup point=AfterSnapshotBeforeValidation result=pass final_published=false retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=backup point=AfterIntegrityForeignKey result=pass final_published=false retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=backup point=BeforePublish result=pass final_published=false retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=backup point=PublishError result=pass final_published=false retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure_case operation=backup point=SourceRemovedOrLocked result=pass final_published=false retry=pass residue=0
+BACKUP_RESTORE_RESULT mode=failure implementation=wal_safe_sealed_candidate_v2 result=pass restore_fault_points=18 cancellation_points=9 crash_recovery_points=3 backup_fault_points=10 startup_recovery_points=1 partial_backup_residue=0 restore_temp_residue=0 retry=pass double_recovery=pass old_or_new_valid=true
+BACKUP RESTORE FAILURE SELFTEST PASS
+TEST PASS

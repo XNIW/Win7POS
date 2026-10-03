@@ -1,0 +1,876 @@
+{
+  "schemaVersion": 1,
+  "qualifiedSoftwareMain": "8a25bd217362b3143ff1045b110b3fc9c9c6f7fc",
+  "capturedUtc": "2026-10-03T19:05:39.8375506+00:00",
+  "scope": "REDACTED_SYNTHETIC_LOCAL_AND_SOURCE_CI_EVIDENCE",
+  "hashScope": "CAPTURED_FILE_BYTES_AND_PORTABLE_GIT_BLOB_ID_TEXT_EOL_CAN_NORMALIZE_ON_CHECKOUT",
+  "files": [
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-commit-review.json",
+      "bytes": 2727,
+      "capturedFileSha256": "daaac042409fe1a35585d3de200751e2214f78cbd25f706b4c681b5c10581adb",
+      "gitTextNormalizedBlobSha1": "a1d9b1e58d848e8bf2cdd23b57188e298d8d0fa5"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-final-bound-green.trx",
+      "bytes": 67358,
+      "capturedFileSha256": "a22d922d077479391ef43a371233518ceaf5784f0b308f5892424235e1da5606",
+      "gitTextNormalizedBlobSha1": "5c1f356f3412f1b15d1af12afbb659ebdde1217d"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-followup-fixture-diagnostic.trx",
+      "bytes": 5608,
+      "capturedFileSha256": "862a0c17045e8c24526db294d34c62e0376beb471e5500c17aee7f3248a4ffb8",
+      "gitTextNormalizedBlobSha1": "2c96115960b6601f181ca6a87c17cf38fae79574"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-followup-green.trx",
+      "bytes": 185858,
+      "capturedFileSha256": "4c5f116b7c347d192f230ea1208c8ef90bb09f1c0cb5cce79eca6e8e0f5493f7",
+      "gitTextNormalizedBlobSha1": "d26340b722676d4461733625e7679c8b1452c3a8"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-followup-red.trx",
+      "bytes": 29003,
+      "capturedFileSha256": "195f6179a53ec0563922c786c0a80fbead124c551d0b1e3a8a44048d40a1fada",
+      "gitTextNormalizedBlobSha1": "25d274acb58775ab2f635b0997fed5b19819120e"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-followup-summary.json",
+      "bytes": 5901,
+      "capturedFileSha256": "923a2ffe853da96ef257547ebb0852d006803281bbdec6ff6e07097cfde7b509",
+      "gitTextNormalizedBlobSha1": "69396b837ec364d7427befb3dcca1ffd057786ba"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-fraction-before.trx",
+      "bytes": 5412,
+      "capturedFileSha256": "36b19ca1b7f126e1c10ce48b6d6b438eb0985704e23f506c7ba869e92484d232",
+      "gitTextNormalizedBlobSha1": "7e41ffbf3bb8eb699f51636bd82dd9445711d3c2"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-fraction-corrected.trx",
+      "bytes": 106427,
+      "capturedFileSha256": "d11d281c48ac466f7418a423fd9e737ee7ef982a958d0223236a4c2d07c25c37",
+      "gitTextNormalizedBlobSha1": "1f2e5bd4d3334e27e105e66d7bf6abaf88a2f0de"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-import-bound-green.trx",
+      "bytes": 82385,
+      "capturedFileSha256": "3118831a4f5f94a2354cba624bfe995f49bf23cf13c7f07343ffe4fcb311adfb",
+      "gitTextNormalizedBlobSha1": "29edc6f7e48a524d7c92c4bde4dabefcbb3ccce0"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-omitted-stock-concurrency-copy-failed.trx",
+      "bytes": 1504,
+      "capturedFileSha256": "54dc528507c5d04af6a539950942892b5e1e7884733181e24353ebb5ab468010",
+      "gitTextNormalizedBlobSha1": "5549ebc060bf7a52a7b0b64356f322496a2d36cc"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-omitted-stock-concurrency-green.trx",
+      "bytes": 5336,
+      "capturedFileSha256": "40a06a6f42f1d38a4c455c263a9c939a5f7a8f603397fb04b831c74ae0e13785",
+      "gitTextNormalizedBlobSha1": "25d9f2020003de39656d187f84f56f4544bcad54"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-omitted-stock-concurrency-red.trx",
+      "bytes": 3599,
+      "capturedFileSha256": "5fa3d44ba53dcc593df0ac6e271d30db258574f635fce433738f75183d0f826c",
+      "gitTextNormalizedBlobSha1": "285592bad6052a1efdac19cf335f6e8d0466fbe6"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-omitted-stock-summary.json",
+      "bytes": 2768,
+      "capturedFileSha256": "f66cd4b0d229545e516a5f2db7095be1f4b3c22098402045e7f6140ff92811df",
+      "gitTextNormalizedBlobSha1": "de3c3777a72c1a326513d965e90c0c2cc8bf1f29"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-product-revisions-before.trx",
+      "bytes": 5320,
+      "capturedFileSha256": "e776a00a8696259500001694251b6835d63f0b54ab130f344c30823fdab6e743",
+      "gitTextNormalizedBlobSha1": "6cfccda49af51dfb28d35c43ce2a5e98136e114d"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-reader-parity.trx",
+      "bytes": 13710,
+      "capturedFileSha256": "3effe216bf06cb0ad6c6ebcb1e98c8f2c748767e704a97470b17ed7bcee51396",
+      "gitTextNormalizedBlobSha1": "e88ccf024cb18e24586555fe84378315f9c996b1"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-review-hardware.json",
+      "bytes": 7450,
+      "capturedFileSha256": "87d6daefdcb96f8ae828f4e08aaf36f3240fe5b5d9b0a9bcbc4e9f394658c997",
+      "gitTextNormalizedBlobSha1": "c6d2c887f7b85308c37a78006231cbf4f8740d01"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/A-sync-revision-after.trx",
+      "bytes": 145634,
+      "capturedFileSha256": "ee04a6dec199727685248ddb9e4f35fff9c46223a629cc48f8ec142e6704ede5",
+      "gitTextNormalizedBlobSha1": "91be0843414008eda2e80502a8bd1dd4c6a9beaa"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/B-review-hardware.json",
+      "bytes": 2669,
+      "capturedFileSha256": "a77b5ab3f7b7ea097a425d295504201aa1122914f5884d7243d20f0ac359e2f6",
+      "gitTextNormalizedBlobSha1": "346933535fa820a232dce599955e2a544e79fa7a"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-history.json",
+      "bytes": 924,
+      "capturedFileSha256": "31b70a7ca750081e27e822a301bc989b20ddef5c455dd96175175a74e26dc53c",
+      "gitTextNormalizedBlobSha1": "f819a11846035f20909eb8152b0973a8020574ce"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup.json",
+      "bytes": 23515,
+      "capturedFileSha256": "4405cf4329632916391de26efcc4aba4fd7d07195a33077ba5f0cf590dedc364",
+      "gitTextNormalizedBlobSha1": "47af3e4246aa0df06d573b81419722084f8456d2"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/C-load-review-operations.json",
+      "bytes": 7722,
+      "capturedFileSha256": "6a9b4fbf6d6d55efeb1b8fc6bb71022a2cb93c881b70c772e5fae08fd1cefb16",
+      "gitTextNormalizedBlobSha1": "1ddfc710f9d548c6a362a6f06a5f520a1ec49a4b"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/C-logo-runtime-review.json",
+      "bytes": 2973,
+      "capturedFileSha256": "e74d75f40227db3d1bc6305b1b9d5c609940dd3454e2d629de8134d27180af14",
+      "gitTextNormalizedBlobSha1": "77520c9da4b8cc30aafba4cec25eb41118c44451"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/C-review-operations.json",
+      "bytes": 13025,
+      "capturedFileSha256": "cac00bf1e30aca28f728c6efbd8c02cf1656c317b2139bb14bffc1a495d5aac1",
+      "gitTextNormalizedBlobSha1": "3aaa936207ebe01bb2601c9caa70d57f8fe5d338"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/customer-display-polish-first-failure.txt",
+      "bytes": 48,
+      "capturedFileSha256": "8e3f3e38c63fb53dbb117d25d1d7d21a1a9da6098cadf8b214ce748f3741c36f",
+      "gitTextNormalizedBlobSha1": "091d2b5642d5f9853ae633a31f3a365da5e32e48"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-final-C-harness-x86.log",
+      "bytes": 579,
+      "capturedFileSha256": "5503b4f8e55e64757fecf595b8ea3888b1ff9e5e4913b975473c7c9854a21f89",
+      "gitTextNormalizedBlobSha1": "0c6a6ae14e680b8cc8baccc49e5ccfe952e91f15"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-final-C-solution.log",
+      "bytes": 1243,
+      "capturedFileSha256": "8b18c2ed668bdd2c60bb8b0a1b1978c4b53a81dbede26ef01c9088c00cf76fd1",
+      "gitTextNormalizedBlobSha1": "b9d6beded7d4c609e309d749bc4f4844b7285533"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-final-C-wpf-x86.log",
+      "bytes": 406,
+      "capturedFileSha256": "e019bab87a4067fff2c3cbed4c30ec184d26adc30da7441762af52490f9d1746",
+      "gitTextNormalizedBlobSha1": "43fe4e718fa9f5836170bdc5ca11eaead6cd7637"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-frozen-harness-x86.log",
+      "bytes": 579,
+      "capturedFileSha256": "1530e5f4b96954031580475881dfb514d7c595068831219392eb9949cdc3c569",
+      "gitTextNormalizedBlobSha1": "759d720f782af15267b1b19d8a2a38515a6c290c"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-frozen-solution.log",
+      "bytes": 1243,
+      "capturedFileSha256": "cd5bea08710b3275b1b576415b81f00d684f53a50e70f71f27c6dc40db3a0595",
+      "gitTextNormalizedBlobSha1": "978620ab12155d314071aa97f6409324586c56eb"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-frozen-wpf-x86.log",
+      "bytes": 406,
+      "capturedFileSha256": "c91a26af19afb72b66e579b6f95a934562beb7300f514ba370fae25faa872da7",
+      "gitTextNormalizedBlobSha1": "59ab933e4cf8a36c1158b7d6a78f715bf844a778"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-logo-corrected-harness.log",
+      "bytes": 579,
+      "capturedFileSha256": "6fae90c5c5dbdb414303efb63c7a3d8bb06b65dfae010d15827b2d6d4b51d508",
+      "gitTextNormalizedBlobSha1": "00fd616f4f77b81454ce664b63d95c77777f619b"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-routing-corrected-harness.log",
+      "bytes": 579,
+      "capturedFileSha256": "4faa0a6b8d590b78abcec8d5d419c177c3e8606804730a283b48f045cfad954b",
+      "gitTextNormalizedBlobSha1": "b4cf232d999c2b892b3f0ec26dedc8cee71ce6b2"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-solution-corrected.log",
+      "bytes": 3048,
+      "capturedFileSha256": "8afce684886f97e62f7f84d9b6edc63702e7f5cd715e3aeaf564ec3594c0c8aa",
+      "gitTextNormalizedBlobSha1": "d30136bc559b93e7afbebe255c026a0c07ff5080"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-solution-first.log",
+      "bytes": 2620,
+      "capturedFileSha256": "4d3c4b17480c1bca7dbc6544adfe960912cd4154a3ce89fb296fd3e3caf4ef15",
+      "gitTextNormalizedBlobSha1": "94fe38a1fda5d5fa386239f0fc704755c0fd934f"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-sync-backup-load-corrected.log",
+      "bytes": 579,
+      "capturedFileSha256": "f2131d2f1b0c67230d2739ca3cb99f24f64d6bf3abc92857455284917ee188a2",
+      "gitTextNormalizedBlobSha1": "0349816c410c84320951835d1601288f9ec65168"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-build-sync-backup-load.log",
+      "bytes": 579,
+      "capturedFileSha256": "6796455b1bd6c0480a898a47c3754acc5806101695c6ca13e68d6bdf5645e439",
+      "gitTextNormalizedBlobSha1": "2b62f16f61f6b164997344f693508a7c06efb686"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-C-main-CI-first-failure.json",
+      "bytes": 4501,
+      "capturedFileSha256": "aedb2f9f0b99137e6a3650afc105ed5b44deb98ca51352032fac7103df849b88",
+      "gitTextNormalizedBlobSha1": "08238e293d95d515458999a4de87604a5cdc044e"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-C-main-CI-first-failure.log",
+      "bytes": 10309,
+      "capturedFileSha256": "79da89e6cb2cec71b3a355449eabc9ed6eb4a0c88e81e64de6d74f4ce2360985",
+      "gitTextNormalizedBlobSha1": "f0a763d3820e230e3f39778ce616550a55862bdf"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-catalog-delta-net48-10.log",
+      "bytes": 873,
+      "capturedFileSha256": "53397fc85bc6f5062fadc9a2880261a12b45b230ee4bc201e6e712e1b501e426",
+      "gitTextNormalizedBlobSha1": "8236a9192b8c10aff40aad444bf392dfb1695e07"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-catalog-delta-net48-100.log",
+      "bytes": 878,
+      "capturedFileSha256": "5e5dce22a7ae86a88567ac258b13be8eaa2c65a0c984a40e621d65ca8e862985",
+      "gitTextNormalizedBlobSha1": "73173cb1409d29d10e21f0b5f7bac6f093feb6a0"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-catalog-delta-net48-1000.log",
+      "bytes": 884,
+      "capturedFileSha256": "bbb11fdcdfb2599aa12fa389c5b59f9e176c7c203377786295a168cd95914a59",
+      "gitTextNormalizedBlobSha1": "1cf407179ed6fda688712116f5e419c39edbf6c4"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-catalog-net48-x86-100000.log",
+      "bytes": 928,
+      "capturedFileSha256": "23df6ec28ed7d0aa37639b4e8ff9aaa6aeffaa5b2b948fff0ba7efb17ccb3953",
+      "gitTextNormalizedBlobSha1": "f1bf78aaba26e5a56a75fdda3246f0fac0cc1463"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-catalog-net48-x86-19763.log",
+      "bytes": 17780,
+      "capturedFileSha256": "6f0e4413030c025fd3b638c0877ef5841586d9a61e89e3351be0a936e32808a9",
+      "gitTextNormalizedBlobSha1": "7094d33f1fa57f63760a20e7cd7ee649c82ce30f"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-catalog-performance.json",
+      "bytes": 812,
+      "capturedFileSha256": "45cb249ed984e1be4005f898cc562014d1b69f524390fa9da6379443a53da296",
+      "gitTextNormalizedBlobSha1": "fc1c21dff55beeb68243d29857865100a5385d65"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cli-backup-restore-failure-selftest.log",
+      "bytes": 5401,
+      "capturedFileSha256": "847e1f4134b33526df36c552f55529f656f8f33e74926aa872425e663a773486",
+      "gitTextNormalizedBlobSha1": "7624b8464cbf87f5ca5bfcef610b4733600b2136"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cli-backup-restore-selftest.log",
+      "bytes": 6913,
+      "capturedFileSha256": "ac4628e3337b3ec0568983ad74f70697c16a3838ae5120a2075776ba5b3e2cbf",
+      "gitTextNormalizedBlobSha1": "3d2a617799be85a0a60f4258591a4c1240215608"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cli-selftest.log",
+      "bytes": 4198,
+      "capturedFileSha256": "172f31046975e750723eed5a2deb113e5adf506fde5c6c20824ce0a138e7d7b5",
+      "gitTextNormalizedBlobSha1": "1795e213af42d13dc2cb13cc69bdcd46982d33a6"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-core-final-C.log",
+      "bytes": 403,
+      "capturedFileSha256": "05d774e826f8cb8e20e61a1fcc9d460642e56e894de1c95b72b8ec60f8122152",
+      "gitTextNormalizedBlobSha1": "0f548c0dc60f21c094fa105fd8b3128ba800a30f"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-core-final-C.trx",
+      "bytes": 1538937,
+      "capturedFileSha256": "28c95014f65256ae6c72286bc65d5174bc3466ae47bd6efa0241acde16ff63cd",
+      "gitTextNormalizedBlobSha1": "b2648cd59c4efa5ad56fc8d4ac9dba5e6cd3feb5"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-core-first-failure.trx",
+      "bytes": 1538390,
+      "capturedFileSha256": "3711c964a1196224065b5ef60c5a447b6e77452ebc510f817cd8caef021016db",
+      "gitTextNormalizedBlobSha1": "71ea8672f6faa796b36f276c83fc8f8cebc7d067"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-core-frozen.trx",
+      "bytes": 1538936,
+      "capturedFileSha256": "1e2d0771ae008a79d69434a9dfa5bb04b9fd2779bc2a64e64cab5a60993a486c",
+      "gitTextNormalizedBlobSha1": "bbf4b51b08b5588fd866bbbc93bb8ea5d9c31237"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-gates-corrected.log",
+      "bytes": 2925,
+      "capturedFileSha256": "2e7872f2f61dc085ee3ea236a3f11fe2f8806ab6355e2de1a981b284a68966fc",
+      "gitTextNormalizedBlobSha1": "e9bc67f149130ae4ace4103e6c42ee2263d7c536"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-gates-final-C.log",
+      "bytes": 2925,
+      "capturedFileSha256": "2e7872f2f61dc085ee3ea236a3f11fe2f8806ab6355e2de1a981b284a68966fc",
+      "gitTextNormalizedBlobSha1": "e9bc67f149130ae4ace4103e6c42ee2263d7c536"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-gates-first.log",
+      "bytes": 2992,
+      "capturedFileSha256": "b2f2828c62d73d6cba6d3ad229d279265095cfa3cb2bd66658ff0506370388b9",
+      "gitTextNormalizedBlobSha1": "6319bb913283c89937527d9b02cbe97c83278956"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-interactive-launch.json",
+      "bytes": 1304,
+      "capturedFileSha256": "eb97e76ad5e6652c4a8510557e85d5b4fb481b3a66e534af3fecf0646ebd543f",
+      "gitTextNormalizedBlobSha1": "59cb4720927118561611057db485d1f8af096801"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-local-validation.json",
+      "bytes": 1627,
+      "capturedFileSha256": "112cfd74468500171ba7af29c41d490668e30c125e0128702c5ba81a97629f77",
+      "gitTextNormalizedBlobSha1": "8cf50b96c71d2e253f36ed71c27349148d170916"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-log-display-padding.json",
+      "bytes": 1300,
+      "capturedFileSha256": "df831c7ea5cf9d2f99d14bcb7884b6dd7710b241c9264ed33834c7d7cca64bb0",
+      "gitTextNormalizedBlobSha1": "fd77df555d3b273ca15afb099295d85a489b054c"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-packages-corrected.trx",
+      "bytes": 197626,
+      "capturedFileSha256": "f86686e0b2c74242e2377308bf4bd3f007cb7f5ce34a83835008c7e03153fc29",
+      "gitTextNormalizedBlobSha1": "1790aebf6d1d35f8505e7b68d1bc1bc70e1eb359"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-PR114-exact-head-checks.json",
+      "bytes": 1818,
+      "capturedFileSha256": "f53a68848390a240eff08b36befd3bcb6571f6bc1363fd8e11b63595ecd482a0",
+      "gitTextNormalizedBlobSha1": "e813895ec67313d5004ed5c9c4e8a4748192a3ad"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-PR114-merge.json",
+      "bytes": 224,
+      "capturedFileSha256": "723a77bc0df3d2573f924eaaf684b2fa041e485ba007021c47be9487759b86dd",
+      "gitTextNormalizedBlobSha1": "16a609494a0b1657e51a07741a460a62b8e0ffe6"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-PR116-canonical-ci.json",
+      "bytes": 4476,
+      "capturedFileSha256": "13da0d36d250806b22ea91dfdb7a696e345a0c7c488cd59e3b02f34a1fdae8be",
+      "gitTextNormalizedBlobSha1": "73081f0aba141de12fbdf8fb5328130ca03d5272"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-PR116-exact-head-checks.json",
+      "bytes": 1867,
+      "capturedFileSha256": "6375f33aed1594ddd499a21f2b65402d648728e9933373f59cbcc3d5b1439ec0",
+      "gitTextNormalizedBlobSha1": "e381bba5efce4cfb8280204f5393c6f59c9ff430"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-PR116-merge.json",
+      "bytes": 224,
+      "capturedFileSha256": "46ab30dfa0716832aeb238ebf8884723fb5cdf026d0df5234726a7772c76337c",
+      "gitTextNormalizedBlobSha1": "25abaa81fb1d1df2807e35fd1d405d605663b003"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-restore-candidate.log",
+      "bytes": 752,
+      "capturedFileSha256": "6710d4f689cf3b30166b628bc870de6807081f3878d6d8abfc20ad8fb6696cf9",
+      "gitTextNormalizedBlobSha1": "1c9af853ee0201f15983e456b72ae0e6d4c3743a"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-test-environment.json",
+      "bytes": 1661,
+      "capturedFileSha256": "13946df312d9d28401a26e984ed40dfe793ce00c3bd1865a6914ca5b44a96c94",
+      "gitTextNormalizedBlobSha1": "6360e25a98c13c658ef8d64ae92b764d84402999"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-authorization.log",
+      "bytes": 3530,
+      "capturedFileSha256": "9e04a1c8a5eaefdcded0103d2e0810d5c957ddf25b92613ac61ebb9c9b312de4",
+      "gitTextNormalizedBlobSha1": "3f29532a3f7f9d32a6b3e30bc0992869a34b8c6a"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-bounded-logging.log",
+      "bytes": 571,
+      "capturedFileSha256": "77ef98cf98db8807133a2be46a0376b3878b13a02e7b77c6ecdec5cc33e726ac",
+      "gitTextNormalizedBlobSha1": "98c31319633a83297f293ca46b47984887f9f5dc"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-focus-recheck.txt",
+      "bytes": 129,
+      "capturedFileSha256": "b1bfb7c62f6cb2c151f77600177990f571ee11f3f862b5c54d799f12357bb214",
+      "gitTextNormalizedBlobSha1": "ca4ac7fe75266122f180de4a9c65359a6d488210"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-functional-logo-corrected.log",
+      "bytes": 2955,
+      "capturedFileSha256": "da2180bcec3e1e18230bc158fb4b035742e1bf1ee4d98329f63b23ac71303c99",
+      "gitTextNormalizedBlobSha1": "00749e6e78e3c7d3b6f72d932eff11646e2abeac"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-functional-routing-corrected.log",
+      "bytes": 2996,
+      "capturedFileSha256": "3cd1be9a20eba468d0499877121462f960b2bc0e4f41cd8713834d1697a1498b",
+      "gitTextNormalizedBlobSha1": "8ca7ecc573b16af1dde108a1930d7c0ed48f5f6b"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-functional-with-load-first.log",
+      "bytes": 2767,
+      "capturedFileSha256": "1b06005be49bcd7821beffc9861aa298d579d1c5725bcf715e5d6df7fff228de",
+      "gitTextNormalizedBlobSha1": "4ee815c198a5677f17d1facd4e1e9361c7508ecc"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-functional.log",
+      "bytes": 1571,
+      "capturedFileSha256": "278c7eca89bf86b4f884da138b37290222136888bfa8a35e505c894492e029b9",
+      "gitTextNormalizedBlobSha1": "41c14482f81dbd3c8fb87cf716234987738570e0"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-paging-dispatcher.log",
+      "bytes": 281,
+      "capturedFileSha256": "a5f54a5592e10bbd5c28f021c3d3c9728a1c4768d3f57b8ac1197821d3fcd627",
+      "gitTextNormalizedBlobSha1": "6ef5e357282692e467ac7bf6b3e36a15e74e6961"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-ui-product-image-profile.log",
+      "bytes": 311,
+      "capturedFileSha256": "e0bf3fdd43d1c30677132ec5f805a06f0bce8552a296e57302a8b01390b51351",
+      "gitTextNormalizedBlobSha1": "b91a344b110b19cd4cbc11ff65afdf14b63524a0"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/display.json",
+      "bytes": 6356,
+      "capturedFileSha256": "4ccf41d008df6d023a60cc43020501d7b2741ff137584b183f9820dfbcc13d6a",
+      "gitTextNormalizedBlobSha1": "abf416c12dd04e5de3fe4a27cb9768d9b57f9360"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/H1-public-scan-first-failure.txt",
+      "bytes": 787,
+      "capturedFileSha256": "1963eca12e60280c32403663cf3264f19f0df5e4693cfa67bb873f1b70bbb4e5",
+      "gitTextNormalizedBlobSha1": "1e888e31e4cf80f8bd76c0d615fe94d13b193590"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/H1-runtime-routing-review.json",
+      "bytes": 3673,
+      "capturedFileSha256": "b3d23bdfb084797d94e71e82b0dc46c3642d4dc4a8bbf2cbcf340fc4d8fd8f5e",
+      "gitTextNormalizedBlobSha1": "3cd3164149643438f49371b823f04726445444b8"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/h2-review-backup.json",
+      "bytes": 3184,
+      "capturedFileSha256": "0ea9358c5a559857dbd71eaee4450e4f41ce2b09df39cf1255b4716bbf9b8223",
+      "gitTextNormalizedBlobSha1": "93c74edfae9c11a4c6d67af942838f9763613f87"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/load-corrected-functional.txt",
+      "bytes": 34,
+      "capturedFileSha256": "3c698a6abf5884abb59d8fb7c08666106875d215ea4ab7cd5b495e65d5cfd9c0",
+      "gitTextNormalizedBlobSha1": "5aa0f3d966f37fd53aed84e0391c1470f7fa7966"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/load-corrected-samples.csv",
+      "bytes": 7820,
+      "capturedFileSha256": "668d399fe58c73b603703aa0bd353cd4817e0f004a7f24e27e1a7331beec678f",
+      "gitTextNormalizedBlobSha1": "66cbc041961dafedb53aaede6c1d013c0727ffb9"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/load-corrected.json",
+      "bytes": 1569,
+      "capturedFileSha256": "4decc93b286eea1e731ac62b8113292d8e9b247a1e5d39cddb676e29bb814298",
+      "gitTextNormalizedBlobSha1": "49a27f6a250b59938962041f7482c2720be22a76"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/load-correction.json",
+      "bytes": 1353,
+      "capturedFileSha256": "f59807fe05f9aba802e755c5cc4752bef5a00cf56dd4c5d3edad0fb3da5f5e29",
+      "gitTextNormalizedBlobSha1": "5148b0780f5b631f42351943b1d13f2aad902efb"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/load-first-failure-samples.csv",
+      "bytes": 7819,
+      "capturedFileSha256": "27b37511907d3308dda19dcef468af057f5f890a0bc6b2ae9961116daf005db0",
+      "gitTextNormalizedBlobSha1": "f472ff89670c077f337b2a2bd5683f2c98ac9e9c"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/load-first-failure.raw.json",
+      "bytes": 1549,
+      "capturedFileSha256": "8b13a8208a8cc98b4788fe6c4cb8dc03e590ac2208356afd341af656529f5379",
+      "gitTextNormalizedBlobSha1": "5b8112f8b6373deb9868de82bb8beb473ec35935"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/PR115-exact-head-checks.json",
+      "bytes": 1818,
+      "capturedFileSha256": "8c03d03b0793e84ae35a25adc1efc6f54128ae9603c53ffce6cb1d14e3050990",
+      "gitTextNormalizedBlobSha1": "c90889a3cca45aab29b236eb18723c7d33cbc166"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/PR115-merge.json",
+      "bytes": 224,
+      "capturedFileSha256": "fe2e1f48c516785e9ac7aa2580a8bc2186772561f3a6b677044681f153918d34",
+      "gitTextNormalizedBlobSha1": "46984136f9969d8056ae3936f5034de98fb833b3"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-baseline.trx",
+      "bytes": 2469,
+      "capturedFileSha256": "dd20fb777497fd5a86e250f52819b9bf6bb89c9bddd30d1ed7474602d52af072",
+      "gitTextNormalizedBlobSha1": "dc5f50b2ac044a3b6a95e50f8ac7815e934f8b59"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-contention-initial.trx",
+      "bytes": 19205,
+      "capturedFileSha256": "cd90ef512e995bb1b19177e352ae6833dba6e7d2f1d3766bd9c43e932359b49d",
+      "gitTextNormalizedBlobSha1": "a921c9579200038df0e804e89fa5f58e0bb7ee0b"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-final-repeat-1.trx",
+      "bytes": 7644,
+      "capturedFileSha256": "11600c3f88434f0d7114387e12325d43832eefd6d64b4ca90b6859097dc304cf",
+      "gitTextNormalizedBlobSha1": "756cb6cec0058a32a6ae1001043c3fa767fe4da6"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-final-repeat-2.trx",
+      "bytes": 7644,
+      "capturedFileSha256": "8dac54a62d5abb0349dfe2f0a0c03373e923a90436f28fa86671d2eb940ad777",
+      "gitTextNormalizedBlobSha1": "f9cc41d843ce17cdca1ff539936e49cdf2fb85b8"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-final-repeat-3.trx",
+      "bytes": 7644,
+      "capturedFileSha256": "f9e2584dfcdcbf69a1fc61b508f5d42f8b9d4f62a94b845b6758b4575717cc9e",
+      "gitTextNormalizedBlobSha1": "2c37ad8ff16fb9c6e18f09fb6b17657cccefca83"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-final-repeats.json",
+      "bytes": 7531,
+      "capturedFileSha256": "385daa3abaed7f4b2d4f256909e1dd551906a29e4971c849086c04e81dc4a2a1",
+      "gitTextNormalizedBlobSha1": "052b5b3a7539c462a2a58e9434659c570059441b"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-repeat-1.trx",
+      "bytes": 7644,
+      "capturedFileSha256": "dce5715e3fb6497c099cc8d896b9bd6b1ae0699df53c9e2f4e797387d6724f73",
+      "gitTextNormalizedBlobSha1": "05cdaf39ba918de1795128287eacd7f352a445dd"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-repeat-2.trx",
+      "bytes": 7644,
+      "capturedFileSha256": "00ebc2f1123d29d7ea14f6237b6d61049fa0f832f8a85009a9d798b66883c9ec",
+      "gitTextNormalizedBlobSha1": "374a2e90de4dd86b10254da11cd2085d888f9df7"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/backup-tests/backup-repeat-3.trx",
+      "bytes": 7644,
+      "capturedFileSha256": "4af1b15d1d8423abde2fe72238b7d22cea47bb0b3191f90d068a079b2b4527b6",
+      "gitTextNormalizedBlobSha1": "089413d35c9b3e5a3c7f277dc58ae8d463cb21ff"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/cart-performance.csv",
+      "bytes": 8169,
+      "capturedFileSha256": "69168b669ab8415a16a82cfd12f849a4a93dc24264c5f7a9771ba7a5644215f4",
+      "gitTextNormalizedBlobSha1": "ee74dcde0572c310bdac675421f27d3933235fae"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/diagnostic-scans.json",
+      "bytes": 110,
+      "capturedFileSha256": "38a815cc47492b6fddc80db33c15966285a2f63e5978f87860dc729bfa9e7c81",
+      "gitTextNormalizedBlobSha1": "06e4c127e458fa6c6b4845f3a8eda467ab82cd13"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/fixture-setup.json",
+      "bytes": 139,
+      "capturedFileSha256": "d2fa2e50bff95f04773821c4731f107d6cb5e0569ba99793040af5c669bdde49",
+      "gitTextNormalizedBlobSha1": "edab44fcb71da665cd6bc35da342e3ea954b1ced"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/flow-performance.csv",
+      "bytes": 7403,
+      "capturedFileSha256": "e2bdfe384f768f9a83af3691f98b101389d0a3581d4bb009ca01ca2a98d4b294",
+      "gitTextNormalizedBlobSha1": "2ddaf5981fff2355a234f6e8f3f08864adb4edab"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/functional-completion.txt",
+      "bytes": 100,
+      "capturedFileSha256": "a6b8ce784680480d9f138a9adbd672558da53b37b4be0576ab156635a3a88213",
+      "gitTextNormalizedBlobSha1": "999f433ba28c8cf5dd5644841f76ce6f7a615352"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/performance-result.json",
+      "bytes": 224,
+      "capturedFileSha256": "35d05b55dfc729243c92c28bbb2509013ccbb34291a1f26b22ac19644bf1cd58",
+      "gitTextNormalizedBlobSha1": "ce74122851b8fe9d6aa9c5a7439797f9c7f055f9"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/protocol.json",
+      "bytes": 8296,
+      "capturedFileSha256": "0594ea5af360f0aec31117adf807527494f35e355a34d537735648ecc69d9d82",
+      "gitTextNormalizedBlobSha1": "5b1d3fa604df9c53936987d8d80272e0f774bb42"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/qualification-environment.csv",
+      "bytes": 566,
+      "capturedFileSha256": "acf7e163b652d9b083d8fe29c97d918ed41357f5ab859c3999b1c1c0bbe1e6f1",
+      "gitTextNormalizedBlobSha1": "7cf1bd0bbe5421bc7fc118a582d9acf7b6fb63ef"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/qualification-idle.csv",
+      "bytes": 421,
+      "capturedFileSha256": "f2a509fef29a456d85c5facc7fa93480d812a476ab2070e3aff5a5d46875f7dc",
+      "gitTextNormalizedBlobSha1": "0a5a4cc3024e49b60a242a13ae7cde5a9409e433"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/qualification-runtime.txt",
+      "bytes": 427,
+      "capturedFileSha256": "714b74dfabf700a231bf09f25fa785c1e4fb94034fe7bd8225e1e767794acf55",
+      "gitTextNormalizedBlobSha1": "21ac0895fe32b6535d7a060e83f20d494b89c26d"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/qualification-scans.csv",
+      "bytes": 822,
+      "capturedFileSha256": "0bf91cd15417d151f9aa4ebfb65ae29e20b7375017dd38037cc5491f4fbe8b3a",
+      "gitTextNormalizedBlobSha1": "d7a2029f09d9006dad1a57cf7febb99845658c3b"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic/render-stages.csv",
+      "bytes": 1336,
+      "capturedFileSha256": "9f4d0cf9bb6aaa9e687f44c110d8c7ee1dca06ed89dd121d21459c8803e7221d",
+      "gitTextNormalizedBlobSha1": "8a9f71e3197ed70e65fc988e37829387220fb63a"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/cart-performance.csv",
+      "bytes": 8170,
+      "capturedFileSha256": "4ad6aa581d4126f8f78f70b89a5e57768ac64bacbce74c494f7a94b4f6d2b967",
+      "gitTextNormalizedBlobSha1": "103d535c955b4d90cb4f783d52eff8e3d22c3421"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/fixture-setup.json",
+      "bytes": 139,
+      "capturedFileSha256": "fb6ecbd7325ead544bbc4a32f0a5c8c50a5fb7e5380ea294c7f84208508000ee",
+      "gitTextNormalizedBlobSha1": "af2541a367779dbd873c8c513bb6538a789b9776"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/flow-performance.csv",
+      "bytes": 7404,
+      "capturedFileSha256": "a881a564e5bf6ba8475fccd4a9349bd0c6bf20da9d41dfa53876ebf4c7bfddaa",
+      "gitTextNormalizedBlobSha1": "c11f3071c6d414bc0cdafbd8cc88580814eab5a4"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/harness-error.txt",
+      "bytes": 1730,
+      "capturedFileSha256": "c343666dfbeb24887f3240ae63e1d1f1e29b7b81451ad762b614cee0880c9137",
+      "gitTextNormalizedBlobSha1": "a0a7fe46be7ce6c0b85df5930d103a42899aba48"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/launcher.json",
+      "bytes": 445,
+      "capturedFileSha256": "a5aeef03e4787648baae9b2438a09b0f59c1ee6bb9973966742386021479b70c",
+      "gitTextNormalizedBlobSha1": "47e5c9b919ea88f9b4e0dde45e9afcdbb982dd0c"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/performance-result.json",
+      "bytes": 204,
+      "capturedFileSha256": "69f5f7afbb8d886ae610904572f6b5f404216d94615bcd72693d5ef8df2c448d",
+      "gitTextNormalizedBlobSha1": "79207613e4c38e63a6baddd483ce56221facca49"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/protocol.json",
+      "bytes": 8296,
+      "capturedFileSha256": "e7b04210a6dcac3e6cbb1b26805d4fa34db57bc3f9fa9dbc3dc53d68216916f3",
+      "gitTextNormalizedBlobSha1": "76dfc2380d97d1162621175e2284f7fe68863e98"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/qualification-environment.csv",
+      "bytes": 274,
+      "capturedFileSha256": "9db96e83ce86f0e0c7bdc6883ed2574b04131f73327a70a97db85a515f348069",
+      "gitTextNormalizedBlobSha1": "899f1dc491383b8930c84393020fb80b19ba9543"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/qualification-operations.txt",
+      "bytes": 20685,
+      "capturedFileSha256": "8a355ab232a052199eea3a31e0168747fb2a74f4904f1a94e5ca1a83463e5a3d",
+      "gitTextNormalizedBlobSha1": "d6c0aca8a138f0199766f0b2d4f8e8d60152e917"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/qualification-runtime.txt",
+      "bytes": 427,
+      "capturedFileSha256": "e74707701bf6be96741d266ba49b87c4e80670ccaf026e5b0bbe48f4f9a27e33",
+      "gitTextNormalizedBlobSha1": "81b9fa408c98946fdf0d282a7664274373d83e70"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/qualification-scans.csv",
+      "bytes": 318,
+      "capturedFileSha256": "b04d64989c816517c58b0f250667c31979a26611742f2159b31c84e73ba70a08",
+      "gitTextNormalizedBlobSha1": "118ed07eb5a7ec55f61ee11ffdbf35ef97276910"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive/render-stages.csv",
+      "bytes": 1317,
+      "capturedFileSha256": "0a5b92a64a3bdfa3cc7b44240a6ef77b883c8b99f3b7e7aa6a2bb01514fa8367",
+      "gitTextNormalizedBlobSha1": "d966e16f09cfb26f734d55d94f25e434b444cade"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/cart-performance.csv",
+      "bytes": 8170,
+      "capturedFileSha256": "8829c1a0a16190a5312b861fb7027afd36613f877740d557ea289a5c1d9d1aa1",
+      "gitTextNormalizedBlobSha1": "d1b927c3ebc813c9fd67807ffd8d29dc416cac6a"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/fixture-setup.json",
+      "bytes": 139,
+      "capturedFileSha256": "7956733dd3fe656111d46ac43b1be43bf384bba6b68a400094fc8040e132bf8c",
+      "gitTextNormalizedBlobSha1": "b0ac82cdaca90a2890b7e40e40a1065fa2a5e828"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/flow-performance.csv",
+      "bytes": 7408,
+      "capturedFileSha256": "dba537586490f3c80d53fe340ab0ce612302b90f7277a6c7816baa63bf118af5",
+      "gitTextNormalizedBlobSha1": "943e0c28057daa0d51cb1f7f185c1665ef3e5016"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/harness-error.txt",
+      "bytes": 1730,
+      "capturedFileSha256": "c343666dfbeb24887f3240ae63e1d1f1e29b7b81451ad762b614cee0880c9137",
+      "gitTextNormalizedBlobSha1": "a0a7fe46be7ce6c0b85df5930d103a42899aba48"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/launcher.json",
+      "bytes": 453,
+      "capturedFileSha256": "2ad7713446d7ba9815c9916bc032079ca9177c046de54493948b2243830d842e",
+      "gitTextNormalizedBlobSha1": "4c4bcd1d10413f64f21c9a3b7a807cdca20b5164"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/performance-result.json",
+      "bytes": 204,
+      "capturedFileSha256": "69f5f7afbb8d886ae610904572f6b5f404216d94615bcd72693d5ef8df2c448d",
+      "gitTextNormalizedBlobSha1": "79207613e4c38e63a6baddd483ce56221facca49"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/protocol.json",
+      "bytes": 8295,
+      "capturedFileSha256": "bd7221801e5e3bd0814c962bddbb5eea9c9e9a7acb32535160052f0f5894bfaa",
+      "gitTextNormalizedBlobSha1": "7fcb0770fd7fee52e7646d31abd8e56d47d4dfe9"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/qualification-environment.csv",
+      "bytes": 274,
+      "capturedFileSha256": "80d5c7e0d214a36dcc40815e9fad87ffaa54c7a526d3aae248fc429f147c7414",
+      "gitTextNormalizedBlobSha1": "b506161cda72a05727ed32dc69a01c378e5dcbaa"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/qualification-operations.txt",
+      "bytes": 22709,
+      "capturedFileSha256": "d62c18d25ef301f4df6d6c1f25eabbe04767b81cf56ec0d728b6b249546efbfb",
+      "gitTextNormalizedBlobSha1": "e5e5680cedd67fa782486f134ba4f00c823078e5"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/qualification-runtime.txt",
+      "bytes": 427,
+      "capturedFileSha256": "fdc0c9d61efe3df883550c2972491eb665e6dc12d27b13010490ca5a3632b29d",
+      "gitTextNormalizedBlobSha1": "bae2c4d42b88ae3ab3b67e32b96e5e967e6edfb2"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/qualification-scans.csv",
+      "bytes": 318,
+      "capturedFileSha256": "b04d64989c816517c58b0f250667c31979a26611742f2159b31c84e73ba70a08",
+      "gitTextNormalizedBlobSha1": "118ed07eb5a7ec55f61ee11ffdbf35ef97276910"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-capture/render-stages.csv",
+      "bytes": 1317,
+      "capturedFileSha256": "3956353e309553d36d593b9ce913f5ad9c20524b18210a47c415b13f48cf60d6",
+      "gitTextNormalizedBlobSha1": "c5c0c12e9ac2f700c8b73c00fc36e43858455d88"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/cart-performance.csv",
+      "bytes": 8170,
+      "capturedFileSha256": "c1c8096f5f91d474678203f567110d0c2d44e29b93e578b8b655e578a1cefd88",
+      "gitTextNormalizedBlobSha1": "e169cd05b749131c6ab3d6f5593f99b9fddacb25"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/diagnostic-timeline.txt",
+      "bytes": 37599,
+      "capturedFileSha256": "de5967818bee23d52d458db0ce1868f6c35306c509708e8b6d1cac409f9afd00",
+      "gitTextNormalizedBlobSha1": "56bd225796f9fcea1e35cb9c06d952b28ec65179"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/fixture-setup.json",
+      "bytes": 139,
+      "capturedFileSha256": "b44505e737ec74057ef2deb12a7ed02df55c8b01737eb53da792af4c868c5c55",
+      "gitTextNormalizedBlobSha1": "b20b85f5264d242a718e694a9fdd4f2a0d6d4be1"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/flow-performance.csv",
+      "bytes": 7401,
+      "capturedFileSha256": "b3ca43100a50f343d71604ed6def76ef6f719f77acd70a6bce540f55ac74b482",
+      "gitTextNormalizedBlobSha1": "bf734782917b4162d3249f855f62a9aaed946c43"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/harness-error.txt",
+      "bytes": 1730,
+      "capturedFileSha256": "c343666dfbeb24887f3240ae63e1d1f1e29b7b81451ad762b614cee0880c9137",
+      "gitTextNormalizedBlobSha1": "a0a7fe46be7ce6c0b85df5930d103a42899aba48"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/launcher.json",
+      "bytes": 451,
+      "capturedFileSha256": "cc4f052e0919817fd1ee3bd806995f66d14dcd562d5673cd37d04dab83c9954c",
+      "gitTextNormalizedBlobSha1": "7450ec8fab29e373c371ddf739ad52e7437b1909"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/performance-result.json",
+      "bytes": 204,
+      "capturedFileSha256": "69f5f7afbb8d886ae610904572f6b5f404216d94615bcd72693d5ef8df2c448d",
+      "gitTextNormalizedBlobSha1": "79207613e4c38e63a6baddd483ce56221facca49"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/protocol.json",
+      "bytes": 8295,
+      "capturedFileSha256": "a3093c76be82dc17b37528a5a28472803ff2a6ce4471135db4b393cff0bf8ba3",
+      "gitTextNormalizedBlobSha1": "65907808b9f623d58f06e2590975924e82ecd50b"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/qualification-environment.csv",
+      "bytes": 274,
+      "capturedFileSha256": "ff1fadea558280ec2a15a0fe225facb11e7187bc5ac33381716ead7cf6b6a8b0",
+      "gitTextNormalizedBlobSha1": "9bbb175f3577ab4608ac5b319fc21691253a3803"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/qualification-operations.txt",
+      "bytes": 25395,
+      "capturedFileSha256": "38961a61007bd2c162ef16d3115ab6841a752faeeeda17822aa54659ad636b8a",
+      "gitTextNormalizedBlobSha1": "935a09756174f3682a537a80fc1666146fa07507"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/qualification-runtime.txt",
+      "bytes": 427,
+      "capturedFileSha256": "85865b5684414153b9200795a8a3f19c331423a48367e40a98699aed280b08e0",
+      "gitTextNormalizedBlobSha1": "6ec11a3cbaa915326e5897fa924ff82852be4849"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/qualification-scans.csv",
+      "bytes": 318,
+      "capturedFileSha256": "b04d64989c816517c58b0f250667c31979a26611742f2159b31c84e73ba70a08",
+      "gitTextNormalizedBlobSha1": "118ed07eb5a7ec55f61ee11ffdbf35ef97276910"
+    },
+    {
+      "file": "docs/reports/evidence/2026-10-03-closeout/D-cart-diagnostic-interactive-trace/render-stages.csv",
+      "bytes": 1317,
+      "capturedFileSha256": "660f90113580aa087fd35b6f05085c0bae20b65ebaaefeae13e28625ed3b3f56",
+      "gitTextNormalizedBlobSha1": "fc18be118fab7b85392ca7fd51e387245e39a003"
+    }
+  ],
+  "selfAndLaterIndependentReviewExcluded": true,
+  "rawInvalidJsonFirstFailureRetained": true,
+  "authenticatedLiveRun": "NOT_EXECUTED"
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "ACTUAL_NET48_X86_SYNTHETIC_CATALOG_BENCHMARK",
+  "dataSourceCommit": "9ca46dc1c6d8842a85d1a45393729527ea3f416c",
+  "products": 19763,
+  "warmupCount": 2,
+  "measuredCount": 20,
+  "protocol": ".github/workflows/performance.yml",
+  "status": "PASS_EXISTING_CATALOG_GATES",
+  "elapsedMilliseconds": {
+    "p50": 2460.4545,
+    "p95": 2688.335,
+    "maximum": 2734.487
+  },
+  "dispatcherMilliseconds": {
+    "median": 12.6625,
+    "maximum": 21.491,
+    "stableSamples": 20
+  },
+  "peakWorkingSetBytes": 60166144.0,
+  "peakPrivateBytes": 42647552.0,
+  "maximumGen2": 2.0,
+  "exactSamples": 20,
+  "releasePayloadBound": false,
+  "actualLiveCatalogSize": "NOT_MEASURED",
+  "mobileConvergence": "NOT_MEASURED",
+  "stabilityQualification": "NOT_INFERRED"
+}

@@ -1,0 +1,5 @@
+Test run for C:\Dev\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+Results File: C:\Dev\_codex-evidence\win7pos-closeout-20261003\final-C-core\core-final-C.trx
+
+Passed!  - Failed:     0, Passed:  1201, Skipped:     0, Total:  1201, Duration: 4 m 36 s - Win7POS.Core.Tests.dll (net10.0)

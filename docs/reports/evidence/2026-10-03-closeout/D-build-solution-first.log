@@ -1,0 +1,27 @@
+  RID is: win-x86
+  Platform is: AnyCPU
+  RID is: win-x86
+  Platform is: AnyCPU
+  RID is: win-x86
+  Platform is: AnyCPU
+  Win7POS.Core -> C:\Dev\Win7POS\src\Win7POS.Core\bin\Release\netstandard2.0\Win7POS.Core.dll
+  RID is: win-x86
+  Platform is: AnyCPU
+  Win7POS.Data -> C:\Dev\Win7POS\src\Win7POS.Data\bin\Release\netstandard2.0\Win7POS.Data.dll
+  Win7POS.CatalogPerformance -> C:\Dev\Win7POS\tests\Win7POS.CatalogPerformance\bin\Release\net10.0\Win7POS.CatalogPerformance.dll
+  Win7POS.CatalogPerformance -> C:\Dev\Win7POS\tests\Win7POS.CatalogPerformance\bin\Release\net48\Win7POS.CatalogPerformance.exe
+  Win7POS.Cli -> C:\Dev\Win7POS\src\Win7POS.Cli\bin\Release\net10.0\Win7POS.Cli.dll
+  Win7POS.Core.Tests -> C:\Dev\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll
+C:\Dev\Win7POS\src\Win7POS.Wpf\Pos\CustomerDisplay\CustomerDisplayManager.cs(471,17): warning CS4014: Because this call is not awaited, execution of the current method continues before the call is completed. Consider applying the 'await' operator to the result of the call. [C:\Dev\Win7POS\src\Win7POS.Wpf\Win7POS.Wpf_dphufmqo_wpftmp.csproj]
+C:\Dev\Win7POS\src\Win7POS.Wpf\Import\ImportWorkflowService.cs(237,29): error CS0266: Cannot implicitly convert type 'decimal' to 'int?'. An explicit conversion exists (are you missing a cast?) [C:\Dev\Win7POS\src\Win7POS.Wpf\Win7POS.Wpf_dphufmqo_wpftmp.csproj]
+C:\Dev\Win7POS\src\Win7POS.Wpf\Pos\PosWorkflowService.cs(2485,94): error CS0266: Cannot implicitly convert type 'decimal' to 'int'. An explicit conversion exists (are you missing a cast?) [C:\Dev\Win7POS\src\Win7POS.Wpf\Win7POS.Wpf_dphufmqo_wpftmp.csproj]
+
+Build FAILED.
+
+C:\Dev\Win7POS\src\Win7POS.Wpf\Pos\CustomerDisplay\CustomerDisplayManager.cs(471,17): warning CS4014: Because this call is not awaited, execution of the current method continues before the call is completed. Consider applying the 'await' operator to the result of the call. [C:\Dev\Win7POS\src\Win7POS.Wpf\Win7POS.Wpf_dphufmqo_wpftmp.csproj]
+C:\Dev\Win7POS\src\Win7POS.Wpf\Import\ImportWorkflowService.cs(237,29): error CS0266: Cannot implicitly convert type 'decimal' to 'int?'. An explicit conversion exists (are you missing a cast?) [C:\Dev\Win7POS\src\Win7POS.Wpf\Win7POS.Wpf_dphufmqo_wpftmp.csproj]
+C:\Dev\Win7POS\src\Win7POS.Wpf\Pos\PosWorkflowService.cs(2485,94): error CS0266: Cannot implicitly convert type 'decimal' to 'int'. An explicit conversion exists (are you missing a cast?) [C:\Dev\Win7POS\src\Win7POS.Wpf\Win7POS.Wpf_dphufmqo_wpftmp.csproj]
+    1 Warning(s)
+    2 Error(s)
+
+Time Elapsed 00:00:03.44

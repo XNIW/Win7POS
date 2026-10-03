@@ -1,0 +1,56 @@
+
+=== REQUIRED GATES ===
+
+Gate                                              Result Detail
+----                                              ------ ------
+check-dialog-standards.ps1                        PASS
+check-architecture-boundaries.ps1                 PASS
+check-release-foundation.ps1                      PASS
+check-release-supply-chain.ps1                    PASS
+check-product-image-phase-b.ps1                   PASS
+check-pos-cart-grid.ps1                           PASS
+check-performance-validation.ps1                  PASS
+check-pos-startup-win7-safe.ps1                   PASS
+check-win7pos-startup-no-eager-db.ps1             PASS
+check-win7pos-legacy-db-migrations.ps1            PASS
+check-pos-unified-login-ux.ps1                    PASS
+check-pos-login-logging.ps1                       PASS
+check-pos-debug-logging.ps1                       PASS
+check-bounded-async-logging.ps1                   PASS
+check-pos-first-login-sale-safe-ui.ps1            PASS
+check-pos-online-bootstrap.ps1                    PASS
+check-pos-online-client.ps1                       PASS
+check-pos-online-linking-task084b.ps1             PASS
+check-security-hardening.ps1                      PASS
+check-public-staging-config.ps1                   PASS
+check-final-article-sync-acceptance.ps1           PASS
+check-supplier-excel-wizard.ps1                   PASS
+check-product-dialog-free-text.ps1                PASS
+check-product-keyset-paging.ps1                   PASS
+check-win7pos-ui-ux-guard.ps1                     PASS
+check-win7pos-hardcoded-strings.ps1               PASS
+check-pos-customer-display-safety.ps1             PASS
+check-pos-shop-data-readonly.ps1                  PASS
+check-pos-sync-status-ux.ps1                      PASS
+check-pos-sales-sync.ps1                          PASS
+check-sale-repository-boundaries.ps1              PASS
+check-sale-line-read-repository-boundaries.ps1    PASS
+check-sale-stock-movement-writer-boundaries.ps1   PASS
+check-sales-sync-outbox-repository-boundaries.ps1 PASS
+check-sale-reversal-writer-boundaries.ps1         PASS
+check-sale-transaction-writer-boundaries.ps1      PASS
+check-remote-price-apply-diagnostics.ps1          PASS
+check-pos-outbox-shop-binding.ps1                 PASS
+check-pos-catalog-pull.ps1                        PASS
+check-pos-catalog-import-outbox.ps1               PASS
+check-pos-catalog-import-sync.ps1                 PASS
+check-pos-offline-authorization-lease.ps1         PASS
+check-pos-reversal-economics.ps1                  PASS
+check-pos-revenue-copy.ps1                        PASS
+check-win7pos-restore-guard.ps1                   PASS
+check-pos-start-of-day-sync.ps1                   PASS
+check-pos-printer-cashdrawer-safety.ps1           PASS
+check-pos-printer-driver-discovery.ps1            PASS
+check-pos-receipt-surface-consistency.ps1         PASS
+
+GATES_SUMMARY=49/49
