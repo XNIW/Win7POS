@@ -3,7 +3,7 @@
   "package": "C/H3",
   "date": "2026-10-03",
   "baseSha": "42afc8817422a5d1c3ed06e0ca50f7fb44a3207b",
-  "status": "IMPLEMENTED_PENDING_CANONICAL_BUILD_AND_HARNESS",
+  "status": "LOCAL_CORE_DATA_AND_WPF_SCENARIO_PASS_PHYSICAL_ACCEPTANCE_OPEN",
   "features": [
     "Canonical typed logo position, welcome/custom/clock idle, bounded 120-character Unicode message, barcode hidden/last4/full, paid/change privacy, 5-60-second test duration.",
     "Legacy show_barcode compatibility maps absent canonical mode to full/hidden and malformed canonical mode fails closed.",
@@ -18,15 +18,15 @@
     "id": "H3-PORTRAIT-PRIVACY",
     "cause": "Existing portrait XAML ignored ShowUnitPrice and ShowLineTotal while landscape respected them.",
     "fix": "Apply those same visibility flags to the portrait money fields.",
-    "status": "SOURCE_FIXED_RUNTIME_VALIDATION_PENDING"
+    "status": "PASS_SOURCE_AND_WPF_PRIVACY_REGRESSION"
   },
   "tests": {
     "coreDataNewDeclaredRows": 12,
     "coreDataFilter": "FullyQualifiedName~CustomerDisplay",
-    "coreDataStatus": "NOT_EXECUTED",
+    "coreDataStatus": "PASS_IN_1201_OF_1201_FINAL_CORE_SUITE",
     "wpfScenario": "CUSTOMERDISPLAY_polish",
     "wpfMethod": "CustomerDisplayPolishSmoke.RunAsync",
-    "wpfStatus": "NOT_EXECUTED",
+    "wpfStatus": "PASS_CUSTOMERDISPLAY_POLISH_CANONICAL_FUNCTIONAL_RUN",
     "wpfCoverage": [
       "Actual PNG/JPG/BMP valid/truncated/header-bomb/locked/replaced/missing managed image cases.",
       "Oversize bytes, UNC/URL and partial-publication rejection.",
@@ -74,5 +74,20 @@
     "Synthetic topology harness is not physical-monitor certification.",
     "Managed logo files are immutable by content identity and prior frozen images hold no source file locks; disk changes are revalidated on initialization/settings reload.",
     "No post-Win7 DPI APIs or framework upgrades."
-  ]
+  ],
+  "runtimeCorrection": {
+    "failure": "CUSTOMERDISPLAY_polish logo_pixels",
+    "artifact": "customer-display-polish-first-failure.txt",
+    "artifactSha256": "8e3f3e38c63fb53dbb117d25d1d7d21a1a9da6098cadf8b214ce748f3741c36f",
+    "runnerLog": "C:\\Dev\\_codex-evidence\\win7pos-closeout-20261003\\ui-functional.log",
+    "runnerLogSha256": "278c7eca89bf86b4f884da138b37290222136888bfa8a35e505c894492e029b9",
+    "cause": "InvalidDataException derives from SystemException, not IOException. The expected dimension-bomb rejection escaped the fixture exception filter; managed-load fallback had the same explicit type omission.",
+    "fix": "Explicit InvalidDataException filters in expected rejection helper and LoadSafeAsync; add matching-content-hash malformed/header-bomb managed fallback fixtures for PNG/JPEG/BMP.",
+    "paths": [
+      "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayLogoStore.cs",
+      "tests/Win7POS.Wpf.UiSmokeHarness/CustomerDisplayPolishSmoke.cs"
+    ],
+    "status": "PASS_CANONICAL_WPF_SCENARIO_AFTER_CORRECTION",
+    "preserved": "All byte/pixel/frame/hash/privacy/focus/finite expiry assertions and timeouts retained."
+  }
 }

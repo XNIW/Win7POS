@@ -65,7 +65,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
                 lock (_cache) { _cache.Clear(); _cache[settings.LogoFile] = bitmap; }
                 return bitmap;
             }
-            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException ||
+            catch (Exception error) when (error is IOException || error is InvalidDataException || error is UnauthorizedAccessException ||
                 error is ArgumentException || error is FormatException || error is NotSupportedException || error is System.Runtime.InteropServices.COMException || error is OverflowException)
             {
                 lock (_cache) _cache.Remove(settings.LogoFile);

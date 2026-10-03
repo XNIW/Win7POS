@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -42,6 +43,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var dimensionBomb = Path.Combine(root, "dimension-bomb." + kind);
                     File.WriteAllBytes(dimensionBomb, OversizeDimensions(sourceBytes, kind));
                     await MustFailAsync(() => store.ImportAsync(dimensionBomb), "unbounded image dimensions accepted: " + kind).ConfigureAwait(true);
+                    foreach (var invalidBytes in new[] { sourceBytes.Take(24).ToArray(), OversizeDimensions(sourceBytes, kind) })
+                    {
+                        string invalidHash;
+                        using (var sha = SHA256.Create()) invalidHash = BitConverter.ToString(sha.ComputeHash(invalidBytes)).Replace("-", "").ToLowerInvariant();
+                        var invalidReference = new CustomerDisplayLogoReference { FileName = "logo_" + invalidHash + "." + kind, Hash = invalidHash };
+                        Directory.CreateDirectory(storeDirectory);
+                        var invalidManaged = Path.Combine(storeDirectory, invalidReference.FileName);
+                        File.WriteAllBytes(invalidManaged, invalidBytes);
+                        Require(await store.LoadSafeAsync(WithLogo(invalidReference)).ConfigureAwait(true) == null, "malformed managed image did not fall back: " + kind);
+                        File.Delete(invalidManaged);
+                    }
                     var reference = await store.ImportAsync(source).ConfigureAwait(true);
                     Require(CustomerDisplayContentPolicy.IsManagedLogoReference(reference.FileName, reference.Hash), "managed image reference invalid: " + kind);
                     var settings = WithLogo(reference);
@@ -247,7 +259,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             var failed = false;
             try { await action().ConfigureAwait(true); }
-            catch (Exception exception) when (exception is IOException || exception is ArgumentException || exception is FormatException || exception is NotSupportedException || exception is System.Runtime.InteropServices.COMException)
+            catch (Exception exception) when (exception is IOException || exception is InvalidDataException || exception is ArgumentException || exception is FormatException || exception is NotSupportedException || exception is System.Runtime.InteropServices.COMException)
             { failed = true; }
             Require(failed, error);
         }
