@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "package": "B",
+  "reviewer": "hardware",
+  "reviewKind": "independent read-only source review",
+  "baseSha": "42afc8817422a5d1c3ed06e0ca50f7fb44a3207b",
+  "status": "PASS_NO_REMAINING_FINDINGS_IN_REVIEWED_SCOPE",
+  "sourceSnapshot": [
+    { "path": "src/Win7POS.Data/Backup/BackupRestoreProtocol.cs", "sha256": "f124d37bad6ccd89f2643d5cd96046baa0f5daffbb016124cba5ddaeb708bccc" },
+    { "path": "src/Win7POS.Data/Backup/SqliteOnlineBackup.cs", "sha256": "4425453ff334eebf279014a7f004e19954160470c8062df5df37ef7b09926c2e" },
+    { "path": "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs", "sha256": "b19a26a1a057ddc24c811cdc6e81e3626ebe3277affd0d814728882b0ed8fba4" },
+    { "path": "tests/Win7POS.Core.Tests/Data/OnlineBackupContentionTests.cs", "sha256": "49c0ee2e4b52fb4662e270c39df3ffd6e0750da5299319dc03363b0e5bc56577" }
+  ],
+  "resolvedFinding": {
+    "initialProblem": "The initial finite writer could finish before the provider copy call; successful overlap used pre-commit activity only.",
+    "correction": "A test-only wrapper starts the writer after source and destination open, waits for its first committed write, calls the existing provider copy, and retains the writer until verified backup completion. Success is counted only after commit while the backup operation remains active.",
+    "boundedWriter": "4096 commits and 10 seconds; Task.Yield without sleeps."
+  },
+  "reviewedAssertions": [
+    "Source/destination handles open before the test wrapper; production without hooks invokes the same provider call.",
+    "Writer continues through verified-backup completion and all cleanup paths release and await it.",
+    "Real EXCLUSIVE transactions exercise native BUSY, exactly two attempts after controlled release, exactly five attempts for a persistent lock, cancellation, and clean retry.",
+    "Malformed source returns native NOTADB once; explicitly injected irreversible error codes exercise no retry and partial cleanup.",
+    "No timeout increase, WAL requirement, or product-side sales/backup serialization was introduced."
+  ],
+  "limits": [
+    "The wrapper observes the provider-call boundary. It does not instrument sqlite3_backup_step and does not prove a writer commit inside that native step.",
+    "This review executed no build or tests; parent-owned TRX and repeated-run evidence qualify runtime validation separately.",
+    "Historical failure cause remains undetermined; superseded initial green writer artifacts cannot establish the corrected overlap criterion.",
+    "No physical Win7, real SMB share, or authenticated live app restore acceptance was performed by this reviewer."
+  ]
+}

@@ -1,0 +1,50 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="e6480704-2200-439e-ae1f-5c85d3598b8b" name="xniw9@MIN-ASUS 2026-10-03 14:15:04" runUser="MIN-ASUS\xniw9" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-03T14:15:04.4118344-03:00" queuing="2026-10-03T14:15:04.4118349-03:00" start="2026-10-03T14:15:02.6643001-03:00" finish="2026-10-03T14:15:05.8682873-03:00" />
+  <TestSettings name="default" id="15462d47-eb3f-4331-a6f4-1aeea3093f8e">
+    <Deployment runDeploymentRoot="xniw9_MIN-ASUS_2026-10-03_14_15_04" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="87a8521c-7f60-4edb-9a15-028a6151d02b" testId="1a9917e1-7b0d-8aea-9413-d6eda10719db" testName="OnlineBackup_CancelDuringRealLockAttempt_DoesNotRetryOrPublish" computerName="MIN-ASUS" duration="00:00:00.5915437" startTime="2026-10-03T14:15:04.7324140-03:00" endTime="2026-10-03T14:15:05.3240444-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="87a8521c-7f60-4edb-9a15-028a6151d02b" />
+    <UnitTestResult executionId="f605b224-5cae-4d84-b2bf-5e6f98d7cbca" testId="13185cac-5d03-8a8a-b5bd-65983241aafc" testName="OnlineBackup_RealInvalidSource_IsNotRetriedAndNeverPublished" computerName="MIN-ASUS" duration="00:00:00.0040186" startTime="2026-10-03T14:15:05.3241216-03:00" endTime="2026-10-03T14:15:05.3282071-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f605b224-5cae-4d84-b2bf-5e6f98d7cbca" />
+    <UnitTestResult executionId="fe93280c-8a60-4599-8d67-8616601a4b7b" testId="12500af5-1c3e-8d1d-8f60-9311b04184c7" testName="OnlineBackup_RealPersistentExclusiveLock_FailsWithinAttemptBudgetAndCleansUp" computerName="MIN-ASUS" duration="00:00:00.8677768" startTime="2026-10-03T14:15:03.8640312-03:00" endTime="2026-10-03T14:15:04.7321035-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fe93280c-8a60-4599-8d67-8616601a4b7b" />
+    <UnitTestResult executionId="2a0e8093-0f1f-403a-9abf-93964f999b0e" testId="12e791d6-cdbc-8036-9cee-e6b3807a10ed" testName="OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues" computerName="MIN-ASUS" duration="00:00:00.4921270" startTime="2026-10-03T14:15:05.3282452-03:00" endTime="2026-10-03T14:15:05.8224812-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2a0e8093-0f1f-403a-9abf-93964f999b0e" />
+    <UnitTestResult executionId="c6220a0f-584e-4866-a687-93cb1b69c807" testId="1a6cbbd0-8c72-8dc2-a5fe-2cf8bdf892a0" testName="OnlineBackup_RealExclusiveLockReleasedAtRetry_PublishesVerifiedSnapshot" computerName="MIN-ASUS" duration="00:00:00.8305340" startTime="2026-10-03T14:15:03.0179249-03:00" endTime="2026-10-03T14:15:03.8610366-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c6220a0f-584e-4866-a687-93cb1b69c807" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="OnlineBackup_RealInvalidSource_IsNotRetriedAndNeverPublished" storage="c:\dev\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="13185cac-5d03-8a8a-b5bd-65983241aafc">
+      <Execution id="f605b224-5cae-4d84-b2bf-5e6f98d7cbca" />
+      <TestMethod codeBase="C:\Dev\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.PersistenceFoundationTests" name="OnlineBackup_RealInvalidSource_IsNotRetriedAndNeverPublished" />
+    </UnitTest>
+    <UnitTest name="OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues" storage="c:\dev\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="12e791d6-cdbc-8036-9cee-e6b3807a10ed">
+      <Execution id="2a0e8093-0f1f-403a-9abf-93964f999b0e" />
+      <TestMethod codeBase="C:\Dev\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.PersistenceFoundationTests" name="OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues" />
+    </UnitTest>
+    <UnitTest name="OnlineBackup_CancelDuringRealLockAttempt_DoesNotRetryOrPublish" storage="c:\dev\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1a9917e1-7b0d-8aea-9413-d6eda10719db">
+      <Execution id="87a8521c-7f60-4edb-9a15-028a6151d02b" />
+      <TestMethod codeBase="C:\Dev\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.PersistenceFoundationTests" name="OnlineBackup_CancelDuringRealLockAttempt_DoesNotRetryOrPublish" />
+    </UnitTest>
+    <UnitTest name="OnlineBackup_RealPersistentExclusiveLock_FailsWithinAttemptBudgetAndCleansUp" storage="c:\dev\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="12500af5-1c3e-8d1d-8f60-9311b04184c7">
+      <Execution id="fe93280c-8a60-4599-8d67-8616601a4b7b" />
+      <TestMethod codeBase="C:\Dev\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.PersistenceFoundationTests" name="OnlineBackup_RealPersistentExclusiveLock_FailsWithinAttemptBudgetAndCleansUp" />
+    </UnitTest>
+    <UnitTest name="OnlineBackup_RealExclusiveLockReleasedAtRetry_PublishesVerifiedSnapshot" storage="c:\dev\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1a6cbbd0-8c72-8dc2-a5fe-2cf8bdf892a0">
+      <Execution id="c6220a0f-584e-4866-a687-93cb1b69c807" />
+      <TestMethod codeBase="C:\Dev\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Data.PersistenceFoundationTests" name="OnlineBackup_RealExclusiveLockReleasedAtRetry_PublishesVerifiedSnapshot" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="1a9917e1-7b0d-8aea-9413-d6eda10719db" executionId="87a8521c-7f60-4edb-9a15-028a6151d02b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="13185cac-5d03-8a8a-b5bd-65983241aafc" executionId="f605b224-5cae-4d84-b2bf-5e6f98d7cbca" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="12500af5-1c3e-8d1d-8f60-9311b04184c7" executionId="fe93280c-8a60-4599-8d67-8616601a4b7b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="12e791d6-cdbc-8036-9cee-e6b3807a10ed" executionId="2a0e8093-0f1f-403a-9abf-93964f999b0e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1a6cbbd0-8c72-8dc2-a5fe-2cf8bdf892a0" executionId="c6220a0f-584e-4866-a687-93cb1b69c807" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="5" executed="5" passed="5" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>

@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "declaredRepetitionLimit": 3,
+  "runsCompleted": 3,
+  "casesPerRun": 5,
+  "total": 15,
+  "passed": 15,
+  "failed": 0,
+  "notExecuted": 0,
+  "sdk": "10.0.301",
+  "command": "dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore --filter <five causal cases>",
+  "privateEvidenceRoot": "C:\\Users\\xniw9\\AppData\\Local\\Temp\\Win7POS-closeout-backup-final-0a9aa792989e43a3b2e4eadb8426f51c",
+  "environment": "Fresh per-run WIN7POS_DATA_DIR; WIN7POS_ADMIN_WEB_BASE_URL=http://127.0.0.1:9",
+  "binarySha256": "986d616c21ed500f443569d0f962b7fe4fbe4fb6f627e33eb8d8e8c72e7727d8",
+  "criterion": "First committed write while backup operation active before native copy, continuous finite writer through verified completion, post-commit overlap check, actual native invocation and writer-attempt boundary asserted. No assertion of committed writes inside synchronous SQLite backup_step.",
+  "sourceManifest": [
+    {
+      "path": "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs",
+      "sha256": "b19a26a1a057ddc24c811cdc6e81e3626ebe3277affd0d814728882b0ed8fba4"
+    },
+    {
+      "path": "tests/Win7POS.Core.Tests/Data/OnlineBackupContentionTests.cs",
+      "sha256": "49c0ee2e4b52fb4662e270c39df3ffd6e0750da5299319dc03363b0e5bc56577"
+    },
+    {
+      "path": "src/Win7POS.Data/Backup/BackupRestoreProtocol.cs",
+      "sha256": "f124d37bad6ccd89f2643d5cd96046baa0f5daffbb016124cba5ddaeb708bccc"
+    },
+    {
+      "path": "src/Win7POS.Data/Backup/SqliteOnlineBackup.cs",
+      "sha256": "4425453ff334eebf279014a7f004e19954160470c8062df5df37ef7b09926c2e"
+    }
+  ],
+  "runs": [
+    {
+      "artifact": "backup-tests/backup-final-repeat-1.trx",
+      "sha256": "11600c3f88434f0d7114387e12325d43832eefd6d64b4ca90b6859097dc304cf",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "notExecuted": 0,
+      "cases": [
+        {
+          "name": "OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues",
+          "outcome": "Passed",
+          "duration": "00:00:00.5103457",
+          "startTime": "2026-10-03T14:15:01.4443711-03:00",
+          "endTime": "2026-10-03T14:15:01.9573084-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealExclusiveLockReleasedAtRetry_PublishesVerifiedSnapshot",
+          "outcome": "Passed",
+          "duration": "00:00:00.8270277",
+          "startTime": "2026-10-03T14:14:59.0874164-03:00",
+          "endTime": "2026-10-03T14:14:59.9259897-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealPersistentExclusiveLock_FailsWithinAttemptBudgetAndCleansUp",
+          "outcome": "Passed",
+          "duration": "00:00:00.8621603",
+          "startTime": "2026-10-03T14:14:59.9292404-03:00",
+          "endTime": "2026-10-03T14:15:00.7917860-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealInvalidSource_IsNotRetriedAndNeverPublished",
+          "outcome": "Passed",
+          "duration": "00:00:00.0035471",
+          "startTime": "2026-10-03T14:15:01.4407352-03:00",
+          "endTime": "2026-10-03T14:15:01.4443447-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_CancelDuringRealLockAttempt_DoesNotRetryOrPublish",
+          "outcome": "Passed",
+          "duration": "00:00:00.6484548",
+          "startTime": "2026-10-03T14:15:00.7921161-03:00",
+          "endTime": "2026-10-03T14:15:01.4406519-03:00",
+          "message": null
+        }
+      ]
+    },
+    {
+      "artifact": "backup-tests/backup-final-repeat-2.trx",
+      "sha256": "8dac54a62d5abb0349dfe2f0a0c03373e923a90436f28fa86671d2eb940ad777",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "notExecuted": 0,
+      "cases": [
+        {
+          "name": "OnlineBackup_CancelDuringRealLockAttempt_DoesNotRetryOrPublish",
+          "outcome": "Passed",
+          "duration": "00:00:00.5915437",
+          "startTime": "2026-10-03T14:15:04.7324140-03:00",
+          "endTime": "2026-10-03T14:15:05.3240444-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealInvalidSource_IsNotRetriedAndNeverPublished",
+          "outcome": "Passed",
+          "duration": "00:00:00.0040186",
+          "startTime": "2026-10-03T14:15:05.3241216-03:00",
+          "endTime": "2026-10-03T14:15:05.3282071-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealPersistentExclusiveLock_FailsWithinAttemptBudgetAndCleansUp",
+          "outcome": "Passed",
+          "duration": "00:00:00.8677768",
+          "startTime": "2026-10-03T14:15:03.8640312-03:00",
+          "endTime": "2026-10-03T14:15:04.7321035-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues",
+          "outcome": "Passed",
+          "duration": "00:00:00.4921270",
+          "startTime": "2026-10-03T14:15:05.3282452-03:00",
+          "endTime": "2026-10-03T14:15:05.8224812-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealExclusiveLockReleasedAtRetry_PublishesVerifiedSnapshot",
+          "outcome": "Passed",
+          "duration": "00:00:00.8305340",
+          "startTime": "2026-10-03T14:15:03.0179249-03:00",
+          "endTime": "2026-10-03T14:15:03.8610366-03:00",
+          "message": null
+        }
+      ]
+    },
+    {
+      "artifact": "backup-tests/backup-final-repeat-3.trx",
+      "sha256": "f9e2584dfcdcbf69a1fc61b508f5d42f8b9d4f62a94b845b6758b4575717cc9e",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "notExecuted": 0,
+      "cases": [
+        {
+          "name": "OnlineBackup_CancelDuringRealLockAttempt_DoesNotRetryOrPublish",
+          "outcome": "Passed",
+          "duration": "00:00:00.6335508",
+          "startTime": "2026-10-03T14:15:08.5065210-03:00",
+          "endTime": "2026-10-03T14:15:09.1401498-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues",
+          "outcome": "Passed",
+          "duration": "00:00:00.5092123",
+          "startTime": "2026-10-03T14:15:09.1439721-03:00",
+          "endTime": "2026-10-03T14:15:09.6553943-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealExclusiveLockReleasedAtRetry_PublishesVerifiedSnapshot",
+          "outcome": "Passed",
+          "duration": "00:00:00.7955419",
+          "startTime": "2026-10-03T14:15:06.8597570-03:00",
+          "endTime": "2026-10-03T14:15:07.6679456-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealInvalidSource_IsNotRetriedAndNeverPublished",
+          "outcome": "Passed",
+          "duration": "00:00:00.0036432",
+          "startTime": "2026-10-03T14:15:09.1402285-03:00",
+          "endTime": "2026-10-03T14:15:09.1439393-03:00",
+          "message": null
+        },
+        {
+          "name": "OnlineBackup_RealPersistentExclusiveLock_FailsWithinAttemptBudgetAndCleansUp",
+          "outcome": "Passed",
+          "duration": "00:00:00.8353599",
+          "startTime": "2026-10-03T14:15:07.6705528-03:00",
+          "endTime": "2026-10-03T14:15:08.5061894-03:00",
+          "message": null
+        }
+      ]
+    }
+  ]
+}
