@@ -33,61 +33,100 @@ public sealed partial class PersistenceFoundationTests
         var overlappingAttempts = 0;
         var overlappingSuccesses = 0;
         var maximumOverlappingWriteMs = 0L;
-        var stop = 0;
         var writes = 0;
+        var nativeCopyActive = 0;
+        var nativeOverlappingAttempts = 0;
+        var nativeCopyCalls = 0;
+        using var writerMayRun = new ManualResetEventSlim();
+        using var firstWriterCommitted = new ManualResetEventSlim();
+        using var backupDone = new ManualResetEventSlim();
+        var writerReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         Exception? writerFailure = null;
         var writer = Task.Run(async () =>
         {
             try
             {
                 using var connection = factory.Open();
-                while (Volatile.Read(ref stop) == 0)
+                writerReady.SetResult(true);
+                Assert.IsTrue(writerMayRun.Wait(TimeSpan.FromSeconds(10)), "Backup did not release the writer barrier.");
+                // Continue through verified-backup completion, with a hard cap on
+                // both writes and elapsed time. Yielding lets the native worker run
+                // without a sleep or a product-side sales/backup serialization gate.
+                var writerDeadline = Stopwatch.StartNew();
+                while (!backupDone.IsSet)
                 {
                     var sequence = Interlocked.Increment(ref writes);
+                    Assert.IsTrue(sequence <= 4096 && writerDeadline.Elapsed < TimeSpan.FromSeconds(10), "Concurrent writer exhausted its declared finite budget before backup completion.");
                     var overlapsBackup = Volatile.Read(ref backupActive) == 1;
                     if (overlapsBackup)
                         Interlocked.Increment(ref overlappingAttempts);
+                    if (Volatile.Read(ref nativeCopyActive) == 1)
+                        Interlocked.Increment(ref nativeOverlappingAttempts);
                     var stopwatch = Stopwatch.StartNew();
                     await connection.ExecuteAsync(
                         "INSERT INTO audit_log(ts, action, details) VALUES(@ts, @action, 'writer');",
                         new { ts = sequence + 1L, action = "backup-writer-" + sequence });
                     stopwatch.Stop();
-                    if (overlapsBackup)
+                    if (overlapsBackup && Volatile.Read(ref backupActive) == 1)
                     {
                         Interlocked.Increment(ref overlappingSuccesses);
                         UpdateMaximum(ref maximumOverlappingWriteMs, stopwatch.ElapsedMilliseconds);
                     }
-                    await Task.Delay(1);
+                    firstWriterCommitted.Set();
+                    await Task.Yield();
                 }
             }
             catch (Exception ex)
             {
                 writerFailure = ex;
+                writerReady.TrySetException(ex);
             }
         });
 
         try
         {
-            await WaitUntilAsync(() => Volatile.Read(ref writes) >= 20, "Concurrent writer did not start.");
+            await writerReady.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var hooks = new BackupRestoreTestHooks
+            {
+                NativeSnapshotRunner = copy =>
+                {
+                    Interlocked.Increment(ref nativeCopyCalls);
+                    Interlocked.Exchange(ref nativeCopyActive, 1);
+                    try
+                    {
+                        writerMayRun.Set();
+                        // SQLite's synchronous DELETE-journal copy may block a
+                        // writer until it returns. Prove a committed write during
+                        // the operation before entering that native call, then
+                        // keep the writer running through verified completion.
+                        Assert.IsTrue(firstWriterCommitted.Wait(TimeSpan.FromSeconds(10)), "Writer did not complete its first concurrent commit.");
+                        copy();
+                    }
+                    finally { Interlocked.Exchange(ref nativeCopyActive, 0); }
+                }
+            };
             Interlocked.Exchange(ref backupActive, 1);
             try
             {
-                var validation = await new SqliteOnlineBackup(factory).CreateVerifiedAsync(files.Backup);
+                var validation = await new SqliteOnlineBackup(factory, null, hooks).CreateVerifiedAsync(files.Backup);
                 Assert.IsTrue(validation.IsValid, "Online backup must pass integrity and foreign-key checks.");
             }
             finally
             {
                 Interlocked.Exchange(ref backupActive, 0);
+                backupDone.Set();
             }
         }
         finally
         {
-            Interlocked.Exchange(ref stop, 1);
+            writerMayRun.Set();
+            backupDone.Set();
             await writer;
         }
 
         Assert.IsNull(writerFailure, "Concurrent writer failed during online backup: " + writerFailure);
         Assert.IsTrue(overlappingAttempts > 0, "Writer never attempted a commit while online backup was active.");
+        Assert.IsTrue(nativeCopyCalls > 0 && nativeOverlappingAttempts > 0, "No writer attempted a commit across an actual native snapshot invocation.");
         Assert.IsTrue(overlappingSuccesses > 0, "Writer made no successful commit while online backup was active.");
         Assert.IsTrue(maximumOverlappingWriteMs < 5000, "An overlapping writer exceeded busy_timeout.");
         Assert.IsTrue(File.Exists(files.Backup));

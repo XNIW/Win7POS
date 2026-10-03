@@ -1,0 +1,22 @@
+[
+  {
+    "source": "tests\\Win7POS.Core.Tests\\TestResults\\operations1-online-backup-recheck.trx",
+    "sourceSha256": "c30baec6f664c74da057d42ddbf1a8e33cf7c7111c6d78f052be717635422f20",
+    "test": "OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues",
+    "outcome": "Passed",
+    "duration": "00:00:01.2770218",
+    "startTime": "2026-10-01T18:45:07.6088992-03:00",
+    "endTime": "2026-10-01T18:45:08.9162049-03:00",
+    "message": null
+  },
+  {
+    "source": "tests\\Win7POS.Core.Tests\\TestResults\\operations1-final-verified.trx",
+    "sourceSha256": "c4cb0e6c1d93e037ac38424c5cedd7581b1059069aa2d3ba8c4c17594acc3d87",
+    "test": "OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues",
+    "outcome": "Passed",
+    "duration": "00:00:00.8235085",
+    "startTime": "2026-10-01T18:14:50.6452964-03:00",
+    "endTime": "2026-10-01T18:14:51.4688460-03:00",
+    "message": null
+  }
+]

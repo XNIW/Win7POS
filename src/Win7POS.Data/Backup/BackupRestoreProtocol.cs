@@ -121,6 +121,7 @@ namespace Win7POS.Data.Backup
     internal sealed class BackupRestoreTestHooks
     {
         public Action<BackupFailurePoint> BackupFault { get; set; }
+        public Action<Action> NativeSnapshotRunner { get; set; }
         public Func<string> CandidateTokenFactory { get; set; }
         public Action<RestoreFailurePoint> RestoreFault { get; set; }
         public Func<RestoreFailurePoint, CancellationToken, Task> RestorePauseAsync { get; set; }

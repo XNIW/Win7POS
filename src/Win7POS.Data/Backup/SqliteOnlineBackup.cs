@@ -201,7 +201,10 @@ namespace Win7POS.Data.Backup
                     {
                         source.Open();
                         destination.Open();
-                        source.BackupDatabase(destination);
+                        if (_testHooks?.NativeSnapshotRunner == null)
+                            source.BackupDatabase(destination);
+                        else
+                            _testHooks.NativeSnapshotRunner(() => source.BackupDatabase(destination));
                     }
 
                     return attempt - 1;
