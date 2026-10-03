@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "package": "A sync and fractional stock follow-up",
+  "runner": "C:\\Dev\\.dotnet-sdk-10.0.301\\dotnet.exe",
+  "testProject": "tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj",
+  "isolatedWorkspace": "C:\\Users\\xniw9\\.codex\\worktrees\\closeout-sync-baseline\\Win7POS",
+  "execution": "Core/Data source explicitly copied from the shared checkout; all these test runs occurred in the isolated workspace. No external API calls or actual process restart are certified.",
+  "backendSource": {
+    "repository": "C:\\Dev\\merchandise-control-admin-web",
+    "commit": "553c4568b335ee95be31aaaea6735ed0a751879c",
+    "mutationFile": "src/server/pos-auth/article-mutations.ts",
+    "mutationBound": "Finite number magnitude <= 1000000000000, server toFixed(3)",
+    "importFile": "src/server/pos-auth/catalog-import-sync.ts",
+    "importBound": "Nonnegative number <= 999999999, server toFixed(3)",
+    "qualification": "Read-only source inspection, not authenticated backend execution."
+  },
+  "localPolicy": {
+    "localWrites": "0..2147483647 inclusive, maximum three fractional digits; reject unsupported scale without rounding",
+    "supplierImport": "0..999999999 inclusive, maximum three fractional digits; explicit and preserved values validated in preview and apply",
+    "remoteReads": "Preexisting remote magnitude domain retained; fractional values preserved without applying local-write rounding"
+  },
+  "beforeReproductions": [
+    {
+      "test": "SamePageDescendingRevisionsKeepNewestBusinessAndShadow",
+      "input": "Persist t0; one response page contains t2 name Newest then t1 name Older for the same remote ID",
+      "observedBefore": "Name became Older (expected Newest)",
+      "fixedBy": "Advance accepted per-page revision before the next duplicate is checked",
+      "classification": "Product failure"
+    },
+    {
+      "test": "SupplierPreviewRejectsUnsupportedQuantityAsRowError",
+      "input": "Quantity 2147483648",
+      "observedBefore": "ArgumentException escaped preview construction",
+      "fixedBy": "Strict decimal quantity policy; retain invalid text for a row-level preview error",
+      "classification": "Product failure"
+    },
+    {
+      "test": "SupplierPreviewRejectsUnsupportedQuantityAsRowError",
+      "input": "Quantity 1.2345",
+      "observedBefore": "Preview.CanApply was true",
+      "fixedBy": "Reject local/import quantities above three fractional digits without rounding",
+      "classification": "Product failure"
+    },
+    {
+      "test": "SupplierPreviewRejectsUnsupportedQuantityAsRowError",
+      "input": "Quantity NaN or Infinity",
+      "observedBefore": "OverflowException escaped double-to-decimal conversion",
+      "fixedBy": "Decimal.TryParse validation with finite supported domain",
+      "classification": "Two product failures"
+    },
+    {
+      "test": "SupplierRenamePreservesExplicitOrAbsentThreeFractionQuantity",
+      "input": "Existing stock1.234; rename with quantity1.234 or absent; fixture initially had no official shop binding",
+      "observedBefore": "Apply.Errors1; diagnostic receipt explicitly identified official shop binding missing. Preview had already retained1.234",
+      "fixedBy": "Seed synthetic official binding in the fixture",
+      "classification": "Two test fixture failures, not evidence of a product quantity defect"
+    }
+  ],
+  "covered": [
+    "Explicit and absent 1.234 quantity rename keeps article code, barcode, CLP price and durable import outbox",
+    "Near local maximum2147483646.999 roundtrip through SQLite legacy INTEGER affinity",
+    "Remote stock1.2345 retains four digits; local1.2345 write rejected before product/outbox insert",
+    "Stock1.234 to2.345 stores manual delta1.111 and durable mutation intent",
+    "Fresh SqliteConnectionFactory after ClearAllPools proves database reopen; no actual process restart claimed",
+    "Supplier import maximum999999999 tested; missing quantity that preserves local1000000000 produces row error",
+    "Existing supplier Android/Excel/ProductDb corpus and adjacent remote/outbox suites"
+  ],
+  "receipts": [
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-followup-red.trx",
+      "sha256": "195F6179A53EC0563922C786C0A80FBEAD124C551D0B1E3A8A44048D40A1FADA",
+      "total": 14,
+      "passed": 7,
+      "failed": 7,
+      "skipped": 0
+    },
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-followup-fixture-diagnostic.trx",
+      "sha256": "862A0C17045E8C24526DB294D34C62E0376BEB471E5500C17AEE7F3248A4FFB8",
+      "total": 2,
+      "passed": 0,
+      "failed": 2,
+      "skipped": 0
+    },
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-followup-green.trx",
+      "sha256": "4C5F116B7C347D192F230EA1208C8EF90BB09F1C0CB5CCE79ECA6E8E0F5493F7",
+      "total": 133,
+      "passed": 133,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-reader-parity.trx",
+      "sha256": "3EFFE216BF06CB0AD6C6EBCB1E98C8F2C748767E704A97470B17ED7BCEE51396",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-import-bound-green.trx",
+      "sha256": "3118831A4F5F94A2354CBA624BFE995F49BF23CF13C7F07343FFE4FCB311ADFB",
+      "total": 58,
+      "passed": 58,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "path": "C:\\Dev\\Win7POS\\docs\\reports\\evidence\\2026-10-03-closeout\\A-final-bound-green.trx",
+      "sha256": "A22D922D077479391EF43A371233518CEAF5784F0B308F5892424235E1DA5606",
+      "total": 47,
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0
+    }
+  ]
+}

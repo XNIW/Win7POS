@@ -2506,7 +2506,7 @@ namespace Win7POS.Wpf.Pos
             var lines = new List<PosCartLine>();
             foreach (var x in _session.Lines)
             {
-                var stockQty = 0;
+                decimal stockQty = 0;
                 long discountAmountMinor = 0;
                 int discountPercent = 0;
                 if (!DiscountKeys.IsDiscount(x.Barcode ?? "") && !(x.Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase))
@@ -3247,7 +3247,7 @@ namespace Win7POS.Wpf.Pos
         public int Quantity { get; set; }
         public long UnitPrice { get; set; }
         public long LineTotal { get; set; }
-        public int StockQty { get; set; }
+        public decimal StockQty { get; set; }
         /// <summary>Importo sconto applicato a questa riga (solo righe prodotto con sconto riga).</summary>
         public long DiscountAmountMinor { get; set; }
         /// <summary>Percentuale sconto (es. 58 per -58%). Solo se sconto riga percentuale.</summary>

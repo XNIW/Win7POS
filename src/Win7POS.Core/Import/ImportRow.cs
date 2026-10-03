@@ -8,7 +8,7 @@ namespace Win7POS.Core.Import
         public string Name2 { get; set; } = string.Empty;
         public long UnitPrice { get; set; }
         public int? Cost { get; set; }
-        public int? Stock { get; set; }
+        public decimal? Stock { get; set; }
         public string SupplierName { get; set; } = string.Empty;
         public string CategoryName { get; set; } = string.Empty;
         /// <summary>Risolto da ImportWorkflowService prima di Apply. Se null, ProductUpserterAdapter usa il resolver.</summary>

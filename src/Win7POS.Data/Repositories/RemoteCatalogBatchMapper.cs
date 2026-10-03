@@ -78,7 +78,7 @@ namespace Win7POS.Data.Repositories
                         RemoteSupplierId = Normalize(row.SupplierId),
                         RemoteUpdatedAt = Normalize(row.UpdatedAt),
                         SecondName = Normalize(row.SecondProductName),
-                        StockQuantity = ToInt(row.StockQuantity),
+                        StockQuantity = Win7POS.Core.Models.StockQuantityPolicy.FromTransport(row.StockQuantity),
                         SupplierName = NameFor(suppliers, row.SupplierId),
                         UnitPrice = ToLong(row.RetailPrice)
                         };

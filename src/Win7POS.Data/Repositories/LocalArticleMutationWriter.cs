@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Online;
+using Win7POS.Core.Models;
 using Win7POS.Core.Receipt;
 using Win7POS.Data.Online;
 
@@ -670,7 +671,7 @@ VALUES(
             SqliteTransaction transaction,
             long productId,
             string barcode,
-            int quantityDelta,
+            decimal quantityDelta,
             string reason,
             DateTimeOffset occurredAt,
             ICollection<ArticleMutationEnqueueResult> mutations)
@@ -958,7 +959,7 @@ LIMIT 1;",
             string secondaryName,
             int purchasePrice,
             ResolvedArticleReferences references,
-            int stockQuantity)
+            decimal stockQuantity)
         {
             return connection.ExecuteAsync(@"
 INSERT INTO product_meta(
@@ -1012,7 +1013,7 @@ VALUES(
             if (request.RetailPrice < 0 ||
                 request.RetailPrice > int.MaxValue ||
                 request.PurchasePrice < 0 ||
-                request.InitialStock < 0)
+                !StockQuantityPolicy.IsValid(request.InitialStock))
             {
                 throw new ArgumentException("Article price or stock is invalid.");
             }
@@ -1031,7 +1032,7 @@ VALUES(
             if (request.RetailPrice < 0 ||
                 request.RetailPrice > int.MaxValue ||
                 request.PurchasePrice < 0 ||
-                request.StockQuantity < 0)
+                !StockQuantityPolicy.IsValid(request.StockQuantity))
             {
                 throw new ArgumentException("Article price or stock is invalid.");
             }
@@ -1129,7 +1130,7 @@ VALUES(
             public int PurchasePrice { get; set; }
             public int? SupplierId { get; set; }
             public int? CategoryId { get; set; }
-            public int StockQuantity { get; set; }
+            public decimal StockQuantity { get; set; }
         }
     }
 }

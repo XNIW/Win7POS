@@ -1,0 +1,74 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="e3a3a1c0-fb84-4d0b-83b9-bf98fd08bc9e" name="xniw9@MIN-ASUS 2026-10-03 13:53:41" runUser="MIN-ASUS\xniw9" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-03T13:53:41.5624587-03:00" queuing="2026-10-03T13:53:41.5624592-03:00" start="2026-10-03T13:53:39.8056742-03:00" finish="2026-10-03T13:53:41.6184834-03:00" />
+  <TestSettings name="default" id="1707e692-8236-4d01-bd83-922748f3a9fe">
+    <Deployment runDeploymentRoot="xniw9_MIN-ASUS_2026-10-03_13_53_41" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="c4099b17-a9a6-4ae9-a133-2f927b7efebd" testId="1d3879a6-874c-8e8c-b4c5-d9bac3ee4d54" testName="ReadFirstWorksheet_FirstSheetContractAndFileSharing_AreStable" computerName="MIN-ASUS" duration="00:00:00.0174335" startTime="2026-10-03T13:53:41.5383096-03:00" endTime="2026-10-03T13:53:41.5558178-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c4099b17-a9a6-4ae9-a133-2f927b7efebd" />
+    <UnitTestResult executionId="f4e43bde-52cf-4fc6-9090-323405dbf5ab" testId="16c6f2e6-fad0-8fe3-a11e-8575f1f9e872" testName="ReadFirstWorksheet_XlsxFormula_PreservesClosedXmlCompatibilityResult" computerName="MIN-ASUS" duration="00:00:00.7216522" startTime="2026-10-03T13:53:40.7269872-03:00" endTime="2026-10-03T13:53:41.4486935-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f4e43bde-52cf-4fc6-9090-323405dbf5ab" />
+    <UnitTestResult executionId="3aaa951a-a8c4-444f-b8f7-591c45171346" testId="1aed7c30-3933-8082-8c85-c7cac7f3eb87" testName="ReadFirstWorksheet_XlsxMergedCells_PreservesCurrentTopLeftBehavior" computerName="MIN-ASUS" duration="00:00:00.0249575" startTime="2026-10-03T13:53:40.7019439-03:00" endTime="2026-10-03T13:53:40.7269543-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3aaa951a-a8c4-444f-b8f7-591c45171346" />
+    <UnitTestResult executionId="9bf872ab-11e1-44fe-99da-941ad7febaf3" testId="1a075962-8bb4-810e-874d-fa94535c7008" testName="ReadFirstWorksheet_UnsupportedAndCorruptInputs_ReturnStableRecoverableCode" computerName="MIN-ASUS" duration="00:00:00.0127810" startTime="2026-10-03T13:53:41.5558623-03:00" endTime="2026-10-03T13:53:41.5707599-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9bf872ab-11e1-44fe-99da-941ad7febaf3" />
+    <UnitTestResult executionId="b7d9a2b7-0a80-4fb2-967f-3953e352baaa" testId="16c7b494-d3ad-8616-8ec6-da17f7dea72b" testName="ReadFirstWorksheet_HtmlXls_PreservesRowspanColspanAndEntities" computerName="MIN-ASUS" duration="00:00:00.0197374" startTime="2026-10-03T13:53:41.4487405-03:00" endTime="2026-10-03T13:53:41.4685439-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b7d9a2b7-0a80-4fb2-967f-3953e352baaa" />
+    <UnitTestResult executionId="38c82343-fe64-4c94-8ba7-db3c1d3169ae" testId="1f025a4e-4f69-82f4-8d89-765ad7641d8e" testName="ReadFirstWorksheet_ClosedXmlIncompatibleXlsx_UsesExcelDataReaderPath" computerName="MIN-ASUS" duration="00:00:00.0324796" startTime="2026-10-03T13:53:41.5057159-03:00" endTime="2026-10-03T13:53:41.5382645-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="38c82343-fe64-4c94-8ba7-db3c1d3169ae" />
+    <UnitTestResult executionId="dbf5178e-5040-4a3c-8292-4f8b6d2df7a1" testId="186d7a5f-25cd-844a-b334-ea97798a9b36" testName="ReadFirstWorksheet_RealBinaryXls_RemainsSupported" computerName="MIN-ASUS" duration="00:00:00.0370061" startTime="2026-10-03T13:53:41.4685908-03:00" endTime="2026-10-03T13:53:41.5056680-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dbf5178e-5040-4a3c-8292-4f8b6d2df7a1" />
+    <UnitTestResult executionId="45d0b394-e601-4a61-8cc3-1ae96d24a50a" testId="1b5027cf-8783-89fe-8dcc-322262a4dbe5" testName="ReadFirstWorksheet_XlsxCanonicalAndHeaderless_KeepDetectionContract" computerName="MIN-ASUS" duration="00:00:00.0215697" startTime="2026-10-03T13:53:40.6798367-03:00" endTime="2026-10-03T13:53:40.7016519-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="45d0b394-e601-4a61-8cc3-1ae96d24a50a" />
+    <UnitTestResult executionId="571f1fb2-d1bd-4f68-86b2-a9cd3ef8f4b8" testId="168d908f-339a-8832-98d5-afc3fedf4fb1" testName="ReadFirstWorksheet_XlsxSemanticCorpus_PreservesBaseline" computerName="MIN-ASUS" duration="00:00:00.5288704" startTime="2026-10-03T13:53:40.1356015-03:00" endTime="2026-10-03T13:53:40.6772223-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="571f1fb2-d1bd-4f68-86b2-a9cd3ef8f4b8" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ReadFirstWorksheet_UnsupportedAndCorruptInputs_ReturnStableRecoverableCode" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1a075962-8bb4-810e-874d-fa94535c7008">
+      <Execution id="9bf872ab-11e1-44fe-99da-941ad7febaf3" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_UnsupportedAndCorruptInputs_ReturnStableRecoverableCode" />
+    </UnitTest>
+    <UnitTest name="ReadFirstWorksheet_ClosedXmlIncompatibleXlsx_UsesExcelDataReaderPath" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1f025a4e-4f69-82f4-8d89-765ad7641d8e">
+      <Execution id="38c82343-fe64-4c94-8ba7-db3c1d3169ae" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_ClosedXmlIncompatibleXlsx_UsesExcelDataReaderPath" />
+    </UnitTest>
+    <UnitTest name="ReadFirstWorksheet_XlsxMergedCells_PreservesCurrentTopLeftBehavior" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1aed7c30-3933-8082-8c85-c7cac7f3eb87">
+      <Execution id="3aaa951a-a8c4-444f-b8f7-591c45171346" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_XlsxMergedCells_PreservesCurrentTopLeftBehavior" />
+    </UnitTest>
+    <UnitTest name="ReadFirstWorksheet_XlsxSemanticCorpus_PreservesBaseline" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="168d908f-339a-8832-98d5-afc3fedf4fb1">
+      <Execution id="571f1fb2-d1bd-4f68-86b2-a9cd3ef8f4b8" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_XlsxSemanticCorpus_PreservesBaseline" />
+    </UnitTest>
+    <UnitTest name="ReadFirstWorksheet_XlsxCanonicalAndHeaderless_KeepDetectionContract" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1b5027cf-8783-89fe-8dcc-322262a4dbe5">
+      <Execution id="45d0b394-e601-4a61-8cc3-1ae96d24a50a" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_XlsxCanonicalAndHeaderless_KeepDetectionContract" />
+    </UnitTest>
+    <UnitTest name="ReadFirstWorksheet_FirstSheetContractAndFileSharing_AreStable" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="1d3879a6-874c-8e8c-b4c5-d9bac3ee4d54">
+      <Execution id="c4099b17-a9a6-4ae9-a133-2f927b7efebd" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_FirstSheetContractAndFileSharing_AreStable" />
+    </UnitTest>
+    <UnitTest name="ReadFirstWorksheet_RealBinaryXls_RemainsSupported" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="186d7a5f-25cd-844a-b334-ea97798a9b36">
+      <Execution id="dbf5178e-5040-4a3c-8292-4f8b6d2df7a1" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_RealBinaryXls_RemainsSupported" />
+    </UnitTest>
+    <UnitTest name="ReadFirstWorksheet_XlsxFormula_PreservesClosedXmlCompatibilityResult" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="16c6f2e6-fad0-8fe3-a11e-8575f1f9e872">
+      <Execution id="f4e43bde-52cf-4fc6-9090-323405dbf5ab" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_XlsxFormula_PreservesClosedXmlCompatibilityResult" />
+    </UnitTest>
+    <UnitTest name="ReadFirstWorksheet_HtmlXls_PreservesRowspanColspanAndEntities" storage="c:\users\xniw9\.codex\worktrees\closeout-sync-baseline\win7pos\tests\win7pos.core.tests\bin\release\net10.0\win7pos.core.tests.dll" id="16c7b494-d3ad-8616-8ec6-da17f7dea72b">
+      <Execution id="b7d9a2b7-0a80-4fb2-967f-3953e352baaa" />
+      <TestMethod codeBase="C:\Users\xniw9\.codex\worktrees\closeout-sync-baseline\Win7POS\tests\Win7POS.Core.Tests\bin\Release\net10.0\Win7POS.Core.Tests.dll" adapterTypeName="executor://mstestadapter/v4" className="Win7POS.Core.Tests.Import.SupplierExcelImportReaderParityTests" name="ReadFirstWorksheet_HtmlXls_PreservesRowspanColspanAndEntities" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="1d3879a6-874c-8e8c-b4c5-d9bac3ee4d54" executionId="c4099b17-a9a6-4ae9-a133-2f927b7efebd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16c6f2e6-fad0-8fe3-a11e-8575f1f9e872" executionId="f4e43bde-52cf-4fc6-9090-323405dbf5ab" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1aed7c30-3933-8082-8c85-c7cac7f3eb87" executionId="3aaa951a-a8c4-444f-b8f7-591c45171346" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1a075962-8bb4-810e-874d-fa94535c7008" executionId="9bf872ab-11e1-44fe-99da-941ad7febaf3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16c7b494-d3ad-8616-8ec6-da17f7dea72b" executionId="b7d9a2b7-0a80-4fb2-967f-3953e352baaa" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1f025a4e-4f69-82f4-8d89-765ad7641d8e" executionId="38c82343-fe64-4c94-8ba7-db3c1d3169ae" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="186d7a5f-25cd-844a-b334-ea97798a9b36" executionId="dbf5178e-5040-4a3c-8292-4f8b6d2df7a1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1b5027cf-8783-89fe-8dcc-322262a4dbe5" executionId="45d0b394-e601-4a61-8cc3-1ae96d24a50a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="168d908f-339a-8832-98d5-afc3fedf4fb1" executionId="571f1fb2-d1bd-4f68-86b2-a9cd3ef8f4b8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="9" executed="9" passed="9" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>

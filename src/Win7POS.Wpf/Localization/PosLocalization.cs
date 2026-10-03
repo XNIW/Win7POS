@@ -348,6 +348,7 @@ namespace Win7POS.Wpf.Localization
                 catalog["zh-CN"][entry.Key] = entry.ZhCn;
             }
 
+            AddStockQuantityTranslations(catalog);
             return catalog;
         }
 

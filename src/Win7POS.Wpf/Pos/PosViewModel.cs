@@ -2586,7 +2586,7 @@ namespace Win7POS.Wpf.Pos
             public int Quantity { get; set; }
             public long UnitPrice { get; set; }
             public long LineTotal { get; set; }
-            public int StockQty { get; set; }
+            public decimal StockQty { get; set; }
             public long DiscountAmountMinor { get; set; }
             public int DiscountPercent { get; set; }
 

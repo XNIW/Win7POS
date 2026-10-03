@@ -16,7 +16,7 @@ namespace Win7POS.Data.Repositories
         public string SupplierName { get; set; }
         public int? CategoryId { get; set; }
         public string CategoryName { get; set; }
-        public int InitialStock { get; set; }
+        public decimal InitialStock { get; set; }
         public long? DuplicateSourceProductId { get; set; }
         public DateTimeOffset OccurredAt { get; set; }
     }
@@ -34,7 +34,7 @@ namespace Win7POS.Data.Repositories
         public string SupplierName { get; set; }
         public int? CategoryId { get; set; }
         public string CategoryName { get; set; }
-        public int StockQuantity { get; set; }
+        public decimal StockQuantity { get; set; }
         public string StockReason { get; set; } = "count_correction";
         public DateTimeOffset OccurredAt { get; set; }
     }

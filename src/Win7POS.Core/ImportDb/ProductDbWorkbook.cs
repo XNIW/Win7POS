@@ -28,7 +28,7 @@ namespace Win7POS.Core.ImportDb
         public int? SupplierId { get; set; }
         public string CategoryName { get; set; } = string.Empty;
         public int? CategoryId { get; set; }
-        public int StockQty { get; set; }
+        public decimal StockQty { get; set; }
     }
 
     public sealed class SupplierRow

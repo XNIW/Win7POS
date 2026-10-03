@@ -63,6 +63,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 await Task.WhenAll(service.ExportDailyCsvAsync(DateTime.Today), service.ExportDailyCsvAsync(DateTime.Today), service.GetPrinterSettingsAsync());
             });
+            await CheckAsync(results, "STOCK_fractional_input", async () =>
+            {
+                var vm = new ProductEditViewModel(ProductEditMode.Edit,
+                    new Win7POS.Core.Models.ProductDetailsRow { Id = 1, Barcode = "00a B条码", Name = "Fractional", UnitPrice = 1500, StockQty = 1.234m },
+                    new ProductsWorkflowService());
+                var button = new System.Windows.Controls.Button { Command = vm.ConfirmCommand };
+                Require(button.IsEnabled && vm.StockQtyInt == 1.234m, "fractional editor stock was altered or disabled");
+                foreach (var invalid in new[] { "-1", "1.2345", "NaN", "2147483648" })
+                {
+                    vm.StockText = invalid;
+                    await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.DataBind);
+                    Require(!button.IsEnabled && !vm.IsValid, "invalid stock did not disable actual save button");
+                    vm.StockText = "2.345";
+                    await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.DataBind);
+                    Require(button.IsEnabled && vm.StockQtyInt == 2.345m, "valid fractional stock did not enable save");
+                }
+                button.Command = null;
+            });
             await CheckAsync(results, "F07_settings_rollback", async () =>
             {
                 var service = new PosWorkflowService();

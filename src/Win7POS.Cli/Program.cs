@@ -6519,7 +6519,7 @@ SELECT last_insert_rowid();";
                 NameFor(suppliers, remoteProduct.SupplierId),
                 null,
                 NameFor(categories, remoteProduct.CategoryId),
-                ToInt(remoteProduct.StockQuantity),
+                Win7POS.Core.Models.StockQuantityPolicy.FromTransport(remoteProduct.StockQuantity),
                 ProductWriteOrigin.RemoteCatalogApply,
                 Normalize(remoteProduct.ProductId)).ConfigureAwait(false);
         }

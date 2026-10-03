@@ -245,7 +245,7 @@ namespace Win7POS.Wpf.Products
         public string StockText
         {
             get => _stockText;
-            set { _stockText = value ?? string.Empty; OnPropertyChanged(); }
+            set { _stockText = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(IsValid)); }
         }
 
         public string ArticleCode { get => _articleCode; set { _articleCode = value ?? string.Empty; OnPropertyChanged(); } }
@@ -317,12 +317,14 @@ namespace Win7POS.Wpf.Products
 
         public long UnitPriceMinor => MoneyClp.Parse(PriceText);
         public int PurchasePriceMinor => MoneyClp.Parse(PurchasePriceText);
-        public int StockQtyInt
+        public decimal StockQtyInt
         {
-            get => int.TryParse(StockText?.Trim() ?? "0", out var n) && n >= 0 ? n : 0;
+            get => StockQuantityPolicy.TryParse(StockText, out var n)
+                ? n : throw new ArgumentException(PosLocalization.T("products.invalidStockQuantity"));
         }
 
         public bool IsValid =>
+            StockQuantityPolicy.TryParse(StockText, out _) &&
             Barcode.Length > 0 &&
             UnitPriceMinor >= 0 &&
             SalesReceiptContentPolicy.IsValidBarcode(Barcode) &&
@@ -509,7 +511,10 @@ namespace Win7POS.Wpf.Products
         public event Action<bool> RequestClose;
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string name = null)
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+            if (name == nameof(IsValid)) (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
 
         private void BuildSupplierSelection(out int? supplierId, out string supplierName)
         {
@@ -638,9 +643,8 @@ namespace Win7POS.Wpf.Products
             }
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
             public void Execute(object parameter) => _execute(parameter);
-#pragma warning disable 0067
             public event EventHandler CanExecuteChanged;
-#pragma warning restore 0067
+            public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

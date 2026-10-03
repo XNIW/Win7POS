@@ -16,7 +16,7 @@ namespace Win7POS.Core.Models
         public string ArticleCode { get; set; } = string.Empty;
         public string Name2 { get; set; } = string.Empty;
         public int PurchasePrice { get; set; }
-        public int StockQty { get; set; }
+        public decimal StockQty { get; set; }
         public int? SupplierId { get; set; }
         public string SupplierName { get; set; } = string.Empty;
         public int? CategoryId { get; set; }

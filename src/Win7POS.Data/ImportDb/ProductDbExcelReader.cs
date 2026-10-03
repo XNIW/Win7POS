@@ -149,7 +149,7 @@ namespace Win7POS.Data.ImportDb
                     RetailOld = NormalizeMoneyClp(GetCell(row, retailOldCol)),
                     SupplierName = NormalizeName(ToString(GetCell(row, supplierCol))),
                     CategoryName = NormalizeName(ToString(GetCell(row, categoryCol))),
-                    StockQty = NormalizeInt(GetCell(row, stockCol))
+                    StockQty = NormalizeStock(GetCell(row, stockCol))
                 });
             }
             return rows;
@@ -284,7 +284,7 @@ namespace Win7POS.Data.ImportDb
                     RetailOld = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "Venta (Antiguo)", "H", 7)),
                     SupplierName = NormalizeName(ToString(GetCellValueWithFallback(ws, r, headerMap, "I", 8, "Proveedor", "Supplier", "SupplierName"))),
                     CategoryName = NormalizeName(ToString(GetCellValueWithFallback(ws, r, headerMap, "J", 9, "Categoría", "Category", "CategoryName"))),
-                    StockQty = NormalizeInt(GetCellValueWithFallback(ws, r, headerMap, "K", 10, "Existencias", "Stock", "StockQty"))
+                    StockQty = NormalizeStock(GetCellValueWithFallback(ws, r, headerMap, "K", 10, "Existencias", "Stock", "StockQty"))
                 });
             }
             return rows;
@@ -418,6 +418,15 @@ namespace Win7POS.Data.ImportDb
 
             s = s.Replace(".", "").Replace(",", "");
             return int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+        }
+
+        private static decimal NormalizeStock(object cell)
+        {
+            if (cell == null || cell == DBNull.Value || string.IsNullOrWhiteSpace(Convert.ToString(cell, CultureInfo.InvariantCulture))) return 0;
+            decimal value;
+            if (!Win7POS.Core.Models.StockQuantityPolicy.TryParse(Convert.ToString(cell, CultureInfo.InvariantCulture), out value))
+                throw new FormatException("Invalid stock quantity.");
+            return value;
         }
 
         private static int NormalizeInt(object cell)

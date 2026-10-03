@@ -229,15 +229,44 @@ namespace Win7POS.Data.Repositories
                     var productBatchContext = pageState.ProductContext.CloneWithPendingStock(
                         pendingStockIdentities.Select(row => row.Barcode),
                         pendingStockIdentities.Select(row => row.RemoteProductId));
+                    var pageProductIdentities = (await runContext
+                        .LoadPageProductIdentitiesAsync(tx)
+                        .ConfigureAwait(false)).ToArray();
+                    var currentProductsByRemoteId = pageProductIdentities
+                        .Where(row => !string.IsNullOrWhiteSpace(row.RemoteProductId))
+                        .GroupBy(row => row.RemoteProductId.Trim(), StringComparer.Ordinal)
+                        .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+                    bool IsStaleProduct(string remoteId, string revision, bool tombstone)
+                    {
+                        RemoteCatalogProductIdentityRow[] current;
+                        return currentProductsByRemoteId.TryGetValue((remoteId ?? string.Empty).Trim(), out current) &&
+                            current.Any(row => RemoteCatalogProductWriter.IsIncomingProductStale(
+                                revision, row.RemoteBaseRevision, row.RemoteDeletedAt, tombstone));
+                    }
                     var tombstonedRemoteProductIds = new HashSet<string>(
                         (batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
                             .Where(row => row != null && !string.IsNullOrWhiteSpace(row.RemoteProductId))
+                            .Where(row => !IsStaleProduct(row.RemoteProductId,
+                                string.IsNullOrWhiteSpace(row.RemoteUpdatedAt) ? row.RemoteDeletedAt : row.RemoteUpdatedAt, true))
                             .Select(row => row.RemoteProductId.Trim()),
                         StringComparer.Ordinal);
-                    var activeProductIdentities = (await runContext
-                        .LoadPageProductIdentitiesAsync(tx)
-                        .ConfigureAwait(false))
-                        .Where(row => !string.IsNullOrWhiteSpace(row.Barcode) &&
+                    var pageTombstonesByRemoteId = (batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
+                        .Where(row => row != null && !string.IsNullOrWhiteSpace(row.RemoteProductId))
+                        .GroupBy(row => row.RemoteProductId.Trim(), StringComparer.Ordinal)
+                        .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+                    void AdvanceProductRevision(string remoteId, string revision)
+                    {
+                        if (!PosArticleMutationIntentPolicy.IsProductRevision(revision)) return;
+                        currentProductsByRemoteId[remoteId] = new[] { new RemoteCatalogProductIdentityRow { RemoteBaseRevision = revision } };
+                        // The next duplicate row must compare with the generation accepted in this page.
+                        // A newer reactivation also cancels an older page tombstone's barcode adoption.
+                        if (pageTombstonesByRemoteId.TryGetValue(remoteId, out var tombstones) &&
+                            tombstones.All(row => IsStaleProduct(remoteId,
+                                string.IsNullOrWhiteSpace(row.RemoteUpdatedAt) ? row.RemoteDeletedAt : row.RemoteUpdatedAt, true)))
+                            tombstonedRemoteProductIds.Remove(remoteId);
+                    }
+                    var activeProductIdentities = pageProductIdentities
+                        .Where(row => row.IsActive != 0 && !string.IsNullOrWhiteSpace(row.Barcode) &&
                             !string.IsNullOrWhiteSpace(row.RemoteProductId))
                         .ToArray();
                     var activeRemoteIdsByBarcode = activeProductIdentities
@@ -334,6 +363,15 @@ namespace Win7POS.Data.Repositories
                             result.ImageWarnings = checked(result.ImageWarnings + 1L);
                         }
 
+                        if (IsStaleProduct(normalizedRemoteProductId, product.RemoteUpdatedAt, false))
+                        {
+                            // Compare the persisted canonical revision before changing business,
+                            // shadow, reference or image rows. A full refresh must also report
+                            // this row as skipped, so exactness cannot certify stale data.
+                            result.ProductsSkipped = checked(result.ProductsSkipped + 1L);
+                            continue;
+                        }
+
                         if (activeRemoteIdsByBarcode.TryGetValue(
                                 normalizedBarcode,
                                 out var existingRemoteProductIds) &&
@@ -422,6 +460,7 @@ namespace Win7POS.Data.Repositories
                                 updateProduct: false).ConfigureAwait(false);
                             relinkProductRemoteIds.Add(normalizedRemoteProductId);
                             result.ProductsApplied = checked(result.ProductsApplied + 1L);
+                            AdvanceProductRevision(normalizedRemoteProductId, product.RemoteUpdatedAt);
                             continue;
                         }
 
@@ -529,6 +568,7 @@ namespace Win7POS.Data.Repositories
                         activeBarcodeByRemoteId[normalizedRemoteProductId] = normalizedBarcode;
                         relinkProductRemoteIds.Add(normalizedRemoteProductId);
                         result.ProductsApplied = checked(result.ProductsApplied + 1L);
+                        AdvanceProductRevision(normalizedRemoteProductId, product.RemoteUpdatedAt);
                     }
 
                     await runContext.StageCleanProductsAsync(cleanProducts).ConfigureAwait(false);
@@ -548,7 +588,9 @@ namespace Win7POS.Data.Repositories
 
                     foreach (var tombstone in batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
                     {
-                        if (tombstone == null || string.IsNullOrWhiteSpace(tombstone.RemoteProductId))
+                        if (tombstone == null || string.IsNullOrWhiteSpace(tombstone.RemoteProductId) ||
+                            IsStaleProduct(tombstone.RemoteProductId,
+                                string.IsNullOrWhiteSpace(tombstone.RemoteUpdatedAt) ? tombstone.RemoteDeletedAt : tombstone.RemoteUpdatedAt, true))
                         {
                             result.TombstonesSkipped = checked(result.TombstonesSkipped + 1L);
                             continue;
@@ -2423,20 +2465,22 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
             SqliteTransaction transaction)
         {
             var rows = (await Connection.QueryAsync<RemoteCatalogProductIdentityRow>(@"
-SELECT p.barcode AS Barcode, TRIM(p.remote_product_id) AS RemoteProductId
+SELECT p.barcode AS Barcode, TRIM(p.remote_product_id) AS RemoteProductId,
+       COALESCE(p.is_active, 1) AS IsActive, p.remote_base_revision AS RemoteBaseRevision,
+       p.remote_deleted_at AS RemoteDeletedAt
 FROM products p
 JOIN temp_catalog_page_product_identities incoming
   ON incoming.barcode <> '' AND incoming.barcode = p.barcode
-WHERE COALESCE(p.is_active, 1) = 1
-  AND TRIM(COALESCE(p.remote_product_id, '')) <> ''
+WHERE TRIM(COALESCE(p.remote_product_id, '')) <> ''
 UNION
-SELECT p.barcode AS Barcode, TRIM(p.remote_product_id) AS RemoteProductId
+SELECT p.barcode AS Barcode, TRIM(p.remote_product_id) AS RemoteProductId,
+       COALESCE(p.is_active, 1) AS IsActive, p.remote_base_revision AS RemoteBaseRevision,
+       p.remote_deleted_at AS RemoteDeletedAt
 FROM products p
 JOIN temp_catalog_page_product_identities incoming
   ON incoming.remote_product_id <> ''
  AND incoming.remote_product_id = p.remote_product_id
-WHERE COALESCE(p.is_active, 1) = 1
-  AND TRIM(COALESCE(p.remote_product_id, '')) <> '';",
+WHERE TRIM(COALESCE(p.remote_product_id, '')) <> '';",
                 transaction: transaction).ConfigureAwait(false)).ToArray();
             Diagnostics.ProductIdentityQueryCount = checked(Diagnostics.ProductIdentityQueryCount + 1L);
             Diagnostics.ProductIdentityRowsLoaded = checked(
@@ -2769,7 +2813,7 @@ WITH staged AS (
     CAST(json_extract(value, '$[9]') AS TEXT) AS supplier_name,
     CAST(json_extract(value, '$[10]') AS INTEGER) AS category_id,
     CAST(json_extract(value, '$[11]') AS TEXT) AS category_name,
-    CAST(json_extract(value, '$[12]') AS INTEGER) AS stock_quantity,
+    CAST(json_extract(value, '$[12]') AS REAL) AS stock_quantity,
     CAST(json_extract(value, '$[13]') AS TEXT) AS remote_category_id,
     CAST(json_extract(value, '$[14]') AS TEXT) AS remote_supplier_id,
     CAST(json_extract(value, '$[15]') AS TEXT) AS remote_updated_at,
@@ -2901,7 +2945,7 @@ FROM staged;
                 json.Append(',');
                 RemoteCatalogBatchRepository.AppendJsonString(json, row.CategoryName);
                 json.Append(',');
-                AppendJsonInteger(json, row.StockQuantity);
+                json.Append(row.StockQuantity.ToString(CultureInfo.InvariantCulture));
                 json.Append(',');
                 RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteCategoryId);
                 json.Append(',');
@@ -3183,7 +3227,7 @@ FROM staged;
         public string RemoteSupplierId { get; set; } = string.Empty;
         public string RemoteUpdatedAt { get; set; } = string.Empty;
         public string SecondName { get; set; } = string.Empty;
-        public int StockQuantity { get; set; }
+        public decimal StockQuantity { get; set; }
         public int? SupplierId { get; set; }
         public string SupplierName { get; set; } = string.Empty;
         public long UnitPrice { get; set; }
@@ -3198,8 +3242,12 @@ FROM staged;
 
     internal sealed class RemoteCatalogProductIdentityRow
     {
+        public long ProductId { get; set; }
         public string Barcode { get; set; } = string.Empty;
         public string RemoteProductId { get; set; } = string.Empty;
+        public long IsActive { get; set; }
+        public string RemoteBaseRevision { get; set; } = string.Empty;
+        public string RemoteDeletedAt { get; set; } = string.Empty;
     }
 
     internal sealed class RemoteCatalogPendingStockIdentityRow

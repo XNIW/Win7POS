@@ -420,7 +420,7 @@ namespace Win7POS.Wpf.Products
             return value == '=' || value == '+' || value == '-' || value == '@' || value == '\t';
         }
 
-        public async Task CreateProductAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+        public async Task CreateProductAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, decimal stockQty, string articleCode = null, string name2 = null)
         {
             if (string.IsNullOrWhiteSpace(barcode)) throw new ArgumentException(PosLocalization.T("products.barcodeRequired"));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
@@ -447,7 +447,7 @@ namespace Win7POS.Wpf.Products
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", normalizedBarcode), ("name", name?.Trim() ?? string.Empty))).ConfigureAwait(false);
         }
 
-        public async Task DuplicateProductAsync(long sourceProductId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+        public async Task DuplicateProductAsync(long sourceProductId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, decimal stockQty, string articleCode = null, string name2 = null)
         {
             if (sourceProductId <= 0)
                 throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
@@ -479,14 +479,14 @@ namespace Win7POS.Wpf.Products
         }
 
         /// <summary>Alias per creazione prodotto con tutti i dettagli (barcode, nome, prezzi, fornitore, categoria, stock).</summary>
-        public Task CreateAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+        public Task CreateAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, decimal stockQty, string articleCode = null, string name2 = null)
             => CreateProductAsync(barcode, name, unitPriceMinor, purchasePriceMinor, supplierId, supplierName, categoryId, categoryName, stockQty, articleCode, name2);
 
         /// <summary>Alias per aggiornamento completo (barcode, nomi, prezzi, riferimenti e stock).</summary>
-        public Task UpdateDetailsAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+        public Task UpdateDetailsAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, decimal stockQty, string articleCode = null, string name2 = null)
             => UpdateProductFullAsync(productId, barcode, name, unitPriceMinor, purchasePriceMinor, supplierId, supplierName, categoryId, categoryName, stockQty, articleCode, name2);
 
-        public async Task UpdateProductFullAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null, string stockReason = "count_correction")
+        public async Task UpdateProductFullAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, decimal stockQty, string articleCode = null, string name2 = null, string stockReason = "count_correction")
         {
             if (productId <= 0) throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
@@ -590,7 +590,7 @@ namespace Win7POS.Wpf.Products
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty,
+            decimal stockQty,
             string articleCode,
             string name2,
             string stockReason)

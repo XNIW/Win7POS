@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
@@ -54,6 +55,14 @@ namespace Win7POS.Data.Repositories
         {
             if (string.IsNullOrWhiteSpace(remoteProductId)) return false;
             var normalizedRemoteProductId = remoteProductId.Trim();
+            var current = await conn.QueryFirstOrDefaultAsync<RemoteCatalogProductIdentityRow>(@"
+SELECT remote_base_revision AS RemoteBaseRevision, remote_deleted_at AS RemoteDeletedAt
+FROM products WHERE remote_product_id = @remoteProductId
+ORDER BY COALESCE(is_active, 1) DESC, id LIMIT 1;",
+                new { remoteProductId = normalizedRemoteProductId }, tx).ConfigureAwait(false);
+            var incomingRevision = string.IsNullOrWhiteSpace(remoteUpdatedAt) ? remoteDeletedAt : remoteUpdatedAt;
+            if (current != null && IsIncomingProductStale(incomingRevision,
+                    current.RemoteBaseRevision, current.RemoteDeletedAt, true)) return false;
             var protectedProductId = await FindProtectedProductIdAsync(
                 conn,
                 tx,
@@ -154,7 +163,7 @@ WHERE remote_product_id = @remoteProductId
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty,
+            decimal stockQty,
             string remoteProductId)
         {
             if (p == null) throw new ArgumentNullException(nameof(p));
@@ -208,7 +217,7 @@ WHERE remote_product_id = @remoteProductId
             string supplierName,
             int? categoryId,
             string categoryName,
-            int stockQty,
+            decimal stockQty,
             string remoteProductId,
             CatalogProductPreparedCommands preparedCommands = null,
             CatalogProductBatchContext batchContext = null,
@@ -225,6 +234,16 @@ WHERE remote_product_id = @remoteProductId
                 throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
 
             var normalizedRemoteProductId = remoteProductId.Trim();
+            if (!protectedProductLookupCompleted)
+            {
+                var current = await conn.QueryFirstOrDefaultAsync<RemoteCatalogProductIdentityRow>(@"
+SELECT id AS ProductId, remote_base_revision AS RemoteBaseRevision, remote_deleted_at AS RemoteDeletedAt
+FROM products WHERE remote_product_id = @remoteProductId
+ORDER BY COALESCE(is_active, 1) DESC, id LIMIT 1;",
+                    new { remoteProductId = normalizedRemoteProductId }, tx).ConfigureAwait(false);
+                if (current != null && IsIncomingProductStale(remoteUpdatedAt,
+                        current.RemoteBaseRevision, current.RemoteDeletedAt, false)) return current.ProductId;
+            }
             long? protectedProductId = null;
             if (!protectedProductLookupCompleted)
             {
@@ -355,7 +374,7 @@ AND o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked')",
             var stockQtyToWrite = stockQty;
             if (hasPendingLocalStock)
             {
-                var existingStock = await conn.ExecuteScalarAsync<int?>(@"
+                var existingStock = await conn.ExecuteScalarAsync<decimal?>(@"
 SELECT stock_qty
 FROM product_meta
 WHERE barcode = @Barcode
@@ -429,6 +448,25 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
             return id;
         }
 
+        internal static bool IsIncomingProductStale(string incoming, string currentRevision,
+            string deletedAt, bool tombstone)
+        {
+            // Product revisions are server UTC timestamps; opaque catalog watermarks
+            // are never ordered here. Keep legacy rows with no revision compatible.
+            DateTimeOffset current;
+            var hasCurrent = DateTimeOffset.TryParse(currentRevision, CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind, out current);
+            DateTimeOffset deleted;
+            var hasDeleted = DateTimeOffset.TryParse(deletedAt, CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind, out deleted);
+            if (!hasCurrent && !hasDeleted) return false;
+            DateTimeOffset candidate;
+            if (!DateTimeOffset.TryParse(incoming, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out candidate)) return true;
+            return (hasCurrent && candidate < current) ||
+                (hasDeleted && (tombstone ? candidate < deleted : candidate <= deleted));
+        }
+
         internal static async Task<long?> FindProtectedProductIdAsync(
             SqliteConnection connection,
             SqliteTransaction transaction,
@@ -478,7 +516,7 @@ LIMIT 1;",
             string remoteSupplierId,
             long retailPrice,
             int purchasePrice,
-            int stockQuantity,
+            decimal stockQuantity,
             bool active,
             string authoritativeRevision)
         {
@@ -608,7 +646,7 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
             public string RemoteSupplierId { get; set; } = string.Empty;
             public string RemoteUpdatedAt { get; set; } = string.Empty;
             public string SecondName { get; set; } = string.Empty;
-            public int StockQuantity { get; set; }
+            public decimal StockQuantity { get; set; }
             public int? SupplierId { get; set; }
             public string SupplierName { get; set; } = string.Empty;
             public long UnitPrice { get; set; }
@@ -1049,7 +1087,7 @@ VALUES(
                 string supplierName,
                 int? categoryId,
                 string categoryName,
-                int stockQty)
+                decimal stockQty)
             {
                 Set(_upsertMeta, "@barcode", barcode);
                 Set(_upsertMeta, "@articleCode", articleCode ?? string.Empty);
