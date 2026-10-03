@@ -7,6 +7,8 @@ using System.Text;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Backup;
+using Win7POS.Core.Operations;
+using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.Backup
 {
@@ -102,7 +104,7 @@ UPDATE backup_automation_state SET db_key=@dbKey,considered_local=0,activated_lo
                 return ReadOptions(connection, null);
         }
 
-        internal void SaveOptions(BackupAutomationOptions options, string actor, long localTicks, long utcTicks)
+        internal void SaveOptions(BackupAutomationOptions options, string actor, long localTicks, long utcTicks, Action demandPermission = null)
         {
             using (var connection = OpenExisting())
             {
@@ -111,6 +113,7 @@ UPDATE backup_automation_state SET db_key=@dbKey,considered_local=0,activated_lo
                 {
                     try
                     {
+                        demandPermission?.Invoke();
                         var before = ReadOptions(connection, transaction);
                         var rows = OptionRows(options);
                         connection.Execute(@"
@@ -125,6 +128,10 @@ UPDATE backup_automation_state SET activated_local=@localTicks WHERE singleton_i
                         InsertAudit(connection, transaction, "settings_saved", actor, rows.Count,
                             OptionsHash(before), OptionsHash(options), "saved", string.Empty, 0, utcTicks,
                             string.Join(",", rows.Keys.OrderBy(key => key, StringComparer.Ordinal)));
+                        SettingsRepository.AppendSettingsAudit(connection, transaction, Guid.NewGuid().ToString("N"),
+                            "BackupPolicyUpdate", actor, "backup_policy", rows.Keys, OptionRows(before), rows,
+                            new DateTime(utcTicks, DateTimeKind.Utc));
+                        demandPermission?.Invoke();
                         transaction.Commit();
                     }
                     catch
@@ -134,6 +141,25 @@ UPDATE backup_automation_state SET activated_local=@localTicks WHERE singleton_i
                     }
                 }
             }
+        }
+
+        /// <summary>Reuses automation activation and audit within the profile's settings transaction.</summary>
+        internal static void ApplyPortablePolicyInTransaction(SqliteConnection connection, SqliteTransaction transaction,
+            IReadOnlyDictionary<string, string> before, IReadOnlyDictionary<string, string> after,
+            string actor, long localTicks, long utcTicks)
+        {
+            string Read(IReadOnlyDictionary<string, string> rows, string suffix, string fallback) =>
+                rows.TryGetValue(Prefix + suffix, out var value) ? value : fallback;
+            var oldSignature = Read(before, "schedule", "disabled") + "|" + Read(before, "local_time", "02:00") + "|" + Read(before, "weekly_day", "Sunday");
+            var newSignature = Read(after, "schedule", "disabled") + "|" + Read(after, "local_time", "02:00") + "|" + Read(after, "weekly_day", "Sunday");
+            if (oldSignature != newSignature)
+                connection.Execute("UPDATE backup_automation_state SET activated_local=@localTicks WHERE singleton_id=1;", new { localTicks }, transaction);
+            var keys = PortableSettingsPolicy.Keys.Where(x => x.StartsWith(Prefix, StringComparison.Ordinal)).ToArray();
+            var oldPortable = before.Where(x => keys.Contains(x.Key, StringComparer.Ordinal)).ToDictionary(x => x.Key, x => x.Value);
+            var newPortable = after.Where(x => keys.Contains(x.Key, StringComparer.Ordinal)).ToDictionary(x => x.Key, x => x.Value);
+            InsertAudit(connection, transaction, "settings_imported", actor, keys.Length,
+                PortableSettingsPolicy.SafeHash(oldPortable), PortableSettingsPolicy.SafeHash(newPortable), "saved", "", 0, utcTicks,
+                string.Join(",", keys));
         }
 
         internal void SaveState(BackupAutomationState state, string code = null, string fileName = "", int deletedCount = 0,
@@ -219,6 +245,7 @@ CREATE TABLE IF NOT EXISTS backup_automation_audit(
  deleted_count INTEGER NOT NULL,created_utc INTEGER NOT NULL);
 INSERT INTO backup_automation_state(singleton_id,db_key) VALUES(1,@dbKey)
 ON CONFLICT(singleton_id) DO NOTHING;", new { dbKey = _dbKey }, transaction);
+                    SettingsRepository.EnsureSettingsAudit(connection, transaction);
                     transaction.Commit();
                 }
                 catch
@@ -300,8 +327,7 @@ VALUES(@eventName,@actor,@keyCount,@keyNames,@beforeHash,@afterHash,@code,@fileN
 
         private static string OptionsHash(BackupAutomationOptions options)
         {
-            return HashText(string.Join("\n", OptionRows(options).OrderBy(row => row.Key, StringComparer.Ordinal)
-                .Select(row => row.Key + "=" + row.Value)));
+            return PortableSettingsPolicy.SafeHash(OptionRows(options));
         }
 
         private static string ScheduleSignature(BackupAutomationOptions options)

@@ -11,6 +11,13 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Core.Backup;
+using Win7POS.Core.Operations;
+using Win7POS.Data;
+using Win7POS.Data.Operations;
+using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Pos.Online;
+using System.Linq;
+using System.Text;
 using Win7POS.Data.Backup;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
@@ -41,6 +48,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _backupDestinationPath = string.Empty;
         private string _lastBackupResult = string.Empty;
         private bool _backupSettingsLoaded;
+        private SettingsOperationsService _pendingProfileService;
+        private SettingsProfilePreview _pendingProfile;
+        private string _profilePreview = string.Empty;
+        private SettingsDefaultsScope _defaultsScope = SettingsDefaultsScope.Hardware;
         private string _effectiveBackupsDirectory = AppPaths.BackupsDirectory;
         private static readonly string[] BackupResultCodes = { "backup_verified", "backup_verified_retention_warning",
             "access_denied", "network_unavailable", "cancelled", "backup_failed", "configuration_invalid",
@@ -67,6 +78,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OpenFolderCommand = new RelayCommand(_ => OpenFolder(), _ => !IsBusy);
             SaveBackupSettingsCommand = new AsyncRelayCommand(SaveBackupSettingsAsync,
                 _ => !IsBusy && BackupSettingsLoaded && _hasBackupPermission());
+            ExportProfileCommand = new AsyncRelayCommand(ExportProfileAsync, _ => !IsBusy && _hasBackupPermission());
+            PreviewProfileCommand = new AsyncRelayCommand(PreviewProfileAsync, _ => !IsBusy && _hasMaintenancePermission());
+            ApplyProfileCommand = new AsyncRelayCommand(ApplyProfileAsync, _ => !IsBusy && _pendingProfile != null && _hasMaintenancePermission());
+            RestoreDefaultsCommand = new AsyncRelayCommand(RestoreDefaultsAsync, _ => !IsBusy && _hasMaintenancePermission());
+            ViewSettingsAuditCommand = new AsyncRelayCommand(ViewSettingsAuditAsync, _ => !IsBusy && _hasMaintenancePermission());
         }
 
         public string DbPath => _service.DbPath;
@@ -141,6 +157,144 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand SupplierExcelImportCommand { get; }
         public ICommand OpenFolderCommand { get; }
         public ICommand SaveBackupSettingsCommand { get; }
+        public ICommand ExportProfileCommand { get; }
+        public ICommand PreviewProfileCommand { get; }
+        public ICommand ApplyProfileCommand { get; }
+        public ICommand RestoreDefaultsCommand { get; }
+        public ICommand ViewSettingsAuditCommand { get; }
+        public string ProfilePreview { get => _profilePreview; private set { _profilePreview = value; OnPropertyChanged(); } }
+        public SettingsDefaultsScope DefaultsScope { get => _defaultsScope; set { _defaultsScope = value; OnPropertyChanged(); } }
+        public IReadOnlyList<BackupChoice> DefaultsScopes { get; } = new[]
+        {
+            new BackupChoice(SettingsDefaultsScope.Hardware, "settingsProfile.scope.hardware"),
+            new BackupChoice(SettingsDefaultsScope.Backup, "settingsProfile.scope.backup"),
+            new BackupChoice(SettingsDefaultsScope.CustomerDisplay, "settingsProfile.scope.display"),
+            new BackupChoice(SettingsDefaultsScope.Language, "settingsProfile.scope.language"),
+            new BackupChoice(SettingsDefaultsScope.AllPortable, "settingsProfile.scope.all")
+        };
+
+        private static string CurrentActor => (OperatorSessionHolder.Current?.CurrentUser?.Id ?? 0).ToString(CultureInfo.InvariantCulture);
+        private SettingsOperationsService CreateProfileService()
+        {
+            var actor = CurrentActor;
+            return new SettingsOperationsService(new SqliteConnectionFactory(PosDbOptions.ForPath(DbPath)), AppPaths.BackupsDirectory,
+                permission => actor == CurrentActor &&
+                    (permission == PermissionCodes.DbBackup ? _hasBackupPermission() : permission == PermissionCodes.DbMaintenance && _hasMaintenancePermission()),
+                actor, _service.BackupAutomation);
+        }
+        private async Task ExportProfileAsync()
+        {
+            if (IsBusy || !_hasBackupPermission()) return;
+            var dialog = new SaveFileDialog { Title = PosLocalization.T("settingsProfile.export"), Filter = PosLocalization.T("settingsProfile.filter"),
+                FileName = "settings.win7pos-settings.json", AddExtension = true, DefaultExt = ".win7pos-settings.json" };
+            if (dialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner()) != true) return;
+            IsBusy = true;
+            try
+            {
+                var service = CreateProfileService();
+                var bytes = await Task.Run(() => service.ExportAsync(PosApplicationVersion.GetCurrent())).ConfigureAwait(true);
+                // The user chose this file; overwrite is confirmed by the standard SaveFileDialog.
+                await Task.Run(() => File.WriteAllBytes(dialog.FileName, bytes)).ConfigureAwait(true);
+                Append(PosLocalization.T("settingsProfile.exported"));
+            }
+            catch { Append(PosLocalization.T("settingsProfile.failed")); }
+            finally { IsBusy = false; }
+        }
+        private async Task PreviewProfileAsync()
+        {
+            if (IsBusy || !_hasMaintenancePermission()) return;
+            var dialog = new OpenFileDialog { Title = PosLocalization.T("settingsProfile.preview"), Filter = PosLocalization.T("settingsProfile.filter"), CheckFileExists = true, Multiselect = false };
+            if (dialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner()) != true) return;
+            IsBusy = true;
+            _pendingProfile = null;
+            _pendingProfileService = null;
+            ProfilePreview = string.Empty;
+            try
+            {
+                var service = CreateProfileService();
+                var preview = await Task.Run(async () =>
+                {
+                    using (var stream = new FileStream(dialog.FileName, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        if (stream.Length < 1 || stream.Length > PortableSettingsPolicy.MaximumFileBytes) throw new ArgumentException("Profile size is invalid.");
+                        var bytes = new byte[(int)stream.Length];
+                        var read = 0;
+                        while (read < bytes.Length)
+                        {
+                            var count = stream.Read(bytes, read, bytes.Length - read);
+                            if (count == 0) throw new IOException("Incomplete profile.");
+                            read += count;
+                        }
+                        if (stream.ReadByte() != -1) throw new ArgumentException("Profile size changed.");
+                        return await service.PreviewImportAsync(bytes).ConfigureAwait(false);
+                    }
+                }).ConfigureAwait(true);
+                _pendingProfileService = service;
+                _pendingProfile = preview;
+                ProfilePreview = PosLocalization.F("settingsProfile.diffCount", preview.Differences.Count) + Environment.NewLine +
+                    string.Join(Environment.NewLine, preview.Differences.Select(x => x.Key + ": " + x.Before + " → " + x.After)) + Environment.NewLine +
+                    string.Join(Environment.NewLine, preview.SafetyAdjustments.Select(x => PosLocalization.T("settingsProfile.safety." + x)));
+            }
+            catch { Append(PosLocalization.T("settingsProfile.invalid")); }
+            finally { IsBusy = false; }
+        }
+        private async Task ApplyProfileAsync()
+        {
+            if (IsBusy || _pendingProfile == null || !_hasMaintenancePermission()) return;
+            if (!ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), PosLocalization.T("settingsProfile.apply"), PosLocalization.T("settingsProfile.confirmImport"))) return;
+            IsBusy = true;
+            try
+            {
+                var service = _pendingProfileService;
+                var preview = _pendingProfile;
+                await Task.Run(() => service.ImportAsync(preview, true)).ConfigureAwait(true);
+                _pendingProfile = null;
+                _pendingProfileService = null;
+                ProfilePreview = string.Empty;
+                await RefreshImportedPreferencesAsync().ConfigureAwait(true);
+                Append(PosLocalization.T("settingsProfile.applied"));
+            }
+            catch { Append(PosLocalization.T("settingsProfile.applyFailed")); }
+            finally { IsBusy = false; }
+        }
+        private async Task RestoreDefaultsAsync()
+        {
+            if (IsBusy || !_hasMaintenancePermission()) return;
+            if (!ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), PosLocalization.T("settingsProfile.reset"), PosLocalization.T("settingsProfile.confirmReset"))) return;
+            IsBusy = true;
+            try
+            {
+                var service = CreateProfileService();
+                var scope = DefaultsScope;
+                await Task.Run(() => service.RestoreDefaultsAsync(scope, true)).ConfigureAwait(true);
+                _pendingProfile = null;
+                _pendingProfileService = null;
+                ProfilePreview = string.Empty;
+                await RefreshImportedPreferencesAsync().ConfigureAwait(true);
+                Append(PosLocalization.T("settingsProfile.resetDone"));
+            }
+            catch { Append(PosLocalization.T("settingsProfile.failed")); }
+            finally { IsBusy = false; }
+        }
+        private async Task RefreshImportedPreferencesAsync()
+        {
+            await PosLocalization.Current.LoadAsync(new SettingsRepository(new SqliteConnectionFactory(PosDbOptions.ForPath(DbPath)))).ConfigureAwait(true);
+            await InitializeBackupSettingsAsync().ConfigureAwait(true);
+        }
+        private async Task ViewSettingsAuditAsync()
+        {
+            if (IsBusy || !_hasMaintenancePermission()) return;
+            IsBusy = true;
+            try
+            {
+                var service = CreateProfileService();
+                var rows = await Task.Run(() => service.GetAuditAsync()).ConfigureAwait(true);
+                Append(PosLocalization.T("settingsProfile.audit") + Environment.NewLine + string.Join(Environment.NewLine,
+                    rows.Select(x => x.CreatedUtc + " | " + x.Event + " | " + x.Actor + " | " + x.Source + " | " + x.Result + " | " + x.KeyCount.ToString(CultureInfo.InvariantCulture) + " | " + x.KeyNames)));
+            }
+            catch { Append(PosLocalization.T("settingsProfile.failed")); }
+            finally { IsBusy = false; }
+        }
 
         public event PropertyChangedEventHandler PropertyChanged;
         internal Window OwnerWindow { get; set; }
@@ -196,7 +350,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var actor = (OperatorSessionHolder.Current?.CurrentUser?.Id ?? 0).ToString(CultureInfo.InvariantCulture);
                 // Permission is checked again immediately before the settings transaction.
                 if (!_hasBackupPermission()) return;
-                await Task.Run(() => _service.BackupAutomation.SaveOptionsAsync(options, actor)).ConfigureAwait(true);
+                await Task.Run(() => _service.BackupAutomation.SaveOptionsAsync(options, actor, () =>
+                {
+                    if (!_hasBackupPermission() || actor != CurrentActor) throw new UnauthorizedAccessException();
+                })).ConfigureAwait(true);
                 UpdateBackupDirectory(options);
                 Append(PosLocalization.T("backupAutomation.saved"));
                 await RefreshBackupResultAsync().ConfigureAwait(true);
@@ -506,6 +663,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (SupplierExcelImportCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenFolderCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SaveBackupSettingsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ExportProfileCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (PreviewProfileCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ApplyProfileCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (RestoreDefaultsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ViewSettingsAuditCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -526,6 +688,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             public async void Execute(object parameter)
             {
+                if (!CanExecute(parameter)) return;
                 try
                 {
                     await _executeAsync().ConfigureAwait(true);

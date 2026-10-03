@@ -102,8 +102,16 @@ namespace Win7POS.Data.Backup
                 return await Task.Run(() => _store.LoadOptions()).ConfigureAwait(false);
         }
 
-        public async Task SaveOptionsAsync(BackupAutomationOptions options, string actor)
+        // The profile service already holds EnterMaintenanceAsync; preserve the same store/schema/ownership.
+        internal void EnsurePortablePolicyState() => _store.LoadState(LocalNow.Ticks);
+
+        // Trusted fixtures use the internal overload; production callers must supply current authority.
+        internal Task SaveOptionsAsync(BackupAutomationOptions options, string actor) => SaveOptionsAsync(options, actor, () => { });
+
+        public async Task SaveOptionsAsync(BackupAutomationOptions options, string actor, Action demandPermission)
         {
+            if (demandPermission == null) throw new ArgumentNullException(nameof(demandPermission));
+            demandPermission();
             if (options == null || options.Schedule == null)
                 throw new ArgumentException("Backup options are required.");
             var copy = options.Copy();
@@ -112,11 +120,12 @@ namespace Win7POS.Data.Backup
             copy.DestinationPath = copy.DestinationKind == "local" ? string.Empty : resolved;
             using (await EnterMaintenanceAsync().ConfigureAwait(false))
             {
+                demandPermission();
                 await Task.Run(() =>
                 {
                     var state = _store.LoadState(LocalNow.Ticks);
                     var utc = EffectiveUtc(state);
-                    _store.SaveOptions(copy, actor, LocalNow.Ticks, utc.Ticks);
+                    _store.SaveOptions(copy, actor, LocalNow.Ticks, utc.Ticks, demandPermission);
                 }).ConfigureAwait(false);
             }
         }
