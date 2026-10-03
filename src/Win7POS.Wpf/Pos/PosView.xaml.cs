@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Core.Hardware;
 using Win7POS.Wpf.Infrastructure.Security;
 
 namespace Win7POS.Wpf.Pos
@@ -16,6 +17,7 @@ namespace Win7POS.Wpf.Pos
         private DispatcherOperation _focusOperation;
         private DispatcherOperation _scrollOperation;
         private ListBox _scrollTarget;
+        private bool _barcodeComposing;
 
         public PosView()
         {
@@ -24,6 +26,9 @@ namespace Win7POS.Wpf.Pos
             vm.FocusBarcodeRequested += FocusBarcode;
             vm.StatusToastDetailsRequested += () => CatalogWarningDetailsRequested?.Invoke();
             DataContext = vm;
+            TextCompositionManager.AddPreviewTextInputStartHandler(BarcodeBox, (sender, args) => _barcodeComposing = true);
+            TextCompositionManager.AddPreviewTextInputHandler(BarcodeBox, (sender, args) => _barcodeComposing = false);
+            BarcodeBox.LostKeyboardFocus += (sender, args) => _barcodeComposing = false;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
         }
@@ -71,16 +76,22 @@ namespace Win7POS.Wpf.Pos
             return false;
         }
 
-        private void BarcodeBox_KeyDown(object sender, KeyEventArgs e)
+        private void BarcodeBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key != Key.Enter) return;
+            if (e.Key == Key.Escape || (e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Escape)) _barcodeComposing = false;
+            if (_barcodeComposing || e.Key == Key.ImeProcessed || e.IsRepeat || Keyboard.Modifiers != ModifierKeys.None) return;
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key != Key.Enter && key != Key.Tab) return;
 
             var vm = DataContext as PosViewModel;
             if (vm == null) return;
+            var terminator = key == Key.Enter ? ScannerTerminator.Enter : ScannerTerminator.Tab;
+            if (!vm.AcceptsScannerTerminator(terminator)) return;
+            if (!string.IsNullOrWhiteSpace(vm.BarcodeInput)) e.Handled = true;
 
             if (string.IsNullOrWhiteSpace(vm.BarcodeInput))
             {
-                if (vm.PayCommand?.CanExecute(null) == true && vm.CartItems.Count > 0)
+                if (key == Key.Enter && vm.PayCommand?.CanExecute(null) == true && vm.CartItems.Count > 0)
                 {
                     vm.PayCommand.Execute(null);
                     e.Handled = true;

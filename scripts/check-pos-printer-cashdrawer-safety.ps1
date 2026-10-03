@@ -84,6 +84,12 @@ $discovery = Read-Text "src/Win7POS.Wpf/Printing/WindowsPrinterDiscovery.cs"
 $spooler = Read-Text "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs"
 $receiptContentPolicy = Read-Text "src/Win7POS.Core/Receipt/ReceiptContentPolicy.cs"
 $hardwareSafety = Read-Text "src/Win7POS.Wpf/Printing/PrinterHardwareSafety.cs"
+$typedHardware = Read-Text "src/Win7POS.Core/Hardware/HardwareSettings.cs"
+$drawerPreset = Read-Text "src/Win7POS.Core/Hardware/CashDrawerPresetPolicy.cs"
+$hardwareRepository = Read-Text "src/Win7POS.Data/Repositories/HardwareSettingsRepository.cs"
+$singleFlightDiagnostic = Read-Text "src/Win7POS.Core/Hardware/SingleFlightDiagnostic.cs"
+$scannerPolicy = Read-Text "src/Win7POS.Core/Hardware/ScannerInputPolicy.cs"
+$scannerTestBody = Get-MethodBody (Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsViewModel.cs") 'public\s+void\s+CompleteScannerTest\s*\('
 $printOptions = Read-Text "src/Win7POS.Wpf/Printing/ReceiptPrintOptions.cs"
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsDialog.xaml"
 $dialogVm = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsViewModel.cs"
@@ -185,7 +191,7 @@ if ($keys -notmatch "allow_windows_default" -or $keys -notmatch "allow_virtual_p
     Pass "default/virtual printer safety checks present"
 }
 
-if ($workflow -notmatch "ReceiptEnabled = receiptEnabled \?\? false" -or $workflow -notmatch "AutoPrint = autoPrint \?\? false" -or $workflow -notmatch "CashDrawerEnabled = cashDrawerEnabled \?\? false") {
+if ($typedHardware -notmatch 'public bool ReceiptEnabled \{ get; set; \}' -or $typedHardware -notmatch 'public bool AutoPrint \{ get; set; \}' -or $typedHardware -notmatch 'CashDrawerMode \{ get; set; \} = "disabled"' -or $hardwareRepository -notmatch 'model\.ReceiptEnabled = false' -or $hardwareRepository -notmatch 'model\.CashDrawerMode = "disabled"') {
     Fail "safe defaults for receipt auto-print/cashdrawer missing"
 } else {
     Pass "safe defaults disable receipt auto-print and cashdrawer"
@@ -284,7 +290,7 @@ if ($strictDrawerParser) {
 
 if ($spooler -match 'MaximumCashDrawerCommandLength\s*=\s*64' -and
     $dialog -match '<TextBox\b(?=[^>]*MaxLength="64")(?=[^>]*Text="\{Binding\s+CashDrawerCommand\b)[^>]*>' -and
-    $workflow -match 'MaximumCashDrawerCommandLength' -and
+    ($workflow -match 'MaximumCashDrawerCommandLength' -or $drawerPreset -match 'command\.Length\s*>\s*64') -and
     $uiSmoke -match 'MaximumCashDrawerCommandLength\s*\+\s*1' -and
     $uiSmoke -match 'new\s+string\s*\(\s*''9''\s*,\s*10000\s*\)') {
     Pass "cash-drawer command length is bounded before parsing and covered at UI/runtime boundaries"
@@ -296,14 +302,29 @@ if ($spooler -match 'DefaultCashDrawerCommand' -or
     $spooler -match 'string\.IsNullOrWhiteSpace\s*\(opt\.CashDrawerCommand\)[\s\S]{0,120}\?') {
     Fail "drawer runtime must not turn a blank command into a physical default pulse"
 }
-elseif ($workflow -notmatch 'cashDrawerActive\s*=\s*settings\.CashDrawerEnabled' -or
-        $workflow -notmatch 'cashDrawerActive[\s\S]{0,260}IsCashDrawerCommandValid' -or
+elseif ($typedHardware -notmatch 'CashDrawerPresetPolicy\.TryGetBytes' -or
+        $workflow -notmatch 'hardware\.Validate\(\)' -or
+        $workflow -notmatch 'HardwareSettingsRepository[\s\S]{0,100}SaveAsync' -or
         $posVm -match 'CashDrawerCommand\s*=\s*string\.IsNullOrWhiteSpace') {
     Fail "drawer settings must validate an active command before persistence without a UI blank fallback"
 }
 else {
     Pass "blank drawer commands are rejected at runtime and before active-setting persistence"
 }
+
+if ($hardwareRepository -match 'SetStringsAuditedAsync' -and $hardwareRepository -match 'GetStringsAsync\(Keys\)' -and
+    $hardwareRepository -match 'pos\.useReceipt42' -and $hardwareRepository -match 'printer\.cashDrawerCommand' -and
+    $workflow -match 'demandPermission\(\)' -and $typedHardware -match 'Copies\s*<\s*1\s*\|\|\s*Copies\s*>\s*3') {
+    Pass "typed hardware saves preserve atomic compatibility aliases and audited permission checks"
+} else { Fail "typed hardware settings/audit/legacy permission contract missing" }
+
+if ($scannerPolicy -match 'MaximumRawInputLength\s*=\s*1024' -and $scannerPolicy -match 'StringComparison\.Ordinal' -and
+    $dialog -match 'PrinterSettings\.ScannerTestInput' -and $scannerTestBody -match '_scannerTestArmed' -and
+    $scannerTestBody -notmatch 'AddByBarcode|ProductEdit|SaveAsync|_logger|Log' -and
+    $singleFlightDiagnostic -match '!_worker\.IsCompleted' -and $singleFlightDiagnostic -match 'Task\.WhenAny' -and
+    $singleFlightDiagnostic -notmatch 'CancellationTokenSource|_worker\s*=\s*null') {
+    Pass "scanner test is isolated and diagnostic timeout retains its native worker slot"
+} else { Fail "scanner isolation or single-flight diagnostics missing" }
 
 $startEffectBody = Get-MethodBody $spooler 'private\s+static\s+Task\s+StartExclusivePrinterEffect\s*\('
 $awaitEffectBody = Get-MethodBody $spooler 'private\s+static\s+async\s+Task\s+AwaitEffectWithinTimeoutAsync\s*\('
@@ -379,7 +400,7 @@ if ($printOptions -match 'MinimumCopies\s*=\s*1' -and
     $dialog -match 'x:Name="CopiesTextBox"[\s\S]{0,400}MaxLength="1"' -and
     $dialogVm -match 'IsValidCopyCount|ParsedCopies\s*<=\s*ReceiptPrintOptions\.MaximumCopies' -and
     $workflow -match '!ReceiptPrintOptions\.IsValidCopyCount\(settings\.Copies\)' -and
-    $workflow -match 'persistedCopies[\s\S]{0,220}ReceiptPrintOptions\.MinimumCopies' -and
+    $typedHardware -match 'Copies\s*<\s*1\s*\|\|\s*Copies\s*>\s*3' -and $hardwareRepository -match 'model\.Copies = 1' -and
     $spoolerPrintBody -match 'IsValidCopyCount\(opt\.Copies\)[\s\S]*StartExclusivePrinterEffect' -and
     $spooler -match 'checked\s*\(\s*\(short\)opt\.Copies\s*\)' -and
     $spooler -match 'MaximumCopies[\s\S]{0,220}opt\.Copies\s*>\s*driverMaximumCopies' -and
