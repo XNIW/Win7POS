@@ -1,0 +1,9 @@
+  Determining projects to restore...
+  Restored C:\Dev\Win7POS\src\Win7POS.Cli\Win7POS.Cli.csproj (in 746 ms).
+  Restored C:\Dev\Win7POS\tests\Win7POS.Core.Tests\Win7POS.Core.Tests.csproj (in 751 ms).
+  Restored C:\Dev\Win7POS\src\Win7POS.Core\Win7POS.Core.csproj (in 746 ms).
+  Restored C:\Dev\Win7POS\src\Win7POS.Data\Win7POS.Data.csproj (in 746 ms).
+  Restored C:\Dev\Win7POS\src\Win7POS.Wpf\Win7POS.Wpf.csproj (in 776 ms).
+  Restored C:\Dev\Win7POS\tests\Win7POS.Wpf.UiSmokeHarness\Win7POS.Wpf.UiSmokeHarness.csproj (in 777 ms).
+  Restored C:\Dev\Win7POS\tests\Win7POS.CatalogPerformance\Win7POS.CatalogPerformance.csproj (in 777 ms).
+  Restored C:\Dev\Win7POS\tests\Win7POS.Wpf.Imaging.Tests\Win7POS.Wpf.Imaging.Tests.csproj (in 797 ms).

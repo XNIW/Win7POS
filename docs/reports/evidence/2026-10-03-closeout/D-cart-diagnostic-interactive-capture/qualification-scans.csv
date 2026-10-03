@@ -1,0 +1,1 @@
+cycle,mode,ordinal,service_ms,ui_return_ms,apply_ms,layout_ms,bitmap_ms,command_overhead_ms,gate_wait_ms,worker_queue_ms,product_lookup_update_ms,snapshot_query_map_ms,snapshot_projection_ms,realized_rows,realized_grid,collection_changes,row_notifications,product_commands,commands_on_dispatcher,focus_scroll_wait_ms

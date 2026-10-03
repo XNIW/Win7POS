@@ -1,0 +1,10 @@
+{
+  "MEASUREMENT_COMPLETED": true,
+  "ENVIRONMENT_VALID": false,
+  "STABILITY_PASS": false,
+  "measurementReasons": [],
+  "environmentReasons": [],
+  "stabilityReasons": [
+    "diagnostic_mode_not_qualified"
+  ]
+}

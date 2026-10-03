@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "9ca46dc1c6d8842a85d1a45393729527ea3f416c",
+  "coreDataSourceUnchangedByLaterWpfCorrections": true,
+  "sdk": "10.0.301",
+  "runs": [
+    {
+      "artifact": "D-core-first-failure.trx",
+      "sha256": "3711c964a1196224065b5ef60c5a447b6e77452ebc510f817cd8caef021016db",
+      "total": 1200,
+      "executed": 1200,
+      "passed": 1199,
+      "failed": 1,
+      "notExecuted": 0
+    },
+    {
+      "artifact": "D-packages-corrected.trx",
+      "sha256": "f86686e0b2c74242e2377308bf4bd3f007cb7f5ce34a83835008c7e03153fc29",
+      "total": 153,
+      "executed": 153,
+      "passed": 153,
+      "failed": 0,
+      "notExecuted": 0
+    },
+    {
+      "artifact": "D-core-frozen.trx",
+      "sha256": "1e2d0771ae008a79d69434a9dfa5bb04b9fd2779bc2a64e64cab5a60993a486c",
+      "total": 1201,
+      "executed": 1201,
+      "passed": 1201,
+      "failed": 0,
+      "notExecuted": 0
+    },
+    {
+      "artifact": "D-core-final-C.trx",
+      "sha256": "28c95014f65256ae6c72286bc65d5174bc3466ae47bd6efa0241acde16ff63cd",
+      "total": 1201,
+      "executed": 1201,
+      "passed": 1201,
+      "failed": 0,
+      "notExecuted": 0
+    }
+  ],
+  "wpfRuntimeFinal": "NEW_HARDWARE_DISPLAY_STOCK_LOAD_CASES_PASS_EXISTING_FOCUS_ENVIRONMENT_PRECONDITION_FAIL",
+  "liveExternalAcceptance": "NOT_INFERRED",
+  "finalCandidateCommit": "508ba21e112d4e0c3097fdde89bb569ef967948a",
+  "diagnostic": {
+    "measurementCompleted": true,
+    "environmentValid": false,
+    "stabilityPass": false,
+    "artifact": "D-cart-diagnostic/performance-result.json"
+  }
+}

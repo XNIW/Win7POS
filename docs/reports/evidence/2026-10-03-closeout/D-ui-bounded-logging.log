@@ -1,0 +1,2 @@
+PASS bounded async logging x86; facade_written=3 rotation_files=3 accepted=256 dropped=102817 highWater=256 max_length_samples=2048 producer_ms=1102 producer_p95_us=257.80 producer_max_us=4591.80 private_delta_bytes=6242304 private_bytes_after=29052928 private_high_water_observed_bytes=29102080 private_high_water_delta_bytes=6291456 peak_paged_bytes=29114368 peak_working_set_bytes=38932480 worker_alive_after_shutdown=false.
+BOUNDED_LOGGING_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.BoundedLogging.4510f5e121fa4127b1fa1845f6893cc9\bounded-logging-smoke.txt

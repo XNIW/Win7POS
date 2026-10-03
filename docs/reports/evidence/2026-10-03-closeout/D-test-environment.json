@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-03",
+  "hostOS": {
+    "Caption": "Microsoft Windows 11 Home Single Language",
+    "Version": "10.0.26300",
+    "BuildNumber": "26300",
+    "OSArchitecture": "64-bit"
+  },
+  "hyperVCommandAvailable": false,
+  "virtualBoxCommandAvailable": false,
+  "win7Target": "NOT_IDENTIFIED_OR_ATTESTED",
+  "physicalPeripherals": "NO_IDENTIFIED_AUTHORIZED_TEST_TARGET",
+  "smbShare": "NO_IDENTIFIED_AUTHORIZED_TEST_SHARE",
+  "asusFocus": {
+    "attempts": 2,
+    "failedPrecondition": "hostActive=false",
+    "noProductDefectInferred": true,
+    "requiredAction": "Provide an unlocked interactive QA desktop with the QA window active"
+  },
+  "cartDiagnostic": {
+    "sourceCommit": "508ba21e112d4e0c3097fdde89bb569ef967948a",
+    "measurementCompleted": true,
+    "environmentValid": false,
+    "stabilityPass": false,
+    "desktopMatches": false,
+    "ownForeground": false,
+    "artifact": "D-cart-diagnostic/performance-result.json",
+    "cause": "NOT_INFERRED",
+    "requiredAction": "Run exact verified payload/harness qualification from the real interactive input desktop with QA foreground"
+  },
+  "userConfirmedAvailability": {
+    "asusDesktopAvailable": true,
+    "win7Available": false,
+    "testSmbShareAvailable": false
+  },
+  "interactiveRecovery": {
+    "launcher": "INTERACTIVE_LIMITED",
+    "desktopMismatchResolved": true,
+    "firstObservedSampleValid": true,
+    "completedQualification": false,
+    "threeShortDiagnosticAttempts": "FIRST_SCAN_APPLIED_THEN_VISUAL_PROBE_TIMEOUT",
+    "underlyingSourceCause": "NOT_DEMONSTRATED",
+    "ownedTasksRemoved": true
+  }
+}

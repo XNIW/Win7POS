@@ -1,0 +1,64 @@
+build-and-check	WPF functional completion regressions (x86)	﻿2026-10-03T18:56:30.1524916Z ##[group]Run pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Configuration Release -Platform x86
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1525434Z ^[[36;1mpwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Configuration Release -Platform x86^[[0m
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1570859Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1571055Z env:
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1571186Z   Win7PosBuildVersion: 1.0.0-dev.8a25bd217362
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1571454Z   Win7PosInformationalVersion: 1.0.0-dev.8a25bd217362+sha.8a25bd217362b3143ff1045b110b3fc9c9c6f7fc
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1571749Z   Win7PosCommitSha: 8a25bd217362b3143ff1045b110b3fc9c9c6f7fc
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1571957Z   WIN7POS_EXACT_SHA: 8a25bd217362b3143ff1045b110b3fc9c9c6f7fc
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1572129Z   WIN7POS_PRODUCT_VERSION: 1.0.0
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1572277Z   WIN7POS_BUILD_VERSION: 1.0.0-dev.8a25bd217362
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1572565Z   WIN7POS_ASSEMBLY_VERSION: 1.0.0.0
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1572704Z   WIN7POS_FILE_VERSION: 1.0.0.0
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1572987Z   WIN7POS_INFORMATIONAL_VERSION: 1.0.0-dev.8a25bd217362+sha.8a25bd217362b3143ff1045b110b3fc9c9c6f7fc
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1573363Z   WIN7POS_INSTALLER_BASE_FILENAME: Win7POS-1.0.0-dev.8a25bd217362-Setup
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1573560Z   WIN7POS_RELEASE_TAG:
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1573684Z   DOTNET_ROOT: C:\Program Files\dotnet
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:30.1573822Z ##[endgroup]
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:53.8425421Z PASS: screenshots=50; responsive=1024x768,1280x720,1366x768,1600x900,1920x1080; focus=login,operatorSwitch,pos,payment,refund; products=default,filtered,editor; supplierImport=steps1-4; refund=partial,fullVoid; settings=True; receiptSurfaces=True; recoveryError=True
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:53.8590079Z FUNCTIONAL_VISUAL_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.Visual.6f940ad3c0f54eeca168c5efa5bb6a7a-screenshots
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:55.0013590Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:55.0014118Z PASS F06_reversed_preview_delete_close
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:55.0044192Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.67eee453026d41c3a1a5e4c317a89185\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:56.1104982Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:56.1106121Z PASS F01_export_gate
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:56.1113796Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.709254519f8349e794f39a51a053696a\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:57.3936508Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:57.3936888Z PASS F07_settings_rollback
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:57.3943583Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.06086bfa3fd147129cfe5f86e431f0e5\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:58.7898173Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:58.7898506Z PASS HARDWARE_settings_scanner
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:56:58.7904857Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.ecaa19d1ab4d410a9cd96d2465ab2bf2\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:13.5310811Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:13.5311667Z PASS CUSTOMERDISPLAY_polish
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:13.5318434Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.780dff94217a44f68cca35be16cd7160\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:23.4862794Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:23.4868290Z PASS STOCK_fractional_input
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:23.4868768Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.57338c657c044f7dab330ef051981998\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:25.2149110Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:25.2150337Z PASS F02_F03_workflow_stable_identity_batch_dispatcher
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:25.2157131Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.f9ce27bb7b644422a54bfeb61bbc88db\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:27.3183406Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:27.3183870Z PASS F05_same_clock_recovery_restart_active_cart
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:27.3189302Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.fce6994945bd48faae858bfb8a895eef\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:28.8120844Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:28.8121168Z PASS F08_discount_preview_lifetime
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:28.8125811Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.ff309ede50c0465e91649ef030d72ae0\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:31.5279332Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:31.5279769Z PASS INTEGRATED_login_sale_retry_receipt_restart
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:31.5285926Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.4257fec6513a44f9b0e73b66b877f78a\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:44.2477991Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:44.2478365Z PASS LOAD_sync_backup_x86
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:44.2484352Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.2016bf74651c4b1086c8d17adace0765\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:45.7254872Z PASS
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:45.7255620Z PASS P109_product_editor_late_render_close
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:57:45.7261598Z FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.528cccabf21c4151afcd559f92ab6222\functional-completion.txt
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.0970503Z FAIL
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.0971381Z FAIL PERF_visual_lifetime_and_public_commands Background did not progress
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.1909397Z ^[[31;1mException: ^[[0mD:\a\Win7POS\Win7POS\scripts\run-functional-completion-smoke.ps1:44^[[0m
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.1909988Z ^[[31;1m^[[0m^[[36;1mLine |^[[0m
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.1910587Z ^[[31;1m^[[0m^[[36;1m^[[36;1m  44 | ^[[0m     ^[[36;1mthrow "Functional completion smoke failed (exit=$($process.ExitCo^[[0m …^[[0m
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.1911324Z ^[[31;1m^[[0m^[[36;1m^[[36;1m^[[0m^[[36;1m^[[0m^[[36;1m     | ^[[31;1m     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^[[0m
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.1911999Z ^[[31;1m^[[0m^[[36;1m^[[36;1m^[[0m^[[36;1m^[[0m^[[36;1m^[[31;1m^[[31;1m^[[36;1m     | ^[[31;1mFunctional completion smoke failed (exit=1). Evidence:^[[0m
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.1912803Z ^[[31;1m^[[0m^[[36;1m^[[36;1m^[[0m^[[36;1m^[[0m^[[36;1m^[[31;1m^[[31;1m^[[36;1m^[[31;1m^[[36;1m     | ^[[31;1mC:\Users\runneradmin\AppData\Local\Temp\Win7POS.Functional.8257ac9c7b794e85b00e2bcbaac3ecfe^[[0m
+build-and-check	WPF functional completion regressions (x86)	2026-10-03T18:58:04.2682964Z ##[error]Process completed with exit code 1.

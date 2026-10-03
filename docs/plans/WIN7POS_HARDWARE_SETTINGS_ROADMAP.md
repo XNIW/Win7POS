@@ -2,10 +2,11 @@
 
 ## Scope and status
 
-This roadmap is the hardware/settings follow-up to PR-B. The PR-B migration
-delta does not change scanner input, printer/spooler behavior, cash-drawer
-output, customer-display runtime or operations scheduling; PR #7 behavior below
-is the current baseline.
+The H1/H2/H3 source requirements below are implemented by the 2026-10-03
+functional closeout. W7-F07 atomic printer/drawer settings and OPERATIONS-1
+were already delivered and are reused. Current qualification, commits and
+external prerequisites are recorded in
+`../reports/2026-10-03_FUNCTIONAL_SYNC_OPERATIONS_CLOSEOUT.md`.
 
 - Current-main reproducible P0: `0`.
 - Current-main reproducible P1: `0`.
@@ -13,7 +14,7 @@ is the current baseline.
   certification remains external and open.
 - Epson TM-T60 receipt surfaces are physically verified on Windows 11; this is
   not a substitute for the still-open Windows 7 physical run.
-- All proposed settings below are live-apply (`restart required = NO`).
+- The settings below are live-apply (`restart required = NO`).
 - Hardware configuration never proves that hardware is connected. Health must
   distinguish `Healthy`, `Warning`, `Unknown`, `Disabled`, and `Needs test`.
 
@@ -21,13 +22,13 @@ is the current baseline.
 
 | Area | Current behavior | Evidence |
 | --- | --- | --- |
-| Settings | Generic string KV store; printer settings are saved through several independent writes. | `SettingsRepository.cs`, `PosWorkflowService.cs` |
-| Scanner | Keyboard-wedge input is a focused text box submitted by Enter; there are no typed normalization keys or isolated scanner test. | `PosView.xaml`, `PosView.xaml.cs`, `PosViewModel.cs` |
-| Printer | Installed queues expose driver, port, status, offline/paused state and physical-vs-virtual classification; atomic settings and live job-count diagnostics remain follow-up work. | `WindowsPrinterDiscovery.cs`, `WindowsSpoolerPrinterInventory.cs`, `InstalledPrinterInfo.cs` |
-| Receipt | Shared renderers produce direct-spooler receipt, fiscal-boleta and daily-close text at 32/42 columns; copies are strictly 1–3 and no automatic PDF/archive remains. Width selection still uses legacy `pos.useReceipt42` rather than a typed profile. | `PosReceiptTextRenderer.cs`, `FiscalBoletaTextRenderer.cs`, `DailyCloseReceiptTextRenderer.cs`, `ReceiptPrintOptions.cs`, `WindowsSpoolerReceiptPrinter.cs` |
-| Drawer | Disabled by default, protected from virtual targets and restricted to an exact validated ESC/POS pulse shape. | `PrinterSettingsDialog.xaml`, `PrinterHardwareSafety.cs`, `WindowsSpoolerReceiptPrinter.cs` |
-| Backup | OPERATIONS-1: verified online backup with disabled/daily/weekly schedule, latest-slot startup catch-up, managed retention and configurable local/UNC destination. | `BackupSchedulePolicy.cs`, `BackupAutomation*.cs`, `DbMaintenanceDialog.xaml` |
-| Customer display | Typed atomic settings, Win7-safe topology, non-activating window, privacy projection and hot-plug handling already exist. | `CustomerDisplaySettings*.cs`, `CustomerDisplayManager.cs` |
+| Settings | Typed hardware model, compatible aliases and redacted audit commit atomically; W7-F07 already provided atomic legacy reads/writes. | `SettingsRepository.cs`, `HardwareSettingsRepository.cs`, `SettingsAtomicTests` |
+| Scanner | Focused keyboard-wedge Enter/Tab/both, bounded affixes/normalization, isolated armed test and single submit; manual quantity/price commands retained. | `ScannerInputPolicy.cs`, `PosView.xaml.cs`, `HardwareSettingsSmoke.cs` |
+| Printer | Selected queue/driver/port/status/jobs on a bounded single-flight worker; UI timeout does not release a still-running native call. Health separates configuration from physical verification. | `WindowsSpoolerPrinterInventory.cs`, `PrinterSettingsViewModel.cs` |
+| Receipt | Typed 58mm/32 and 80mm/42 profiles share legacy mapping and renderer width; copies remain 1–3. | `HardwareSettings.cs`, `ReceiptPrintOptions.cs`, `PosReceiptTextRenderer.cs` |
+| Drawer | Disabled by default, pin2/pin5/custom presets, exact validated pulse, virtual-target guard and permission recheck immediately before output. | `PrinterHardwareSafety.cs`, `PrinterSettingsViewModel.cs`, `HardwareSettingsRepository.cs` |
+| Backup | OPERATIONS-1 schedule/catch-up/managed retention/local-or-UNC destination retained. H2 profile/default operations reuse its existing store and atomic activation/audit. | `BackupAutomation*.cs`, `SettingsOperationsService.cs`, `DbMaintenanceDialog.xaml` |
+| Customer display | Atomic settings and existing topology plus managed bounded logo, idle/clock, barcode/money privacy and finite unsaved preview/test pattern. | `CustomerDisplayContentPolicy.cs`, `CustomerDisplayLogoStore.cs`, `CustomerDisplayManager.cs`, `CustomerDisplayPolishSmoke.cs` |
 
 ## PR-H1 — Hardware Center
 
@@ -165,8 +166,9 @@ fallback.
 Backup policy, activation state and redacted policy audit commit in one
 explicit SQLite transaction with rollback. Result, watermark and managed-file
 registration also commit together. Backup-specific internal state/audit
-tables are created transactionally after database initialization; portable
-profile export/import and generic hardware audit remain follow-up work.
+tables are created transactionally after database initialization. H2 portable
+profile import/defaults reuse that store and activation transaction; generic
+settings and hardware audit are now implemented.
 
 ### Redacted settings profile
 
@@ -196,8 +198,9 @@ queue/device names, raw commands, paths, free text and every unknown key.
 | View settings audit | `db.maintenance` | No | Actor/result ordering and redaction. |
 
 Audit each save/import/reset/policy update with actor, source, key names, count,
-and before/after hashes, never values. Settings plus audit row commit in one
-transaction. Proposed events: `HardwareSettingsUpdate`, `BackupPolicyUpdate`,
+and hashes of validated portable values only, never raw values or hashes of
+secret/path/queue/device/RAW fields. Settings plus audit row commit in one
+transaction. Events include `HardwareSettingsUpdate`, `BackupPolicyUpdate`,
 `SettingsProfileExport`, `SettingsProfileImport`, `SettingsDefaultsRestored`, and
 `DbBackupScheduled`.
 
@@ -238,16 +241,15 @@ Additional behavior:
   duplicate/extended decision; copied diagnostics hash raw device identifiers.
 - No network content, HTML, WebView2, video or post-Win7 DPI APIs.
 
-## Recommended order
+## Delivery and remaining acceptance
 
-1. `PR-H1`: typed hardware repository, scanner test, queue diagnostics, receipt
-   profile, drawer presets and health summary.
-2. `PR-H2`: schedule/retention/destination, portable redacted profile, defaults
-   and atomic audit.
-3. `PR-H3`: branding, idle content, privacy, test pattern and topology polish.
+H2 portable profiles/defaults/version audit, H1 hardware/scanner/diagnostics,
+and H3 logo/idle/privacy/finite preview have distinct closeout commits. Their
+source and local fixture qualification is recorded in the single closeout
+report; merge and exact release receipts determine delivery status.
 
-The remaining roadmap risks are non-atomic printer save, 80 mm bias, no live
-job-count diagnostic and generic hardware/settings audit. Backup schedule,
-retention, destination and atomic backup-policy audit are implemented by
-OPERATIONS-1. Copy count and RAW drawer validation were closed by PR #7 and are
-not carried forward as open findings.
+Non-atomic printer save was already closed by W7-F07. Typed receipt selection,
+job-count diagnostics and generic settings audit are implemented. OPERATIONS-1
+schedule/retention/destination and PR #7 copy/RAW validation are preserved.
+Physical Win7, identified peripherals, real SMB and monitor/DPI/hot-plug
+acceptance remain open; local fixtures do not close those requirements.

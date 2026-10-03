@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "transformation": "TRIM_END_OF_LINE_DISPLAY_PADDING_ONLY_IN_VERSIONED_LOG_COPIES",
+  "originalPrivateLogsPreserved": true,
+  "trxModified": false,
+  "testResultOrAssertionModified": false,
+  "files": [
+    {
+      "file": "D-cli-selftest.log",
+      "originalSha256": "eed5b196bdbb6694bd8082f9a8a938ced0d07a45063dc2bb10eca4a42a8d5965",
+      "versionedSha256": "172f31046975e750723eed5a2deb113e5adf506fde5c6c20824ce0a138e7d7b5",
+      "paddedLines": 6
+    },
+    {
+      "file": "D-gates-corrected.log",
+      "originalSha256": "0ac5c27c4328c7505dd7c18b6669233ed9709a0e9522ac3e3bb109cf700907a5",
+      "versionedSha256": "2e7872f2f61dc085ee3ea236a3f11fe2f8806ab6355e2de1a981b284a68966fc",
+      "paddedLines": 49
+    },
+    {
+      "file": "D-gates-final-C.log",
+      "originalSha256": "0ac5c27c4328c7505dd7c18b6669233ed9709a0e9522ac3e3bb109cf700907a5",
+      "versionedSha256": "2e7872f2f61dc085ee3ea236a3f11fe2f8806ab6355e2de1a981b284a68966fc",
+      "paddedLines": 49
+    },
+    {
+      "file": "D-gates-first.log",
+      "originalSha256": "d3f48948e1199cd7af9f9cee6153a3e6cd13745f4e6dd6c7163a7962f09a6428",
+      "versionedSha256": "b2f2828c62d73d6cba6d3ad229d279265095cfa3cb2bd66658ff0506370388b9",
+      "paddedLines": 48
+    }
+  ]
+}

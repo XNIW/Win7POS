@@ -163,3 +163,43 @@ physical Windows 7 remain unverified.
 - Authoritative external backlog remains 10/25 historical PASS and 15
   open/partial. Detailed report:
   `docs/QA/WIN7POS_PHYSICAL_WIN7_HARDWARE_ACCEPTANCE_2026-08-09.md`.
+
+## 2026-10-03 functional, sync and operations closeout
+
+- Canonical report and machine evidence:
+  [Functional closeout](../reports/2026-10-03_FUNCTIONAL_SYNC_OPERATIONS_CLOSEOUT.md).
+  This dated execution preserves historical owner-accepted dispositions;
+  it creates no new deferral or external PASS for the current candidate.
+- Packages B/A/C are normally merged through PRs #114/#115/#116. Candidate
+  `508ba21` completes H1/H2/H3 using W7-F07 and OPERATIONS-1; its exact-head
+  CI/Security pass. Qualified software main is
+  `8a25bd217362b3143ff1045b110b3fc9c9c6f7fc`.
+- Final local Core/Data suite: 1201/1201, zero failures/skips; corrected
+  net48/x86 builds have zero warnings/errors. Canonical hosted WPF passes.
+  Causal failures and rejected setup attempts remain preserved separately.
+  The subsequent identical-source main CI37145182291 fails the existing PERF
+  Background-progress assertion after the other twelve WPF scenarios pass.
+  This is preserved as a separate failure; final exact-main green checks remain
+  required and no documentation update is represented as its runtime fix.
+- Synthetic catalog gates and finite concurrent load integrity pass.
+  Diagnostic measurement completed with ENVIRONMENT_VALID=false and
+  STABILITY_PASS=false; it does not qualify Asus Integrated12/Final60.
+  The user subsequently confirmed the Asus desktop is available and
+  Win7/share TEST are unavailable. Interactive/Limited execution resolves
+  the desktop mismatch, but three short runs fail scan1's visual probe;
+  execution capture observes a 528.877ms WPF TextEditor callback.
+  This is measured blocking work without a proven underlying source cause.
+  Exact-release qualification remains open and is tracked by the report.
+- Supported authenticated C01–C12 acceptance remains blocked by fresh
+  readiness, compatible scope and installed-client/release receipts.
+  NOT_APPLICABLE cells express checked source-contract boundaries only.
+- Physical Win7/peripherals, real SMB and real signing remain separate.
+  The report records owners, prerequisites and executable next actions.
+  Production is not activated.
+- Package D changes docs/evidence and prints existing synthetic phase/stack
+  files in the canonical runner's failure branch before its unchanged throw;
+  this fixes diagnostic loss, not dispatcher behavior. Product src/tests and
+  workflows stay unchanged. Its normal merge, final checkout,
+  same-SHA CI/Security/ReleasePack and downloaded-artifact verification are
+  recorded in the report's post-merge machine receipt; a workflow PASS alone
+  is insufficient.

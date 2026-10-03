@@ -1,0 +1,2 @@
+PASS product paging dispatcher remained responsive; rows=100000 probes=1 paging_in_flight_during_probe=True.
+PRODUCT_PAGING_DISPATCHER_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.ProductPagingDispatcher.3ca25c921b32403ea6828230b4809682\product-paging-dispatcher-smoke.txt

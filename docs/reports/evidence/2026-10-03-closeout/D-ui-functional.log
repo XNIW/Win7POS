@@ -1,0 +1,22 @@
+PASS: screenshots=50; responsive=1024x768,1280x720,1366x768,1600x900,1920x1080; focus=login,operatorSwitch,pos,payment,refund; products=default,filtered,editor; supplierImport=steps1-4; refund=partial,fullVoid; settings=True; receiptSurfaces=True; recoveryError=True
+FUNCTIONAL_VISUAL_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.Visual.7298cd1545f5493b93358a49058630f7-screenshots
+PASS
+PASS F06_reversed_preview_delete_close
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.1a3f3c5f54bf46058413a45855e71446\functional-completion.txt
+PASS
+PASS F01_export_gate
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.8af572b4b67e4338b2b5c9a30ef18cac\functional-completion.txt
+PASS
+PASS F07_settings_rollback
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.25a1fb3a52fa484ca6a75052fcbeee6e\functional-completion.txt
+PASS
+PASS HARDWARE_settings_scanner
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.7a0114914d624f75a9fa0d9c212f1e10\functional-completion.txt
+FAIL
+FAIL CUSTOMERDISPLAY_polish logo_pixels
+Exception: C:\Dev\Win7POS\scripts\run-functional-completion-smoke.ps1:41
+Line |
+  41 |      throw "Functional completion smoke failed (exit=$($process.ExitCo …
+     |      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Functional completion smoke failed (exit=1). Evidence:
+     | C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.fca664dd015d4624837a2563a0e373c2

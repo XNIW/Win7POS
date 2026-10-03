@@ -1,0 +1,40 @@
+PASS: screenshots=50; responsive=1024x768,1280x720,1366x768,1600x900,1920x1080; focus=login,operatorSwitch,pos,payment,refund; products=default,filtered,editor; supplierImport=steps1-4; refund=partial,fullVoid; settings=True; receiptSurfaces=True; recoveryError=True
+FUNCTIONAL_VISUAL_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.Visual.cea87c6dc974451e99e21c59ac50ca4d-screenshots
+PASS
+PASS F06_reversed_preview_delete_close
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.212c95210b8d41f0a8adff6057ddd5cb\functional-completion.txt
+PASS
+PASS F01_export_gate
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.f1f6f5e73d2d4b24bda308abedd6ff0d\functional-completion.txt
+PASS
+PASS F07_settings_rollback
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.20ee531474594bc6b7705cf9eceb68d7\functional-completion.txt
+PASS
+PASS HARDWARE_settings_scanner
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.859de9a738de4a7a92388aa33e005df1\functional-completion.txt
+PASS
+PASS CUSTOMERDISPLAY_polish
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.fd0798fb156d492f8d93f8c109fb3f6d\functional-completion.txt
+PASS
+PASS STOCK_fractional_input
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.5cfa9dc5e6e24124be1936b177d7dfcd\functional-completion.txt
+PASS
+PASS F02_F03_workflow_stable_identity_batch_dispatcher
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.31b57042309e42a298886567ff5b8779\functional-completion.txt
+PASS
+PASS F05_same_clock_recovery_restart_active_cart
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.eb15fb5925ef484687fc6786f3e06f1c\functional-completion.txt
+PASS
+PASS F08_discount_preview_lifetime
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.c528bd1f2e184e1c863c0a2f7e83c84d\functional-completion.txt
+PASS
+PASS INTEGRATED_login_sale_retry_receipt_restart
+FUNCTIONAL_COMPLETION_ARTIFACT=C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.cb5101b289a7457d9b43dceaf8f3c25e\functional-completion.txt
+FAIL
+FAIL LOAD_sync_backup_x86 fixture workers overlapped within a lane or remained active
+Exception: C:\Dev\Win7POS\scripts\run-functional-completion-smoke.ps1:41
+Line |
+  41 |      throw "Functional completion smoke failed (exit=$($process.ExitCo …
+     |      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Functional completion smoke failed (exit=1). Evidence:
+     | C:\Users\xniw9\AppData\Local\Temp\Win7POS.Functional.489b567733404f5d8a391d3864dfb422
