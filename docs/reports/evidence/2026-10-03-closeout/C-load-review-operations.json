@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "repository": "Win7POS",
+  "package": "C finite synthetic sync/backup x86 load smoke review",
+  "reviewer": "/root/operations",
+  "date": "2026-10-03",
+  "recordedAtUtc": "2026-10-03T18:09:06.8345663+00:00",
+  "observedRepositoryHead": "4007588b101171a4ed9e9b9048b9267048886cde",
+  "reviewBinding": "Working source snapshot identified by SHA256 manifest; helper and two runner hooks reviewed without source changes or execution.",
+  "independence": "New helper authored by /root/backup and runner hooks by /root; reviewer did not author these changes.",
+  "status": "NO_UNRESOLVED_FINDINGS_IN_REVIEWED_SCOPE",
+  "findings": [],
+  "scope": [
+    "SyncBackupLoadSmoke.RunAsync and its evidence serialization/business verification helpers.",
+    "FunctionalCompletionSmoke scenario registration/filter context.",
+    "Canonical runner addition of one isolated LOAD_sync_backup_x86 scenario and existing fresh-directory/process timeout behavior."
+  ],
+  "workload": {
+    "syntheticProducts": 100000,
+    "catalogPageLimit": 40,
+    "rowsPerPage": 500,
+    "publicScans": 24,
+    "paymentPreviews": 24,
+    "validatedBackups": 1,
+    "workBudgetSeconds": 45,
+    "catalogUpdates": "The same final500 product rows receive40 consecutive committed generations."
+  },
+  "checks": [
+    "Trusted QA login is reused in the synthetic database. Only fixture role grants are inserted, then the actor logs in again and demands PosSell/PosPay/DbBackup/CatalogImport. Worker demands bind the original session object/operator id.",
+    "Ready/start barriers coordinate one catalog worker and one actual backup worker. Native copy waits for first catalog commit and first issued public scan; the inspected online backup hook holds a source identity handle that permits catalog commits, not CatalogMutationGate.",
+    "Catalog counters advance only after successful ApplyAsync return and require500 applied/zero skipped/conflicts per page,40 run transactions,40 pages and released run guard.",
+    "Backup counter advances after CreateVerifiedAsync completes integrity/foreign-key validation and publication. Final source and reopened published snapshot require100k rows, unchanged sales/outbox, a uniform500-row generation, exact1000.125 stock and matching remote shadow.",
+    "Scans use the real PosView BarcodeBox bubbling input event/VM command and require exact cart count,quantity1,total and zero observed product SQL on UI. The first scan also invokes the public duplicate command while its guard is closed.",
+    "Payment work is explicitly preview-only: exact cash/card commands, receipt preview, confirm/cancel events and actual PaymentView rendering. It does not call the sale commit workflow; physical output callback throws and must remain unused.",
+    "All sample and native-interval list mutation/snapshot paths lock consistently. Private-memory maximum uses interlocked updates.",
+    "Budgeted asynchronous waits cancel their timeout tasks; finally opens start/scan barriers, cancels work/memory tokens and joins catalog,backup,memory workers before closing/disposal and restoring the operator session.",
+    "Synchronous native SQLite copy cannot be preempted mid-step; cleanup joins it and the canonical per-scenario process timeout remains the outer bound. The receipt states this limit explicitly.",
+    "Operation-active overlap is asserted separately from actual timestamped native-copy overlap. The fixture does not require or invent native overlap, network sync/scheduler execution or live convergence.",
+    "Worker peak assertions concern only the single fixture lanes and observed run-context semaphore. Private-memory peak is sampled at50ms plus UI endpoints afterseed/setup, not an exhaustive allocator peak.",
+    "Latency summaries retain first calls and use nearest-rank all-sample p50/p95/max. There are no performance pass thresholds; receipt flags performanceThresholdsApplied/liveBackendExecuted/integratedStabilityQualified/physicalOutputExecuted false.",
+    "Canonical runner supplies a new GUID temp directory and separate process for this scenario and propagates FAIL/nonzero/timeout. No existing assertions or timeouts were weakened by the hook.",
+    "Final canonical runner sets the process-local disabled loopback endpoint before launching visual and all functional scenario children, wraps the complete run in try/finally, and restores the previous environment value on success or failure. No persistent user/machine environment mutation is introduced."
+  ],
+  "resolvedInstrumentation": [
+    {
+      "id": "LOAD-UI-BUSY-NOTIFICATION-COUNT",
+      "resolution": "Count only false-to-true and true-to-false transitions with sawBusy, because repeated true notifications are not separate operations. Peak==1 and active==0 assertions remain.",
+      "evidence": "docs/reports/evidence/2026-10-03-closeout/load-first-failure.raw.json"
+    },
+    {
+      "id": "LOAD-NET48-JSON-FORMAT-BRACE",
+      "resolution": "Close each metric object with an explicit Append after AppendFormat and parse complete JSON grammar before publishing the receipt; numeric metrics and assertions remain.",
+      "evidence": "docs/reports/evidence/2026-10-03-closeout/load-correction.json"
+    },
+    {
+      "id": "LOAD-CANONICAL-DISABLED-ENDPOINT",
+      "resolution": "Canonical runner now supplies the required disabled endpoint to visual and all scenarios and restores the previous process-local value in finally, making standalone CI execution self-contained.",
+      "evidence": "scripts/run-functional-completion-smoke.ps1 final SHA256 manifest"
+    }
+  ],
+  "executionPrerequisites": [
+    "Helper requires x86 and WIN7POS_ADMIN_WEB_BASE_URL exactly http://127.0.0.1:9 before fixture work. The final canonical runner supplies the disabled endpoint to all child processes and restores its previous process environment in finally; direct helper invocations still fail closed if the endpoint differs.",
+    "Use the canonical fresh synthetic scenario directory. This review does not authorize running the harness on a live POS database."
+  ],
+  "manifest": [
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/SyncBackupLoadSmoke.cs",
+      "sha256": "d78bf114a22772e70fdc2aa3216801fe3c008388a2be50a181168fdc50af63f0"
+    },
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/FunctionalCompletionSmoke.cs",
+      "sha256": "69c104c1972477fb8ca18e80a7cf09a904a25894e5238dee057d04adf982b256"
+    },
+    {
+      "path": "scripts/run-functional-completion-smoke.ps1",
+      "sha256": "4b569b2c7f22112cba4de30678253f2800ef37c06c827963ea08fda502f5fa25"
+    }
+  ],
+  "validation": {
+    "buildOrTestRunByReviewer": false,
+    "runtimeValidationOwner": "/root",
+    "activity": "Read-only source, two hook diffs and immediate backup/catalog/payment context.",
+    "runtimeOrPerformancePassClaimed": false,
+    "rootReportedRuntimeEvidence": {
+      "path": "docs/reports/evidence/2026-10-03-closeout/load-corrected.json",
+      "attribution": "Root reports corrected runtime PASS with valid parsed JSON,40committed pages,1validated backup,24scans/24payment previews and worker peaks1. Reviewer did not run the scenario or infer a performance/live qualification PASS."
+    }
+  },
+  "limits": [
+    "One local finite fixture, not a live backend, network scheduler, sustained stability qualification or physical hardware acceptance.",
+    "Sampling can miss transient peaks and quantiles reflect the finite sample sizes, including a single backup.",
+    "45-second work budget starts after fixture setup; native copy/cleanup may extend past it and is governed by the outer process timeout."
+  ]
+}

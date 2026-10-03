@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "repository": "Win7POS",
+  "package": "C H1/H3 independent source review",
+  "reviewer": "/root/operations",
+  "date": "2026-10-03",
+  "recordedAtUtc": "2026-10-03T17:29:45.3800595+00:00",
+  "status": "NO_UNRESOLVED_FINDINGS_IN_REVIEWED_SCOPE",
+  "baseCommit": "441bd0cbdf6473c6cadc03612ad1815625f0638b",
+  "reviewedCommit": "9ca46dc1c6d8842a85d1a45393729527ea3f416c",
+  "diffRange": "441bd0cbdf6473c6cadc03612ad1815625f0638b..9ca46dc1c6d8842a85d1a45393729527ea3f416c",
+  "featureCommits": {
+    "H1": "16955380b336035606d275c9e6f095166c884789",
+    "H3": "9ca46dc1c6d8842a85d1a45393729527ea3f416c"
+  },
+  "independence": "Reviewer authored H2 and package A, but did not author H1 or H3. This receipt independently covers the H1/H3 delta, not H2 or the complete package C.",
+  "scope": [
+    "Hardware scanner normalization and isolated scanner test; manual POS commands, Enter/Tab handling, duplicate submission and IME guards.",
+    "Hardware settings snapshot/legacy mapping, audited save integration, receipt profiles, bounded single-flight queue diagnostics and native buffer limits.",
+    "Physical test service fail-closed permission/actor checks after asynchronous discovery and immediately before intercepted printer/drawer effects.",
+    "Display settings and privacy projection, bounded local logo loading/import, unsaved synthetic preview, finite test pattern, actor fencing and live committed settings reload.",
+    "Display timer/window cleanup, initially minimized expiry, focus preservation and regression smoke source for the resolved findings."
+  ],
+  "findings": [],
+  "resolvedFindings": [
+    {
+      "id": "H1-MANUAL-SCANNER-AFFIXES",
+      "status": "RESOLVED_IN_REVIEWED_COMMIT",
+      "file": "src/Win7POS.Wpf/Pos/PosViewModel.cs",
+      "resolution": "Existing explicit quantity and numeric CLP command paths run before strict scanner normalization. Remaining barcode input is validated; a rejected scan cannot reach quick-create.",
+      "regression": "HardwareSettingsSmoke checks affixed scanning, duplicate submission, rejected scan, 2*barcode, selected-line =3 and numeric CLP 1500."
+    },
+    {
+      "id": "H1-OUTPUT-ACTOR-AFTER-DISCOVERY",
+      "status": "RESOLVED_IN_REVIEWED_COMMIT",
+      "file": "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
+      "resolution": "UI handlers capture the original operator in the permission demand. Both output test services deny missing callbacks and repeat permission and safe-start checks after awaited discovery, before IReceiptPrinter output.",
+      "regression": "HardwareSettingsSmoke holds fake inventory discovery, changes actor and requires zero intercepted effects; a held authorization allows one fake receipt effect."
+    },
+    {
+      "id": "H3-MINIMIZED-PREVIEW-EXPIRY",
+      "status": "RESOLVED_IN_REVIEWED_COMMIT",
+      "file": "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayManager.cs",
+      "resolution": "StartPreview starts the expiry timer before TryOpenOrUpdate can return for an already minimized cashier window. Duration remains bounded to 5-60 seconds and expiry restores runtime state and cleans up the timer.",
+      "regression": "CustomerDisplayPolishSmoke checks visible and initially minimized five-second patterns, no real sale projection in synthetic content, restoration, window/timer cleanup and subscription cleanup."
+    },
+    {
+      "id": "H1-DRAWER-FALLBACK-QUEUE-HEALTH",
+      "status": "RESOLVED_IN_REVIEWED_COMMIT",
+      "file": "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsViewModel.cs",
+      "resolution": "A meaningful receipt queue change clears drawer test observation and confirmation when the drawer uses that receipt fallback. Comparison trims names and ignores case; an explicit drawer target is preserved.",
+      "regression": "HardwareSettingsSmoke confirms drawer queue A, changes fallback to B and requires configured-needs-test plus disabled confirmation."
+    }
+  ],
+  "checks": [
+    "Queue health reports configuration/observation rather than certifying physical output from native queue availability alone.",
+    "Diagnostics are single-flight even after caller timeout; native inventory/diagnostic buffers and enumerated jobs are bounded; no purge or cancel is introduced.",
+    "Receipt profile paper choices use measured width; drawer commands use bounded supported ESC/POS kick bytes.",
+    "Display privacy suppresses paid/change strings when disabled and masks reserved/manual identifiers; last-four mode uses text elements.",
+    "Logo policy validates encoded byte and decoded pixel bounds before detached image decoding; managed local files are hash checked and paths/device identifiers are not exported through diagnostics.",
+    "Preview/test content uses validated unsaved settings and synthetic content, does not persist a sale/settings mutation, and restores current projection after stop/expiry.",
+    "Settings save permission callbacks bind the original actor and are rechecked before transactional commit; committed settings notifications refresh runtime snapshots.",
+    "Dispose/close paths stop timers and unsubscribe settings/display callbacks."
+  ],
+  "manifest": [
+    {
+      "path": "src/Win7POS.Core/Hardware/CashDrawerPresetPolicy.cs",
+      "gitBlobSha1": "cec2d1c7c3337537d3f06c3331378637b00e81ba",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Core/Hardware/HardwareSettings.cs",
+      "gitBlobSha1": "87faef6aa6817182c1906b0bb4e37911e7461c5a",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Core/Hardware/ReceiptProfilePolicy.cs",
+      "gitBlobSha1": "de1737f1a8d7f8f05c676226211702c12fa23f0b",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Core/Hardware/ScannerInputPolicy.cs",
+      "gitBlobSha1": "52a60fc4a6b00d7258a21f79d8627892600fc69f",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Core/Hardware/SingleFlightDiagnostic.cs",
+      "gitBlobSha1": "bd60e21f6960e1555540a27e4143c0538cd26a51",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Core/Pos/CustomerDisplayContentPolicy.cs",
+      "gitBlobSha1": "d771b714035d7b52ff3cf624ea5d7a985ccb1b13",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Core/Pos/CustomerDisplaySettings.cs",
+      "gitBlobSha1": "b76747aa06a43a8fa88b29e91b3d40125e068a3f",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Core/Pos/CustomerDisplaySnapshot.cs",
+      "gitBlobSha1": "71f411783febdcb176cf8e7af46cb32192bd413a",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/CustomerDisplaySettingsRepository.cs",
+      "gitBlobSha1": "5b459a45dbe28332c32cd19071e99a032bfe6933",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Data/Repositories/HardwareSettingsRepository.cs",
+      "gitBlobSha1": "02cf65480e85c7278a9f55e70f905f1e3a74d388",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/MainWindow.xaml.cs",
+      "gitBlobSha1": "ff8e3d83d1b1352f537d6972f4f4aeadf6558de8",
+      "coverage": "H3 display wiring hunks only"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayLogoStore.cs",
+      "gitBlobSha1": "ab5596fc9b115e4e7b9d6ec64934b662370be0ae",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayManager.cs",
+      "gitBlobSha1": "64cd42cd1a19fa98baf33c9543f2fdf47533241e",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayViewModel.cs",
+      "gitBlobSha1": "dfb9338e126e8e8170da04ce7dbe2a2a02c92336",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayWindow.xaml",
+      "gitBlobSha1": "e60d1291d2f318ed1e3459a08aa0c4c733acac0e",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayWindow.xaml.cs",
+      "gitBlobSha1": "f29f313a9a090a663f548906d7af0a0b6df0316b",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplaySettingsDialog.xaml",
+      "gitBlobSha1": "b7d8112637d9cce7b95b55f8f843bde8f1fd9b20",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplaySettingsDialog.xaml.cs",
+      "gitBlobSha1": "dca91e6c9e78ba1501d73425893adefb9895eb67",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplaySettingsViewModel.cs",
+      "gitBlobSha1": "28fd391b92ad5e54f218d3e9beff331a645a3938",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsDialog.xaml",
+      "gitBlobSha1": "e63ee794e0b2410cb10c67fdb6114f78468f2ee4",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsDialog.xaml.cs",
+      "gitBlobSha1": "1a0c2d3fd687be6a6cdcccd12d79a477a20b8929",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsViewModel.cs",
+      "gitBlobSha1": "a90e9b3eaaf2c8e45b4049f45c603740c903db29",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosView.xaml",
+      "gitBlobSha1": "2891d195fd6b6bebbbd5c031d299fb8a87aea6c9",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosView.xaml.cs",
+      "gitBlobSha1": "982730e5ba088318c0ba7a1acbc48bdc1186567f",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosViewModel.cs",
+      "gitBlobSha1": "ad3e7fd639baf1de607dfb3fe18cb72f92677628",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
+      "gitBlobSha1": "42205d397f2f67ffe9578e44c58e2ed5f207a185",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Printing/WindowsPrinterDiagnostics.cs",
+      "gitBlobSha1": "d0c668972d3a7e71bfec9cb5662fe86bf42a0305",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Printing/WindowsSpoolerPrinterInventory.cs",
+      "gitBlobSha1": "87146fac0f708dd13f53501675142da9c9ed6549",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs",
+      "gitBlobSha1": "71d11e44e16e88b862dbc54648d3cf17253991c5",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/CustomerDisplayPolishSmoke.cs",
+      "gitBlobSha1": "b0202e5fa422325b136cae08507f92a1f17a491d",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    },
+    {
+      "path": "tests/Win7POS.Wpf.UiSmokeHarness/HardwareSettingsSmoke.cs",
+      "gitBlobSha1": "ce062241a3eba153c885296fb789e9b33c26c2b2",
+      "coverage": "H1/H3 changed code and its relevant caller context"
+    }
+  ],
+  "validation": {
+    "activity": "Read-only comparison of the final committed H1/H3 delta and relevant source/regression code; only this JSON receipt was written.",
+    "buildOrTestRunByReviewerForThisReceipt": false,
+    "buildAndCiOwner": "/root",
+    "rootValidationStatusAtReceipt": "Serial solution/WPF/x86 harness validation in progress; its outcome is not claimed by this source-review receipt.",
+    "physicalHardwareAcceptanceExecuted": false,
+    "win7RuntimeAcceptanceExecuted": false
+  },
+  "exclusions": [
+    "No new repository-wide audit.",
+    "No independent certification of authored H2/A.",
+    "No physical printer, cash drawer, scanner, monitor hotplug or Win7 device acceptance claim.",
+    "Localization corpus and unrelated source outside the H1/H3 changed hunks are outside this receipt."
+  ]
+}

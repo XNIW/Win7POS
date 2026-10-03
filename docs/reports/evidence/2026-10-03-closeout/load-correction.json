@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "scenario": "LOAD_sync_backup_x86",
+  "status": "FIRST_FAILURE_PRESERVED_CORRECTED_HELPER_PENDING_RETEST",
+  "artifact": "load-first-failure.raw.json",
+  "artifactSha256": "8b13a8208a8cc98b4788fe6c4cb8dc03e590ac2208356afd341af656529f5379",
+  "samplesArtifact": "load-first-failure-samples.csv",
+  "samplesSha256": "27b37511907d3308dda19dcef468af057f5f890a0bc6b2ae9961116daf005db0",
+  "causes": [
+    "IsBusy setter publishes even for repeated same value; observer counted notifications instead of busy-state transitions, producing UiBusyPeak25 with24successful scans while catalog/backup peaks were1.",
+    "net48 composite format parsing consumed adjacent escaped closing braces; maxMs:F3 made first raw receipt malformed JSON."
+  ],
+  "fixes": [
+    "Observer increments only once per false-to-true transition and decrements once per true-to-false transition; worker peak1/end0assertions retained.",
+    "AppendFormat numeric fields without adjacent final closing brace; Append closing object brace separately. Parse emitted JSON grammar using existing framework JsonReaderWriterFactory before publishing receipt."
+  ],
+  "source": "tests/Win7POS.Wpf.UiSmokeHarness/SyncBackupLoadSmoke.cs",
+  "assertionsPreserved": true,
+  "performanceThresholdsApplied": false,
+  "externalAcceptance": "NOT_EXECUTED"
+}
