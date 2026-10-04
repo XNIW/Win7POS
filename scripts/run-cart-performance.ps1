@@ -11,7 +11,10 @@ param(
     [string]$ExpectedCommit = '',
     [switch]$DisableObserver,
     [ValidateRange(0,5)][int]$DiagnosticScanCount = 0,
+    # Compatibility switch for frozen protocol-4 diagnostic binaries.
+    # Protocol 5 always uses Input; this switch does not form a v5 A/B test.
     [switch]$DiagnosticInputDispatch,
+    [switch]$DiagnosticPublicInput,
     [switch]$DiagnosticTimerControl,
     [switch]$DiagnosticTimerWakeup,
     [switch]$DiagnosticLegacyImageProgress,
@@ -19,6 +22,7 @@ param(
     [switch]$DiagnosticLegacyFixtureSetup
 )
 $ErrorActionPreference = 'Stop'
+if ($DiagnosticPublicInput -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount)) { throw 'Public input comparison requires short Diagnostic scans.' }
 if ($DiagnosticLegacyFixtureSetup -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount -or $DiagnosticTimerControl)) { throw 'Legacy fixture setup requires short Diagnostic scans.' }
 if ($DiagnosticExecutionCapture -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount -or $DisableObserver -or $DiagnosticTimerControl)) { throw 'Execution capture requires short Diagnostic scans with the observer enabled.' }
 if ($DiagnosticLegacyImageProgress -and ($Mode -ne 'Diagnostic' -or $DiagnosticTimerControl -or $SoakMinutes -lt 1 -or $SoakMinutes -gt 5)) { throw 'Legacy image progress requires full Diagnostic and 1..5 minutes.' }
@@ -62,9 +66,11 @@ $budgetHash = if ($BudgetPath) { (Get-FileHash -LiteralPath $BudgetPath).Hash.To
 $hostOperatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop |
     Select-Object Caption,Version,BuildNumber,OSArchitecture
 [ordered]@{ products=$Products; soakMinutes=$SoakMinutes; mode=$Mode; stage=$Stage; startedUtc=[DateTimeOffset]::UtcNow.ToString('O');
-    protocol=$(if ($DiagnosticTimerControl) { "minimal-wpf-timer-v2: focused TextBox, actual InputManager timer, no POS view/cart/service; extra 125ms QA wakeup timer=$DiagnosticTimerWakeup; 20-second idle blocks; diagnostic only" } elseif ($DiagnosticLegacyFixtureSetup) { 'win7pos-public-scan-v3: legacy fixture setup Diagnostic comparison only' } else { 'win7pos-public-scan-v4: verify rendered 500-line fixture before useful clock; persistent identities, alternating mode order, 20 public command scans per cycle including Input visual completion, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement' });
+    protocol=$(if ($DiagnosticTimerControl) { "minimal-wpf-timer-v2: focused TextBox, actual InputManager timer, no POS view/cart/service; extra 125ms QA wakeup timer=$DiagnosticTimerWakeup; 20-second idle blocks; diagnostic only" } elseif ($DiagnosticLegacyFixtureSetup) { 'win7pos-public-scan-v3: legacy fixture setup Diagnostic comparison only' } else { 'win7pos-public-scan-v5: actual child preflight; rendered 500-line fixture before useful clock; persistent identities, alternating mode order, public command delivery at Input with enqueue and WPF callbacks included; unchanged 250ms Input completion probe, bitmap separate, image/dialog workload, 20 seconds idle; no forced GC; awake duration excludes suspend; no process-start measurement' });
+    inputDelivery='Input';
+    diagnosticInputDispatchScope='legacy protocol-4 harness only; protocol 5 always Input';
     benchmarkProtocol='31 service samples per size: first call 0, warm 1..30; rendered-view bitmap is not monitor latency';
-    budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; diagnosticInputDispatch=[bool]$DiagnosticInputDispatch; diagnosticLegacyImageProgress=[bool]$DiagnosticLegacyImageProgress; diagnosticExecutionCapture=[bool]$DiagnosticExecutionCapture; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
+    budgetSha256=$budgetHash; observerEnabled=(-not $DisableObserver); diagnosticScanCount=$DiagnosticScanCount; diagnosticInputDispatch=[bool]$DiagnosticInputDispatch; diagnosticPublicInput=[bool]$DiagnosticPublicInput; diagnosticLegacyImageProgress=[bool]$DiagnosticLegacyImageProgress; diagnosticExecutionCapture=[bool]$DiagnosticExecutionCapture; hostOperatingSystem=$hostOperatingSystem; binaries=$manifest } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'protocol.json')
 if ($BudgetPath) { Copy-Item -LiteralPath $BudgetPath -Destination (Join-Path $OutputDirectory 'preregistered-budget.json') }
 if ($PayloadBindingPath) { Copy-Item -LiteralPath $PayloadBindingPath -Destination (Join-Path $OutputDirectory 'payload-binding.json') }
 $previousSoak = $env:WIN7POS_QA_SOAK_MINUTES
@@ -72,26 +78,29 @@ $previousDiagnostic = $env:WIN7POS_QA_CART_DIAGNOSTIC
 $previousObserver = $env:WIN7POS_QA_PERF_OBSERVER_OFF
 $previousScanLimit = $env:WIN7POS_QA_PERF_SCAN_LIMIT
 $previousInputDispatch = $env:WIN7POS_QA_PERF_INPUT_DISPATCH
+$previousPublicInput = $env:WIN7POS_QA_PERF_PUBLIC_INPUT
 $previousTimerWakeup = $env:WIN7POS_QA_TIMER_WAKEUP
 $previousLegacyProgress = $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS
 $previousExecutionCapture = $env:WIN7POS_QA_EXECUTION_CAPTURE
 $previousLegacySetup = $env:WIN7POS_QA_LEGACY_FIXTURE_SETUP
 $status = $null
+$process = $null
+$workingDirectory = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 try {
     $env:WIN7POS_QA_SOAK_MINUTES = if ($DiagnosticScanCount) { '1' } elseif ($SoakMinutes) { [string]$SoakMinutes } else { $null }
     $env:WIN7POS_QA_PERF_SCAN_LIMIT = if ($DiagnosticScanCount) { [string]$DiagnosticScanCount } else { $null }
     $env:WIN7POS_QA_PERF_INPUT_DISPATCH = if ($DiagnosticInputDispatch) { '1' } else { $null }
+    $env:WIN7POS_QA_PERF_PUBLIC_INPUT = if ($DiagnosticPublicInput) { '1' } else { $null }
     $env:WIN7POS_QA_CART_DIAGNOSTIC = if ($DiagnosticTimerControl) { 'timer-control' } else { $null }
     $env:WIN7POS_QA_TIMER_WAKEUP = if ($DiagnosticTimerWakeup) { '1' } else { $null }
     $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS = if ($DiagnosticLegacyImageProgress) { '1' } else { $null }
     $env:WIN7POS_QA_EXECUTION_CAPTURE = if ($DiagnosticExecutionCapture) { '1' } else { $null }
     $env:WIN7POS_QA_LEGACY_FIXTURE_SETUP = if ($DiagnosticLegacyFixtureSetup) { '1' } else { $null }
     $env:WIN7POS_QA_PERF_OBSERVER_OFF = if ($DisableObserver) { '1' } else { $null }
-    $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"'+$OutputDirectory+'"'), '--cart-performance', '--products', $Products) -WindowStyle Hidden -PassThru
+    $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"'+$OutputDirectory+'"'), '--cart-performance', '--products', $Products) -WorkingDirectory $workingDirectory -WindowStyle Hidden -PassThru
     $deadline = [Diagnostics.Stopwatch]::StartNew()
     while (-not $process.WaitForExit(1000)) {
         if ($deadline.Elapsed.TotalMinutes -gt $(if ($DiagnosticScanCount) { 2 } else { $SoakMinutes + 10 })) {
-            Stop-Process -Id $process.Id -ErrorAction SilentlyContinue
             throw 'Performance harness timed out; partial samples preserved.'
         }
     }
@@ -148,13 +157,39 @@ catch {
     throw
 }
 finally {
-    $env:WIN7POS_QA_SOAK_MINUTES = $previousSoak
-    $env:WIN7POS_QA_CART_DIAGNOSTIC = $previousDiagnostic
-    $env:WIN7POS_QA_PERF_OBSERVER_OFF = $previousObserver
-    $env:WIN7POS_QA_PERF_SCAN_LIMIT = $previousScanLimit
-    $env:WIN7POS_QA_PERF_INPUT_DISPATCH = $previousInputDispatch
-    $env:WIN7POS_QA_TIMER_WAKEUP = $previousTimerWakeup
-    $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS = $previousLegacyProgress
-    $env:WIN7POS_QA_EXECUTION_CAPTURE = $previousExecutionCapture
-    $env:WIN7POS_QA_LEGACY_FIXTURE_SETUP = $previousLegacySetup
+    $cleanup = [ordered]@{processId=$null;workingDirectory=$workingDirectory;closeRequested=$false;killRequested=$false;terminal=$false;failure=$null}
+    try {
+        if ($process) {
+            $cleanup.processId=$process.Id
+            try {
+                try { $cleanup.terminal=$process.HasExited } catch { $cleanup.failure=$_.Exception.Message }
+                if (-not $cleanup.terminal) {
+                    $cleanup.closeRequested=$true
+                    try { $null=$process.CloseMainWindow() } catch { $cleanup.failure=$_.Exception.Message }
+                    try { $cleanup.terminal=$process.WaitForExit(5000) } catch { $cleanup.failure=$_.Exception.Message }
+                    if (-not $cleanup.terminal) {
+                        $cleanup.killRequested=$true
+                        # This object belongs to our launch, never rediscover a PID/name.
+                        try { $process.Kill() } catch { $cleanup.failure=$_.Exception.Message }
+                        try { $cleanup.terminal=$process.WaitForExit(5000) } catch { $cleanup.failure=$_.Exception.Message }
+                    }
+                }
+            }
+            finally { try { $process.Dispose() } catch { $cleanup.failure=$_.Exception.Message } }
+        }
+        $cleanup | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'harness-cleanup.json')
+    }
+    finally {
+        $env:WIN7POS_QA_SOAK_MINUTES = $previousSoak
+        $env:WIN7POS_QA_CART_DIAGNOSTIC = $previousDiagnostic
+        $env:WIN7POS_QA_PERF_OBSERVER_OFF = $previousObserver
+        $env:WIN7POS_QA_PERF_SCAN_LIMIT = $previousScanLimit
+        $env:WIN7POS_QA_PERF_INPUT_DISPATCH = $previousInputDispatch
+        $env:WIN7POS_QA_PERF_PUBLIC_INPUT = $previousPublicInput
+        $env:WIN7POS_QA_TIMER_WAKEUP = $previousTimerWakeup
+        $env:WIN7POS_QA_LEGACY_IMAGE_PROGRESS = $previousLegacyProgress
+        $env:WIN7POS_QA_EXECUTION_CAPTURE = $previousExecutionCapture
+        $env:WIN7POS_QA_LEGACY_FIXTURE_SETUP = $previousLegacySetup
+    }
+    if ($process -and -not $cleanup.terminal) { throw 'Owned performance harness cleanup not confirmed; inspect harness-cleanup.json.' }
 }

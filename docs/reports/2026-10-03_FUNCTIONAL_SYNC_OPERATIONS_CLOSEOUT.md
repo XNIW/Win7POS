@@ -4,6 +4,9 @@ Repository-local closeout, 2026-10-03; external acceptance remains open.
 This is the single report for this execution;
 machine receipts live in `evidence/2026-10-03-closeout/`. Historical reports and
 owner decisions remain unchanged. No external acceptance is inferred from builds.
+The residual execution of 2026-10-04 is recorded in the final section below;
+its current machine receipt supersedes earlier acceptance snapshots without
+changing historical failures or the contract-based C01–C12 matrix.
 
 ## Revision and protection
 
@@ -372,3 +375,169 @@ PASS for those builds.
 | Real SMB backup/restore; simulated UNC/disk faults do not attest a share | QA operator responsible for the TEST share | Identified writable authorized TEST SMB target using Windows-configured access; synthetic app data | Configure that TEST destination through the app, run one verified backup/restore/restart cycle and retain integrity/business/audit/cleanup receipts. |
 | Mac IDE checkout update | Authorized Mac coordinator | Preserved current edits/checkpoints and final Win7POS revision available | Coordinator fetches/integrates safely and returns old/new SHA, preservation and clean/ahead-behind receipt for the checkout actually updated. |
 | Real release signing/timestamp and production certification | Release/project owner under a future explicit production mandate | Existing protected-release policy, authorized real certificate and RFC3161 service; all required production/hardware acceptance | Use the existing Protected Release procedure only under that mandate. This closeout delivers development-unsigned; no purchase, signing protection change or production activation occurs. |
+
+## Residual execution — 2026-10-04
+
+`WIN7POS_RESIDUAL_FIRST_SCAN_AND_LIVE_SYNC_RESULT` resumes initial clean
+`main=origin/main=80a6cd82b6c8538df7846190e757409bebe721dc`, Release Pack
+37148719320, on `codex/residual-first-scan-20261004`. The original delivery
+receipt is preserved as
+`C:\Dev\_codex-evidence\win7pos-closeout-20261003\residual-20261004\initial-final-main-delivery.json`.
+The current receipt remains `C:\Dev\_codex-evidence\win7pos-closeout-20261003\final-main-delivery.json`;
+the single current evidence index is `residual-20261004\evidence-index.json` in
+that private evidence root. Post-merge PR/head/main, CI/Security, package and
+qualification identities are recorded there rather than by another documentation
+commit chasing its own SHA. Backup, product revision/fractional stock, H1/H2/H3
+and OPERATIONS-1 were not reimplemented. The finding “1.234 diventa 1234” remains
+withdrawn.
+
+The previous applicable Integrated12 has 640 scans and passes; Final60 retry4
+fails scan1 at595.377ms with a valid actual-child environment sample. Its
+TextEditor callback spans about522ms in the TextStore/layout/automation/native
+wait path. These immutable results remain historical. They do not apply to the
+changed driver, observer metadata and protocol5.
+
+### First-scan experiment and qualified scope of the correction
+
+The initial short, release-bound reproduction still fails scan1. A redundant
+SelectAll hypothesis was then tested with one product variable changed, five
+fresh processes per arm in alternating AB/BA order and the same synthetic cart.
+Baseline completes3/5; selection guard completes1/5. All environment samples
+are valid. The hypothesis is refuted; the product experiment was reverted.
+
+The next comparison freezes one complete diagnostic build and changes only
+command delivery. The direct driver inherits DispatcherSynchronizationContext
+priority **Send**, as measured by the trace; the original tentative “Normal”
+description is corrected here. In five fresh processes per arm, alternating
+AB/BA with controlled reintroduction, direct delivery fails4/5 first probes
+(observed580–593ms); queued Input delivery completes5/5, all25 scans. All
+environment samples remain valid. The first complete counted UI durations in
+the Input arm are152.269–201.557ms, including enqueue, intervening callbacks,
+service, apply, probe and layout. The first probes are66.031–90.352ms. One direct
+arm also passes; no unsuccessful arm or first sample is removed.
+
+The scheduling effect is therefore demonstrated for the synthetic QA driver.
+The correction queues the same public command at Input. Microsoft's
+[DispatcherPriority documentation](https://learn.microsoft.com/en-us/dotnet/api/system.windows.threading.dispatcherpriority?view=windowsdesktop-10.0)
+documents this input queue priority. This does not identify the internal cause
+of the TextStore/provider wait, establish a product bug or attribute it to an
+external automation client. The trace identifies measured blocking work only.
+No product source changes, automation/accessibility/IME suppression, WCT retry,
+native injection or system configuration changes are included.
+
+An additional equally instrumented comparison exercises the real TextBox
+binding and shared PreviewKeyDown/KeyDown public handlers at Input: three fresh
+processes and15 scans per arm, command and routed input, all pass. This is
+synthetic WPF routed input; native scanner delivery, hardware and native IME
+remain unmeasured. It does not replace the full input/focus regressions.
+
+Protocol5 starts the existing stopwatch **before** enqueue. The complete
+command overhead formula and250ms Input probe are unchanged; bitmap time stays
+separate. A controlled dispatcher callback regression verifies its actual
+elapsed time is included. The250ms limit is the post-busy probe limit, while
+the unchanged whole-UI maximum is1000ms; these are distinct gates. The validator
+now checks visual wait and whole-UI maximum for **every** sample, including
+first/warmup samples previously exempted. Warm percentile conventions and the
+frozen budget are unchanged. Red/green validator logs preserve both defects.
+`DiagnosticInputDispatch` supports frozen protocol4 diagnostics only; it is
+explicitly a no-op for protocol5 and cannot form another v5 A/B comparison.
+
+### Actual-child environment, cleanup and regression evidence
+
+The actual UI child now samples the canonical desktop/session/foreground/
+visibility/power/interrupt conditions after fixture readiness, before the first
+scan and useful clock. It flushes the decisive sample and stops immediately
+once cumulative validity is lost. Runtime evidence records process/session/UI
+thread, working directory, desktop names and the actual backend environment's
+scheme/server without credentials, path or query. Parent readiness alone cannot
+qualify the child. The interactive wrapper uses the logged-on user with
+Interactive/Limited, repo working directory and the real Admin backend override
+`http://127.0.0.1:9`; its legacy override is also kept identical. Wrapper changes
+are separately hashed in the index.
+
+Supervision owns only its returned Process object. Terminal cleanup tries
+graceful close, bounded wait and owned kill fallback; exceptions cannot skip
+fallback or unconditional process-local environment restoration. Regression
+fixtures cover failed supervision, close exception, incomplete terminal state,
+failed cleanup receipt publication and nonzero child exit. They use fake owned
+processes; they do not claim a real elapsed production timeout was induced.
+The UI regression also proves hidden-host invalidity remains terminal and its
+sample is flushed before disposal.
+
+The targeted public-input/lifetime regression passes after the user manually
+reactivates the desktop. Earlier failures, including the measured Screen-saver
+desktop and a test-file sharing defect corrected with shared read access, are
+retained. It covers real binding, Enter/Tab, shared handled preview/bubbling
+single submission, KeyDown-only, composition guard, focus recovery/inactive
+window guard, Unicode editing, selection, Rows/Grid and image recycling. The
+isolated scanner fixture is restored in finally. No native IME or physical
+accessibility certification is inferred.
+
+The subsequent first untraced protocol5 short process stops **before scan1**:
+desktop_matches/session_active/visible=1, own_foreground=0, child terminal=true.
+It is an environmental nonqualification, not a latency failure or first-scan
+PASS. No identical automatic retry or long soak follows that lost prerequisite.
+Current short, Integrated12 and Final60 outcomes, including any later changed
+prerequisite, are bound individually in the current machine receipt. Neither
+traced comparisons nor the old Integrated12 qualify the final protocol5 payload.
+
+Independent read-only input and QA reviews find no blocking defects; their
+reviewed file hashes and final small accounting/metadata/compatibility fixes
+are retained in `review-receipts.json`. Required architecture/dialog checks and
+49/49 gates, solution/WPF builds with zero warnings and1201/1201 Core tests
+with no skips pass. The full local WPF suite produces50 screenshots and12
+passing scenarios, then reproduces “Background did not progress” at the image
+editor's ancestor-visibility resume. Its early environment sample is valid;
+no sample attests the environment31s later at that failure. One bounded,
+phase-local diagnostic replay passes without reproducing the delay, so its
+cause remains unknown. The immutable diagnostic build/trace is retained and
+that temporary instrumentation is removed from the patch. This is not a fix
+or a discarded failure. The final untraced targeted regression also passes
+with terminal exit0; it does not retrospectively repair the full-suite FAIL.
+Targeted rechecks and exact-head hosted checks are
+recorded in the current receipt with their actual terminal results.
+The historic CI “Background did not progress” uses a separate3000ms Background
+regression probe. No link with the first-scan Input250ms timeout is established.
+
+After the later actual-child foreground-valid observation, the final source
+candidate completes all five predeclared untraced fresh-process runs,25 scans,
+with every environment sample valid. First probes are105.213/113.011/114.120/
+62.940/78.081ms; complete counted first UI times are340.742/197.889/353.885/
+147.199/147.406ms. The full UI maximum and the probe limit are both respected;
+the first complete UI time is not universally below250ms. These source-built
+Diagnostic runs remain explicitly unqualified and do not substitute for
+exact-main package binding, Integrated12 or Final60.
+
+### Live owner handoff and remaining execution gates
+
+The authorized former Mac coordinator **Riprendi collaudo ecosistema POS**
+redirects this execution to **Completa integrazione e collaudi**, chat
+`01a10506-e42c-7352-a6cb-08b7bc8c800b`. The request covers backend deployment/DB
+compatibility, installed **authenticated** Android/iOS callers, native
+recovery→reopen→subsequent delta, common/POS readiness and preserved Win7POS
+Mac checkout before/after. Existing mobile/IDE and backend/Admin writers remain
+the sole owners. Source CI, saved/installed builds or UI readability alone do
+not prove those gates. The earlier locked-Mac observation is superseded by
+supported UI readability at17:06Z; input/auth/session readiness remains a
+separate requirement. Owner receipts and later updates are linked in the index.
+
+The Mac owner's terminal checkout receipt attests before/after
+`81acd479c187469fe0dc31f9b0fb3a162312c1cc` with13 dirty files unchanged;
+an update to this execution's final main is NOT_RUN. Backend deployment is
+reported at22107a6f, distinct from Admin82af13ef with deployment SKIPPED.
+POS contract compatibility and terminal authenticated caller are not attested.
+New mobile/backend fixes make old source/artifact snapshots historical. The
+vault profile again passes binding/DPAPI/ACL checks without credential export.
+No live request, remote SQL, deployment or remote fixture mutation has been
+performed by Asus without canonical owner readiness. The existing C01–C12
+matrix and justified NOT_APPLICABLE directions above remain intact; articles/
+zero-sales readiness cannot authorize C08, C11 scope changes or C12 restore.
+
+| Gate | Concrete next action and proof |
+| --- | --- |
+| FIRST_SCAN / ASUS_STABILITY | Source short5 is complete with25 scans and valid actual-child environment. Verify its applicability to the frozen final binding, repeating short proof only for changed material bindings, then execute new exact-main ReleasePack-bound Integrated12 and uninterrupted Final60 with unchanged budget and no concurrent QA/build load. Preserve every terminal result. |
+| POS_ADMIN_LIVE | Backend owner provides canonical fresh POS article readiness run ID/scope/window and deployed-contract receipt; Asus invokes the existing vault-based acceptance runner against the exact final pack and new authorized data directory. |
+| MOBILE_CROSS_PLATFORM | Coordinator finishes installed authenticated caller receipts and record-level reopen/second-delta comparisons for supported C01–C12 directions; economic/session/restore actions require their specific scope. |
+| MAC_CHECKOUT | Mac owner safely integrates final Win7POS main while preserving13 dirty files and returns actual before/after SHA and checkout receipt. |
+| WIN7_HARDWARE / SMB | Targets remain explicitly unavailable. Existing exact-package install/upgrade, scanner Enter/Tab, offline/reconnect, sale/return/void, print recovery, backup/restore/restart checklist is ready; Asus loopback/Epson does not certify Win7/Xprinter/SMB. |
+| RELEASE / PRODUCTION | Ordinary reviewed integration, exact-SHA CI/Security and canonical downloaded-pack checksum/signature/provenance verification precede delivery. Development-unsigned only; production remains unauthorized. |
