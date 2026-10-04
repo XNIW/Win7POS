@@ -13,6 +13,7 @@ using Dapper;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Security;
+using Win7POS.Core.Hardware;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure.Security;
@@ -77,6 +78,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var previous = OperatorSessionHolder.Current;
             Window host = null;
             PosViewModel vm = null;
+            HardwareSettingsRepository scannerHardware = null;
+            HardwareSettings priorHardware = null;
             var phase = "initialization";
             try
             {
@@ -85,6 +88,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     connection.Execute(@"WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<500)
 INSERT INTO products(barcode,name,unitPrice,is_active) SELECT printf('PERF%04d',x),'中文 café long wrapped product '||x,1000,1 FROM n;
 INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products WHERE barcode LIKE 'PERF%';");
+                scannerHardware = new HardwareSettingsRepository(new SettingsRepository(new SqliteConnectionFactory(PosDbOptions.Default())));
+                priorHardware = await scannerHardware.LoadAsync();
+                var scannerFixture = priorHardware.Copy();
+                scannerFixture.Scanner = new ScannerInputSettings { Terminator = ScannerTerminator.EnterOrTab };
+                await scannerHardware.SaveAsync(scannerFixture, "qa_fixture", () => { });
                 var view = new PosView(); // Preserve constructor composition and events.
                 vm = (PosViewModel)view.DataContext;
                 var loaded = false;
@@ -92,6 +100,54 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                 host = new Window { Content = view, Width = 1024, Height = 768, ShowInTaskbar = false };
                 host.Show();
                 await WaitAsync(() => loaded && !vm.IsBusy, "real view initialization");
+                phase = "child environment failure is terminal";
+                var environmentDirectory = Path.Combine(Path.GetDirectoryName(PosDbOptions.Default().DbPath), "environment-gate-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(environmentDirectory);
+                using (var environment = new PerformanceEnvironment(environmentDirectory))
+                {
+                    var hidden = new Window(); // Never hide or alter the active QA desktop/window.
+                    try
+                    {
+                        foreach (var sampleHost in new[] { hidden, host })
+                        {
+                            var rejected = false;
+                            try { environment.SampleOrThrow(sampleHost); }
+                            catch (InvalidOperationException error) when (error.Message == "qualification_environment_invalid") { rejected = true; }
+                            Require(rejected && !environment.Valid, "invalid environment resumed qualification");
+                        }
+                        // Read before Dispose: the decisive invalid sample must already be flushed.
+                        string[] samples;
+                        using (var reader = new StreamReader(new FileStream(Path.Combine(environmentDirectory, "qualification-environment.csv"),
+                            FileMode.Open, FileAccess.Read, FileShare.ReadWrite)))
+                            samples = reader.ReadToEnd().Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+                        Require(samples.Length == 3 && samples[1].Split(',')[5] == "0", "invalid child sample was not preserved immediately");
+                    }
+                    finally { hidden.Close(); }
+                }
+                phase = "public input queue accounting";
+                var accountingStart = Stopwatch.GetTimestamp();
+                long callbackStart = 0, callbackEnd = 0;
+                _ = Dispatcher.CurrentDispatcher.BeginInvoke((Action)(() =>
+                {
+                    callbackStart = Stopwatch.GetTimestamp();
+                    System.Threading.Thread.Sleep(40);
+                    callbackEnd = Stopwatch.GetTimestamp();
+                }), DispatcherPriority.Normal);
+                long accountingReturn = 0;
+                object deliveredPriority = null;
+                var delivered = CartQualificationSmoke.QueuePublicInput(() =>
+                {
+                    accountingReturn = Stopwatch.GetTimestamp();
+                    var context = System.Threading.SynchronizationContext.Current;
+                    deliveredPriority = context.GetType().GetField("_priority", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(context);
+                });
+                await delivered.Task;
+                var accountedOverhead = CartQualificationSmoke.CommandOverheadMs(accountingStart, accountingReturn, 0, 0, 0);
+                var callbackMilliseconds = (callbackEnd - callbackStart) * 1000d / Stopwatch.Frequency;
+                Require(deliveredPriority is DispatcherPriority priority && priority == DispatcherPriority.Input &&
+                    callbackStart >= accountingStart && callbackEnd > callbackStart && accountingReturn >= callbackEnd && accountedOverhead >= callbackMilliseconds,
+                    "public input enqueue/intervening dispatcher work escaped measurement: " + accountedOverhead);
+                phase = "initial visual progress";
                 await DrainAsync();
                 var barcode = (TextBox)view.FindName("BarcodeBox");
                 var rows = (ListBox)view.FindName("CartListBox");
@@ -107,6 +163,44 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                     var expected = index;
                     await WaitAsync(() => !vm.IsBusy && vm.CartItems.Count == expected, "public scanner command lost input");
                 }
+                phase = "routed scanner input and composition";
+                Require(vm.AcceptsScannerTerminator(ScannerTerminator.Enter) && vm.AcceptsScannerTerminator(ScannerTerminator.Tab), "scanner fixture not applied");
+                var inputRow = vm.CartItems.Single(row => row.Barcode == "PERF0050");
+                async Task RoutedScanAsync(Key key, bool preview, bool accepted)
+                {
+                    view.RestoreScannerFocus(); await DrainAsync();
+                    Require(barcode.IsKeyboardFocused, "routed scanner needs actual barcode focus");
+                    barcode.Text = "PERF0050";
+                    barcode.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+                    var expectedQuantity = inputRow.Quantity + (accepted ? 1 : 0);
+                    await CartQualificationSmoke.QueuePublicInput(() =>
+                    {
+                        var args = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(barcode), Environment.TickCount, key)
+                            { RoutedEvent = preview ? Keyboard.PreviewKeyDownEvent : Keyboard.KeyDownEvent };
+                        barcode.RaiseEvent(args);
+                        if (preview) { args.RoutedEvent = Keyboard.KeyDownEvent; barcode.RaiseEvent(args); }
+                    }).Task;
+                    if (accepted) await WaitAsync(() => !vm.IsBusy && inputRow.Quantity == expectedQuantity, "routed scanner lost input");
+                    await DrainAsync();
+                    Require(!vm.IsBusy && inputRow.Quantity == expectedQuantity && barcode.IsKeyboardFocused, "routed scanner duplicated input or lost focus");
+                    Require(accepted ? vm.BarcodeInput == "" && ReferenceEquals(vm.SelectedCartItem, inputRow) : vm.BarcodeInput == "PERF0050",
+                        "routed scanner input/selection changed unexpectedly");
+                }
+                await RoutedScanAsync(Key.Enter, true, true);
+                await RoutedScanAsync(Key.Enter, false, true); // Existing KeyDown surface.
+                await RoutedScanAsync(Key.Tab, true, true);
+                var barcodeComposition = new TextComposition(InputManager.Current, barcode, "PERF0050", TextCompositionAutoComplete.Off);
+                TextCompositionManager.StartComposition(barcodeComposition);
+                await RoutedScanAsync(Key.Enter, true, false);
+                TextCompositionManager.CompleteComposition(barcodeComposition);
+                await RoutedScanAsync(Key.Enter, true, true);
+                var tabOnly = scannerFixture.Copy(); tabOnly.Scanner.Terminator = ScannerTerminator.Tab;
+                await scannerHardware.SaveAsync(tabOnly, "qa_fixture", () => { });
+                await WaitAsync(() => vm.AcceptsScannerTerminator(ScannerTerminator.Tab) && !vm.AcceptsScannerTerminator(ScannerTerminator.Enter), "Tab-only scanner profile not applied");
+                await RoutedScanAsync(Key.Enter, true, false);
+                await RoutedScanAsync(Key.Tab, true, true);
+                await scannerHardware.SaveAsync(scannerFixture, "qa_fixture", () => { });
+                await WaitAsync(() => vm.AcceptsScannerTerminator(ScannerTerminator.Enter) && vm.AcceptsScannerTerminator(ScannerTerminator.Tab), "scanner fixture not restored");
                 var first = vm.CartItems[0];
                 for (var repeat = 0; repeat < 20; repeat++)
                 {
@@ -327,7 +421,11 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                 File.WriteAllText(Path.Combine(Path.GetDirectoryName(PosDbOptions.Default().DbPath), "cart-regression-error.txt"), phase + Environment.NewLine + error);
                 throw;
             }
-            finally { host?.Close(); vm?.Dispose(); OperatorSessionHolder.Current = previous; }
+            finally
+            {
+                host?.Close(); vm?.Dispose(); OperatorSessionHolder.Current = previous;
+                if (scannerHardware != null && priorHardware != null) await scannerHardware.SaveAsync(priorHardware, "qa_fixture", () => { });
+            }
         }
     }
 }

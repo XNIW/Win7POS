@@ -50,8 +50,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var scanLimitText = Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_SCAN_LIMIT") ?? "0";
             if (!int.TryParse(scanLimitText, out var scanLimit) || scanLimit < 0 || scanLimit > 5)
                 throw new ArgumentException("diagnostic_scan_limit_invalid");
-            var inputDispatch = Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_INPUT_DISPATCH") == "1";
-            if (inputDispatch && scanLimit == 0) throw new ArgumentException("input_dispatch_requires_short_diagnostic");
+            // Public scan delivery uses the input queue, rather than inheriting
+            // the synthetic batch's Send-priority async continuation.
+            var publicInput = Environment.GetEnvironmentVariable("WIN7POS_QA_PERF_PUBLIC_INPUT") == "1";
+            if (publicInput && scanLimit == 0) throw new ArgumentException("public_input_requires_short_diagnostic");
             var completedScans = 0;
             using var environment = new PerformanceEnvironment(directory);
             using var scans = new StreamWriter(Path.Combine(directory, "qualification-scans.csv"));
@@ -61,6 +63,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
             idle.WriteLine("cycle,elapsed_s,private_bytes,managed_bytes,pending,oldest_ms,focus_pending,focus_oldest_ms,scroll_pending,scroll_oldest_ms,closed_rooted_windows,cache_bytes,input_ms,render_ms,databind_ms,background_ms,observer_dropped,environment_valid,suspended,inactive_pending,oldest_posted_ms,handles,threads,gc0,gc1,gc2,metadata_entries,peak_observed_dispatcher,focus_peak,scroll_peak,focus_maximum_wait_ms,scroll_maximum_wait_ms");
             var view = new PosView();
             var vm = (PosViewModel)view.DataContext;
+            var barcode = (TextBox)view.FindName("BarcodeBox");
+            DispatcherHookEventHandler focusStarted = (_, args) =>
+            {
+                var callback = typeof(DispatcherOperation).GetField("_method", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(args.Operation) as Delegate;
+                if (callback?.Method.Name.IndexOf("FocusBarcode", StringComparison.Ordinal) >= 0)
+                    trace.Checkpoint("focus_callback_start;focused=" + barcode.IsKeyboardFocused + ";text_length=" + barcode.Text.Length +
+                        ";selection_start=" + barcode.SelectionStart + ";selection_length=" + barcode.SelectionLength);
+            };
             var host = new Window { Width = 1024, Height = 768, Content = view, ShowInTaskbar = false };
             var loaded = false;
             view.Loaded += (_, __) => loaded = true;
@@ -71,6 +81,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var notifications = 0;
             try
             {
+                if (traceEnabled) Dispatcher.CurrentDispatcher.Hooks.OperationStarted += focusStarted;
                 host.Show();
                 await CartPerformanceRegressionSmoke.WaitAsync(() => loaded && !vm.IsBusy, "qualification view initialization", 10000);
                 // Fixture population is setup, not scan work. Subsequent cycles
@@ -103,6 +114,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     observer.WriteExecutions(operations);
                 }
                 var cycle = 0;
+                // Preflight comes from this actual QA process and UI dispatcher,
+                // after setup, before the first scan and useful workload clock.
+                environment.SampleOrThrow(host);
                 var usefulStart = environment.AwakeSeconds;
                 if (traceEnabled) trace.Checkpoint("fixture_ready;cart=" + vm.CartItems.Count + ";uia_listening=" + UiaClientsAreListening() +
                     ";context=" + System.Threading.SynchronizationContext.Current?.GetType().FullName);
@@ -117,7 +131,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         {
                             changes = notifications = 0;
                             var expectedQuantity = vm.CartItems[0].Quantity + 1;
-                            vm.BarcodeInput = "P00000001";
+                            var inputEntryTick = traceEnabled ? Stopwatch.GetTimestamp() : 0;
+                            if (traceEnabled) trace.Checkpoint("input_text_start;public_input=" + publicInput);
+                            if (publicInput)
+                            {
+                                barcode.Text = "P00000001";
+                                barcode.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+                            }
+                            else vm.BarcodeInput = "P00000001";
+                            if (traceEnabled) trace.Checkpoint("input_text_end;elapsed_ms=" + Milliseconds(Stopwatch.GetTimestamp() - inputEntryTick).ToString("F3", Invariant));
                             var finished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                             var sawBusy = false;
                             System.ComponentModel.PropertyChangedEventHandler handler = (_, args) =>
@@ -136,17 +158,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             {
                                 if (traceEnabled) trace.Checkpoint("command_start;cycle=" + cycle + ";mode=" + mode + ";scan=" + ordinal +
                                     ";expected_qty=" + expectedQuantity + ";focus=" + Keyboard.FocusedElement?.GetType().FullName);
-                                if (inputDispatch)
+                                // Enqueue, intervening WPF work and completion
+                                // all remain inside the existing scan timer.
+                                commandDispatch = QueuePublicInput(() =>
                                 {
-                                    // One-factor Diagnostic comparison only. The enqueue,
-                                    // execution and completion all stay inside the scan timer.
-                                    commandDispatch = Dispatcher.CurrentDispatcher.InvokeAsync(() =>
-                                    {
-                                        try { ExecutePublicScan(vm, traceEnabled ? trace : null); }
-                                        catch (Exception error) { finished.TrySetException(error); }
-                                    }, DispatcherPriority.Input);
-                                }
-                                else ExecutePublicScan(vm, traceEnabled ? trace : null);
+                                    try { ExecutePublicScan(vm, traceEnabled ? trace : null, publicInput ? barcode : null); }
+                                    catch (Exception error) { finished.TrySetException(error); }
+                                });
                                 if (await Task.WhenAny(finished.Task, Task.Delay(10000)) != finished.Task) throw new TimeoutException("qualification_public_scan_timeout");
                                 await finished.Task;
                             }
@@ -194,15 +212,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             var rendered = Stopwatch.GetTimestamp();
                             var uiReturn = Math.Max(0, Milliseconds(detail.ApplyStartedTimestamp - detail.ServiceCompletedTimestamp));
                             var apply = detail["apply_snapshot"];
-                            var overhead = Math.Max(0, Milliseconds(returned - start) - detail.ServiceMilliseconds - uiReturn - apply);
+                            var overhead = CommandOverheadMs(start, returned, detail.ServiceMilliseconds, uiReturn, apply);
                             scans.WriteLine(string.Join(",", new object[] { cycle, mode, ordinal,
                                 detail.ServiceMilliseconds.ToString("F3", Invariant), uiReturn.ToString("F3", Invariant), apply.ToString("F3", Invariant),
                                 Milliseconds(layout - returned).ToString("F3", Invariant), Milliseconds(rendered - layout).ToString("F3", Invariant), overhead.ToString("F3", Invariant),
                                 detail["gate_wait"].ToString("F3", Invariant), detail["worker_queue"].ToString("F3", Invariant), detail["product_lookup_update"].ToString("F3", Invariant),
                                 detail["snapshot_query_map"].ToString("F3", Invariant), detail["snapshot_projection"].ToString("F3", Invariant),
                                 Containers(rows), Containers(grid), changes, notifications, sql.ProductCommands, sql.ProductCommandsOnCallingThread, visualWait.ToString("F3", Invariant) }));
-                            environment.Sample(host);
-                            if (traceEnabled) trace.Checkpoint("scan_complete;cycle=" + cycle + ";scan=" + ordinal + ";rows=" + Containers(rows) + ";grid=" + Containers(grid));
+                            environment.SampleOrThrow(host);
+                            if (traceEnabled) trace.Checkpoint("scan_complete;cycle=" + cycle + ";scan=" + ordinal + ";rows=" + Containers(rows) + ";grid=" + Containers(grid) +
+                                ";input_entry_total_ms=" + Milliseconds(Stopwatch.GetTimestamp() - inputEntryTick).ToString("F3", Invariant));
                             completedScans++;
                             if (scanLimit > 0 && completedScans == scanLimit)
                             {
@@ -227,13 +246,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     for (var second = 0; second < 20; second++)
                     {
                         if (traceEnabled) trace.Checkpoint("idle_sample_begin;cycle=" + cycle + ";second=" + second);
-                        environment.Sample(host);
+                        environment.SampleOrThrow(host);
                         if (traceEnabled) trace.Checkpoint("idle_sample_end;cycle=" + cycle + ";second=" + second);
                         trace.SampleTimers("idle");
                         await Task.Delay(1000);
                     }
                     if (traceEnabled) trace.Checkpoint("final_sample_begin;cycle=" + cycle);
-                    environment.Sample(host);
+                    environment.SampleOrThrow(host);
                     if (traceEnabled) trace.Checkpoint("final_sample_end;cycle=" + cycle);
                     trace.SampleTimers("before_snapshot");
                     var state = observer.Snapshot(); // Before probes can help work progress.
@@ -257,9 +276,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     cycle++;
                 } while (environment.AwakeSeconds - usefulStart < minutes * 60);
                 File.WriteAllText(Path.Combine(directory, "qualification-measurement.json"), "{\"schemaVersion\":\"win7pos-performance-measurement-v1\",\"measurementCompleted\":true,\"environmentValid\":" +
-                    (environment.Valid ? "true" : "false") + ",\"products\":" + products + ",\"cartSize\":" + vm.CartItems.Count + ",\"protocolVersion\":4,\"observerVersion\":2,\"cycles\":" + cycle + ",\"stabilityEvaluatedByHarness\":false}");
+                    (environment.Valid ? "true" : "false") + ",\"products\":" + products + ",\"cartSize\":" + vm.CartItems.Count + ",\"protocolVersion\":5,\"inputDelivery\":\"Input\",\"observerVersion\":2,\"cycles\":" + cycle + ",\"stabilityEvaluatedByHarness\":false}");
             }
-            finally { host.Close(); vm.Dispose(); Application.Current.MainWindow = null; OperatorSessionHolder.Current = previousOperator; }
+            finally
+            {
+                if (traceEnabled) Dispatcher.CurrentDispatcher.Hooks.OperationStarted -= focusStarted;
+                host.Close(); vm.Dispose(); Application.Current.MainWindow = null; OperatorSessionHolder.Current = previousOperator;
+            }
         }
 
         internal static async Task<double> PrepareFixtureAsync(PosView view, PosViewModel vm, ListBox rows)
@@ -286,7 +309,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             throw new TimeoutException("qualification_fixture_not_ready");
         }
 
-        private static void ExecutePublicScan(PosViewModel vm, CartPerformanceDiagnostics.OperationObserver trace)
+        internal static DispatcherOperation QueuePublicInput(Action command) => Dispatcher.CurrentDispatcher.InvokeAsync(command, DispatcherPriority.Input);
+
+        internal static double CommandOverheadMs(long start, long returned, double service, double uiReturn, double apply) =>
+            Math.Max(0, Milliseconds(returned - start) - service - uiReturn - apply);
+
+        internal static void ExecutePublicScan(PosViewModel vm, CartPerformanceDiagnostics.OperationObserver trace, TextBox barcode = null, Key terminator = Key.Enter)
         {
             if (trace != null)
             {
@@ -295,7 +323,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 trace.Checkpoint("command_execute;context=" + context?.GetType().FullName + ";context_priority=" + (priority ?? "unavailable"));
             }
             if (!vm.AddBarcodeCommand.CanExecute(null)) throw new InvalidOperationException("qualification_scan_command_disabled");
-            vm.AddBarcodeCommand.Execute(null);
+            if (barcode == null) vm.AddBarcodeCommand.Execute(null);
+            else
+            {
+                if (!barcode.IsKeyboardFocused) throw new InvalidOperationException("diagnostic_public_input_focus_missing");
+                // WPF routed input comparison, not native scanner/character delivery.
+                // The same handled event must not submit a second time on bubbling.
+                var key = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(barcode), Environment.TickCount, terminator)
+                    { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                barcode.RaiseEvent(key);
+                key.RoutedEvent = Keyboard.KeyDownEvent;
+                barcode.RaiseEvent(key);
+            }
         }
 
         private static async Task<double> ProbeAsync(DispatcherPriority priority)

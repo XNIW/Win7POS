@@ -47,9 +47,10 @@ function Test-Win7PosPerformance {
         $idle = @(Import-Csv -LiteralPath (Join-Path $Directory 'qualification-idle.csv') -ErrorAction Stop)
         $receipt = Get-Content -LiteralPath (Join-Path $Directory 'qualification-measurement.json') -Raw -ErrorAction Stop | ConvertFrom-Json
         if ($receipt.schemaVersion -cne 'win7pos-performance-measurement-v1' -or $receipt.measurementCompleted -isnot [bool] -or $receipt.measurementCompleted -ne $true -or
-            $receipt.cycles -ne $idle.Count -or $receipt.products -ne $ExpectedProducts -or $receipt.cartSize -ne 500 -or $receipt.protocolVersion -notin @(3,4)) { throw 'invalid_measurement_receipt' }
+            $receipt.cycles -ne $idle.Count -or $receipt.products -ne $ExpectedProducts -or $receipt.cartSize -ne 500 -or $receipt.protocolVersion -notin @(3,4,5)) { throw 'invalid_measurement_receipt' }
+        if ($receipt.protocolVersion -eq 5 -and $receipt.inputDelivery -cne 'Input') { throw 'invalid_public_input_delivery' }
         # Preserve v3 historical verdicts; v4 additionally proves fixture readiness.
-        if ($receipt.protocolVersion -eq 4) {
+        if ($receipt.protocolVersion -ge 4) {
             $setup = Get-Content -LiteralPath (Join-Path $Directory 'fixture-setup.json') -Raw -ErrorAction Stop | ConvertFrom-Json
             if ($setup.schemaVersion -cne 'win7pos-fixture-setup-v1' -or $setup.completed -isnot [bool] -or $setup.completed -ne $true -or
                 $setup.legacyDiagnostic -isnot [bool] -or $setup.legacyDiagnostic -ne $false -or $setup.cartSize -ne 500 -or
@@ -118,7 +119,9 @@ function Test-Win7PosPerformance {
             if ($cycle -ne [double]$row.cycle -or $cycle -ge $idle.Count -or $ordinal -ne [double]$row.ordinal -or
                 $ordinal -lt 1 -or $ordinal -gt 10 -or $row.mode -cnotin @('Rows','Grid') -or
                 -not $seen.Add("$cycle/$($row.mode)/$ordinal")) { throw 'invalid_or_duplicate_scan_identity' }
-            if ($cycle -ge $Budget.warmupCycles -and [double]$row.focus_scroll_wait_ms -gt $Budget.visualMaximumWaitMs) {
+            # Warmup affects percentile summaries, never the bounded public
+            # visual completion requirement (including the first scan).
+            if ([double]$row.focus_scroll_wait_ms -gt $Budget.visualMaximumWaitMs) {
                 $stability.Add("public_visual_wait:cycle=$cycle,mode=$($row.mode),ordinal=$ordinal")
             }
         }
@@ -130,7 +133,11 @@ function Test-Win7PosPerformance {
             $ui = @($warm | ForEach-Object { [double]$_.service_ms + [double]$_.ui_return_ms + [double]$_.apply_ms + [double]$_.layout_ms + [double]$_.command_overhead_ms })
             $metrics["${mode}ServiceP95Ms"] = P95 $service
             $metrics["${mode}UiP95Ms"] = P95 $ui
-            $metrics["${mode}UiMaximumMs"] = ($ui | Measure-Object -Maximum).Maximum
+            # Maximum includes the first scan and every warmup sample, so work
+            # before the completion probe cannot escape the fixed stall ceiling.
+            $allUi = @($scans | Where-Object { $_.mode -ceq $mode } | ForEach-Object {
+                [double]$_.service_ms + [double]$_.ui_return_ms + [double]$_.apply_ms + [double]$_.layout_ms + [double]$_.command_overhead_ms })
+            $metrics["${mode}UiMaximumMs"] = ($allUi | Measure-Object -Maximum).Maximum
             $metrics["${mode}BitmapP95Ms"] = P95 @($warm | ForEach-Object { [double]$_.bitmap_ms })
             if ($metrics["${mode}ServiceP95Ms"] -gt $Budget.serviceP95Ms) { $stability.Add("service_p95:$mode") }
             if ($metrics["${mode}UiP95Ms"] -gt $Budget.uiP95Ms) { $stability.Add("ui_p95:$mode") }

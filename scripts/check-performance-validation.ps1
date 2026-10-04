@@ -17,8 +17,8 @@ function Fixture {
         [pscustomobject]@{cycle=$cycle;mode=$mode;ordinal=$ordinal;service_ms=8;ui_return_ms=3;apply_ms=2;layout_ms=8;bitmap_ms=20;command_overhead_ms=1;realized_grid=12;product_commands=2;commands_on_dispatcher=0;collection_changes=0;focus_scroll_wait_ms=1}
     } } })
 }
-function Check([string]$Name, [bool]$Expected, [bool]$Completed=$true, [string]$Reason='', [int]$ReceiptProducts=100000, [int]$ReceiptCart=500, [switch]$DuplicateIsolated, [double]$Seconds=400, [int]$ProtocolVersion=3) {
-    @{schemaVersion='win7pos-performance-measurement-v1';measurementCompleted=$true;environmentValid=$true;products=$ReceiptProducts;cartSize=$ReceiptCart;protocolVersion=$ProtocolVersion;cycles=$idle.Count} |
+function Check([string]$Name, [bool]$Expected, [bool]$Completed=$true, [string]$Reason='', [int]$ReceiptProducts=100000, [int]$ReceiptCart=500, [switch]$DuplicateIsolated, [double]$Seconds=400, [int]$ProtocolVersion=3, [string]$InputDelivery='Input') {
+    @{schemaVersion='win7pos-performance-measurement-v1';measurementCompleted=$true;environmentValid=$true;products=$ReceiptProducts;cartSize=$ReceiptCart;protocolVersion=$ProtocolVersion;inputDelivery=$InputDelivery;cycles=$idle.Count} |
         ConvertTo-Json | Set-Content (Join-Path $directory 'qualification-measurement.json')
     $isolated = @(foreach($size in @(1,10,50,100,500)) { foreach($sample in 0..30) {
         [pscustomobject]@{products=100000;cart=$size;sample=$sample;ms=8;dispatcher_probe_ms=$script:sendLatency;product_commands=2;commands_on_dispatcher=0}
@@ -40,6 +40,8 @@ $setup = @{schemaVersion='win7pos-fixture-setup-v1';completed=$true;elapsedMs=25
 $setupPath = Join-Path $directory 'fixture-setup.json'
 $setup | ConvertTo-Json | Set-Content $setupPath
 Fixture; Check 'v4 rendered fixture' $true -ProtocolVersion 4
+Fixture; Check 'v5 input delivery and rendered fixture' $true -ProtocolVersion 5
+Fixture; Check 'v5 direct Send delivery rejected' $false -ProtocolVersion 5 -InputDelivery 'Send' -Reason 'invalid_public_input_delivery'
 $setup.realizedRows=0; $setup | ConvertTo-Json | Set-Content $setupPath
 Fixture; Check 'v4 empty visual fixture' $false -ProtocolVersion 4 -Reason 'invalid_fixture_setup'
 $setup.realizedRows=14; $setup.legacyDiagnostic=$true; $setup | ConvertTo-Json | Set-Content $setupPath
@@ -69,6 +71,8 @@ Fixture; $idle[5].background_ms=251; Check 'priority timeout' $false -Reason 'pr
 Fixture; $idle[5].background_ms='Infinity'; Check 'explicit probe timeout' $false -Reason 'priority_probe_timeout'
 Fixture; $idle[5].focus_maximum_wait_ms=101; Check 'visual delay before idle' $false -Reason 'application_visual_backlog'
 Fixture; $scans[62].focus_scroll_wait_ms=101; $scans[62].command_overhead_ms=101; Check 'per-scan visual wait despite acceptable UI percentiles' $false -Reason 'public_visual_wait'
+Fixture; $scans[0].focus_scroll_wait_ms=101; $scans[0].command_overhead_ms=101; Check 'first scan visual wait includes warmup' $false -Reason 'public_visual_wait:cycle=0,mode=Rows,ordinal=1'
+Fixture; $scans[0].command_overhead_ms=1001; Check 'first scan entire command overhead retained' $false -Reason 'ui_stall'
 Fixture; $scans[62].focus_scroll_wait_ms='Infinity'; Check 'non-finite scan visual wait' $false -Reason 'invalid_numeric_field:focus_scroll_wait_ms'
 Fixture; $scans[62].PSObject.Properties.Remove('focus_scroll_wait_ms'); Check 'missing scan visual wait' $false -Reason 'invalid_numeric_field:focus_scroll_wait_ms'
 Fixture; $budget.visualMaximumWaitMs=251; Check 'widened visual wait budget' $false -Reason 'budget_exceeds'; $budget.visualMaximumWaitMs=100
@@ -102,6 +106,8 @@ Check-RunnerRejection 'short-and-soak' @{Mode='Diagnostic';DiagnosticScanCount=5
 Check-RunnerRejection 'short-qualification' @{Mode='Qualification';DiagnosticScanCount=5} 'diagnostic only'
 Check-RunnerRejection 'input-qualification' @{Mode='Qualification';DiagnosticScanCount=5;DiagnosticInputDispatch=$true} 'requires short Diagnostic'
 Check-RunnerRejection 'input-without-short' @{Mode='Diagnostic';DiagnosticInputDispatch=$true} 'requires short Diagnostic'
+Check-RunnerRejection 'public-input-qualification' @{Mode='Qualification';DiagnosticScanCount=5;DiagnosticPublicInput=$true} 'requires short Diagnostic'
+Check-RunnerRejection 'public-input-without-short' @{Mode='Diagnostic';DiagnosticPublicInput=$true} 'requires short Diagnostic'
 Check-RunnerRejection 'integrated-sha-mismatch' @{Mode='Qualification';Stage='Integrated';SoakMinutes=12;BudgetPath=$runnerBudget;PayloadBindingPath=$runnerBinding;ExpectedCommit=('b' * 40)} 'verified payload binding'
 Check-RunnerRejection 'minimal-timer-qualification' @{Mode='Qualification';SoakMinutes=3;DiagnosticTimerControl=$true} 'requires Diagnostic'
 Check-RunnerRejection 'minimal-timer-short-scans' @{Mode='Diagnostic';SoakMinutes=3;DiagnosticTimerControl=$true;DiagnosticScanCount=5} 'requires Diagnostic'
@@ -118,6 +124,53 @@ try {
     Check-RunnerRejection 'trace-qualification' @{Mode='Qualification'} 'diagnostic only'
 }
 finally { $env:WIN7POS_QA_PERF_TRACE=$oldTrace }
+# Supervision fixtures own a fake child object; none launches a real process.
+function Check-RunnerCleanup([string]$Name, [string]$WaitMode, [int]$ExitCode, [bool]$ExpectedKill, [string]$ExpectedFailure, [switch]$FailCleanupReceipt) {
+    $global:Win7PosValidatorOwnedChild = [pscustomobject]@{Id=12345;HasExited=$false;ExitCode=$ExitCode;WaitMode=$WaitMode;WaitCalls=0;CloseCalls=0;KillCalls=0;Disposed=$false}
+    $global:Win7PosValidatorOwnedChild | Add-Member ScriptMethod WaitForExit {
+        param($milliseconds)
+        $this.WaitCalls++
+        if ($this.WaitMode -like 'wait-error*' -and $this.WaitCalls -eq 1) { throw 'controlled supervision failure' }
+        if ($this.WaitMode -in @('wait-error-kill','wait-error-close') -and $this.WaitCalls -eq 2) { return $false }
+        $this.HasExited=$true
+        return $true
+    }
+    $global:Win7PosValidatorOwnedChild | Add-Member ScriptMethod CloseMainWindow { $this.CloseCalls++; if ($this.WaitMode -eq 'wait-error-close') { throw 'controlled close failure' }; return $true }
+    $global:Win7PosValidatorOwnedChild | Add-Member ScriptMethod Kill { $this.KillCalls++ }
+    $global:Win7PosValidatorOwnedChild | Add-Member ScriptMethod Dispose { $this.Disposed=$true }
+    function Start-Process {
+        param($FilePath,$ArgumentList,$WorkingDirectory,$WindowStyle,[switch]$PassThru)
+        if ($WorkingDirectory -ne (Resolve-Path (Join-Path $PSScriptRoot '..')).Path -or $WindowStyle -ne 'Hidden') { throw 'incorrect child launch context' }
+        return $global:Win7PosValidatorOwnedChild
+    }
+    function Get-CimInstance { [pscustomobject]@{Caption='synthetic';Version='0';BuildNumber='0';OSArchitecture='x86'} }
+    if ($FailCleanupReceipt) {
+        function Set-Content {
+            [CmdletBinding()]param([Parameter(Position=0)][string]$Path,[string]$LiteralPath,[Parameter(ValueFromPipeline)]$Value)
+            process {
+                if ($LiteralPath -like '*harness-cleanup.json') { throw 'controlled cleanup receipt failure' }
+                Microsoft.PowerShell.Management\Set-Content @PSBoundParameters
+            }
+        }
+    }
+    $output=Join-Path $directory $Name
+    $oldScanLimit=$env:WIN7POS_QA_PERF_SCAN_LIMIT
+    $caught=$false
+    try { & (Join-Path $PSScriptRoot 'run-cart-performance.ps1') -OutputDirectory $output -HarnessDirectory $runnerHarness -Mode Diagnostic -DiagnosticScanCount 5 }
+    catch { $caught=$true; if ($_.Exception.Message -notlike "*$ExpectedFailure*") { throw } }
+    $cleanup=if($FailCleanupReceipt){[pscustomobject]@{terminal=$global:Win7PosValidatorOwnedChild.HasExited;killRequested=($global:Win7PosValidatorOwnedChild.KillCalls -gt 0)}}else{Get-Content -LiteralPath (Join-Path $output 'harness-cleanup.json') -Raw | ConvertFrom-Json}
+    $result=Get-Content -LiteralPath (Join-Path $output 'performance-result.json') -Raw | ConvertFrom-Json
+    if (-not $caught -or -not $cleanup.terminal -or $cleanup.killRequested -ne $ExpectedKill -or -not $global:Win7PosValidatorOwnedChild.Disposed -or
+        $result.MEASUREMENT_COMPLETED -or $result.ENVIRONMENT_VALID -or $result.STABILITY_PASS -or $env:WIN7POS_QA_PERF_SCAN_LIMIT -ne $oldScanLimit) { throw "$Name cleanup regression" }
+    Write-Output "PASS runner cleanup $Name"
+    Remove-Variable -Name Win7PosValidatorOwnedChild -Scope Global
+}
+Check-RunnerCleanup 'supervision-graceful-stop' 'wait-error-graceful' 0 $false 'controlled supervision failure'
+Check-RunnerCleanup 'supervision-bounded-kill' 'wait-error-kill' 0 $true 'controlled supervision failure'
+Check-RunnerCleanup 'supervision-close-throws' 'wait-error-close' 0 $true 'controlled supervision failure'
+Check-RunnerCleanup 'cleanup-receipt-write-failed' 'wait-error-graceful' 0 $false 'controlled cleanup receipt failure' -FailCleanupReceipt
+Check-RunnerCleanup 'terminal-receipt-incomplete' 'completed' 0 $false 'functional-completion.txt'
+Check-RunnerCleanup 'terminal-child-failed' 'completed' 2 $false 'harness exit=2'
 # Execute the workflow's actual aggregation with synthetic receipts. A tolerated
 # measurement step failure must never become a successful qualification job.
 $workflow = Get-Content (Join-Path $PSScriptRoot '../.github/workflows/ci.yml') -Raw
