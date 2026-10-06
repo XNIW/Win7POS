@@ -546,11 +546,14 @@ zero-sales readiness cannot authorize C08, C11 scope changes or C12 restore.
 
 This section supersedes the earlier current stability and Mac checkout actions;
 all earlier failed runs and the contract-based C01–C12 matrix remain historical
-evidence. The accepted software candidate is
-`0f4da73352dfcaf1d2121846bff133fcff475ea2` (PR118), fetched and aligned with
-`origin/main`. Exact-main CI37224970368 and Security37224970364 passed.
-The documentation update is prepared separately on
-`codex/post-final60-closeout-20261005`, keeping the Asus acceptance checkout clean.
+evidence. The qualified executable candidate is
+`0f4da73352dfcaf1d2121846bff133fcff475ea2` (PR118).
+Its exact-SHA CI37224970368 and Security37224970364 passed.
+The report update on `codex/post-final60-closeout-20261005` follows independent
+review and the repository's exact-head CI/Security gates before integration.
+Only documentation changes: product, test, harness, script and build inputs
+remain identical. The original qualification stays bound to0f4 and its pack;
+it is not rebound to a subsequent documentation merge or newly versioned pack.
 
 The applicable protocol5/Input Integrated12 passed723.792s with620 scans.
 Final60 `qualification-final60-retry-20261005t215124z` completed normally at
@@ -585,7 +588,7 @@ prior-receipt snapshots and explicit failed-attempt history.
 | SOFTWARE | PASS: PR118 integrated; exact-main CI/Security and existing functional gates pass. No new product defect has been reproduced in this consolidation. | Change code only for a newly reproduced defect, with targeted regressions. |
 | ASUS_STABILITY | PASS: applicable Integrated12 and uninterrupted Final60, same protocol5/Input,100000-product fixture, verified candidate and preregistered budget. | No further identical run; this synthetic Asus/Windows11 result does not certify physical input latency or Win7 hardware. |
 | POS_ADMIN_LIVE | BLOCKED_READINESS_AND_OWNER_ROUTING: Windows source check at2026-10-05T23:49:03Z and owner check at2026-10-06T00:01:40Z confirm Admin main82af13ef and canonical `docs/HANDOFFS/WIN7POS_ARTICLE_ACCEPTANCE_READY.json` absent (HTTP404). Existing TEST vault remains valid. | Identify the current backend owner chat; the reported W locator is unavailable in the exposed Codex channels. Forward the prepared ordinary TEST read request, acquire runtime/DB/POS-contract/scope/counters originals, then reserve a fresh runId before READY and execute only covered authorized missing cells. |
-| MOBILE_CROSS_PLATFORM | BLOCKED_FINAL_ACCEPTANCE: owner checkpoint2026-10-06T00:04:48Z reports iOS CI37390541718 Build Debug FAIL/exit65 on43822986287b96899066ae12f360cd30c588e934. A one-file repair has two approved reviews and seven targeted regressions PASS; earlier full03/build03/TEST02 PASS remain tied to their own revision. | Owner attests full04/build04/TEST04 and exact-revision CI, then final installed authenticated callers and record-level recovery/reopen/subsequent-delta comparisons for uncovered authorized directions. Neither local repair nor older PASS qualifies live acceptance. |
+| MOBILE_CROSS_PLATFORM | BLOCKED_FINAL_ACCEPTANCE: iOS PR17 merged2026-10-06T08:24:56Z; headb4c95eb41dd45e0eabeb2272e70cd2791af794fe has CI37431303746 SUCCESS. Current merge/main82ef66e23b5a2e09d78d83e6cfd3a536695b9c2b has CI37435949165 FAIL in three of15 UI tests; Build Debug passes and the unit suite reports1531 tests,36 skipped and zero failures. The older438 compile failure is historical. | Existing iOS owner investigates the current UI failures with targeted reproduction, then attests the successor CI, exact TEST artifact, installed caller and authenticated recovery/reopen/subsequent-delta comparisons. PR CI, local artifact and installed runtime are distinct; no live direction is promoted. |
 | MAC_CHECKOUT | PASS_OWNER_ATTESTED:81acd479→0f4da733,13 dirty files preserved; owner rechecked applicability, file types/permissions, stash and backup preservation. | Checkout preservation is separate from IDE UI, WIP builds or authenticated runtime acceptance. |
 | WIN7_HARDWARE | NOT_EXECUTED: Win7/peripheral and SMB TEST targets remain unavailable. | Future exact-pack smoke must verify installation, scanner, sale/offline/reconnect, printing and backup/restore; keep VM and physical peripheral results distinct. |
 | RELEASE | PASS: existing exact-candidate ReleasePack37224970370, development-unsigned, locally reverified62 checksums. Installation is not attested. | Retain the verified pack and its canonical receipts; no production signing or deployment is inferred. |
@@ -608,6 +611,24 @@ the terminal observation separately from the earlier in-progress snapshot.
 The routing failure does not establish any refusal or failure of the ordinary
 backend reads; no backend owner read result has been acquired. Those ordinary
 reads are already authorized and require no additional generic GO.
+
+The iOS GitHub checks above were read directly on2026-10-06T13:31Z:
+[PR17](https://github.com/XNIW/iOSMerchandiseControl/pull/17),
+[successful PR check](https://github.com/XNIW/iOSMerchandiseControl/actions/runs/37431303746)
+and [current main UI failure](https://github.com/XNIW/iOSMerchandiseControl/actions/runs/37435949165).
+The failure concerns missing Options tab access, held-recovery root assertion
+and a supplier input value missing its final character; it does not by itself
+establish a product defect. Analyze and secret-scan steps were skipped on that
+failed main run. The PR run exposes no GitHub artifact; owner-local TEST artifacts
+and final installation/authentication require their own receipts.
+
+After the documentation merge, the ordinary staging runner requires a clean
+checkout at the new `origin/main`, a verified ReleasePack on that same SHA and
+fresh readiness bound to that client. Use the automatically generated pack and
+reserve the runId when the backend bundle and Asus window are ready. The new
+pack embeds its new SHA/version and is not asserted byte-identical to the41
+qualified0f4 payload files. Source equivalence preserves the original qualified
+evidence; no new identical Final60 is required by the article acceptance runner.
 
 No live cell is promoted from source/build/install evidence. The article runner
 requires exact client/host/profile/contract binding, zero-sales owned scope,
