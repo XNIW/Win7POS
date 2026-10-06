@@ -541,3 +541,77 @@ zero-sales readiness cannot authorize C08, C11 scope changes or C12 restore.
 | MAC_CHECKOUT | Mac owner safely integrates final Win7POS main while preserving13 dirty files and returns actual before/after SHA and checkout receipt. |
 | WIN7_HARDWARE / SMB | Targets remain explicitly unavailable. Existing exact-package install/upgrade, scanner Enter/Tab, offline/reconnect, sale/return/void, print recovery, backup/restore/restart checklist is ready; Asus loopback/Epson does not certify Win7/Xprinter/SMB. |
 | RELEASE / PRODUCTION | Ordinary reviewed integration, exact-SHA CI/Security and canonical downloaded-pack checksum/signature/provenance verification precede delivery. Development-unsigned only; production remains unauthorized. |
+
+## Consolidation after Final60 PASS — 2026-10-05
+
+This section supersedes the earlier current stability and Mac checkout actions;
+all earlier failed runs and the contract-based C01–C12 matrix remain historical
+evidence. The accepted software candidate is
+`0f4da73352dfcaf1d2121846bff133fcff475ea2` (PR118), fetched and aligned with
+`origin/main`. Exact-main CI37224970368 and Security37224970364 passed.
+The documentation update is prepared separately on
+`codex/post-final60-closeout-20261005`, keeping the Asus acceptance checkout clean.
+
+The applicable protocol5/Input Integrated12 passed723.792s with620 scans.
+Final60 `qualification-final60-retry-20261005t215124z` completed normally at
+2026-10-05T22:51:40.9541143Z (19:51:40 Santiago):3602.528s,154 cycles,
+3080 scans and6315 environment samples, with zero invalid samples. Canonical
+measurement, environment and stability flags are all true. The owned process
+terminated and its temporary task was removed. The preceding Oct4 and Oct5
+interrupted Final60 attempts remain FAIL/NOT_QUALIFIED; no partial durations are
+combined and no further identical Final60 is required.
+
+Both qualifications use ReleasePack37224970370,
+`1.0.0-dev.0f4da73352df`,41 verified payload files and the same harness/budget:
+binding `8801d521d70ee02e13ad76bfde790bafb3a567d23a0b20407227f405b6c16b9d`,
+harness `5a65a8448c4372d10d8db073ef893c63f3d29b864c76e24ebb95f5ce4cf43a19`,
+budget `63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398`.
+The canonical artifact verifier was rerun on the existing downloaded pack;
+all62 checksums, three saved archives, payload/dist and Setup agree. The outer
+download wrapper has no offline mode and was not rerun. This consolidation
+performs no new measurement, build, installation or signing.
+
+The immutable canonical validation receipt is
+`residual-20261004/consolidated-canonical-validation-20261005T2346033888702Z.json`
+under the private closeout evidence root; SHA256
+`f35e40dea0622f67052caaf500e1e93b13a7b80270db67909107c5759c155c47`.
+Final60's raw result SHA256 is
+`779935de0e97d0bd175ec00dfc7cc0c96ee3d274c5d99622cd0fb610f113dfcc`.
+The single current overall result remains `final-main-delivery.json`, with full
+prior-receipt snapshots and explicit failed-attempt history.
+
+| State | Evidence and disposition | Precise remaining work |
+| --- | --- | --- |
+| SOFTWARE | PASS: PR118 integrated; exact-main CI/Security and existing functional gates pass. No new product defect has been reproduced in this consolidation. | Change code only for a newly reproduced defect, with targeted regressions. |
+| ASUS_STABILITY | PASS: applicable Integrated12 and uninterrupted Final60, same protocol5/Input,100000-product fixture, verified candidate and preregistered budget. | No further identical run; this synthetic Asus/Windows11 result does not certify physical input latency or Win7 hardware. |
+| POS_ADMIN_LIVE | BLOCKED_READINESS_AND_OWNER_ROUTING: Windows source check at2026-10-05T23:49:03Z and owner check at2026-10-06T00:01:40Z confirm Admin main82af13ef and canonical `docs/HANDOFFS/WIN7POS_ARTICLE_ACCEPTANCE_READY.json` absent (HTTP404). Existing TEST vault remains valid. | Identify the current backend owner chat; the reported W locator is unavailable in the exposed Codex channels. Forward the prepared ordinary TEST read request, acquire runtime/DB/POS-contract/scope/counters originals, then reserve a fresh runId before READY and execute only covered authorized missing cells. |
+| MOBILE_CROSS_PLATFORM | BLOCKED_FINAL_ACCEPTANCE: owner checkpoint2026-10-06T00:04:48Z reports iOS CI37390541718 Build Debug FAIL/exit65 on43822986287b96899066ae12f360cd30c588e934. A one-file repair has two approved reviews and seven targeted regressions PASS; earlier full03/build03/TEST02 PASS remain tied to their own revision. | Owner attests full04/build04/TEST04 and exact-revision CI, then final installed authenticated callers and record-level recovery/reopen/subsequent-delta comparisons for uncovered authorized directions. Neither local repair nor older PASS qualifies live acceptance. |
+| MAC_CHECKOUT | PASS_OWNER_ATTESTED:81acd479→0f4da733,13 dirty files preserved; owner rechecked applicability, file types/permissions, stash and backup preservation. | Checkout preservation is separate from IDE UI, WIP builds or authenticated runtime acceptance. |
+| WIN7_HARDWARE | NOT_EXECUTED: Win7/peripheral and SMB TEST targets remain unavailable. | Future exact-pack smoke must verify installation, scanner, sale/offline/reconnect, printing and backup/restore; keep VM and physical peripheral results distinct. |
+| RELEASE | PASS: existing exact-candidate ReleasePack37224970370, development-unsigned, locally reverified62 checksums. Installation is not attested. | Retain the verified pack and its canonical receipts; no production signing or deployment is inferred. |
+| PRODUCTION | NOT_AUTHORIZED_NOT_ACTIVATED. | No automatic production action. |
+
+The coordinator is **Completa integrazione e collaudi**. The Mac checkout receipt
+`mac-final-main-update-20261004.json` is owner-attested, original SHA256
+`e296501326e1d35868ec3667ee89c825503de7eb2ba06eb685a2ec979530152b`, with independent
+post-review `22490a0e2c25607d233c20f388f9445a24789a6db597e1b4983e0e6e77e42914`.
+Windows has not independently hashed those Mac originals. Fresh owner
+applicability/type-mode receipts are `8c08a7ebbdf630486269858d85c4224d88d2aaaa18de5122e15c79d97d623de3`
+and `a6ad03e9d1b2ecbe898b24c7f546694aece3ee3c0f8747ece1b37011acef8cd9`.
+The coordinator's terminal delivery includes19 original references and the
+unchanged contract-based C01–C12 matrix; document-binding review PASS has zero
+findings and explicitly leaves global completion blocked. Its final JSON SHA256
+is `91feecd30050c07076f8eb5845b9fb723bbefe3023056487c21113537942326d`;
+the Markdown SHA256 is `45a24541fabe33a5858c07f805cef1fea886a4bac3a3b6f3bae01ecd87a23564`.
+These original Mac hashes are owner-reported. The overall Windows receipt records
+the terminal observation separately from the earlier in-progress snapshot.
+The routing failure does not establish any refusal or failure of the ordinary
+backend reads; no backend owner read result has been acquired. Those ordinary
+reads are already authorized and require no additional generic GO.
+
+No live cell is promoted from source/build/install evidence. The article runner
+requires exact client/host/profile/contract binding, zero-sales owned scope,
+fresh readiness of at most two hours and deployment verification within the
+preceding15 minutes. POS↔Admin article acceptance need not wait for the entire
+mobile matrix; it also does not authorize C08 economic actions, C11 scope/session
+changes or C12 restore. Existing NOT_APPLICABLE directions remain unchanged.
