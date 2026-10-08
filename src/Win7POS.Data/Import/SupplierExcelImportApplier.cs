@@ -228,7 +228,8 @@ namespace Win7POS.Data.Import
                 cancellationToken.ThrowIfCancellationRequested();
                 var preview = SupplierImportAnalyzer.BuildSyncPreview(
                     effectiveRows,
-                    currentByBarcode.Values);
+                    currentByBarcode.Values,
+                    cancellationToken);
                 preview.ApplyContext = context;
                 tx.Commit();
                 return preview;
@@ -321,7 +322,8 @@ namespace Win7POS.Data.Import
 
                     var transactionalPreview = SupplierImportAnalyzer.BuildSyncPreview(
                         rows,
-                        currentByBarcode.Values);
+                        currentByBarcode.Values,
+                        cancellationToken);
                     transactionalPreview.ApplyContext = currentContext;
                     if (expectedPreview != null)
                     {
@@ -377,7 +379,7 @@ namespace Win7POS.Data.Import
                     foreach (var row in transactionalPreview.ValidatedRows)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        var barcode = Normalize(row?.Barcode);
+                        var barcode = NormalizeBarcode(row?.Barcode);
                         ProductDetailsRow existing;
                         currentByBarcode.TryGetValue(barcode, out existing);
                         if (existing == null && !options.InsertNew)
@@ -532,7 +534,7 @@ namespace Win7POS.Data.Import
             if (rowNumber > 0)
                 message += ":row=" + rowNumber.ToString(CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(barcode))
-                message += ":barcode=" + Normalize(barcode);
+                message += ":barcode=" + NormalizeBarcode(barcode);
             AddError(result, message);
         }
 
@@ -623,7 +625,7 @@ ORDER BY p.barcode ASC;";
         {
             return (rows ?? Array.Empty<SupplierImportEditableRow>())
                 .Where(row => row != null && !row.IsSkipped)
-                .Select(row => Normalize(row.Barcode))
+                .Select(row => NormalizeBarcode(row.Barcode))
                 .Where(barcode => barcode.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(barcode => barcode, StringComparer.OrdinalIgnoreCase)
@@ -704,7 +706,7 @@ ORDER BY key ASC;";
             ProductDetailsRow existing,
             SupplierExcelImportApplyResult result)
         {
-            var barcode = Normalize(row?.Barcode);
+            var barcode = NormalizeBarcode(row?.Barcode);
             var name = TextOrExisting(row?.ProductName, existing == null ? null : existing.Name);
             var itemNumber = TextOrExisting(row?.ItemNumber, existing == null ? null : existing.ArticleCode);
             var secondName = TextOrExisting(row?.SecondProductName, existing == null ? null : existing.Name2);
@@ -753,9 +755,9 @@ ORDER BY key ASC;";
                 PurchasePrice = purchase,
                 StockQty = stock,
                 SupplierId = existing == null ? null : existing.SupplierId,
-                SupplierName = TextOrExisting(row?.Supplier, existing == null ? null : existing.SupplierName) ?? string.Empty,
+                SupplierName = CategorySupplierResolver.Normalize(TextOrExisting(row?.Supplier, existing == null ? null : existing.SupplierName)),
                 CategoryId = existing == null ? null : existing.CategoryId,
-                CategoryName = TextOrExisting(row?.Category, existing == null ? null : existing.CategoryName) ?? string.Empty
+                CategoryName = CategorySupplierResolver.Normalize(TextOrExisting(row?.Category, existing == null ? null : existing.CategoryName))
             };
         }
 
@@ -784,9 +786,9 @@ ORDER BY key ASC;";
         {
             parsed = existing;
             if (string.IsNullOrWhiteSpace(value)) return true;
-            var number = SupplierImportAnalyzer.ParseNumber(value);
-            if (!number.HasValue || number.Value < int.MinValue || number.Value > int.MaxValue) return false;
-            parsed = Convert.ToInt32(Math.Round(number.Value));
+            long number;
+            if (!SupplierImportAnalyzer.TryParsePrice(value, true, out number)) return false;
+            parsed = (int)number;
             return true;
         }
 
@@ -794,9 +796,8 @@ ORDER BY key ASC;";
         {
             parsed = existing;
             if (string.IsNullOrWhiteSpace(value)) return true;
-            var number = SupplierImportAnalyzer.ParseNumber(value);
-            if (!number.HasValue || number.Value < long.MinValue || number.Value > long.MaxValue) return false;
-            parsed = Convert.ToInt64(Math.Round(number.Value));
+            if (!SupplierImportAnalyzer.TryParsePrice(value, false, out var number)) return false;
+            parsed = number;
             return true;
         }
 
@@ -808,12 +809,13 @@ ORDER BY key ASC;";
 
         private static string Normalize(string value)
         {
-            if (value == null) return string.Empty;
-            var trimmed = value.Trim();
-            return trimmed.Length == 0
-                ? string.Empty
-                : string.Join(" ", trimmed.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+            // Preserve the same effective text used by the canonical preview
+            // and outbox. Reference-name lookup retains its separate resolver
+            // normalization/deduplication policy.
+            return (value ?? string.Empty).Trim();
         }
+
+        private static string NormalizeBarcode(string value) => (value ?? string.Empty).Trim();
 
         private static bool TextEquals(string left, string right)
         {

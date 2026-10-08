@@ -27,6 +27,8 @@ namespace Win7POS.Core.Models
         public string Reason { get; set; } = string.Empty;
     }
 
+    public enum RefundPrintStatus { NotRequested, Accepted, Failed }
+
     public sealed class RefundCreateResult
     {
         public long RefundSaleId { get; set; }
@@ -34,5 +36,7 @@ namespace Win7POS.Core.Models
         public string Receipt42 { get; set; } = string.Empty;
         public string Receipt32 { get; set; } = string.Empty;
         public long TotalMinor { get; set; }
+        public RefundPrintStatus PrintStatus { get; set; }
+        public string PrintError { get; set; } = string.Empty;
     }
 }

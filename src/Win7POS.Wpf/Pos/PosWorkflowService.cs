@@ -1449,16 +1449,17 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<RefundCreateResult> CreateRefundAsync(RefundCreateRequest req, bool useReceipt42, bool autoPrint)
+        internal async Task<RefundCreateResult> CreateRefundAsync(
+            RefundCreateRequest req, bool useReceipt42, bool autoPrint,
+            OperatorSession operatorSession, OperatorSession.ReversalAuthorizationGrant authorizationGrant)
         {
             if (req == null) throw new ArgumentNullException(nameof(req));
             if (req.OriginalSaleId <= 0) throw new ArgumentException("invalid original sale id");
+            if (operatorSession == null) throw new ArgumentNullException(nameof(operatorSession));
 
             var effectiveAutoPrint = autoPrint && !App.IsSafeStart;
-            var installedPrinters = effectiveAutoPrint
-                ? await GetInstalledPrintersAsync().ConfigureAwait(false)
-                : null;
-            ReceiptPrintRequest automaticPrintRequest = null;
+            string authorizationDeniedCode = null;
+            var authorizationDeniedVersion = long.MinValue;
             RefundCreateResult result;
             await _gate.WaitAsync().ConfigureAwait(false);
             try
@@ -1564,47 +1565,34 @@ namespace Win7POS.Wpf.Pos
                     RelatedOriginalLineId = x.OriginalLineId
                 }).ToList();
 
-                var refundSaleId = await _sales.InsertRefundOrVoidAsync(
-                    refundSale,
-                    refundLines,
-                    req.IsFullVoid ? original.Id : (long?)null,
-                    AuditActions.RefundCreate,
-                    savedRefundSaleId =>
-                    {
-                        var voided = req.IsFullVoid ? "true" : "false";
-                        return AuditDetails.Kv(new (string k, string v)[]
+                using (var authorizationUse = await operatorSession.BeginReversalAuthorizationUseAsync(
+                    authorizationGrant, req.IsFullVoid, PosLocalization.T("sales.refundVoid")).ConfigureAwait(false))
+                {
+                    refundSale.OperatorId = authorizationUse.CommitGuard.OperatorId;
+                    await _sales.InsertAuthorizedRefundOrVoidAsync(
+                        refundSale,
+                        refundLines,
+                        req.IsFullVoid ? original.Id : (long?)null,
+                        AuditActions.RefundCreate,
+                        savedRefundSaleId =>
                         {
-                            ("originalSaleId", original.Id.ToString()),
-                            ("refundSaleId", savedRefundSaleId.ToString()),
-                            ("isFullVoid", req.IsFullVoid.ToString()),
-                            ("voided", voided),
-                            ("totalMinor", refundSale.Total.ToString()),
-                            ("lines", refundLines.Count.ToString())
-                        });
-                    }).ConfigureAwait(false);
+                            var voided = req.IsFullVoid ? "true" : "false";
+                            return AuditDetails.Kv(new (string k, string v)[]
+                            {
+                                ("originalSaleId", original.Id.ToString()),
+                                ("refundSaleId", savedRefundSaleId.ToString()),
+                                ("isFullVoid", req.IsFullVoid.ToString()),
+                                ("voided", voided),
+                                ("totalMinor", refundSale.Total.ToString()),
+                                ("lines", refundLines.Count.ToString())
+                            });
+                        }, authorizationUse.CommitGuard).ConfigureAwait(false);
+                }
 
                 var completed = new SaleCompleted(refundSale, refundLines);
                 QueueSalesOutboxSyncNoThrow();
                 var receipt42 = BuildRefundReceiptPreview(completed, true, shop);
                 var receipt32 = BuildRefundReceiptPreview(completed, false, shop);
-
-                if (effectiveAutoPrint)
-                {
-                    try
-                    {
-                        var receiptText = useReceipt42 ? receipt42 : receipt32;
-                        automaticPrintRequest = await CreateReceiptPrintRequestNoLockAsync(
-                            receiptText,
-                            useReceipt42,
-                            "REFUND_" + refundSale.Code,
-                            automaticAfterSale: true,
-                            installedPrinters: installedPrinters).ConfigureAwait(false);
-                    }
-                    catch (Exception printEx)
-                    {
-                        _logger.LogError(printEx, "POS refund print failed");
-                    }
-                }
 
                 result = new RefundCreateResult
                 {
@@ -1615,6 +1603,12 @@ namespace Win7POS.Wpf.Pos
                     TotalMinor = refundSale.Total
                 };
             }
+            catch (PosAuthorizationLeaseException ex)
+            {
+                authorizationDeniedCode = ex.Code;
+                authorizationDeniedVersion = ex.OperatorAuthorityVersion;
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "POS create refund failed");
@@ -1623,19 +1617,28 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 _gate.Release();
+                if (authorizationDeniedCode != null)
+                {
+                    try { operatorSession.HandleAuthorizationUseDenied(authorizationDeniedCode, authorizationDeniedVersion); }
+                    catch (Exception ex) { _logger.LogError(ex, "POS refund authorization denial handling failed"); }
+                }
             }
 
-            if (automaticPrintRequest != null)
+            // Discovery, request preparation and queue submission all happen after
+            // the durable movement. A print retry only reads this persisted ID.
+            if (effectiveAutoPrint)
             {
                 try
                 {
-                    await _receiptPrinter.PrintAsync(
-                        automaticPrintRequest.ReceiptText,
-                        automaticPrintRequest.Options).ConfigureAwait(false);
+                    await PrintReceiptTextAsync(useReceipt42 ? result.Receipt42 : result.Receipt32,
+                        useReceipt42, "REFUND_" + result.RefundSaleCode, automaticAfterSale: true).ConfigureAwait(false);
+                    result.PrintStatus = RefundPrintStatus.Accepted;
                 }
                 catch (Exception printEx)
                 {
                     _logger.LogError(printEx, "POS refund print failed");
+                    result.PrintStatus = RefundPrintStatus.Failed;
+                    result.PrintError = printEx.Message;
                 }
             }
 

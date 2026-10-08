@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Security;
@@ -364,9 +365,119 @@ namespace Win7POS.Wpf.Infrastructure.Security
             }
         }
 
-        internal async Task<IPosAuthorizationUseLease> BeginAuthorizationUseAsync(
+        // A supervisor approval belongs to the operator/epoch that requested it.
+        // Keep it separate from ordinary-sale permission evaluation.
+        internal sealed class ReversalAuthorizationGrant
+        {
+            internal ReversalAuthorizationGrant(
+                OperatorSession owner, int operatorId, long authorityVersion,
+                long authorizationEpoch, string generationFingerprint,
+                bool refundApproved = false, bool refundOverride = false,
+                bool voidApproved = false, bool voidOverride = false)
+            {
+                Owner = owner;
+                OperatorId = operatorId;
+                AuthorityVersion = authorityVersion;
+                AuthorizationEpoch = authorizationEpoch;
+                GenerationFingerprint = generationFingerprint;
+                RefundApproved = refundApproved;
+                RefundOverride = refundOverride;
+                VoidApproved = voidApproved;
+                VoidOverride = voidOverride;
+            }
+
+            internal OperatorSession Owner { get; }
+            internal int OperatorId { get; }
+            internal long AuthorityVersion { get; }
+            internal long AuthorizationEpoch { get; }
+            internal string GenerationFingerprint { get; }
+            internal bool RefundApproved { get; }
+            internal bool RefundOverride { get; }
+            internal bool VoidApproved { get; }
+            internal bool VoidOverride { get; }
+        }
+
+        internal ReversalAuthorizationGrant CaptureReversalAuthorizationGrant()
+        {
+            var version = Interlocked.Read(ref _operatorAuthorityVersion);
+            if (!TryGetAuthorizationBoundUser(out var user) ||
+                !PosOnlineSyncRevocationLatch.TryCaptureAuthorizationEpoch(out var epoch))
+                throw new PosAuthorizationLeaseException(
+                    "sync_generation_inactive",
+                    PosLocalization.T("access.login.authorizationExpired"));
+            var decision = _authorizationLeaseGuard.Evaluate(out var trustedSession);
+            if (!decision.Allowed ||
+                !PosOnlineSyncSupervisorHost.TryCreateGeneration(trustedSession, out var generation))
+                throw new PosAuthorizationLeaseException(
+                    decision.Allowed ? "sync_generation_inactive" : decision.Code,
+                    PosLocalization.T("access.login.authorizationExpired"));
+            var grant = new ReversalAuthorizationGrant(this, user.Id, version, epoch, generation.Fingerprint);
+            DemandReversalGrantCurrent(grant);
+            return grant;
+        }
+
+        internal ReversalAuthorizationGrant ApproveReversalAuthorization(
+            ReversalAuthorizationGrant grant, string permissionCode, bool grantedByOverride)
+        {
+            if (permissionCode != PermissionCodes.PosRefund && permissionCode != PermissionCodes.PosVoidSale)
+                throw new ArgumentOutOfRangeException(nameof(permissionCode));
+            DemandReversalGrantCurrent(grant);
+            if (!grantedByOverride && !HasPermission(_currentUser, permissionCode))
+                throw new InvalidOperationException("Permesso negato: " + permissionCode);
+            return new ReversalAuthorizationGrant(
+                this, grant.OperatorId, grant.AuthorityVersion, grant.AuthorizationEpoch, grant.GenerationFingerprint,
+                permissionCode == PermissionCodes.PosRefund || grant.RefundApproved,
+                permissionCode == PermissionCodes.PosRefund ? grantedByOverride : grant.RefundOverride,
+                permissionCode == PermissionCodes.PosVoidSale || grant.VoidApproved,
+                permissionCode == PermissionCodes.PosVoidSale ? grantedByOverride : grant.VoidOverride);
+        }
+
+        private void DemandReversalGrantCurrent(ReversalAuthorizationGrant grant)
+        {
+            var user = _currentUser;
+            if (grant == null || !ReferenceEquals(grant.Owner, this) ||
+                grant.AuthorityVersion != Interlocked.Read(ref _operatorAuthorityVersion) ||
+                !_currentUserCanUsePosAuthorization || user == null || !user.IsActive ||
+                user.Id != grant.OperatorId ||
+                !PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(grant.AuthorizationEpoch) ||
+                PosOnlineSyncRevocationLatch.IsRevokedFingerprint(grant.GenerationFingerprint))
+                throw new PosAuthorizationLeaseException(
+                    "sync_generation_inactive",
+                    PosLocalization.T("access.login.authorizationExpired"));
+        }
+
+        private bool HasReversalPermission(
+            ReversalAuthorizationGrant grant, UserAccount user, string permissionCode)
+        {
+            DemandReversalGrantCurrent(grant);
+            return grant.RefundApproved &&
+                (grant.RefundOverride || HasPermission(user, PermissionCodes.PosRefund)) &&
+                (permissionCode == PermissionCodes.PosRefund ||
+                 (permissionCode == PermissionCodes.PosVoidSale && grant.VoidApproved &&
+                  (grant.VoidOverride || HasPermission(user, PermissionCodes.PosVoidSale))));
+        }
+
+        internal Task<IPosAuthorizationUseLease> BeginReversalAuthorizationUseAsync(
+            ReversalAuthorizationGrant grant, bool isFullVoid, string operationText)
+        {
+            DemandReversalGrantCurrent(grant);
+            return BeginAuthorizationUseCoreAsync(
+                isFullVoid ? PermissionCodes.PosVoidSale : PermissionCodes.PosRefund,
+                operationText,
+                grant);
+        }
+
+        internal Task<IPosAuthorizationUseLease> BeginAuthorizationUseAsync(
             string permissionCode,
             string operationText)
+        {
+            return BeginAuthorizationUseCoreAsync(permissionCode, operationText, null);
+        }
+
+        private async Task<IPosAuthorizationUseLease> BeginAuthorizationUseCoreAsync(
+            string permissionCode,
+            string operationText,
+            ReversalAuthorizationGrant reversalGrant)
         {
             var operatorAuthorityVersion =
                 Interlocked.Read(ref _operatorAuthorityVersion);
@@ -402,6 +513,14 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 }
 
                 var user = _currentUser;
+                if (reversalGrant != null)
+                {
+                    DemandReversalGrantCurrent(reversalGrant);
+                    if (!string.Equals(reversalGrant.GenerationFingerprint, generation.Fingerprint, StringComparison.Ordinal))
+                        throw new PosAuthorizationLeaseException(
+                            "sync_generation_inactive",
+                            PosLocalization.T("access.login.authorizationExpired"));
+                }
                 if (!_currentUserCanUsePosAuthorization)
                 {
                     throw new PosAuthorizationLeaseException(
@@ -411,7 +530,9 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 }
                 if (user == null ||
                     !user.IsActive ||
-                    !HasPermission(user, permissionCode))
+                    !(reversalGrant == null
+                        ? HasPermission(user, permissionCode)
+                        : HasReversalPermission(reversalGrant, user, permissionCode)))
                 {
                     throw new InvalidOperationException(
                         "Permesso negato: " +
@@ -427,7 +548,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                     authorizationEpoch,
                     generation,
                     commitExpiryGuard,
-                    operatorAuthorityVersion);
+                    operatorAuthorityVersion,
+                    reversalGrant);
                 lease.CommitGuard.DemandStillValid();
                 return lease;
             }
@@ -562,7 +684,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
             OnlineSyncGeneration expectedGeneration,
             PosAuthorizationCommitExpiryGuard commitExpiryGuard,
             long expectedOperatorAuthorityVersion,
-            TimeSpan minimumRemaining)
+            TimeSpan minimumRemaining,
+            ReversalAuthorizationGrant reversalGrant)
         {
             DemandCommitExpiryStillValid(
                 commitExpiryGuard,
@@ -610,7 +733,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 expectedOperatorId,
                 permissionCode,
                 operationText,
-                expectedOperatorAuthorityVersion);
+                expectedOperatorAuthorityVersion,
+                reversalGrant);
         }
 
         private static bool HasSameAuthorizationBinding(
@@ -684,7 +808,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
             long expectedOperatorAuthorityVersion,
             TimeSpan minimumRemaining,
             int demandCount,
-            Action commit)
+            Action commit,
+            ReversalAuthorizationGrant reversalGrant)
         {
             // Preserve the global lock order: the lease guard owns its _sync
             // while consulting the latch, so no lease/store evaluation may run
@@ -697,7 +822,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 expectedGeneration,
                 commitExpiryGuard,
                 expectedOperatorAuthorityVersion,
-                minimumRemaining);
+                minimumRemaining,
+                reversalGrant);
             var committed = PosOnlineSyncRevocationLatch
                 .CommitIfAuthorizationCurrent(
                     expectedAuthorizationEpoch,
@@ -714,7 +840,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                             expectedOperatorId,
                             permissionCode,
                             operationText,
-                            expectedOperatorAuthorityVersion);
+                            expectedOperatorAuthorityVersion,
+                            reversalGrant);
                     },
                     commit);
             if (!committed)
@@ -733,7 +860,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
             int expectedOperatorId,
             string permissionCode,
             string operationText,
-            long expectedOperatorAuthorityVersion)
+            long expectedOperatorAuthorityVersion,
+            ReversalAuthorizationGrant reversalGrant)
         {
             var user = _currentUser;
             if (Interlocked.Read(ref _operatorAuthorityVersion) !=
@@ -742,7 +870,9 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 user == null ||
                 !user.IsActive ||
                 user.Id != expectedOperatorId ||
-                !HasPermission(user, permissionCode))
+                !(reversalGrant == null
+                    ? HasPermission(user, permissionCode)
+                    : HasReversalPermission(reversalGrant, user, permissionCode)))
             {
                 throw new InvalidOperationException(
                     "Permesso negato: " +
@@ -774,6 +904,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
             private readonly OnlineSyncGeneration _generation;
             private readonly PosAuthorizationCommitExpiryGuard
                 _commitExpiryGuard;
+            private readonly ReversalAuthorizationGrant _reversalGrant;
             private IDisposable _latchLease;
             private int _demandCount;
 
@@ -786,7 +917,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 long authorizationEpoch,
                 OnlineSyncGeneration generation,
                 PosAuthorizationCommitExpiryGuard commitExpiryGuard,
-                long operatorAuthorityVersion)
+                long operatorAuthorityVersion,
+                ReversalAuthorizationGrant reversalGrant)
             {
                 _owner = owner ??
                     throw new ArgumentNullException(nameof(owner));
@@ -795,6 +927,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 OperatorId = operatorId;
                 _permissionCode = permissionCode ?? string.Empty;
                 _operationText = operationText;
+                _reversalGrant = reversalGrant;
                 AuthorizationEpoch = authorizationEpoch;
                 OperatorAuthorityVersion = operatorAuthorityVersion;
                 _generation = generation ??
@@ -813,7 +946,9 @@ namespace Win7POS.Wpf.Infrastructure.Security
                     _generation.StaffCredentialVersion,
                     _generation.StaffId,
                     DemandStillValid,
-                    CommitIfStillValid);
+                    CommitIfStillValid,
+                    reversalGrant == null ? SaleKind.Sale :
+                        permissionCode == PermissionCodes.PosVoidSale ? SaleKind.Void : SaleKind.Refund);
             }
 
             private long AuthorizationEpoch { get; }
@@ -842,7 +977,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                         _generation,
                         _commitExpiryGuard,
                         OperatorAuthorityVersion,
-                        TimeSpan.Zero);
+                        TimeSpan.Zero,
+                        _reversalGrant);
                 }
                 catch (PosAuthorizationLeaseException ex)
                 {
@@ -877,7 +1013,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                         OperatorAuthorityVersion,
                         minimumRemaining,
                         demandCount,
-                        commit);
+                        commit,
+                        _reversalGrant);
                 }
                 catch (PosAuthorizationLeaseException ex)
                 {

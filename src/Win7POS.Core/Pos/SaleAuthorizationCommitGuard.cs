@@ -1,10 +1,11 @@
 using System;
+using Win7POS.Core.Models;
 
 namespace Win7POS.Core.Pos
 {
     /// <summary>
     /// Immutable, non-forgeable authorization capability consumed by the
-    /// repository-native ordinary-sale transaction. Only the trusted WPF
+    /// repository-native sale transaction, scoped to its economic operation. Only the trusted WPF
     /// authorization authority and the test assembly can construct one.
     /// </summary>
     public sealed class SaleAuthorizationCommitGuard
@@ -23,8 +24,14 @@ namespace Win7POS.Core.Pos
             int staffCredentialVersion,
             string staffId,
             Action demandStillValid,
-            Action<TimeSpan, Action> commitIfStillValid)
+            Action<TimeSpan, Action> commitIfStillValid,
+            SaleKind authorizedSaleKind = SaleKind.Sale)
         {
+            if (authorizedSaleKind != SaleKind.Sale &&
+                authorizedSaleKind != SaleKind.Refund &&
+                authorizedSaleKind != SaleKind.Void)
+                throw new ArgumentOutOfRangeException(nameof(authorizedSaleKind));
+            AuthorizedSaleKind = authorizedSaleKind;
             AuthorizationEpoch = authorizationEpoch;
             GenerationFingerprint = generationFingerprint;
             GenerationId = generationId;
@@ -41,6 +48,7 @@ namespace Win7POS.Core.Pos
         }
 
         public long AuthorizationEpoch { get; }
+        public SaleKind AuthorizedSaleKind { get; }
         public string GenerationFingerprint { get; }
         public string GenerationId { get; }
         public int OperatorId { get; }

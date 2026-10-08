@@ -351,6 +351,11 @@ namespace Win7POS.Wpf.Pos
         public ICommand BackupDbCommand { get; }
         public ICommand PrinterSettingsCommand { get; }
         public ICommand PrintLastReceiptCommand { get; }
+        public ICommand ReprintRefundCommand { get; }
+        private long _lastRefundSaleId;
+        private string _lastRefundSaleCode;
+        public bool HasRefundReceipt => _lastRefundSaleId > 0;
+        public string RefundReprintLabel { get; private set; }
         public ICommand OpenCashDrawerCommand { get; }
         public ICommand DailyReportCommand { get; }
         public ICommand DbMaintenanceCommand { get; }
@@ -409,6 +414,7 @@ namespace Win7POS.Wpf.Pos
             BackupDbCommand = new AsyncRelayCommand(BackupDbAsync, _ => !IsBusy, _logger);
             PrinterSettingsCommand = new AsyncRelayCommand(OpenPrinterSettingsAsync, _ => !IsBusy, _logger);
             PrintLastReceiptCommand = new AsyncRelayCommand(PrintLastReceiptAsync, _ => !IsBusy, _logger);
+            ReprintRefundCommand = new AsyncRelayCommand(ReprintRefundAsync, _ => !IsBusy && HasRefundReceipt, _logger);
             OpenCashDrawerCommand = new AsyncRelayCommand(OpenCashDrawerAsync, _ => !IsBusy && IsCashDrawerConfigured, _logger);
             DailyReportCommand = new AsyncRelayCommand(OpenDailyReportAsync, _ => !IsBusy, _logger);
             DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy, _logger);
@@ -1729,11 +1735,12 @@ namespace Win7POS.Wpf.Pos
             return Task.CompletedTask;
         }
 
-        private async Task<bool> TryDemandOrOverrideAsync(string permissionCode, string operationText)
+        private async Task<bool> TryDemandOrOverrideAsync(string permissionCode, string operationText, Action<bool> approved = null)
         {
             try
             {
                 _permissionService.Demand(permissionCode, operationText);
+                approved?.Invoke(false);
                 return true;
             }
             catch (PosAuthorizationLeaseException ex)
@@ -1764,13 +1771,13 @@ namespace Win7POS.Wpf.Pos
                 }
                 _operatorSession?.LogOverride(permissionCode, operationText, authorizerId.Value);
                 _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideGranted, "permission=" + permissionCode + " op=" + operationText + " authorizerId=" + authorizerId.Value);
+                approved?.Invoke(true);
                 return true;
             }
         }
 
         private async Task OpenRefundAsync()
         {
-            if (!(await TryDemandOrOverrideAsync(PermissionCodes.PosRefund, PosLocalization.Current.Text("sales.refundVoid")).ConfigureAwait(true))) return;
             if (SelectedRecentSale == null)
             {
                 SetStatus(PosLocalization.Current.Text("pos.status.selectSale"), PosNoticeSeverity.Warning);
@@ -1781,9 +1788,16 @@ namespace Win7POS.Wpf.Pos
 
         private async Task OpenRefundForSaleIdThenRefreshAsync(long saleId, Dialogs.SalesRegisterViewModel registerVm)
         {
+            if (IsBusy) return;
             IsBusy = true;
             try
             {
+                var authority = _operatorSession as OperatorSession;
+                if (authority == null) throw new InvalidOperationException(PosLocalization.T("common.userPermissionDenied"));
+                var grant = authority.CaptureReversalAuthorizationGrant();
+                var refundOverride = false;
+                if (!await TryDemandOrOverrideAsync(PermissionCodes.PosRefund, PosLocalization.T("sales.refundVoid"), value => refundOverride = value).ConfigureAwait(true)) return;
+                grant = authority.ApproveReversalAuthorization(grant, PermissionCodes.PosRefund, refundOverride);
                 var preview = await _service.BuildRefundPreviewAsync(saleId).ConfigureAwait(true);
                 IsBusy = false;
 
@@ -1811,17 +1825,21 @@ namespace Win7POS.Wpf.Pos
                     return;
                 }
 
-                if (req.IsFullVoid && !(await TryDemandOrOverrideAsync(PermissionCodes.PosVoidSale, PosLocalization.Current.Text("sales.kind.void")).ConfigureAwait(true)))
+                if (req.IsFullVoid)
                 {
-                    SetStatus(PosLocalization.Current.Text("pos.status.voidPermissionDenied"), PosNoticeSeverity.Error);
-                    return;
+                    var voidOverride = false;
+                    if (!await TryDemandOrOverrideAsync(PermissionCodes.PosVoidSale, PosLocalization.T("sales.kind.void"), value => voidOverride = value).ConfigureAwait(true))
+                    {
+                        SetStatus(PosLocalization.Current.Text("pos.status.voidPermissionDenied"), PosNoticeSeverity.Error);
+                        return;
+                    }
+                    grant = authority.ApproveReversalAuthorization(grant, PermissionCodes.PosVoidSale, voidOverride);
                 }
 
                 IsBusy = true;
-                var result = await _service.CreateRefundAsync(req, UseReceipt42, _printerSettings.AutoPrint).ConfigureAwait(true);
+                var result = await _service.CreateRefundAsync(req, UseReceipt42, _printerSettings.AutoPrint, authority, grant).ConfigureAwait(true);
                 _operatorSession?.LogSecurityEvent(SecurityEventCodes.Refund, "originalSaleId=" + saleId + " refundCode=" + result.RefundSaleCode);
-                ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
-                SetStatus(PosLocalization.Current.Format("pos.status.returnCompleted", result.RefundSaleCode), PosNoticeSeverity.Success);
+                ApplyRefundResult(result);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
                 if (registerVm != null && registerVm.LoadCommand.CanExecute(null))
                     registerVm.LoadCommand.Execute(null);
@@ -1836,6 +1854,39 @@ namespace Win7POS.Wpf.Pos
                 IsBusy = false;
                 RequestFocusBarcode();
             }
+        }
+
+        internal void ApplyRefundResult(RefundCreateResult result)
+        {
+            _lastRefundSaleId = result.RefundSaleId;
+            _lastRefundSaleCode = result.RefundSaleCode;
+            RefundReprintLabel = PosLocalization.Current.Format("refund.reprintSaved", result.RefundSaleCode);
+            OnPropertyChanged(nameof(HasRefundReceipt));
+            OnPropertyChanged(nameof(RefundReprintLabel));
+            ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
+            var key = result.PrintStatus == RefundPrintStatus.Failed ? "refund.savedPrintFailed"
+                : result.PrintStatus == RefundPrintStatus.Accepted ? "refund.savedPrintAccepted" : "refund.saved";
+            SetStatus(PosLocalization.Current.Format(key, result.RefundSaleCode, result.PrintError),
+                result.PrintStatus == RefundPrintStatus.Failed ? PosNoticeSeverity.Warning : PosNoticeSeverity.Success);
+            (ReprintRefundCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private async Task ReprintRefundAsync()
+        {
+            if (IsBusy || !HasRefundReceipt) return;
+            IsBusy = true;
+            try
+            {
+                _permissionService.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.T("pos.cart.printLast"));
+                await _service.PrintReceiptBySaleIdAsync(_lastRefundSaleId, UseReceipt42).ConfigureAwait(true);
+                SetStatus(PosLocalization.T("refund.reprintAccepted"), PosNoticeSeverity.Success);
+            }
+            catch (Exception ex)
+            {
+                SetStatus(PosLocalization.Current.Format("refund.savedPrintFailed", _lastRefundSaleCode, ex.Message), PosNoticeSeverity.Warning);
+                _logger.LogError(ex, "POS VM saved refund reprint failed");
+            }
+            finally { IsBusy = false; RequestFocusBarcode(); }
         }
 
         private Task OpenSalesRegisterAsync()
@@ -2606,6 +2657,7 @@ namespace Win7POS.Wpf.Pos
             (BackupDbCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrinterSettingsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintLastReceiptCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ReprintRefundCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenCashDrawerCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DailyReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DbMaintenanceCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();

@@ -141,9 +141,18 @@ Forbid "access/recovery logs contain no raw operator identifiers or credentials"
 
 Forbid "shipping app exposes no supplier mutation smoke hook" $shippingApp 'SupplierExcelWpfViewModelSmoke|--supplier-excel-wpf-viewmodel-smoke'
 Require "supplier mutation smoke is isolated in the non-shipping UI harness" $supplierSmokeHarness '--supplier-excel-wpf-viewmodel-smoke[\s\S]*RunSmokeAsync'
-Require "supplier apply authorizes before initialization and again immediately before backup" $supplierWorkflow 'ApplyAsync\([\s\S]{0,300}DemandApplyAuthorization\(\);[\s\S]{0,100}DbInitializer\.EnsureCreated[\s\S]{0,900}DemandApplyAuthorization\(\);[\s\S]{0,100}CreateBackupBeforeApplyAsync'
-Require "raw supplier apply reauthorizes after backup immediately before mutation" $supplierWorkflow 'CreateBackupBeforeApplyAsync\(_options\.DbPath\)\.ConfigureAwait\(true\);\s*DemandApplyAuthorization\(\);\s*\}\s*var\s+applier'
-Require "preview supplier apply builds payload off-dispatcher then reauthorizes immediately before mutation" $supplierWorkflow 'BuildSupplierExcelEntry[\s\S]{0,260}ConfigureAwait\(true\);[\s\S]{0,140}DemandApplyAuthorization\(\);\s*\}\s*var\s+applier'
+. (Join-Path $PSScriptRoot "sales-sync-outbox-gate-helpers.ps1")
+$supplierApplyMethods = @(Get-CSharpMethodSlices $supplierWorkflow "public" "ApplyAsync")
+$rawSupplierApply = @($supplierApplyMethods | Where-Object { $_.Text -match 'IReadOnlyList<SupplierImportEditableRow>' -and $_.Text -match 'CancellationToken cancellationToken' })
+$previewSupplierApply = @($supplierApplyMethods | Where-Object { $_.Text -match 'SupplierImportSyncPreview preview' -and $_.Text -match 'CancellationToken cancellationToken' })
+if ($rawSupplierApply.Count -ne 1 -or $previewSupplierApply.Count -ne 1) {
+    Fail "supplier apply requires exactly one cancellable raw and preview implementation"
+} else {
+    Require "supplier apply authorizes before worker initialization and again immediately before backup" $rawSupplierApply[0].Text 'DemandApplyAuthorization\(\);[\s\S]*await Task\.Run\(\(\) => DbInitializer\.EnsureCreated\(_options\), cancellationToken\)\.ConfigureAwait\(true\);[\s\S]*if \(!dryRun\)\s*\{\s*DemandApplyAuthorization\(\);\s*backupPath = await CreateBackupBeforeApplyAsync\(cancellationToken\)\.ConfigureAwait\(true\);'
+    Require "raw supplier apply reauthorizes on caller context after backup immediately before worker mutation" $rawSupplierApply[0].Text 'CreateBackupBeforeApplyAsync\(cancellationToken\)\.ConfigureAwait\(true\);\s*DemandApplyAuthorization\(\);\s*\}\s*var\s+applier[\s\S]*await Task\.Run\(\(\) => applier\.ApplyAsync\('
+    Require "preview supplier apply authorizes before validation and backup on caller context" $previewSupplierApply[0].Text 'DemandApplyAuthorization\(\);[\s\S]*BuildSyncPreviewAsync\(preview\.FinalRows, cancellationToken\)\.ConfigureAwait\(true\);[\s\S]*if \(!dryRun\)\s*\{\s*DemandApplyAuthorization\(\);\s*backupPath = await CreateBackupBeforeApplyAsync\(cancellationToken\)\.ConfigureAwait\(true\);'
+    Require "preview supplier apply builds payload off-dispatcher then reauthorizes immediately before worker mutation" $previewSupplierApply[0].Text 'await Task\.Run\(\(\) =>\s*CatalogImportOutboxPayloadBuilder\.BuildSupplierExcelEntry[\s\S]*ConfigureAwait\(true\);\s*if \(!dryRun\)\s*\{\s*DemandApplyAuthorization\(\);\s*\}\s*var\s+applier[\s\S]*await Task\.Run\(\(\) => applier\.ApplyAsync\('
+}
 Require "supplier authorization smoke attributes every gate, backup and dispatcher boundary" $supplierSmokeHarness 'SequencedAuthorizer[\s\S]*AllCallsOnDispatcher[\s\S]*backupDelta\s*==\s*\(denyAfterBackup\s*\?\s*1\s*:\s*0\)'
 Require "supplier authorization lease result is required by the executable smoke" $supplierSmokeHarness 'authorizationLeasePass[\s\S]{0,220}throw\s+new\s+InvalidOperationException'
 Require "nullable POS permission composition becomes deny-all" $posViewModel '_permissionService\s*=\s*permissionService\s*\?\?\s*DenyAllPermissionService\.Instance'

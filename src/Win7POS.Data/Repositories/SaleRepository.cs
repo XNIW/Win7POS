@@ -192,6 +192,25 @@ namespace Win7POS.Data.Repositories
                 auditAction,
                 auditDetailsFactory);
 
+        public Task<long> InsertAuthorizedRefundOrVoidAsync(
+            Sale refundSale,
+            IReadOnlyList<SaleLine> refundLines,
+            long? originalSaleIdToMarkVoided,
+            string auditAction,
+            Func<long, string> auditDetailsFactory,
+            SaleAuthorizationCommitGuard authorizationCommitGuard)
+        {
+            if (authorizationCommitGuard == null)
+                throw new ArgumentNullException(nameof(authorizationCommitGuard));
+            return _transactionWriter.InsertRefundOrVoidAsync(
+                refundSale,
+                refundLines,
+                originalSaleIdToMarkVoided,
+                auditAction,
+                auditDetailsFactory,
+                authorizationCommitGuard);
+        }
+
         public Task InsertSaleLinesAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
