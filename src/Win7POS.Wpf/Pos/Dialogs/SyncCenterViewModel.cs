@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -74,6 +77,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string SalesQueueText { get => _salesQueueText; private set => Set(ref _salesQueueText, value); }
 
         public event PropertyChangedEventHandler PropertyChanged;
+
+        public ObservableCollection<ImportRecoveryPresentation> ImportRecoveries { get; } =
+            new ObservableCollection<ImportRecoveryPresentation>();
+
+        public void ApplyImportRecoveries(IEnumerable<CatalogImportRecoveryBatch> batches)
+        {
+            ImportRecoveries.Clear();
+            foreach (var batch in batches) ImportRecoveries.Add(new ImportRecoveryPresentation(batch));
+        }
 
         public void Apply(PosSyncStatusSnapshot status, DateTimeOffset updatedAt)
         {
@@ -194,6 +206,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             text.AppendLine("imports.in_progress=" + _snapshot.ImportInProgress.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("imports.remaining_due=" + _snapshot.ImportRemainingDue.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("imports.next_retry_at=" + SafeCode(_snapshot.ImportNextRetryText));
+            text.AppendLine("imports.recovery_batches_shown=" + ImportRecoveries.Count.ToString(CultureInfo.InvariantCulture));
+            foreach (var recovery in ImportRecoveries)
+            {
+                var batch = recovery.Batch;
+                text.AppendLine("imports.recovery." + batch.OutboxId.ToString(CultureInfo.InvariantCulture) +
+                    ".code=" + SafeCode(batch.LastErrorCode) + ";state=" + SafeCode(batch.RecoveryState) +
+                    ";replacement_code=" + SafeCode(batch.ReplacementErrorCode) +
+                    ";op_id=" + SafeCode(batch.ClientImportId) +
+                    ";replacement_id=" + (batch.ReplacementOutboxId?.ToString(CultureInfo.InvariantCulture) ?? "none") +
+                    ";hash=" + SafeCode((batch.PayloadHash ?? string.Empty).Substring(0, Math.Min(12, (batch.PayloadHash ?? string.Empty).Length))));
+            }
             text.AppendLine("articles.pending=" + _snapshot.ArticlePending.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("articles.retry=" + _snapshot.ArticleRetry.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("articles.blocked=" + _snapshot.ArticleBlocked.ToString(CultureInfo.InvariantCulture));

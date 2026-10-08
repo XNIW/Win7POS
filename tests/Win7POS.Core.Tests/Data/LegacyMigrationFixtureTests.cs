@@ -177,10 +177,11 @@ ORDER BY migration_id;").ToArray();
                 "0009-catalog-authoritative-id-stage",
                 "0010-article-mutation-outbox",
                 "0011-product-image-outbox",
-                "0012-customer-order-inbox"
+                "0012-customer-order-inbox",
+                "0013-catalog-import-recovery"
             },
             appliedIds,
-            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0012.");
+            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0013.");
     }
 
     private static void AssertPostPr7MainWasBootstrappedWithoutReapplying(string databasePath)
@@ -198,10 +199,11 @@ ORDER BY migration_id;").ToArray();
                 "0009-catalog-authoritative-id-stage",
                 "0010-article-mutation-outbox",
                 "0011-product-image-outbox",
-                "0012-customer-order-inbox"
+                "0012-customer-order-inbox",
+                "0013-catalog-import-recovery"
             },
             appliedIds,
-            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0012.");
+            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0013.");
         Assert.AreEqual(
             "{\"shopName\":\"Negozio QA Ñ\",\"address\":\"Via Unicode 7\"}",
             connection.ExecuteScalar<string>(@"
@@ -225,10 +227,11 @@ ORDER BY migration_id;").ToArray();
                 "0009-catalog-authoritative-id-stage",
                 "0010-article-mutation-outbox",
                 "0011-product-image-outbox",
-                "0012-customer-order-inbox"
+                "0012-customer-order-inbox",
+                "0013-catalog-import-recovery"
             },
             appliedIds,
-            "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009-0012.");
+            "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009-0013.");
         Assert.AreEqual(
             8L,
             connection.ExecuteScalar<long>(@"

@@ -132,6 +132,128 @@ namespace Win7POS.Data.Online
                 .ToString("O", CultureInfo.InvariantCulture);
         }
 
+        internal static CatalogImportOutboxEntry BuildRecoveryEntry(
+            SupplierImportSyncPreview preview, PosCatalogImportRequest original, string originalHash, bool accepted,
+            IReadOnlyList<CatalogImportRecoveryContribution> contributions,PosCatalogImportReceiptResponse receipt=null)
+        {
+            var rows = preview.NewProducts.Concat(preview.UpdatedProducts.Select(row => row.Updated))
+                .Concat(preview.NoChangeRows.Select(row => row.Updated)).OrderBy(row => row.RowNumber).ToArray();
+            var items = new List<PosCatalogImportItemRequest>();
+            var corrections=new List<PosCatalogImportCorrectionItem>();
+            var originals = original.Items.ToDictionary(item => item.Barcode, StringComparer.Ordinal);
+            var edits=preview.ValidatedRows.ToDictionary(row=>row.Barcode,StringComparer.Ordinal);
+            var snapshotsById=(receipt?.CurrentProductSnapshots ?? Array.Empty<PosCatalogImportProductSnapshot>())
+                .GroupBy(snapshot=>snapshot.ClientItemId,StringComparer.Ordinal).ToDictionary(group=>group.Key,group=>group.ToArray(),StringComparer.Ordinal);
+            var ownersById=(receipt?.Receipt?.RemoteProductIds ?? Array.Empty<PosCatalogImportPersistedProductAck>())
+                .GroupBy(product=>product.ClientItemId,StringComparer.Ordinal).ToDictionary(group=>group.Key,group=>group.ToArray(),StringComparer.Ordinal);
+            var fulfilled = contributions.SelectMany(contribution => contribution.Request.Items)
+                .GroupBy(item => item.Barcode,StringComparer.Ordinal).ToDictionary(group => group.Key,group => group.ToArray(),StringComparer.Ordinal);
+            foreach (var row in rows)
+            {
+                var before = originals[row.Barcode];
+                var edit=edits[row.Barcode];
+                var item = BuildItem("updated", row, "legacy_recovery");
+                // Canonical merge rows include current local fallback values. They
+                // are not evidence that an absent/unchanged original field is owed
+                // remotely. Preserve the immutable intent for every unedited field.
+                if(TextEqual(edit.ProductName,before.ProductName)) item.ProductName=before.ProductName;
+                if(TextEqual(edit.SecondProductName,before.SecondProductName)) item.SecondProductName=before.SecondProductName;
+                if(TextEqual(edit.ItemNumber,before.ItemNumber)) item.ItemNumber=before.ItemNumber;
+                if(TextEqual(edit.Supplier,before.Supplier)) item.Supplier=before.Supplier;
+                if(TextEqual(edit.Category,before.Category)) item.Category=before.Category;
+                if(EqualNumber(edit.RetailPrice,before.RetailPrice)) item.RetailPrice=before.RetailPrice;
+                if(EqualNumber(edit.PurchasePrice,before.PurchasePrice)) item.PurchasePrice=before.PurchasePrice;
+                if(EqualNumber(edit.Quantity,before.Quantity)) item.Quantity=before.Quantity;
+                if (!IsAdminPrice(item.RetailPrice) || !IsAdminPrice(item.PurchasePrice))
+                    throw new CatalogImportRecoveryException("validation_failed");
+                if (fulfilled.TryGetValue(row.Barcode,out var matches) && matches.Any(match => SameIntent(item,match))) continue;
+                if (accepted)
+                {
+                    if (!TextEqual(item.ProductName,before.ProductName) || !TextEqual(item.SecondProductName,before.SecondProductName) ||
+                        !TextEqual(item.ItemNumber,before.ItemNumber) || !TextEqual(item.Supplier,before.Supplier) || !TextEqual(item.Category,before.Category))
+                        throw new CatalogImportRecoveryException("recovery_metadata_changed");
+                    var mask=new List<string>();
+                    var changes=new PosCatalogImportCorrectionChanges();
+                    if (!EqualNumber(item.RetailPrice,before.RetailPrice)) { mask.Add("retailPrice");changes.RetailPrice=RequiredNumber(item.RetailPrice); }
+                    if (!EqualNumber(item.PurchasePrice,before.PurchasePrice)) { mask.Add("purchasePrice");changes.PurchasePrice=RequiredNumber(item.PurchasePrice); }
+                    if (!EqualNumber(item.Quantity,before.Quantity)) { mask.Add("quantityDelta");changes.QuantityDelta=RequiredNumber(item.Quantity)-QuantityOrZero(before.Quantity); }
+                    if (mask.Count==0) continue;
+                    if (!snapshotsById.TryGetValue(before.ClientItemId,out var snapshots) || !ownersById.TryGetValue(before.ClientItemId,out var owners) ||
+                        snapshots.Length!=1 || owners.Length!=1 || snapshots[0].SnapshotStatus!="available" ||
+                        snapshots[0].RemoteProductId!=owners[0].RemoteProductId || string.IsNullOrWhiteSpace(snapshots[0].BaseRevision))
+                        throw new CatalogImportRecoveryException("receipt_snapshot_unavailable");
+                    var baseSnapshot=new PosCatalogImportCorrectionBaseSnapshot();
+                    if(mask.Contains("retailPrice")) baseSnapshot.RetailPrice=snapshots[0].RetailPrice;
+                    if(mask.Contains("purchasePrice")) baseSnapshot.PurchasePrice=snapshots[0].PurchasePrice;
+                    if(mask.Contains("quantityDelta")) baseSnapshot.StockQuantity=snapshots[0].StockQuantity;
+                    corrections.Add(new PosCatalogImportCorrectionItem { ClientItemId=before.ClientItemId,
+                        RemoteProductId=snapshots[0].RemoteProductId,BaseRevision=snapshots[0].BaseRevision,
+                        BaseSnapshot=baseSnapshot,
+                        FieldMask=mask.OrderBy(field=>field,StringComparer.Ordinal).ToArray(),Changes=changes });
+                    continue;
+                }
+                items.Add(item);
+            }
+            if (accepted)
+            {
+                if (corrections.Count==0) return null;
+                if(corrections.Count>1000) throw new CatalogImportRecoveryException("recovery_payload_too_large");
+                var correctionHash=Sha256Hex("correction-v1|"+original.Batch.ClientImportId+"|"+originalHash+"|"+
+                    Serialize(corrections.ToArray())+"|"+Serialize(receipt));
+                var correctionId="win7pos-correction-"+correctionHash.Substring(0,32);
+                var correction=new PosCatalogImportCorrectionRequest { RecoveryOf=new PosCatalogImportRecoveryOf
+                    { ClientImportId=original.Batch.ClientImportId,IdempotencyKey=original.Batch.IdempotencyKey,
+                        PayloadHash=originalHash,OriginalRequest=original },
+                    Correction=new PosCatalogImportCorrectionOperation { ClientImportId=correctionId,
+                        IdempotencyKey=correctionId+":"+PosCatalogImportCorrectionContract.SchemaVersion,
+                        CreatedAt=BuildStableBatchCreatedAt(correctionHash),Items=corrections.ToArray() } };
+                var correctionJson=CatalogImportCorrectionTransport.SerializeSaved(correction,receipt);
+                return new CatalogImportOutboxEntry { OperationType="catalog_import_correction",ClientImportId=correctionId,
+                    IdempotencyKey=correction.Correction.IdempotencyKey,SchemaVersion=correction.SchemaVersion,Source=Source,
+                    CreatedAt=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),PayloadJson=correctionJson,PayloadHash=Sha256Hex(correctionJson) };
+            }
+            if (items.Count == 0) return null;
+            var hash = Sha256Hex(original.Batch.ClientImportId + "|" + originalHash + "|" + Serialize(items.ToArray()));
+            var id = "win7pos-recovery-" + hash.Substring(0, 32);
+            foreach (var item in items) item.ClientItemId = id + "-row-" + item.RowNumber.ToString(CultureInfo.InvariantCulture);
+            var request = new PosCatalogImportRequest
+            {
+                SchemaVersion = PosOnlineContract.CatalogImportSchemaVersion, Source = Source,
+                Batch = new PosCatalogImportBatchRequest { ClientImportId = id, IdempotencyKey = id + ":" + PosOnlineContract.CatalogImportSchemaVersion,
+                    CreatedAt = BuildStableBatchCreatedAt(hash), SourceFileName = "recovery.xlsx", PreviewFingerprint = preview.Fingerprint },
+                Items = items.ToArray(), Summary = new PosCatalogImportSummaryRequest { UpdatedProducts = items.Count }
+            };
+            var json = Serialize(request);
+            return new CatalogImportOutboxEntry { ClientImportId = id, IdempotencyKey = request.Batch.IdempotencyKey,
+                SchemaVersion = request.SchemaVersion, Source = Source, CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                PayloadJson = json, PayloadHash = Sha256Hex(json) };
+        }
+
+        internal static bool EqualNumber(string first, string second)
+        {
+            decimal a, b;
+            return string.Equals(first ?? "", second ?? "", StringComparison.Ordinal) ||
+                decimal.TryParse(first, NumberStyles.Number, CultureInfo.InvariantCulture, out a) &&
+                decimal.TryParse(second, NumberStyles.Number, CultureInfo.InvariantCulture, out b) && a == b;
+        }
+        private static decimal RequiredNumber(string value)
+        {
+            decimal number;
+            if (!decimal.TryParse(value,NumberStyles.Number,CultureInfo.InvariantCulture,out number))
+                throw new CatalogImportRecoveryException("validation_failed");
+            return number;
+        }
+        internal static decimal QuantityOrZero(string value) => string.IsNullOrWhiteSpace(value) ? 0 : RequiredNumber(value);
+        internal static bool SameIntent(PosCatalogImportItemRequest first,PosCatalogImportItemRequest second)
+        {
+            return first.Barcode == second.Barcode && TextEqual(first.ProductName,second.ProductName) &&
+                TextEqual(first.SecondProductName,second.SecondProductName) && TextEqual(first.ItemNumber,second.ItemNumber) &&
+                TextEqual(first.Supplier,second.Supplier) && TextEqual(first.Category,second.Category) &&
+                EqualNumber(first.RetailPrice,second.RetailPrice) && EqualNumber(first.PurchasePrice,second.PurchasePrice) &&
+                EqualNumber(first.Quantity,second.Quantity);
+        }
+        private static bool TextEqual(string first,string second) => (first ?? "").Trim() == (second ?? "").Trim();
+
         public static string Sha256Hex(string value)
         {
             using (var sha = SHA256.Create())
@@ -228,7 +350,7 @@ namespace Win7POS.Data.Online
 
         private static string Serialize<T>(T value)
         {
-            var serializer = new DataContractJsonSerializer(typeof(T));
+            var serializer = new DataContractJsonSerializer(typeof(T),new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat=true });
             using (var stream = new MemoryStream())
             {
                 serializer.WriteObject(stream, value);

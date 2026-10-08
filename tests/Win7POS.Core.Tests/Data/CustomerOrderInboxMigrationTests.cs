@@ -32,7 +32,7 @@ VALUES('TASK030-MIGRATION-PROBE', 1, 1900, 1900, 0, 0);");
 
             var result = new SchemaMigrationRunner(
                 factory,
-                SchemaMigrationRegistry.All).Run();
+                SchemaMigrationRegistry.All.Take(12)).Run();
 
             CollectionAssert.AreEqual(
                 new[] { "0012-customer-order-inbox" },
@@ -45,7 +45,7 @@ VALUES('TASK030-MIGRATION-PROBE', 1, 1900, 1900, 0, 0);");
             Assert.IsTrue(detector.HasAllIndexDefinitions(
                 DbInitializer.CustomerOrderInboxIndexSql));
             Assert.IsTrue(
-                SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(detector));
+                SchemaMigrationRegistry.All[11].IsSatisfied(detector));
             Assert.AreEqual(
                 "TASK030-MIGRATION-PROBE|1900",
                 verify.ExecuteScalar<string>(@"
@@ -54,7 +54,7 @@ FROM sales
 WHERE code = 'TASK030-MIGRATION-PROBE';"));
             Assert.AreEqual(
                 "1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3",
-                SchemaMigrationRegistry.Latest.Checksum);
+                SchemaMigrationRegistry.All[11].Checksum);
         }
         finally
         {

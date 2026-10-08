@@ -102,6 +102,42 @@ WHERE type = 'index'
                 tableNames);
         }
 
+        internal bool HasCatalogImportRecoverySchema()
+        {
+            if (!HasCanonicalTableDefinitions(
+                    DbInitializer.CatalogImportRecoverySchemaSql,
+                      "catalog_import_recovery", "catalog_import_recovery_contributions"))
+            {
+                return false;
+            }
+
+            // The generic legacy guard permits historical CHECK variations. This
+            // new evidence tables must retain their exact guards and ownership keys.
+            using (var expected = new SqliteConnection("Data Source=:memory:"))
+            {
+                expected.Open();
+                expected.Execute(DbInitializer.CatalogImportRecoverySchemaSql);
+                foreach (var table in new[] { "catalog_import_recovery", "catalog_import_recovery_contributions" })
+                {
+                    if (!string.Equals(
+                            NormalizeRecoveryTableSql(ReadTableSql(expected, null, table)),
+                            NormalizeRecoveryTableSql(ReadTableSql(_connection, _transaction, table)),
+                            StringComparison.Ordinal))
+                        return false;
+                }
+                return true;
+            }
+        }
+
+        private static string NormalizeRecoveryTableSql(string sql)
+        {
+            // SQL keywords are case-insensitive; receipt-state string literals are not.
+            var parts = Regex.Split(sql.Trim().TrimEnd(';'), @"('(?:''|[^'])*')");
+            return string.Concat(parts.Select((part, index) => index % 2 == 1
+                ? part
+                : Regex.Replace(part, @"\s+", string.Empty).ToLowerInvariant()));
+        }
+
         public bool HasKnownTableDefinitions(
             string requiredSchemaSql,
             string allowedSchemaSql,

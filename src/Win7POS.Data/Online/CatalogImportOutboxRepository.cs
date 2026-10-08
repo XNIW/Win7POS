@@ -10,7 +10,7 @@ using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.Online
 {
-    public sealed class CatalogImportOutboxRepository
+    public sealed partial class CatalogImportOutboxRepository
     {
         public const long CatalogImportInProgressLeaseMilliseconds = 15 * 60 * 1000L;
 
@@ -65,14 +65,17 @@ INSERT OR IGNORE INTO catalog_import_outbox(
   origin_shop_id, origin_shop_code, source, payload_json, payload_hash,
   status, attempt_count, next_retry_at, created_at, updated_at)
 VALUES(
-  @ClientImportId, @IdempotencyKey, @SchemaVersion, 'catalog_import',
+  @ClientImportId, @IdempotencyKey, @SchemaVersion, @OperationType,
   @OriginShopId, @OriginShopCode, @Source, @PayloadJson, @PayloadHash,
-  'pending', 0, 0, @NowMs, @NowMs);",
+  'pending', 0, 0, @NowMs, @NowMs);
+INSERT OR IGNORE INTO catalog_import_recovery(original_id,delivery_known,dispatch_count,receipt_status,created_at,updated_at)
+SELECT last_insert_rowid(),1,0,'unverified',@NowMs,@NowMs WHERE changes()=1;",
                 new
                 {
                     entry.ClientImportId,
                     entry.IdempotencyKey,
                     entry.SchemaVersion,
+                    entry.OperationType,
                     entry.Source,
                     entry.PayloadJson,
                     entry.PayloadHash,
@@ -105,7 +108,7 @@ LIMIT 1;",
             if (!string.Equals(existing.ClientImportId, entry.ClientImportId, StringComparison.Ordinal) ||
                 !string.Equals(existing.IdempotencyKey, entry.IdempotencyKey, StringComparison.Ordinal) ||
                 !string.Equals(existing.SchemaVersion, entry.SchemaVersion, StringComparison.Ordinal) ||
-                !string.Equals(existing.OperationType, "catalog_import", StringComparison.Ordinal) ||
+                !string.Equals(existing.OperationType, entry.OperationType, StringComparison.Ordinal) ||
                 !string.Equals(existing.OriginShopId ?? string.Empty, origin.ShopId, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(existing.OriginShopCode, origin.ShopCode, StringComparison.Ordinal) ||
                 !string.Equals(existing.Source, entry.Source, StringComparison.Ordinal) ||
@@ -470,8 +473,8 @@ WHERE id = @outboxId
                         new { outboxId },
                         tx).ConfigureAwait(false) ?? string.Empty;
 
-                    await ApplyRemoteProductIdsAsync(conn, tx, ack.RemoteProductIds).ConfigureAwait(false);
-                    await ApplyRemotePriceIdsAsync(conn, tx, ack.RemotePriceIds, idempotencyKey).ConfigureAwait(false);
+                    await ApplyAckMappingsAsync(conn, tx, outboxId, ack, idempotencyKey).ConfigureAwait(false);
+                    await CompleteRecoveryAsync(conn, tx, outboxId, ack, nowMs).ConfigureAwait(false);
                     var rawGeneration = await conn.ExecuteScalarAsync<string>(
                         "SELECT value FROM app_settings WHERE key = @key;",
                         new { key = CatalogShopStateRepository.ImportAckGenerationKey },
@@ -743,7 +746,7 @@ WHERE id = @outboxId
             }
         }
 
-        private static async Task ApplyRemoteProductIdsAsync(
+        internal static async Task ApplyRemoteProductIdsAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             IReadOnlyList<CatalogImportRemoteProductId> remoteProductIds)
@@ -786,7 +789,7 @@ WHERE remote_product_id = @RemoteProductId
             }
         }
 
-        private static async Task ApplyRemotePriceIdsAsync(
+        internal static async Task ApplyRemotePriceIdsAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             IReadOnlyList<CatalogImportRemotePriceId> remotePriceIds,
@@ -1072,6 +1075,7 @@ WHERE barcode = @barcode
 
     public sealed class CatalogImportOutboxEntry
     {
+        public string OperationType { get; set; } = "catalog_import";
         public string ClientImportId { get; set; } = string.Empty;
         public long CreatedAt { get; set; }
         public string IdempotencyKey { get; set; } = string.Empty;

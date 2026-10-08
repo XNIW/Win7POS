@@ -9,8 +9,8 @@
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         Width="820"
-        MinHeight="520"
-        Height="560"
+        MinHeight="620"
+        Height="680"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize">
     <Grid Margin="0" Background="#F1EDF7">
@@ -60,21 +60,26 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" MinWidth="100" Height="32" Command="{Binding RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}">
+                <Button Grid.Column="0" MinWidth="100" Height="32" VerticalAlignment="Top" Margin="0,36,0,0" Command="{Binding RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc common.reload}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
-                    <TextBlock Text="{loc:Loc priceHistory.newSalePriceClp}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBox Text="{Binding NewRetailText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditPrices}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
-                    <TextBlock Text="{loc:Loc priceHistory.newPurchasePrice}" VerticalAlignment="Center" Margin="16,0,8,0"/>
-                    <TextBox Text="{Binding NewPurchaseText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditPrices}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
+                <StackPanel Grid.Column="1" Margin="12,0">
+                    <TextBlock Text="{loc:Loc priceHistory.newSalePriceClp}" MinHeight="32" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                    <TextBox x:Name="RetailPriceInput" Text="{Binding NewRetailText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditPriceInputs}" MinWidth="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Text="{Binding NewRetailError}" Foreground="#B42318" FontSize="11" MinHeight="32" Margin="0,4,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
-                <Button Grid.Column="2" MinWidth="120" Height="32" Command="{Binding ApplyNewPricesCommand}" Style="{StaticResource PrimaryButtonStyle}">
+                <StackPanel Grid.Column="2" Margin="0,0,12,0">
+                    <TextBlock Text="{loc:Loc priceHistory.newPurchasePrice}" MinHeight="32" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                    <TextBox x:Name="PurchasePriceInput" Text="{Binding NewPurchaseText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditPriceInputs}" MinWidth="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Text="{Binding NewPurchaseError}" Foreground="#B42318" FontSize="11" MinHeight="32" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+                <Button Grid.Column="3" MinWidth="120" Height="32" VerticalAlignment="Top" Margin="0,36,0,0" Command="{Binding ApplyNewPricesCommand}" Style="{StaticResource PrimaryButtonStyle}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc priceHistory.applyPrices}" Margin="8,0,0,0"/>
@@ -130,7 +135,7 @@
                     <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="12,0" Foreground="Gray"/>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="12,0" Foreground="Gray" TextWrapping="Wrap"/>
         </DockPanel>
     </Grid>
 </chrome:DialogShellWindow>

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "pos-catalog-import-correction-v1",
+  "shopDeviceId": "30000000-0000-4000-8000-000000000094",
+  "posSessionId": "40000000-0000-4000-8000-000000000094",
+  "deviceToken": "fixture-device-token-not-a-secret",
+  "sessionToken": "fixture-session-token-not-a-secret",
+  "recoveryOf": {
+    "clientImportId": "receipt-fixture-import-1",
+    "idempotencyKey": "receipt-fixture-idem-1",
+    "payloadHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "originalRequest": {
+      "schemaVersion": "pos-catalog-import-v1",
+      "source": "supplier_excel",
+      "appVersion": "1.0-fixture",
+      "payloadHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "batch": {
+        "clientImportId": "receipt-fixture-import-1",
+        "idempotencyKey": "receipt-fixture-idem-1",
+        "createdAt": "2026-10-08T18:00:00.000Z",
+        "attemptCount": 1,
+        "sourceFileName": "fixture.xlsx",
+        "previewFingerprint": "receipt-fixture-preview"
+      },
+      "summary": {
+        "newProducts": 1,
+        "updatedProducts": 0,
+        "noChangeRows": 0,
+        "skippedRows": 0,
+        "warningCount": 0
+      },
+      "items": [
+        {
+          "clientItemId": "receipt-fixture-row-1",
+          "rowNumber": 1,
+          "barcode": "RECEIPT-FIXTURE-1",
+          "productName": "Receipt fixture",
+          "changeKind": "new",
+          "retailPrice": 1200,
+          "purchasePrice": 900,
+          "quantity": 1.25
+        }
+      ]
+    }
+  },
+  "correction": {
+    "clientImportId": "receipt-fixture-correction-1",
+    "idempotencyKey": "receipt-fixture-correction-idem-1",
+    "payloadHash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    "createdAt": "2026-10-08T20:00:00.000Z",
+    "items": [
+      {
+        "clientItemId": "receipt-fixture-row-1",
+        "remoteProductId": "80000000-0000-4000-8000-000000000094",
+        "baseRevision": "2026-10-08T19:55:00.000001Z",
+        "fieldMask": [
+          "purchasePrice",
+          "retailPrice",
+          "quantityDelta"
+        ],
+        "changes": {
+          "purchasePrice": 900,
+          "retailPrice": 1200,
+          "quantityDelta": 0.25
+        },
+        "baseSnapshot": {
+          "retailPrice": 1200,
+          "purchasePrice": 900,
+          "stockQuantity": 1.25
+        }
+      }
+    ]
+  }
+}

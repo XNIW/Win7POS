@@ -18,6 +18,7 @@ namespace Win7POS.Data.Import
     public sealed class SupplierExcelImportApplyOptions
     {
         public CatalogImportOutboxEntry CatalogImportOutboxEntry { get; set; }
+        internal CatalogImportRecoveryCommit RecoveryCommit { get; set; }
         public bool DryRun { get; set; }
         public bool InsertNew { get; set; } = true;
         internal SupplierExcelImportTestHooks TestHooks { get; set; }
@@ -26,6 +27,8 @@ namespace Win7POS.Data.Import
     public sealed class SupplierExcelImportApplyResult
     {
         public int Inserted { get; set; }
+        public string BackupPath { get; set; } = string.Empty;
+        public bool RecoveryAlreadyConverged { get; set; }
         public int Updated { get; set; }
         public int NoChange { get; set; }
         public int Errors { get; set; }
@@ -160,6 +163,7 @@ namespace Win7POS.Data.Import
         internal Action<int> AfterExistingProductBatch { get; set; }
         internal Action<int> AfterProductWrite { get; set; }
         internal Action<int> AfterHistoryWrite { get; set; }
+        internal Action BeforeCommit { get; set; }
 
         internal void ThrowIfRequested(SupplierExcelImportFaultPoint point, int completedWrites = 0)
         {
@@ -304,6 +308,8 @@ namespace Win7POS.Data.Import
             {
                 try
                 {
+                    if (options.RecoveryCommit != null)
+                        await options.RecoveryCommit.ValidateAsync(conn, tx).ConfigureAwait(false);
                     var barcodes = ExtractEffectiveBarcodes(rows);
                     var currentByBarcode = await LoadExistingProductsAsync(
                         conn,
@@ -488,7 +494,8 @@ namespace Win7POS.Data.Import
                         }
                     }
 
-                    if (options.CatalogImportOutboxEntry != null && result.ChangedBarcodes.Count > 0)
+                    if (options.CatalogImportOutboxEntry != null &&
+                        (result.ChangedBarcodes.Count > 0 || options.RecoveryCommit != null))
                     {
                         options.TestHooks?.ThrowIfRequested(SupplierExcelImportFaultPoint.BeforeOutboxEnqueue);
                         cancellationToken.ThrowIfCancellationRequested();
@@ -496,15 +503,30 @@ namespace Win7POS.Data.Import
                             .EnqueueAsync(conn, tx, options.CatalogImportOutboxEntry, result.SqlMetrics.RecordOutboxCommand)
                             .ConfigureAwait(false);
                         result.CatalogImportOutboxStatus = "pending";
+                        if (options.RecoveryCommit != null)
+                            await options.RecoveryCommit.AttachAsync(conn, tx, result.CatalogImportOutboxId).ConfigureAwait(false);
                         options.TestHooks?.ThrowIfRequested(
                             SupplierExcelImportFaultPoint.AfterOutboxEnqueueBeforeCommit);
                     }
+                    else if (options.RecoveryCommit != null)
+                    {
+                        await options.RecoveryCommit.FinalizeAsync(conn, tx).ConfigureAwait(false);
+                        result.RecoveryAlreadyConverged = true;
+                        result.CatalogImportOutboxStatus = "acked";
+                    }
 
                     cancellationToken.ThrowIfCancellationRequested();
+                    options.TestHooks?.BeforeCommit?.Invoke();
+                    options.RecoveryCommit?.DemandAuthorization();
                     tx.Commit();
                     return result;
                 }
                 catch (OperationCanceledException)
+                {
+                    try { tx.Rollback(); } catch { }
+                    throw;
+                }
+                catch (CatalogImportRecoveryException)
                 {
                     try { tx.Rollback(); } catch { }
                     throw;
@@ -1112,6 +1134,12 @@ VALUES
 
                 try
                 {
+                    if (entry.OperationType=="catalog_import_correction")
+                    {
+                        var correction=CatalogImportCorrectionTransport.ReadIntendedRequest(entry.PayloadJson);
+                        return new CatalogImportApplyContext(entry.IdempotencyKey,
+                            correction.Items.ToDictionary(item=>item.Barcode,item=>item.ClientItemId,StringComparer.OrdinalIgnoreCase));
+                    }
                     var serializer = new DataContractJsonSerializer(typeof(PosCatalogImportRequest));
                     using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(entry.PayloadJson)))
                     {

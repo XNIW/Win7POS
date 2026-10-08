@@ -2354,7 +2354,11 @@ namespace Win7POS.Wpf
                             token,
                             administratorRepairAuthorized,
                             allowFullDecision: administratorRepairAuthorized),
-                    AuthorizeFullCatalogRepairAsync)
+                    AuthorizeFullCatalogRepairAsync,
+                    AuthorizeCatalogImportRecoveryAsync,
+                    () => !App.IsSafeStart && CurrentAccessMode != PosAuthenticatedAccessMode.LocalRecovery &&
+                        HasCurrentPermission(PermissionCodes.CatalogImport),
+                    () => OnlineSyncHost?.CurrentGeneration)
                 {
                     Owner = DialogOwnerHelper.GetSafeOwner(owner ?? this)
                 };
@@ -2390,6 +2394,15 @@ namespace Win7POS.Wpf
                     PosLocalization.T("sync.center.repairPermissionMessage"),
                     "CatalogFullRepair",
                     dialogOwner)
+                .ConfigureAwait(true);
+        }
+
+        private async Task<bool> AuthorizeCatalogImportRecoveryAsync(Window dialogOwner)
+        {
+            if (App.IsSafeStart || CurrentAccessMode == PosAuthenticatedAccessMode.LocalRecovery) return false;
+            if (HasCurrentPermission(PermissionCodes.CatalogImport)) return true;
+            return await TrySwitchForPermissionAsync(PermissionCodes.CatalogImport,
+                PosLocalization.T("importRecovery.permission"), "CatalogImportRecovery", dialogOwner)
                 .ConfigureAwait(true);
         }
 

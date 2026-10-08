@@ -40,7 +40,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
             };
             var service = new SupplierExcelImportWorkflowService(authorize);
             await CheckRetailHistoryAndAdminBoundsAsync(service, lines);
-            await ProductPriceHistoryCompletionSmoke.RunAsync(lines);
             var rows = MakeRows(20000, "IMPORT-BASELINE-");
             await service.BuildSyncPreviewAsync(rows);
             await service.ApplyAsync(rows, true);

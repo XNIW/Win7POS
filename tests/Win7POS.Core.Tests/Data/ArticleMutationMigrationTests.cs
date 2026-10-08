@@ -30,6 +30,7 @@ public sealed class ArticleMutationMigrationTests
             DbInitializer.EnsureArticleMutationSchema(connection, transaction);
             DbInitializer.EnsureProductImageSchema(connection, transaction);
             DbInitializer.EnsureCustomerOrderInboxSchema(connection, transaction);
+            DbInitializer.EnsureCatalogImportRecoverySchema(connection, transaction);
             transaction.Commit();
         }
 
@@ -71,7 +72,7 @@ public sealed class ArticleMutationMigrationTests
             SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(detector),
             "Fresh schema does not satisfy the current migration invariant.");
         Assert.AreEqual(
-            "0012-customer-order-inbox",
+            "0013-catalog-import-recovery",
             SchemaMigrationRegistry.Latest.MigrationId);
     }
 

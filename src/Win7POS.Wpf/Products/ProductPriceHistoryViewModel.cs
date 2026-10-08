@@ -1,11 +1,13 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Models;
+using Win7POS.Core.Util;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 
@@ -31,8 +33,8 @@ namespace Win7POS.Wpf.Products
             _canEditPrices = canEditPrices;
             Barcode = barcode ?? "";
             ProductName = name ?? "";
-            _currentRetail = currentRetail.ToString();
-            _currentPurchase = currentPurchase.ToString();
+            _currentRetail = MoneyClp.Format(currentRetail);
+            _currentPurchase = MoneyClp.Format(currentPurchase);
 
             RetailHistory = new ObservableCollection<ProductPriceHistoryRow>();
             PurchaseHistory = new ObservableCollection<ProductPriceHistoryRow>();
@@ -47,31 +49,45 @@ namespace Win7POS.Wpf.Products
         public string CurrentRetailPrice
         {
             get => _currentRetail;
-            set { _currentRetail = value ?? ""; OnPropertyChanged(); }
+            set { _currentRetail = value ?? ""; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
         public string CurrentPurchasePrice
         {
             get => _currentPurchase;
-            set { _currentPurchase = value ?? ""; OnPropertyChanged(); }
+            set { _currentPurchase = value ?? ""; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
         public string NewRetailText
         {
             get => _newRetailText;
-            set { _newRetailText = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(HasNewRetail)); RaiseCanExecuteChanged(); }
+            set { _newRetailText = value ?? ""; if (!IsBusy) StatusMessage = ""; OnPropertyChanged(); OnPropertyChanged(nameof(HasNewRetail)); OnPropertyChanged(nameof(NewRetailError)); RaiseCanExecuteChanged(); }
         }
 
         public string NewPurchaseText
         {
             get => _newPurchaseText;
-            set { _newPurchaseText = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(HasNewPurchase)); RaiseCanExecuteChanged(); }
+            set { _newPurchaseText = value ?? ""; if (!IsBusy) StatusMessage = ""; OnPropertyChanged(); OnPropertyChanged(nameof(HasNewPurchase)); OnPropertyChanged(nameof(NewPurchaseError)); RaiseCanExecuteChanged(); }
         }
 
-        public bool HasNewRetail => int.TryParse(NewRetailText?.Trim().Replace(".", "").Replace(",", ""), out var v) && v >= 0;
-        public bool HasNewPurchase => int.TryParse(NewPurchaseText?.Trim().Replace(".", "").Replace(",", ""), out var v) && v >= 0;
+        public bool HasNewRetail => ParsePriceInput(NewRetailText).Kind == PriceInputKind.Valid;
+        public bool HasNewPurchase => ParsePriceInput(NewPurchaseText).Kind == PriceInputKind.Valid;
+        public string NewRetailError => PriceInputError(ParsePriceInput(NewRetailText));
+        public string NewPurchaseError => PriceInputError(ParsePriceInput(NewPurchaseText));
         public bool CanEditPrices => _canEditPrices;
-        public bool CanApplyNewPrices => CanEditPrices && !IsBusy && (HasNewRetail || HasNewPurchase);
+        public bool CanEditPriceInputs => CanEditPrices && !IsBusy;
+        public bool CanApplyNewPrices
+        {
+            get
+            {
+                if (!CanEditPrices || IsBusy) return false;
+                var retail = ParsePriceInput(NewRetailText);
+                var purchase = ParsePriceInput(NewPurchaseText);
+                if (retail.Kind == PriceInputKind.Invalid || purchase.Kind == PriceInputKind.Invalid) return false;
+                return (retail.Kind == PriceInputKind.Valid && !SamePrice(CurrentRetailPrice, retail.Value))
+                    || (purchase.Kind == PriceInputKind.Valid && !SamePrice(CurrentPurchasePrice, purchase.Value));
+            }
+        }
 
         public string StatusMessage
         {
@@ -82,7 +98,7 @@ namespace Win7POS.Wpf.Products
         public bool IsBusy
         {
             get => _isBusy;
-            set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+            set { _isBusy = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanEditPriceInputs)); RaiseCanExecuteChanged(); }
         }
 
         public ObservableCollection<ProductPriceHistoryRow> RetailHistory { get; }
@@ -92,6 +108,7 @@ namespace Win7POS.Wpf.Products
         public ICommand ApplyNewPricesCommand { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
+        public event Action<bool> PriceInputFocusRequested;
 
         private void RaiseCanExecuteChanged()
         {
@@ -106,26 +123,11 @@ namespace Win7POS.Wpf.Products
 
         private async Task RefreshAsync()
         {
+            if (IsBusy) return;
             IsBusy = true;
             try
             {
-                var list = await _service.GetPriceHistoryAsync(_productId).ConfigureAwait(true);
-                RetailHistory.Clear();
-                PurchaseHistory.Clear();
-                foreach (var row in list ?? Enumerable.Empty<ProductPriceHistoryRow>())
-                {
-                    if (string.Equals(row.PriceType, "retail", StringComparison.OrdinalIgnoreCase))
-                        RetailHistory.Add(row);
-                    else
-                        PurchaseHistory.Add(row);
-                }
-
-                var details = await _service.GetDetailsByIdAsync(_productId).ConfigureAwait(true);
-                if (details != null)
-                {
-                    CurrentRetailPrice = details.UnitPrice.ToString();
-                    CurrentPurchasePrice = details.PurchasePrice.ToString();
-                }
+                await RefreshCoreAsync().ConfigureAwait(true);
                 StatusMessage = PosLocalization.T("priceHistory.updated");
             }
             catch (Exception ex)
@@ -138,35 +140,74 @@ namespace Win7POS.Wpf.Products
             }
         }
 
+        private async Task RefreshCoreAsync()
+        {
+            var list = await _service.GetPriceHistoryAsync(_productId).ConfigureAwait(true);
+            var details = await _service.GetDetailsByIdAsync(_productId).ConfigureAwait(true);
+            RetailHistory.Clear();
+            PurchaseHistory.Clear();
+            foreach (var row in list ?? Enumerable.Empty<ProductPriceHistoryRow>())
+            {
+                if (string.Equals(row.PriceType, "retail", StringComparison.OrdinalIgnoreCase))
+                    RetailHistory.Add(row);
+                else
+                    PurchaseHistory.Add(row);
+            }
+            if (details != null)
+            {
+                CurrentRetailPrice = MoneyClp.Format(details.UnitPrice);
+                CurrentPurchasePrice = MoneyClp.Format(details.PurchasePrice);
+            }
+        }
+
         private async Task ApplyNewPricesAsync()
         {
+            if (IsBusy) return;
             if (!CanEditPrices)
             {
                 StatusMessage = PosLocalization.T("priceHistory.priceEditDenied");
                 return;
             }
-            long retail = ParseClp(NewRetailText);
-            var purchase = ParseClp(NewPurchaseText);
-            var details = await _service.GetDetailsByIdAsync(_productId).ConfigureAwait(true);
-            if (details == null) { StatusMessage = PosLocalization.T("products.notFound"); return; }
-            var currentRetail = details.UnitPrice;
-            var currentPurchase = details.PurchasePrice;
-            if (retail < 0) retail = currentRetail;
-            if (purchase < 0) purchase = currentPurchase;
+            var retailInput = ParsePriceInput(NewRetailText);
+            var purchaseInput = ParsePriceInput(NewPurchaseText);
+            if (retailInput.Kind == PriceInputKind.Invalid || purchaseInput.Kind == PriceInputKind.Invalid)
+            {
+                StatusMessage = PriceInputError(retailInput.Kind == PriceInputKind.Invalid ? retailInput : purchaseInput);
+                PriceInputFocusRequested?.Invoke(retailInput.Kind == PriceInputKind.Invalid);
+                return;
+            }
+            if (retailInput.Kind == PriceInputKind.Blank && purchaseInput.Kind == PriceInputKind.Blank)
+            {
+                StatusMessage = PosLocalization.T("priceHistory.noPriceChanges");
+                return;
+            }
 
+            // Own the operation before the first service await. Both validated values
+            // are captured above, and refresh keeps the same busy interval.
             IsBusy = true;
+            StatusMessage = PosLocalization.T("priceHistory.savingPrices");
             try
             {
+                var details = await _service.GetDetailsByIdAsync(_productId).ConfigureAwait(true);
+                if (details == null) { StatusMessage = PosLocalization.T("products.notFound"); return; }
+                long retail = retailInput.Kind == PriceInputKind.Blank ? details.UnitPrice : retailInput.Value;
+                var purchase = purchaseInput.Kind == PriceInputKind.Blank ? details.PurchasePrice : purchaseInput.Value;
+                if (retail == details.UnitPrice && purchase == details.PurchasePrice)
+                {
+                    StatusMessage = PosLocalization.T("priceHistory.noPriceChanges");
+                    return;
+                }
                 await _service.UpdateProductPricesAsync(_productId, purchase, retail, "MANUAL_EDIT").ConfigureAwait(true);
-                CurrentRetailPrice = retail.ToString();
-                CurrentPurchasePrice = purchase.ToString();
+                CurrentRetailPrice = MoneyClp.Format(retail);
+                CurrentPurchasePrice = MoneyClp.Format(purchase);
                 NewRetailText = "";
                 NewPurchaseText = "";
-                await RefreshAsync().ConfigureAwait(true);
+                await RefreshCoreAsync().ConfigureAwait(true);
                 StatusMessage = PosLocalization.T("priceHistory.pricesUpdated");
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "ApplyNewPrices");
                 StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
@@ -175,11 +216,49 @@ namespace Win7POS.Wpf.Products
             }
         }
 
-        private static int ParseClp(string text)
+        private static bool SamePrice(string current, int value)
+            => long.TryParse(current, NumberStyles.Integer, CultureInfo.InvariantCulture, out var price) && price == value;
+
+        private static string PriceInputError(PriceInput input)
+            => input.Kind == PriceInputKind.Invalid
+                ? PosLocalization.F("priceHistory.invalidPrice", MoneyClp.Format(int.MaxValue)) : "";
+
+        private static PriceInput ParsePriceInput(string text)
         {
-            if (string.IsNullOrWhiteSpace(text)) return -1;
-            var s = text.Trim().Replace(".", "").Replace(",", "");
-            return int.TryParse(s, out var v) ? v : -1;
+            if (string.IsNullOrWhiteSpace(text)) return new PriceInput(PriceInputKind.Blank);
+            var raw = text.Trim();
+            if (raw[0] == '+') raw = raw.Substring(1);
+            if (raw.Length == 0) return new PriceInput(PriceInputKind.Invalid);
+            // MoneyClp defines integral CLP and accepts thousand groups. Check the
+            // shape first so malformed decimals/mixed separators cannot become a
+            // different amount when the shared parser removes separators.
+            char separator = '\0';
+            foreach (var character in raw)
+            {
+                if (character >= '0' && character <= '9') continue;
+                if (character != '.' && character != ',' && character != ' ')
+                    return new PriceInput(PriceInputKind.Invalid);
+                if (separator != '\0' && separator != character)
+                    return new PriceInput(PriceInputKind.Invalid);
+                separator = character;
+            }
+            if (separator != '\0')
+            {
+                var groups = raw.Split(separator);
+                if (groups[0].Length < 1 || groups[0].Length > 3 || groups.Skip(1).Any(group => group.Length != 3))
+                    return new PriceInput(PriceInputKind.Invalid);
+            }
+            var value = MoneyClp.Parse(raw);
+            return value < 0 ? new PriceInput(PriceInputKind.Invalid) : new PriceInput(PriceInputKind.Valid, value);
+        }
+
+        private enum PriceInputKind { Blank, Valid, Invalid }
+
+        private struct PriceInput
+        {
+            internal PriceInput(PriceInputKind kind, int value = 0) { Kind = kind; Value = value; }
+            internal PriceInputKind Kind { get; }
+            internal int Value { get; }
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

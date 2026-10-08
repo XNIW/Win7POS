@@ -31,11 +31,12 @@ public sealed class MigrationRunnerTests
             ["0009-catalog-authoritative-id-stage"] = "68d57cd65b2d56456d5b2ab5eee83237477aefc85f93aa2d81e5f64699fae659",
             ["0010-article-mutation-outbox"] = "a881c8100282eef1352df3db13a249eaa200be0ee3fa023b93bfb46ae28197e6",
             ["0011-product-image-outbox"] = "59eff792775e9c2e65f15d158a75ab80430bed6d69c409e9bfb97a425e5f74d0",
-            ["0012-customer-order-inbox"] = "1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3"
+            ["0012-customer-order-inbox"] = "1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3",
+            ["0013-catalog-import-recovery"] = "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883"
         };
 
-        Assert.AreEqual(12, migrations.Count);
-        Assert.AreEqual("0012-customer-order-inbox", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(13, migrations.Count);
+        Assert.AreEqual("0013-catalog-import-recovery", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -152,7 +153,8 @@ VALUES('PRE-0007', 2, 750, 750, 0, 0);");
                 "0009-catalog-authoritative-id-stage",
                 "0010-article-mutation-outbox",
                 "0011-product-image-outbox",
-                "0012-customer-order-inbox"
+                "0012-customer-order-inbox",
+                "0013-catalog-import-recovery"
             },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
@@ -198,7 +200,8 @@ VALUES('perf2a.migration-probe', 'preserve-before-0009');");
                 "0009-catalog-authoritative-id-stage",
                 "0010-article-mutation-outbox",
                 "0011-product-image-outbox",
-                "0012-customer-order-inbox"
+                "0012-customer-order-inbox",
+                "0013-catalog-import-recovery"
             },
             first.AppliedMigrationIds.ToArray());
         Assert.IsTrue(second.WasNoOp);
@@ -555,7 +558,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
 
         Assert.AreEqual(0, result.BootstrappedMigrationIds.Count);
         CollectionAssert.AreEqual(
-            new[] { "0000-custom-predecessor", "0012-customer-order-inbox" },
+            new[] { "0000-custom-predecessor", "0013-catalog-import-recovery" },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
         Assert.IsTrue(new LegacySchemaDetector(verify).TableExists("custom_predecessor"));

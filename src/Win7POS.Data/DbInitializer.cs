@@ -1089,6 +1089,37 @@ WHERE ack_pos_sale_id IS NOT NULL;
             conn.Execute(CustomerOrderInboxSchemaSql, transaction: tx);
         }
 
+        internal static string CatalogImportRecoverySchemaSql => @"
+CREATE TABLE IF NOT EXISTS catalog_import_recovery (
+  original_id INTEGER PRIMARY KEY REFERENCES catalog_import_outbox(id) ON DELETE RESTRICT,
+  delivery_known INTEGER NOT NULL CHECK(delivery_known IN (0,1)),
+  dispatch_count INTEGER NOT NULL DEFAULT 0 CHECK(dispatch_count>=0),
+  receipt_status TEXT NOT NULL DEFAULT 'unverified' CHECK(receipt_status IN ('unverified','not_found','accepted','retired')),
+  receipt_json TEXT NULL,
+  replacement_id INTEGER NULL UNIQUE REFERENCES catalog_import_outbox(id) ON DELETE RESTRICT,
+  resolved_at INTEGER NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS catalog_import_recovery_contributions (
+  original_id INTEGER NOT NULL REFERENCES catalog_import_outbox(id) ON DELETE RESTRICT,
+  contributor_id INTEGER NOT NULL REFERENCES catalog_import_outbox(id) ON DELETE RESTRICT,
+  payload_hash TEXT NOT NULL,
+  receipt_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(original_id,contributor_id)
+);
+";
+
+        internal static void EnsureCatalogImportRecoverySchema(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            // Historical attempt_count values do not prove whether HTTP was dispatched.
+            // Only new enqueue/dispatch operations may create recovery evidence.
+            conn.Execute(CatalogImportRecoverySchemaSql, transaction: tx);
+        }
+
         internal static string DependentSchemaSql => @"
 CREATE TABLE IF NOT EXISTS local_stock_movements (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -1609,6 +1640,10 @@ ALTER TABLE sales ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending';
         internal static string PostCustomerOrderInboxLedgerlessKnownSchemaSql =>
             PostProductImageLedgerlessKnownSchemaSql + "\n" +
             CustomerOrderInboxSchemaSql;
+
+        internal static string PostCatalogImportRecoveryLedgerlessKnownSchemaSql =>
+            PostCustomerOrderInboxLedgerlessKnownSchemaSql + "\n" +
+            CatalogImportRecoverySchemaSql;
 
         internal static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
         {

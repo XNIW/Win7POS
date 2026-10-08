@@ -12,7 +12,7 @@ using Win7POS.Core.Receipt;
 
 namespace Win7POS.Data.Online
 {
-    public sealed class CatalogImportSyncService
+    public sealed partial class CatalogImportSyncService
     {
         private const int MaxOutboxItemsPerRun = 10;
         private const int MaxAttemptsBeforeBlocked = 12;
@@ -181,7 +181,8 @@ namespace Win7POS.Data.Online
                     trustedSession.ShopId,
                     trustedSession.ShopCode);
                 if (string.IsNullOrWhiteSpace(bindingError) &&
-                    !string.Equals(item.OperationType, "catalog_import", StringComparison.Ordinal))
+                    !string.Equals(item.OperationType, "catalog_import", StringComparison.Ordinal) &&
+                    !string.Equals(item.OperationType, "catalog_import_correction", StringComparison.Ordinal))
                 {
                     bindingError = "operation_type_mismatch";
                 }
@@ -201,6 +202,9 @@ namespace Win7POS.Data.Online
 
                     return false;
                 }
+
+                if (item.OperationType=="catalog_import_correction")
+                    return await SyncCorrectionAsync(client,trustedSession,item,preparedAttempt,run,fence,executionContext,cancellationToken).ConfigureAwait(false);
 
                 var validation = CatalogImportOutboxPayloadValidator.Validate(item);
                 if (!validation.IsValid)
@@ -222,6 +226,15 @@ namespace Win7POS.Data.Online
                 var request = validation.Request;
                 AttachTrust(request, trustedSession, item);
                 AttachAttemptMetadata(request, item, preparedAttempt);
+                DemandTransportSize(request);
+
+                // Durable before HTTP: cancellation, credential refresh and lease
+                // release may lower attempt_count, but cannot erase dispatch evidence.
+                if (!await _outbox.RecordDispatchAsync(item, preparedAttempt, fence).ConfigureAwait(false))
+                {
+                    run.SetFailureIfNone(SyncFailureKind.ConcurrentDrain, "catalog_import_dispatch_fence_lost");
+                    return false;
+                }
 
                 var response = executionContext == null
                     ? await client.CatalogImportAsync(request, cancellationToken).ConfigureAwait(false)
@@ -392,6 +405,13 @@ namespace Win7POS.Data.Online
                     // lease makes a failed local transition recoverable.
                 }
                 throw;
+            }
+            catch(CatalogImportRecoveryException ex)
+            {
+                if(await _outbox.MarkBlockedAsync(item.Id,SafeDiagnosticCode(ex.Code),DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    preparedAttempt,fence).ConfigureAwait(false))
+                { run.Blocked++;run.SetFailure(SyncFailureKind.LocalValidation,SafeDiagnosticCode(ex.Code)); }
+                return false;
             }
             catch (Exception)
             {
@@ -594,7 +614,7 @@ namespace Win7POS.Data.Online
                 : "response_shop_mismatch";
         }
 
-        private static CatalogImportAckResult BuildAckResult(
+        internal static CatalogImportAckResult BuildAckResult(
             CatalogImportOutboxItem item,
             PosCatalogImportRequest request,
             PosCatalogImportResponse remote,
@@ -810,6 +830,7 @@ namespace Win7POS.Data.Online
                             request.PosSessionId = credentials.PosSessionId;
                             request.SessionToken = credentials.SessionToken;
                             request.ShopDeviceId = credentials.ShopDeviceId;
+                            DemandTransportSize(request);
                             return client.CatalogImportAsync(request, token);
                         },
                         response =>
