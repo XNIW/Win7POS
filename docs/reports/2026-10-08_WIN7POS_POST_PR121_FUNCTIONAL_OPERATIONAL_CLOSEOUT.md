@@ -137,6 +137,10 @@ fixtures and product code are unchanged. Only the nine exact historical
 commit/path/rule/line fingerprints are excepted, following the existing policy;
 default scanner rules and scanned paths remain unchanged. The failed run is
 retained and a successor SHA requires fresh CI/Security qualification.
+The first hosted Core log also exposed Windows checkout LF-to-CRLF conversion
+of these new golden files. Their exact-byte `-text` attribute now follows the
+existing contract-fixture policy; all thirteen hashes must survive a checkout
+with `core.autocrlf=true`. Byte assertions and pins remain unchanged.
 
 ## Measurements and their limits
 
