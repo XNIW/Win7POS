@@ -44,7 +44,7 @@
   },
   "correction": {
     "clientImportId": "receipt-fixture-correction-1",
-    "idempotencyKey": "receipt-fixture-correction-idem-1",
+    "idempotencyKey": "correction-idem-1",
     "payloadHash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     "createdAt": "2026-10-08T20:00:00.000Z",
     "items": [

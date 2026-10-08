@@ -24,13 +24,13 @@ public sealed class PosCatalogImportRecoveryContractTests
             ["not-found.response.json"] = "44cc7ba0ff25b8bcfaa1d54c2c2ee80ff80ed837571f03aa5194d8d79cf0eddc",
             ["retired.response.json"] = "a6bc4b3a4973f26fba2923836f8426fc73f5bb8f221b8a4c5ee1048dcf9e6a60",
             ["retire.accepted.response.json"] = "c7424784823815c22863274dea73268ce951e449a5a0d1228a4cf283953dba93",
-            ["correction.request.json"] = "883cb4730431512ea5ca26e24d7507c7a71800ee112f99c0f5cac718b022dba6",
-            ["correction.response.json"] = "d2b488b7fa2e49f407fa18831048bf24cb07d3b05631004375d60fa12220faee",
-            ["correction-target.lookup.request.json"] = "2af59b9184b81d44e63f7eb60bc9fd9b59b364b0978f9a4af7c663c86c24d87a",
-            ["correction-target.retire.request.json"] = "83860d85501a94f8041bd51608b18e9feb5da072cff10389fad6194bc64b3b90",
-            ["correction-target.accepted.response.json"] = "cfe5cf650bc49559a3783d2b7237a1a95866cf1c4c02eb15da97b27e6ca3ac5d",
-            ["correction.no-effect.request.json"] = "2a8c1c26790688f5cf290d90fca57cbe6221e4da7360e720178be63531bb9a91",
-            ["correction.no-effect.response.json"] = "68d251af6d0c391f8f10f9eb37d050aca71971b0d81bcbb3a00a292229136e93"
+            ["correction.request.json"] = "33a9f1325e8c03d8dd684eff9293704e7523a1cb2697b9c148c196e1fe7f8ec5",
+            ["correction.response.json"] = "f9e4e280b6a609834e4cd09a4648a2d0d02432f5812a1ce141819e5c223c9924",
+            ["correction-target.lookup.request.json"] = "bc0530b9e337ae38e80c9c5e3f2c3333ebea21593dd50fe710ad66240f248086",
+            ["correction-target.retire.request.json"] = "0e54ae7c5ae5bf34bee4058817ad6f70e718969780a31c3b2fdf4453e7f413cf",
+            ["correction-target.accepted.response.json"] = "161829c925ae3fb9208690d97cfe1adba97ee40861e98409faef1dd72cd23233",
+            ["correction.no-effect.request.json"] = "6557c20b689eafefe8765ae9d721b41c538b95448adc0584fd3dbc40eac255cd",
+            ["correction.no-effect.response.json"] = "5483aedee84827ee085859316a71817fbd7be74249d410a1fdb2a22b91e41015"
         };
         foreach (var fixture in expected)
             Assert.AreEqual(fixture.Value, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(FixturePath(fixture.Key)))).ToLowerInvariant(), fixture.Key);

@@ -129,6 +129,15 @@ must independently qualify the full functional sequence before integration.
 Local SQLite and loopback evidence
 does not certify an authenticated deployed Admin or physical hardware.
 
+The first hosted Security run identified nine false positives for one synthetic
+correction idempotency identifier in seven JSON fixtures. The coordinated Admin
+variant uses a shorter synthetic ID and recalculates its canonical response
+hashes with the unchanged parser. Fixture byte pins are updated; ordinary
+fixtures and product code are unchanged. Only the nine exact historical
+commit/path/rule/line fingerprints are excepted, following the existing policy;
+default scanner rules and scanned paths remain unchanged. The failed run is
+retained and a successor SHA requires fresh CI/Security qualification.
+
 ## Measurements and their limits
 
 The measured host is MIN-ASUS, Windows 11 Home Single Language 10.0.26300 x64;

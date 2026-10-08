@@ -6,9 +6,9 @@
   "shopId": "10000000-0000-4000-8000-000000000094",
   "shopDeviceId": "30000000-0000-4000-8000-000000000094",
   "clientImportId": "receipt-fixture-correction-1",
-  "idempotencyKey": "receipt-fixture-correction-idem-1",
+  "idempotencyKey": "correction-idem-1",
   "payloadHash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
-  "canonicalPayloadHash": "sha256:9b1fb062b185995cf81e3bc14a0c0b2cea493123b1441807dd6c759a592bf84b",
+  "canonicalPayloadHash": "sha256:3316daaff1fa2b14af2e86205cd3e6da45d57b290186a577f376f92d1afedf13",
   "receipt": {
     "ok": true,
     "batchId": "b0000000-0000-4000-8000-000000000094",

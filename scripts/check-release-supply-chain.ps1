@@ -111,14 +111,29 @@ $invalidIgnoreLines = @($ignoreLines | Where-Object {
 $perf2bFalsePositive = "18a6e065d445445b201d5203807a06455311a862:tests/Win7POS.Core.Tests/Data/ProductQueryPlanTests.cs:generic-api-key:376"
 $f4OutboxFalsePositive = "044d95541a183cd58360d7ffefe4a69d9eb3d4d9:tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs:generic-api-key:971"
 $f4ReserveOutboxFalsePositive = "044d95541a183cd58360d7ffefe4a69d9eb3d4d9:tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs:generic-api-key:1012"
-if ($ignoreLines.Count -ne 11 -or
+# These synthetic idempotency identifiers are not secrets and are renamed in the coordinated fixture follow-up.
+# Preserve the exact historical findings, following the PERF2-B and F4 identifier exceptions above.
+$u2IdempotencyFalsePositives = @(
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction.no-effect.response.json:generic-api-key:9",
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction.response.json:generic-api-key:9",
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction-target.accepted.response.json:generic-api-key:9",
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction.no-effect.request.json:generic-api-key:47",
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction-target.retire.request.json:generic-api-key:8",
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction-target.retire.request.json:generic-api-key:56",
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction-target.lookup.request.json:generic-api-key:8",
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction-target.lookup.request.json:generic-api-key:56",
+    "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction.request.json:generic-api-key:47"
+)
+$missingU2IdempotencyFalsePositives = @($u2IdempotencyFalsePositives | Where-Object { $ignoreLines -cnotcontains $_ })
+if ($ignoreLines.Count -ne 20 -or
     $invalidIgnoreLines.Count -ne 0 -or
     $ignoreLines -cnotcontains $perf2bFalsePositive -or
     $ignoreLines -cnotcontains $f4OutboxFalsePositive -or
-    $ignoreLines -cnotcontains $f4ReserveOutboxFalsePositive) {
-    Fail "Gitleaks history exceptions must be eleven reviewed exact commit/path/rule/line fingerprints"
+    $ignoreLines -cnotcontains $f4ReserveOutboxFalsePositive -or
+    $missingU2IdempotencyFalsePositives.Count -ne 0) {
+    Fail "Gitleaks history exceptions must be twenty reviewed exact commit/path/rule/line fingerprints"
 }
-else { Pass "Gitleaks history exceptions are eleven reviewed exact fingerprints with no wildcard" }
+else { Pass "Gitleaks history exceptions are twenty reviewed exact fingerprints with no wildcard" }
 
 $securityWorkflow = Read-RequiredText ".github\workflows\security-supply-chain.yml"
 $releaseWorkflow = Read-RequiredText ".github\workflows\release-pack.yml"

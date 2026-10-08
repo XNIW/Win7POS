@@ -38,3 +38,10 @@ fence. All four copied hashes matched the coordinator's Mac receipt; the test
 pins every one of the thirteen fixture files.
 All token strings are synthetic fixtures. These source fixtures and local
 transport tests do not attest a deployed runtime or any live effect.
+
+The coordinated staging-compatible variant shortens the synthetic correction
+idempotency ID to `correction-idem-1` after Gitleaks flagged the former test
+identifier. Admin's unchanged parser recalculates the correction and no-effect
+canonical hashes; the seven transferred JSON files and their byte pins match
+the new Mac wire manifest `577e972184aff6e68966145d683faa176a95fdf5367b562eb76207fe9931f8d2`.
+Ordinary fixtures, runtime behavior and secret-scanner rules are unchanged.
