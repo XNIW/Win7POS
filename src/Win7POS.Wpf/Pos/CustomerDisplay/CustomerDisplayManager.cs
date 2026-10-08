@@ -38,6 +38,9 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         private readonly Stopwatch _previewWatch = new Stopwatch();
         private bool _previewPriorOpen;
         private bool _previewPriorManuallyClosed;
+        private bool _previewPriorHiddenForMinimize;
+        private bool _previewPriorMonitorMissing;
+        private bool _previewPriorReopenBlocked;
         private bool _reloadRunning;
         private bool _reloadRequested;
         private CustomerDisplayWindow _window;
@@ -47,8 +50,11 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         private bool _subscribed;
         private bool _disposed;
         private bool _cashierMinimized;
+        private bool _operatorLocked;
         private bool _monitorWasMissing;
         private bool _manuallyClosed;
+        private bool _hiddenForCashierMinimize;
+        private bool _reopenBlocked;
         private string _lastTopologySignature = string.Empty;
 
         public CustomerDisplayManager(
@@ -136,16 +142,10 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             _settings = settings.Clone();
             _logo = logo;
             if (_disposed) return;
-            if (!_settings.Enabled)
-            {
-                _manuallyClosed = false;
-                CloseWindow();
-            }
-            else
-            {
-                _manuallyClosed = false;
-                TryOpenOrUpdate(false);
-            }
+            _manuallyClosed = false;
+            _monitorWasMissing = false;
+            _reopenBlocked = false;
+            TryOpenOrUpdate(false);
         }
 
         public async Task<CustomerDisplayLogoReference> ImportLogoAsync(string path)
@@ -176,6 +176,8 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         {
             ThrowIfDisposed();
             _manuallyClosed = false;
+            _monitorWasMissing = false;
+            _reopenBlocked = false;
             TryOpenOrUpdate(true);
         }
 
@@ -183,6 +185,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         {
             StopPreview();
             _manuallyClosed = true;
+            _hiddenForCashierMinimize = false;
             CloseWindow();
         }
 
@@ -246,9 +249,14 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             ValidateAgainstTopology(candidate);
             _previewPriorOpen = IsOpen;
             _previewPriorManuallyClosed = _manuallyClosed;
+            _previewPriorHiddenForMinimize = _hiddenForCashierMinimize;
+            _previewPriorMonitorMissing = _monitorWasMissing;
+            _previewPriorReopenBlocked = _reopenBlocked;
             _previewSettings = candidate;
             _previewSnapshot = snapshot;
             _manuallyClosed = false;
+            _monitorWasMissing = false;
+            _reopenBlocked = false;
             _previewWatch.Restart();
             _contentTimer.Start();
             try { TryOpenOrUpdate(true); }
@@ -263,7 +271,10 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             _previewWatch.Stop();
             _contentTimer.Stop();
             _manuallyClosed = _previewPriorManuallyClosed;
-            if (_previewPriorOpen && _settings.Enabled) TryOpenOrUpdate(false);
+            _hiddenForCashierMinimize = _previewPriorHiddenForMinimize;
+            _monitorWasMissing = _previewPriorMonitorMissing;
+            _reopenBlocked = _previewPriorReopenBlocked;
+            if ((_previewPriorOpen || _hiddenForCashierMinimize) && _settings.Enabled) TryOpenOrUpdate(false);
             else CloseWindow();
         }
 
@@ -294,14 +305,16 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         public void SetCashierMinimized(bool minimized)
         {
             _cashierMinimized = minimized;
-            if (_settings.FollowCashierMinimize && minimized)
+            var settings = _previewSettings ?? _settings;
+            if (settings.FollowCashierMinimize && minimized)
             {
+                if (IsOpen) _hiddenForCashierMinimize = true;
                 _window?.Hide();
                 if (_previewSettings == null) _contentTimer.Stop();
                 return;
             }
 
-            if (!minimized && _settings.Enabled && _settings.AutoOpen)
+            if (settings.Enabled && (_hiddenForCashierMinimize || settings.AutoOpen))
             {
                 TryOpenOrUpdate(false);
             }
@@ -309,10 +322,8 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
 
         public void SetOperatorLocked(bool locked)
         {
-            var snapshot = locked
-                ? CustomerDisplayProjection.WithState(_lastSnapshot, CustomerDisplayState.Locked, "locked")
-                : _posViewModel?.CurrentCustomerDisplaySnapshot ?? _lastSnapshot;
-            OnSnapshotChanged(snapshot);
+            _operatorLocked = locked;
+            OnSnapshotChanged(_posViewModel?.CurrentCustomerDisplaySnapshot ?? _lastSnapshot);
         }
 
         private void OnSnapshotChanged(CustomerDisplaySnapshot snapshot)
@@ -331,7 +342,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
                 _completedTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, Math.Min(30, _settings.ThankYouSeconds)));
                 _completedTimer.Start();
             }
-            if (_settings.Enabled && (!_cashierMinimized || !_settings.FollowCashierMinimize))
+            if (_settings.Enabled || _previewSettings != null)
                 TryOpenOrUpdate(false);
         }
 
@@ -356,31 +367,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         private void OnTopologyDebounce(object sender, EventArgs e)
         {
             _topologyDebounce.Stop();
-            if ((_previewSettings == null && !_settings.Enabled) || _manuallyClosed) return;
-            if (_monitorWasMissing && !_settings.ReopenWhenMonitorReturns)
-            {
-                var monitors = SafeMonitors();
-                var selection = CustomerDisplayMonitorPolicy.Select(
-                    monitors.Select(x => x.ToDescriptor()),
-                    _settings);
-                if (selection.Customer != null)
-                {
-                    _monitorWasMissing = false;
-                    _manuallyClosed = true;
-                }
-                return;
-            }
-            var opened = TryOpenOrUpdate(false);
-            if (!opened)
-            {
-                _monitorWasMissing = true;
-                CloseWindow();
-            }
-            else if (_monitorWasMissing && _settings.ReopenWhenMonitorReturns)
-            {
-                _monitorWasMissing = false;
-                TryOpenOrUpdate(false);
-            }
+            TryOpenOrUpdate(false);
         }
 
         private bool TryOpenOrUpdate(
@@ -389,13 +376,19 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             CustomerDisplaySettings settings = null)
         {
             settings = settings ?? _previewSettings ?? _settings;
-            if (!settings.Enabled || _manuallyClosed || (_cashierMinimized && settings.FollowCashierMinimize)) return false;
+            if (!settings.Enabled || _manuallyClosed)
+            {
+                _hiddenForCashierMinimize = false;
+                CloseWindow();
+                return false;
+            }
             try
             {
                 var monitors = SafeMonitors();
                 var selection = CustomerDisplayMonitorPolicy.Select(monitors.Select(x => x.ToDescriptor()), settings);
                 if (selection.Customer == null)
                 {
+                    _monitorWasMissing = true;
                     CloseWindow();
                     WarningRaised?.Invoke(selection.ErrorCode);
                     if (throwOnFailure) throw new InvalidOperationException(selection.ErrorCode);
@@ -406,13 +399,37 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
                     string.Equals(x.DeviceName, selection.Customer.DeviceName, StringComparison.OrdinalIgnoreCase));
                 if (monitor == null)
                 {
+                    _monitorWasMissing = true;
                     CloseWindow();
                     WarningRaised?.Invoke("selected_monitor_missing");
                     if (throwOnFailure) throw new InvalidOperationException("selected_monitor_missing");
                     return false;
                 }
 
-                var displaySnapshot = snapshot ?? _previewSnapshot ?? _lastSnapshot;
+                // Every entry point observes the same return policy, including a
+                // snapshot that arrives before the display-settings debounce.
+                if (_monitorWasMissing)
+                {
+                    _monitorWasMissing = false;
+                    _reopenBlocked = !settings.ReopenWhenMonitorReturns;
+                }
+                if (_reopenBlocked)
+                {
+                    _hiddenForCashierMinimize = false;
+                    CloseWindow();
+                    return false;
+                }
+                if (_cashierMinimized && settings.FollowCashierMinimize)
+                {
+                    if (IsOpen) _hiddenForCashierMinimize = true;
+                    _window?.Hide();
+                    if (_previewSettings == null) _contentTimer.Stop();
+                    return false;
+                }
+
+                var displaySnapshot = snapshot ?? _previewSnapshot ?? (_operatorLocked
+                    ? CustomerDisplayProjection.WithState(_lastSnapshot, CustomerDisplayState.Locked, "locked")
+                    : _lastSnapshot);
                 var logo = _previewSettings == null || settings.LogoFile == _settings.LogoFile && settings.LogoHash == _settings.LogoHash ? _logo : _logoStore.Cached(settings);
                 if (_window == null)
                 {
@@ -438,6 +455,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
                 if (_previewSettings != null || displaySnapshot.State == CustomerDisplayState.Idle && settings.IdleMode == CustomerDisplayIdleMode.Clock)
                     _contentTimer.Start();
                 else _contentTimer.Stop();
+                _hiddenForCashierMinimize = false;
                 return true;
             }
             catch (Exception ex)
@@ -454,6 +472,8 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             if (sender is CustomerDisplayWindow window) window.Closed -= OnWindowClosed;
             if (ReferenceEquals(sender, _window))
             {
+                _manuallyClosed = true;
+                _hiddenForCashierMinimize = false;
                 _window = null;
                 _completedTimer.Stop();
                 _contentTimer.Stop();
@@ -486,7 +506,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
                     if (_disposed) return;
                     _settings = settings;
                     _logo = logo;
-                    if (_settings.Enabled) TryOpenOrUpdate(false); else if (_previewSettings == null) CloseWindow();
+                    TryOpenOrUpdate(false);
                 }
             }
             catch { WarningRaised?.Invoke("settingsReloadFailed"); }

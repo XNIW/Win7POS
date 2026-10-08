@@ -24,7 +24,7 @@ namespace Win7POS.Wpf.Import
         private readonly ISupplierExcelFileDialogService _fileDialogService;
         private readonly ISupplierExcelCompletionDialogService _completionDialogService;
         private readonly FileLogger _logger = new FileLogger("SupplierExcelImportViewModel");
-        private CancellationTokenSource _analyzeCancellation;
+        private CancellationTokenSource _operationCancellation;
         private int _stepIndex;
         private string _selectedPath = string.Empty;
         private string _status = string.Empty;
@@ -54,7 +54,7 @@ namespace Win7POS.Wpf.Import
             SyncPreviewCommand = new AsyncRelayCommand(BuildSyncPreviewAsync, () => !IsBusy && StepIndex == 2 && EditableRows.Count > 0);
             ApplyCommand = new AsyncRelayCommand(ApplyAsync, () => !IsBusy && StepIndex == 3 && CanApply);
             ApplyMarkupCommand = new RelayCommand(ApplyMarkup, () => !IsBusy && StepIndex == 2 && EditableRows.Count > 0);
-            CancelCommand = new RelayCommand(Cancel, () => !IsBusy || _analyzeCancellation != null);
+            CancelCommand = new RelayCommand(Cancel, () => !IsBusy || _operationCancellation != null);
             Status = PosLocalization.T("supplierExcelImport.statusChooseFile");
         }
 
@@ -296,9 +296,9 @@ namespace Win7POS.Wpf.Import
                 return EditableRows.Count(row =>
                     row != null &&
                     !row.IsSkipped &&
-                    (IsInvalidNonNegativeNumber(row.PurchasePrice) ||
-                        IsInvalidNonNegativeNumber(row.RetailPrice) ||
-                        IsInvalidNonNegativeNumber(row.Quantity)));
+                    (IsInvalidPrice(row.PurchasePrice, true) ||
+                        IsInvalidPrice(row.RetailPrice, false) ||
+                        !string.IsNullOrWhiteSpace(row.Quantity) && !Win7POS.Core.Models.StockQuantityPolicy.TryParseImport(row.Quantity, out _)));
             }
         }
         public bool CanProceedToStep3
@@ -379,7 +379,7 @@ namespace Win7POS.Wpf.Import
             }
 
             var cancellation = new CancellationTokenSource();
-            _analyzeCancellation = cancellation;
+            _operationCancellation = cancellation;
             IsBusy = true;
             Status = PosLocalization.T("supplierExcelImport.statusAnalyzing");
             try
@@ -420,8 +420,8 @@ namespace Win7POS.Wpf.Import
             }
             finally
             {
-                if (ReferenceEquals(_analyzeCancellation, cancellation))
-                    _analyzeCancellation = null;
+                if (ReferenceEquals(_operationCancellation, cancellation))
+                    _operationCancellation = null;
                 cancellation.Dispose();
                 IsBusy = false;
             }
@@ -435,10 +435,10 @@ namespace Win7POS.Wpf.Import
                 return;
             }
 
-            var cancellation = _analyzeCancellation;
+            var cancellation = _operationCancellation;
             if (cancellation == null || cancellation.IsCancellationRequested)
                 return;
-            Status = PosLocalization.T("supplierExcelImport.statusCancellationRequested");
+            Status = PosLocalization.T("supplierExcelImport.statusOperationCancelling");
             cancellation.Cancel();
         }
 
@@ -479,15 +479,21 @@ namespace Win7POS.Wpf.Import
                 return;
             }
 
+            var cancellation = new CancellationTokenSource();
+            _operationCancellation = cancellation;
             IsBusy = true;
             Status = PosLocalization.T("supplierExcelImport.statusApplying");
             try
             {
-                var apply = await _service.ApplyAsync(SyncPreview, false, SelectedFileName).ConfigureAwait(true);
+                var apply = await _service.ApplyAsync(SyncPreview, false, SelectedFileName, cancellation.Token).ConfigureAwait(true);
                 LastApplyResult = apply;
                 Status = apply.Summary;
                 _completionDialogService.ShowCompletion(PosLocalization.T("supplierExcelImport.title"), apply.Summary);
                 RequestClose?.Invoke(true);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                Status = PosLocalization.T("supplierExcelImport.statusOperationCancelled");
             }
             catch (SupplierExcelImportWorkflowException ex)
             {
@@ -501,6 +507,8 @@ namespace Win7POS.Wpf.Import
             }
             finally
             {
+                if (ReferenceEquals(_operationCancellation, cancellation)) _operationCancellation = null;
+                cancellation.Dispose();
                 IsBusy = false;
             }
         }
@@ -520,17 +528,23 @@ namespace Win7POS.Wpf.Import
 
         private async Task BuildSyncPreviewAsync()
         {
+            var cancellation = new CancellationTokenSource();
+            _operationCancellation = cancellation;
             IsBusy = true;
             Status = PosLocalization.T("supplierExcelImport.statusCalculatingSync");
             try
             {
-                var preview = await _service.BuildSyncPreviewAsync(EditableRows.ToList()).ConfigureAwait(true);
+                var preview = await _service.BuildSyncPreviewAsync(EditableRows.ToList(), cancellation.Token).ConfigureAwait(true);
                 ApplySyncPreview(preview);
                 IsSyncPreviewStale = false;
                 StepIndex = 3;
                 Status = preview.CanApply
                     ? PosLocalization.T("supplierExcelImport.statusSyncReady")
                     : PosLocalization.T("supplierExcelImport.statusSyncReadyWithErrors");
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                Status = PosLocalization.T("supplierExcelImport.statusOperationCancelled");
             }
             catch (Exception ex)
             {
@@ -541,6 +555,8 @@ namespace Win7POS.Wpf.Import
             }
             finally
             {
+                if (ReferenceEquals(_operationCancellation, cancellation)) _operationCancellation = null;
+                cancellation.Dispose();
                 IsBusy = false;
             }
         }
@@ -548,7 +564,8 @@ namespace Win7POS.Wpf.Import
         private void ApplyMarkup()
         {
             double markup;
-            if (!double.TryParse((MarkupPercent ?? string.Empty).Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out markup))
+            if (!double.TryParse((MarkupPercent ?? string.Empty).Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out markup) ||
+                double.IsNaN(markup) || double.IsInfinity(markup))
             {
                 Status = PosLocalization.T("supplierExcelImport.invalidMarkup");
                 return;
@@ -830,11 +847,10 @@ namespace Win7POS.Wpf.Import
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
-        private static bool IsInvalidNonNegativeNumber(string value)
+        private static bool IsInvalidPrice(string value, bool isPurchasePrice)
         {
             if (string.IsNullOrWhiteSpace(value)) return false;
-            var number = SupplierImportAnalyzer.ParseNumber(value);
-            return !number.HasValue || number.Value < 0;
+            return !SupplierImportAnalyzer.TryParsePrice(value, isPurchasePrice, out _);
         }
 
         private void RaiseCanExecuteChanged()
@@ -990,6 +1006,11 @@ namespace Win7POS.Wpf.Import
         private static string Localize(string sourceMessage)
         {
             var source = (sourceMessage ?? string.Empty).Trim();
+            var issue = source.Split('|');
+            if (issue.Length == 3 && issue[0] == "supplier_import_invalid_price")
+                return PosLocalization.F("supplierExcelImport.issueInvalidPrice", issue[1], issue[2]);
+            if (issue.Length == 3 && issue[0] == "supplier_import_invalid_text")
+                return PosLocalization.F("supplierExcelImport.issueInvalidText", issue[1], issue[2]);
             switch (source)
             {
                 case "Colonna obbligatoria mancante: barcode":

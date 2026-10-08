@@ -30,7 +30,7 @@ if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $visualResult)) {
 Get-Content -LiteralPath $visualResult
 if (-not ([IO.File]::ReadAllText($visualResult).StartsWith('PASS'))) { throw "Visual regression did not pass: $visualResult" }
 Write-Host "FUNCTIONAL_VISUAL_ARTIFACT=$visualOutput"
-$scenarios = @('F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
+$scenarios = @('IMPORT_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
 foreach ($scenario in $scenarios) {
 $dataDir = Join-Path ([IO.Path]::GetTempPath()) ('Win7POS.Functional.' + [Guid]::NewGuid().ToString('N'))
 $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"' + $dataDir + '"'), '--functional-completion-smoke', '--scenario', $scenario) -WindowStyle Hidden -PassThru

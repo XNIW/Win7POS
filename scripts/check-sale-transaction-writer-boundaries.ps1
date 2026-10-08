@@ -219,6 +219,7 @@ $facadeContracts = @(
             "req\s*,\s*totalMinor\s*,\s*paidCashMinor\s*,\s*paidCardMinor\s*,\s*changeMinor",
             "conn\s*,\s*tx\s*,\s*req\s*,\s*totalMinor\s*,\s*paidCashMinor\s*,\s*paidCardMinor\s*,\s*changeMinor") },
     [pscustomobject]@{ Facade = "InsertRefundOrVoidAsync"; Writer = "InsertRefundOrVoidAsync"; Forwarding = @("refundSale\s*,\s*refundLines\s*,\s*originalSaleIdToMarkVoided\s*,\s*auditAction\s*,\s*auditDetailsFactory") },
+    [pscustomobject]@{ Facade = "InsertAuthorizedRefundOrVoidAsync"; Writer = "InsertRefundOrVoidAsync"; Forwarding = @("refundSale\s*,\s*refundLines\s*,\s*originalSaleIdToMarkVoided\s*,\s*auditAction\s*,\s*auditDetailsFactory\s*,\s*authorizationCommitGuard") },
     [pscustomobject]@{ Facade = "InsertSaleLinesAsync"; Writer = "InsertSaleLinesAsync"; Forwarding = @("conn\s*,\s*tx\s*,\s*lines") },
     [pscustomobject]@{ Facade = "EnsureClientSaleIdAsync"; Writer = "EnsureClientSaleIdAsync"; Forwarding = @("conn\s*,\s*tx\s*,\s*saleId") },
     [pscustomobject]@{ Facade = "ApplyLocalStockMovementsAsync"; Writer = "ApplyLocalStockMovementsAsync"; Forwarding = @("conn\s*,\s*tx\s*,\s*sale\s*,\s*lines") },
@@ -347,10 +348,14 @@ if ($refundOrVoidWriters.Count -ne 1) {
 } else {
     $refundOrVoidWriter = $refundOrVoidWriters[0]
     Assert-OrderedMarkers $refundOrVoidWriter "F6 refund/void writer" @(
+        [pscustomobject]@{ Name = "refund/void kind restriction"; Pattern = "if\s*\(refundSale\.Kind\s*!=\s*\(int\)SaleKind\.Refund\s*&&\s*refundSale\.Kind\s*!=\s*\(int\)SaleKind\.Void\)" },
         [pscustomobject]@{ Name = "refund receipt validation"; Pattern = "SalesReceiptContentPolicy\.EnsureValid\(refundSale\s*,\s*refundLines\)" },
         [pscustomobject]@{ Name = "refund snapshot validation"; Pattern = "ReceiptDocumentPolicy\.EnsureValidSnapshotJson\(refundSale\.ReceiptShopSnapshotJson\)" },
+        [pscustomobject]@{ Name = "authorization/operator binding"; Pattern = "ValidateAuthorizationBinding\(refundSale\s*,\s*authorizationCommitGuard\)" },
         [pscustomobject]@{ Name = "connection open"; Pattern = "_factory\.Open\(\)" },
+        [pscustomobject]@{ Name = "authorized exclusive commit fence"; Pattern = "AcquireExclusiveCommitFence\(conn\)" },
         [pscustomobject]@{ Name = "transaction begin"; Pattern = "conn\.BeginTransaction\(\)" },
+        [pscustomobject]@{ Name = "initial authorization demand"; Pattern = "authorizationCommitGuard\?\.DemandStillValid\(\)" },
         [pscustomobject]@{ Name = "reversal boundary"; Pattern = "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync\(conn\s*,\s*tx\s*,\s*refundSale\s*,\s*refundLines\)" },
         [pscustomobject]@{ Name = "refund header"; Pattern = "INSERT\s+INTO\s+sales\(" },
         [pscustomobject]@{ Name = "client sale id"; Pattern = "EnsureClientSaleIdAsync\(conn\s*,\s*tx\s*,\s*saleId\)" },
@@ -360,12 +365,27 @@ if ($refundOrVoidWriters.Count -ne 1) {
         [pscustomobject]@{ Name = "outbox enqueue"; Pattern = "EnqueueSalesSyncOutboxAsync\(conn\s*,\s*tx\s*,\s*saleId\s*,\s*refundSale\.ClientSaleId\)" },
         [pscustomobject]@{ Name = "audit"; Pattern = "new\s+AuditLogRepository\(\)" },
         [pscustomobject]@{ Name = "void mark"; Pattern = "_reversalWriter\s*\.\s*MarkSaleVoidedAsync\(\s*conn\s*,\s*tx" },
-        [pscustomobject]@{ Name = "commit"; Pattern = "tx\.Commit\(\)" }
+        [pscustomobject]@{ Name = "unguarded commit invocation"; Pattern = "\bcommitTransaction\s*\(\s*\)" },
+        [pscustomobject]@{ Name = "authorized commit invocation and budget"; Pattern = "authorizationCommitGuard\.CommitIfStillValid\(\s*SqliteConnectionFactory\s*\.\s*DurableCommitSafetyBudget\s*,\s*commitTransaction\s*\)" }
     )
-    if ($refundOrVoidWriter -notmatch "catch\s*\{\s*tx\.Rollback\(\)\s*;\s*throw;\s*\}") {
-        Fail "F6 refund/void writer must roll back header, lines, stock, outbox, audit and void mark together"
+    $commitDelegatePattern = "Action\s+commitTransaction\s*=\s*\(\s*\)\s*=>\s*\{\s*tx\.Commit\(\)\s*;\s*transactionCommitted\s*=\s*true\s*;\s*\}\s*;"
+    $commitDispatchPattern = "if\s*\(authorizationCommitGuard\s*==\s*null\)\s*commitTransaction\(\)\s*;\s*else\s*authorizationCommitGuard\.CommitIfStillValid\(\s*SqliteConnectionFactory\s*\.\s*DurableCommitSafetyBudget\s*,\s*commitTransaction\s*\)\s*;"
+    if ($refundOrVoidWriter -notmatch "var\s+transactionCommitted\s*=\s*false\s*;" -or
+        $refundOrVoidWriter -notmatch $commitDelegatePattern -or
+        $refundOrVoidWriter -notmatch $commitDispatchPattern -or
+        [regex]::Matches($refundOrVoidWriter, "\btx\s*\.\s*Commit\s*\(").Count -ne 1 -or
+        [regex]::Matches($refundOrVoidWriter, "\bcommitTransaction\s*\(").Count -ne 1 -or
+        [regex]::Matches($refundOrVoidWriter, "\bCommitIfStillValid\s*\(").Count -ne 1 -or
+        $refundOrVoidWriter -notmatch "authorizationCommitGuard\s*==\s*null\s*\?\s*null\s*:\s*SqliteConnectionFactory\.AcquireExclusiveCommitFence\(conn\)") {
+        Fail "F6 refund/void writer must commit only through the conditional authorized delegate, with its fence, headroom budget and durable-completion flag"
     } else {
-        Pass "F6 refund/void writer rolls back all persistence effects together"
+        Pass "F6 refund/void writer retains the conditional commit fence, guard budget and single durable commit delegate"
+    }
+    if ($refundOrVoidWriter -notmatch "catch\s*\{\s*if\s*\(\s*!transactionCommitted\s*\)\s*\{\s*try\s*\{\s*tx\.Rollback\(\)\s*;\s*\}\s*catch\s*\{[^{}]*\}\s*\}\s*throw\s*;\s*\}" -or
+        [regex]::Matches($refundOrVoidWriter, "\btx\s*\.\s*Rollback\s*\(").Count -ne 1) {
+        Fail "F6 refund/void writer must roll back all uncommitted persistence effects together and preserve the original failure"
+    } else {
+        Pass "F6 refund/void writer rolls back all uncommitted persistence effects together and preserves the original failure"
     }
     $refundDapper = @(Get-CSharpDapperAsyncInvocations $refundOrVoidWriter)
     $refundDapperWithoutTx = @($refundDapper | Where-Object {
@@ -376,6 +396,42 @@ if ($refundOrVoidWriters.Count -ne 1) {
     } else {
         Pass "F6 refund/void header write uses the active transaction"
     }
+}
+
+$authorizedReversalFacades = @(Get-MethodSlices $saleRepository "public" "InsertAuthorizedRefundOrVoidAsync")
+$bindingDeclaration = [regex]::Match($writer, "\bprivate\s+static\s+void\s+ValidateAuthorizationBinding\s*\(")
+$bindingSlice = ""
+if ($bindingDeclaration.Success) {
+    $bindingBody = Find-CSharpMethodBodyStart $writer $bindingDeclaration.Index
+    if ($null -ne $bindingBody -and $bindingBody.Kind -eq "block") {
+        $bindingEnd = Find-CSharpMatchingDelimiter $writer $bindingBody.Index '{' '}'
+        if ($bindingEnd -ge $bindingBody.Index) {
+            $bindingSlice = $writer.Substring($bindingBody.Index, $bindingEnd - $bindingBody.Index + 1)
+        }
+    }
+}
+$bindingMarkers = @(
+    "if\s*\(authorizationCommitGuard\s*==\s*null\)\s*return\s*;",
+    "saleKind\s*!=\s*authorizationCommitGuard\.AuthorizedSaleKind",
+    "!sale\.OperatorId\.HasValue",
+    "sale\.OperatorId\.Value\s*!=\s*authorizationCommitGuard\.OperatorId",
+    "authorizationCommitGuard\.OperatorId\s*<=\s*0",
+    "authorizationCommitGuard\.AuthorizationEpoch\s*<\s*0",
+    "string\.IsNullOrWhiteSpace\(\s*authorizationCommitGuard\.GenerationFingerprint\)",
+    "string\.IsNullOrWhiteSpace\(\s*authorizationCommitGuard\.GenerationId\)",
+    "string\.IsNullOrWhiteSpace\(\s*authorizationCommitGuard\.ShopId\)\s*&&\s*string\.IsNullOrWhiteSpace\(\s*authorizationCommitGuard\.ShopCode\)",
+    "string\.IsNullOrWhiteSpace\(\s*authorizationCommitGuard\.ShopDeviceId\)",
+    "string\.IsNullOrWhiteSpace\(\s*authorizationCommitGuard\.StaffId\)",
+    "authorizationCommitGuard\.StaffCredentialVersion\s*<\s*0"
+)
+$missingBindingMarkers = @($bindingMarkers | Where-Object { $bindingSlice -notmatch $_ })
+if ($authorizedReversalFacades.Count -ne 1 -or
+    $authorizedReversalFacades[0] -notmatch "if\s*\(authorizationCommitGuard\s*==\s*null\)\s*throw\s+new\s+ArgumentNullException\(nameof\(authorizationCommitGuard\)\)" -or
+    $missingBindingMarkers.Count -gt 0 -or
+    $refundOrVoidWriter -notmatch "INSERT\s+INTO\s+sales\([^)]*\boperator_id\b[^)]*\)\s*VALUES\([^)]*@OperatorId\b") {
+    Fail "F6 authorized refund/void must require a guard and persist its validated kind/operator/shop/generation/staff binding. missing=$($missingBindingMarkers -join ', ')"
+} else {
+    Pass "F6 authorized refund/void requires a guard and preserves the validated kind/operator/shop/generation/staff binding"
 }
 
 $refundSaleWriters = @(Get-MethodSlices $writer "internal" "InsertRefundSaleAsync")

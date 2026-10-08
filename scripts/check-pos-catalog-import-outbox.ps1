@@ -97,7 +97,7 @@ Assert-Contains $applier ".EnqueueAsync(conn, tx" "catalog outbox enqueue uses s
 Assert-Contains $applier "CatalogImportApplyContext.FromEntry" "supplier apply maps price history to catalog import client item ids"
 Assert-Contains $applier "catalog_import_client_item_id" "supplier apply stores catalog import client item id on price history"
 Assert-Contains $workflow "CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry" "supplier workflow builds catalog import payload"
-Assert-Contains $viewModel "_service.ApplyAsync(SyncPreview, false, SelectedFileName)" "supplier apply passes redacted file name"
+Assert-Contains $viewModel "_service.ApplyAsync(SyncPreview, false, SelectedFileName, cancellation.Token)" "supplier apply passes redacted file name and operation cancellation"
 Assert-Contains $workflow "ListDetailsByBarcodesAsync" "supplier workflow uses targeted catalog lookup"
 Assert-Contains $productRepository "ListDetailsByBarcodesAsync" "targeted product details lookup present"
 Assert-Contains $localProductWriter "is_active = 0" "local product delete uses soft delete"

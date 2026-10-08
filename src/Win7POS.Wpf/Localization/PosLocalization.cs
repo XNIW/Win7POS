@@ -349,6 +349,8 @@ namespace Win7POS.Wpf.Localization
             }
 
             AddOperationsTranslations(catalog);
+            AddRefundCompletionTranslations(catalog);
+            AddSupplierImportCompletionTranslations(catalog);
             AddHardwareTranslations(catalog);
             AddCustomerDisplayPolishTranslations(catalog);
             AddStockQuantityTranslations(catalog);

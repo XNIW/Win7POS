@@ -461,6 +461,11 @@
                         <TextBlock Text="{loc:Loc pos.cart.printLast}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}"
+                        Command="{Binding ReprintRefundCommand}"
+                        Visibility="{Binding HasRefundReceipt, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding RefundReprintLabel}" TextWrapping="Wrap" TextAlignment="Center"/>
+                </Button>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenCashDrawerCommand}" ToolTip="{loc:Loc shell.openCashDrawerTooltip}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconCashDrawer}" Style="{StaticResource ButtonIconPathStyle}"/>

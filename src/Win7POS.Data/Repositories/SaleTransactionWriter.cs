@@ -45,6 +45,9 @@ namespace Win7POS.Data.Repositories
             if (lines == null) throw new ArgumentNullException(nameof(lines));
             SalesReceiptContentPolicy.EnsureValid(sale, lines);
             ReceiptDocumentPolicy.EnsureValidSnapshotJson(sale.ReceiptShopSnapshotJson);
+            if (authorizationCommitGuard != null &&
+                authorizationCommitGuard.AuthorizedSaleKind != SaleKind.Sale)
+                throw new InvalidOperationException("The authorization-use token does not permit an ordinary sale.");
             ValidateAuthorizationBinding(sale, authorizationCommitGuard);
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var commitFence = authorizationCommitGuard == null
@@ -303,11 +306,11 @@ WHERE sale_id = @saleId
         {
             if (authorizationCommitGuard == null)
                 return;
-            if (sale.Kind != 0 &&
-                sale.Kind != (int)SaleKind.Sale)
+            var saleKind = sale.Kind == 0 ? SaleKind.Sale : (SaleKind)sale.Kind;
+            if (saleKind != authorizationCommitGuard.AuthorizedSaleKind)
             {
                 throw new InvalidOperationException(
-                    "The authorization-use token only permits ordinary sales.");
+                    "The authorization-use token does not permit this sale kind.");
             }
             if (!sale.OperatorId.HasValue ||
                 sale.OperatorId.Value != authorizationCommitGuard.OperatorId ||
@@ -328,7 +331,7 @@ WHERE sale_id = @saleId
                 authorizationCommitGuard.StaffCredentialVersion < 0)
             {
                 throw new InvalidOperationException(
-                    "The ordinary-sale authorization binding is incomplete.");
+                    "The sale authorization binding is incomplete.");
             }
         }
 
@@ -418,22 +421,36 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
             IReadOnlyList<SaleLine> refundLines,
             long? originalSaleIdToMarkVoided,
             string auditAction,
-            Func<long, string> auditDetailsFactory)
+            Func<long, string> auditDetailsFactory,
+            SaleAuthorizationCommitGuard authorizationCommitGuard = null)
         {
             if (refundSale == null) throw new ArgumentNullException(nameof(refundSale));
             if (refundLines == null) throw new ArgumentNullException(nameof(refundLines));
+            if (refundSale.Kind != (int)SaleKind.Refund && refundSale.Kind != (int)SaleKind.Void)
+                throw new InvalidOperationException("A reversal requires refund or void kind.");
             SalesReceiptContentPolicy.EnsureValid(refundSale, refundLines);
             ReceiptDocumentPolicy.EnsureValidSnapshotJson(refundSale.ReceiptShopSnapshotJson);
+            ValidateAuthorizationBinding(refundSale, authorizationCommitGuard);
 
             using var conn = _factory.Open();
+            using var commitFence = authorizationCommitGuard == null
+                ? null
+                : SqliteConnectionFactory.AcquireExclusiveCommitFence(conn);
             using var tx = conn.BeginTransaction();
+            var transactionCommitted = false;
+            Action commitTransaction = () =>
+            {
+                tx.Commit();
+                transactionCommitted = true;
+            };
             try
             {
+                authorizationCommitGuard?.DemandStillValid();
                 await _reversalWriter.ValidateReversalBoundaryAsync(conn, tx, refundSale, refundLines)
                     .ConfigureAwait(false);
                 var saleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change, receipt_shop_snapshot)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change, @ReceiptShopSnapshotJson);
+INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change, operator_id, receipt_shop_snapshot)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change, @OperatorId, @ReceiptShopSnapshotJson);
 SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
 
                 refundSale.Id = saleId;
@@ -470,12 +487,21 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
                         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
                 }
 
-                tx.Commit();
+                if (authorizationCommitGuard == null)
+                    commitTransaction();
+                else
+                    authorizationCommitGuard.CommitIfStillValid(
+                        SqliteConnectionFactory.DurableCommitSafetyBudget,
+                        commitTransaction);
                 return saleId;
             }
             catch
             {
-                tx.Rollback();
+                if (!transactionCommitted)
+                {
+                    try { tx.Rollback(); }
+                    catch { /* Preserve the original authorization or persistence failure. */ }
+                }
                 throw;
             }
         }

@@ -30,6 +30,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             DbInitializer.EnsureCreated(options);
             if (performance) return await CartPerformanceSmoke.RunAsync(dataDir, int.TryParse(productCount, out var count) ? count : 20000);
             var results = new List<string>();
+            await CheckAsync(results, "IMPORT_completion", SupplierImportCompletionSmoke.RunAsync);
+            await CheckAsync(results, "REFUND_completion", RefundCompletionSmoke.RunAsync);
+            await CheckAsync(results, "REVERSAL_authorization", ReversalAuthorizationCompletionSmoke.RunAsync);
             await CheckAsync(results, "PERF_visual_lifetime_and_public_commands", CartPerformanceRegressionSmoke.RunAsync);
             await CheckAsync(results, "INTEGRATED_login_sale_retry_receipt_restart", FunctionalSaleSmoke.RunAsync);
             await CheckAsync(results, "LOAD_sync_backup_x86", SyncBackupLoadSmoke.RunAsync);
@@ -66,6 +69,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             });
             await CheckAsync(results, "HARDWARE_settings_scanner", HardwareSettingsSmoke.RunAsync);
             await CheckAsync(results, "CUSTOMERDISPLAY_polish", CustomerDisplayPolishSmoke.RunAsync);
+            await CheckAsync(results, "CUSTOMERDISPLAY_completion", CustomerDisplayCompletionSmoke.RunAsync);
             await CheckAsync(results, "STOCK_fractional_input", async () =>
             {
                 var vm = new ProductEditViewModel(ProductEditMode.Edit,

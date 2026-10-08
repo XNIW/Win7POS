@@ -342,6 +342,15 @@ namespace Win7POS.Core.Import
             IEnumerable<SupplierImportEditableRow> finalRows,
             IEnumerable<ProductDetailsRow> existingProducts)
         {
+            return BuildSyncPreview(finalRows, existingProducts, CancellationToken.None);
+        }
+
+        public static SupplierImportSyncPreview BuildSyncPreview(
+            IEnumerable<SupplierImportEditableRow> finalRows,
+            IEnumerable<ProductDetailsRow> existingProducts,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             var preview = new SupplierImportSyncPreview();
             var rows = (finalRows ?? Enumerable.Empty<SupplierImportEditableRow>())
                 .Where(row => row != null)
@@ -353,7 +362,7 @@ namespace Win7POS.Core.Import
             var existingByBarcode = new Dictionary<string, ProductDetailsRow>(StringComparer.OrdinalIgnoreCase);
             foreach (var product in existingProducts ?? Enumerable.Empty<ProductDetailsRow>())
             {
-                var barcode = NormalizeValue(product == null ? string.Empty : product.Barcode);
+                var barcode = NormalizeBarcode(product == null ? string.Empty : product.Barcode);
                 if (barcode.Length > 0 && !existingByBarcode.ContainsKey(barcode))
                     existingByBarcode.Add(barcode, product);
             }
@@ -365,7 +374,7 @@ namespace Win7POS.Core.Import
                 preview.SkippedRows.Add(new SupplierImportSyncSkippedRow
                 {
                     RowNumber = row.RowNumber,
-                    Barcode = NormalizeValue(row.Barcode),
+                    Barcode = NormalizeBarcode(row.Barcode),
                     ProductName = NormalizeValue(row.ProductName),
                     ItemNumber = NormalizeValue(row.ItemNumber),
                     SecondProductName = NormalizeValue(row.SecondProductName)
@@ -376,7 +385,7 @@ namespace Win7POS.Core.Import
             var rowNumbersByBarcode = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in activeRows)
             {
-                var barcode = NormalizeValue(row.Barcode);
+                var barcode = NormalizeBarcode(row.Barcode);
                 if (barcode.Length == 0)
                     continue;
 
@@ -391,7 +400,7 @@ namespace Win7POS.Core.Import
             }
 
             foreach (var group in activeRows
-                .Select(row => new { Row = row, Barcode = NormalizeValue(row.Barcode) })
+                .Select(row => new { Row = row, Barcode = NormalizeBarcode(row.Barcode) })
                 .Where(item => item.Barcode.Length > 0)
                 .GroupBy(item => item.Barcode, StringComparer.OrdinalIgnoreCase)
                 .Where(group => group.Count() > 1))
@@ -404,7 +413,7 @@ namespace Win7POS.Core.Import
             var effectiveActiveRows = activeRows
                 .Where(row =>
                 {
-                    var barcode = NormalizeValue(row.Barcode);
+                    var barcode = NormalizeBarcode(row.Barcode);
                     if (barcode.Length == 0)
                         return true;
                     SupplierImportEditableRow last;
@@ -416,7 +425,8 @@ namespace Win7POS.Core.Import
 
             foreach (var row in effectiveActiveRows)
             {
-                var barcode = NormalizeValue(row.Barcode);
+                cancellationToken.ThrowIfCancellationRequested();
+                var barcode = NormalizeBarcode(row.Barcode);
                 if (barcode.Length == 0)
                 {
                     preview.Errors.Add(new SupplierImportError("Barcode richiesto prima del Sync DB.", row.RowNumber, string.Empty));
@@ -426,12 +436,12 @@ namespace Win7POS.Core.Import
                 ProductDetailsRow existing;
                 existingByBarcode.TryGetValue(barcode, out existing);
 
-                if (!ValidateFinalRow(row, existing, preview))
+                SupplierImportProductRow updated;
+                if (!ValidateFinalRow(row, existing, preview, out updated))
                     continue;
 
                 preview.ApplyExpectations.Add(ToApplyExpectation(row, barcode, existing));
 
-                var updated = ToFinalCanonicalRow(row, existing);
                 if (existing == null)
                 {
                     preview.NewProducts.Add(updated);
@@ -465,6 +475,7 @@ namespace Win7POS.Core.Import
             preview.Summary.WarningCount = preview.Warnings.Count;
             preview.Summary.ErrorCount = preview.Errors.Count;
             preview.Fingerprint = BuildSyncFingerprint(preview);
+            cancellationToken.ThrowIfCancellationRequested();
             return preview;
         }
 
@@ -528,10 +539,10 @@ namespace Win7POS.Core.Import
 
             var expectedRows = expected.ApplyExpectations
                 .Where(item => item != null)
-                .ToDictionary(item => NormalizeValue(item.Barcode), StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(item => NormalizeBarcode(item.Barcode), StringComparer.OrdinalIgnoreCase);
             var currentRows = current.ApplyExpectations
                 .Where(item => item != null)
-                .ToDictionary(item => NormalizeValue(item.Barcode), StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(item => NormalizeBarcode(item.Barcode), StringComparer.OrdinalIgnoreCase);
             if (expectedRows.Count != expected.ValidatedRows.Count ||
                 currentRows.Count != current.ValidatedRows.Count ||
                 expectedRows.Count != currentRows.Count)
@@ -592,19 +603,54 @@ namespace Win7POS.Core.Import
 
         public static double? ParseNumber(string value)
         {
-            if (value == null) return null;
+            return ToDouble(NormalizeNumberText(value));
+        }
+
+        private static string NormalizeNumberText(string value)
+        {
+            if (value == null) return string.Empty;
             var clean = value.Trim().Replace(" ", string.Empty);
-            if (clean.Length == 0) return null;
+            if (clean.Length == 0) return string.Empty;
 
             if (Regex.IsMatch(clean, @"^\d{1,3}(\.\d{3})*,\d+$"))
-                return ToDouble(clean.Replace(".", string.Empty).Replace(",", "."));
+                return clean.Replace(".", string.Empty).Replace(",", ".");
             if (Regex.IsMatch(clean, @"^\d{1,3}(,\d{3})*\.\d+$"))
-                return ToDouble(clean.Replace(",", string.Empty));
+                return clean.Replace(",", string.Empty);
             if (Regex.IsMatch(clean, @"^-?[1-9]\d{0,2}(,\d{3})+$"))
-                return ToDouble(clean.Replace(",", string.Empty));
+                return clean.Replace(",", string.Empty);
             if (Regex.IsMatch(clean, @"^-?[1-9]\d{0,2}(\.\d{3})+$"))
-                return ToDouble(clean.Replace(".", string.Empty));
-            return ToDouble(clean.Replace(",", "."));
+                return clean.Replace(".", string.Empty);
+            return clean.Replace(",", ".");
+        }
+
+        // Import accepts localized decimals and retains its established ToEven
+        // CLP rounding. Validate the original value before rounding, using exact
+        // decimal arithmetic rather than an Int64 boundary rounded to Double.
+        public static bool TryParsePrice(string value, bool isPurchasePrice, out long price)
+        {
+            price = 0;
+            var clean = NormalizeNumberText(value);
+            var parts = clean.Split(new[] { 'e', 'E' });
+            if (parts.Length > 2) return false;
+            var exponent = 0;
+            if (parts.Length == 2 && !int.TryParse(parts[1], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out exponent))
+                return false;
+            var mantissa = parts[0].TrimStart('+', '-');
+            var dot = mantissa.IndexOf('.');
+            var fractionDigits = dot < 0 ? 0 : mantissa.Length - dot - 1;
+            var digits = mantissa.Replace(".", string.Empty).TrimStart('0');
+            var significant = digits.TrimEnd('0');
+            var trailingZeros = digits.Length - significant.Length;
+            // Decimal.TryParse otherwise silently rounds excess input precision
+            // (or underflows tiny exponent values to zero).
+            if (significant.Length > 28 || (long)fractionDigits - exponent - trailingZeros > 28)
+                return false;
+            decimal parsed;
+            if (!decimal.TryParse(clean, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) ||
+                parsed < 0 || parsed > (isPurchasePrice ? (decimal)int.MaxValue : long.MaxValue))
+                return false;
+            price = (long)decimal.Round(parsed, 0, MidpointRounding.ToEven);
+            return true;
         }
 
         public static string NormalizeHeader(string value)
@@ -1826,7 +1872,8 @@ namespace Win7POS.Core.Import
         private static double? ToDouble(string value)
         {
             double parsed;
-            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed)
+            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) &&
+                !double.IsNaN(parsed) && !double.IsInfinity(parsed)
                 ? (double?)parsed
                 : null;
         }
@@ -2097,8 +2144,8 @@ namespace Win7POS.Core.Import
                 PurchasePrice = existing == null ? NumberTextOrEmpty(row.PurchasePrice, false) : ToIntOrExistingText(row.PurchasePrice, existing.PurchasePrice),
                 RetailPrice = existing == null ? NumberTextOrEmpty(row.RetailPrice, true) : ToLongOrExistingText(row.RetailPrice, existing.UnitPrice),
                 Quantity = QuantityText(row.Quantity, existing == null ? (decimal?)null : existing.StockQty),
-                Supplier = ChooseText(row.Supplier, existing == null ? null : existing.SupplierName),
-                Category = ChooseText(row.Category, existing == null ? null : existing.CategoryName)
+                Supplier = NormalizeValue(ChooseText(row.Supplier, existing == null ? null : existing.SupplierName)),
+                Category = NormalizeValue(ChooseText(row.Category, existing == null ? null : existing.CategoryName))
             };
         }
 
@@ -2122,9 +2169,10 @@ namespace Win7POS.Core.Import
         private static bool ValidateFinalRow(
             SupplierImportEditableRow row,
             ProductDetailsRow existing,
-            SupplierImportSyncPreview preview)
+            SupplierImportSyncPreview preview,
+            out SupplierImportProductRow canonical)
         {
-            var barcode = NormalizeValue(row.Barcode);
+            var barcode = NormalizeBarcode(row.Barcode);
             var hasIdentity = !string.IsNullOrWhiteSpace(row.ProductName) ||
                 !string.IsNullOrWhiteSpace(row.SecondProductName) ||
                 !string.IsNullOrWhiteSpace(row.ItemNumber) ||
@@ -2153,6 +2201,15 @@ namespace Win7POS.Core.Import
                 ok = false;
             if (!ValidateOptionalNumber(row.RetailPrice, row.RowNumber, barcode, "retailPrice", preview))
                 ok = false;
+            // These are the active catalog-import payload limits. Reject rather
+            // than allow local data to diverge from its truncated outbox payload.
+            canonical = ToFinalCanonicalRow(row, existing);
+            if (!ValidateText(canonical.Barcode, 80, "barcode", row, preview)) ok = false;
+            if (!ValidateText(canonical.ItemNumber, 120, "itemNumber", row, preview)) ok = false;
+            if (!ValidateText(canonical.ProductName, 240, "productName", row, preview)) ok = false;
+            if (!ValidateText(canonical.SecondProductName, 240, "secondProductName", row, preview)) ok = false;
+            if (!ValidateText(canonical.Supplier, 120, "supplier", row, preview)) ok = false;
+            if (!ValidateText(canonical.Category, 120, "category", row, preview)) ok = false;
             decimal quantity;
             var quantityValid = string.IsNullOrWhiteSpace(row.Quantity)
                 ? existing == null || StockQuantityPolicy.IsValid(existing.StockQty) && existing.StockQty <= StockQuantityPolicy.MaximumImportQuantity
@@ -2183,16 +2240,27 @@ namespace Win7POS.Core.Import
             SupplierImportSyncPreview preview)
         {
             if (string.IsNullOrWhiteSpace(value)) return true;
-            var parsed = ParseNumber(value);
-            if (!parsed.HasValue || parsed.Value < 0)
+            long parsed;
+            if (!TryParsePrice(value, field == "purchasePrice", out parsed))
             {
                 preview.Errors.Add(new SupplierImportError(
-                    "Valore numerico non valido per " + field + ".",
+                    "supplier_import_invalid_price|" + field + "|" +
+                    (field == "purchasePrice" ? int.MaxValue.ToString(CultureInfo.InvariantCulture) : long.MaxValue.ToString(CultureInfo.InvariantCulture)),
                     rowNumber,
                     barcode));
                 return false;
             }
             return true;
+        }
+
+        private static bool ValidateText(string value, int maximumLength, string field, SupplierImportEditableRow row, SupplierImportSyncPreview preview)
+        {
+            if ((value ?? string.Empty).Trim().Length <= maximumLength && !(value ?? string.Empty).Any(char.IsControl))
+                return true;
+            preview.Errors.Add(new SupplierImportError(
+                "supplier_import_invalid_text|" + field + "|" + maximumLength.ToString(CultureInfo.InvariantCulture),
+                row.RowNumber, NormalizeBarcode(row.Barcode)));
+            return false;
         }
 
         private static SupplierImportProductRow ToFinalCanonicalRow(SupplierImportEditableRow row, ProductDetailsRow existing)
@@ -2206,15 +2274,15 @@ namespace Win7POS.Core.Import
             return new SupplierImportProductRow
             {
                 RowNumber = row.RowNumber,
-                Barcode = NormalizeValue(row.Barcode),
+                Barcode = NormalizeBarcode(row.Barcode),
                 ItemNumber = itemNumber,
                 ProductName = productName,
                 SecondProductName = secondProductName,
                 PurchasePrice = existing == null ? NumberTextOrEmpty(row.PurchasePrice, false) : ToIntOrExistingText(row.PurchasePrice, existing.PurchasePrice),
                 RetailPrice = existing == null ? NumberTextOrEmpty(row.RetailPrice, true) : ToLongOrExistingText(row.RetailPrice, existing.UnitPrice),
                 Quantity = QuantityText(row.Quantity, existing == null ? (decimal?)null : existing.StockQty),
-                Supplier = ChooseText(row.Supplier, existing == null ? null : existing.SupplierName),
-                Category = ChooseText(row.Category, existing == null ? null : existing.CategoryName)
+                Supplier = NormalizeValue(ChooseText(row.Supplier, existing == null ? null : existing.SupplierName)),
+                Category = NormalizeValue(ChooseText(row.Category, existing == null ? null : existing.CategoryName))
             };
         }
 
@@ -2314,6 +2382,8 @@ namespace Win7POS.Core.Import
                 : string.Join(" ", trimmed.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
         }
 
+        private static string NormalizeBarcode(string value) => (value ?? string.Empty).Trim();
+
         private static string QuantityText(string value, decimal? existing)
         {
             if (string.IsNullOrWhiteSpace(value)) return existing.HasValue ? existing.Value.ToString(CultureInfo.InvariantCulture) : string.Empty;
@@ -2324,35 +2394,36 @@ namespace Win7POS.Core.Import
 
         private static int? ToIntNullable(string value, int existing)
         {
-            var parsed = ParseNumber(value);
-            return parsed.HasValue ? (int?)Convert.ToInt32(Math.Round(parsed.Value)) : existing;
+            if (string.IsNullOrWhiteSpace(value)) return existing;
+            long parsed;
+            return TryParsePrice(value, true, out parsed) ? (int?)parsed : null;
         }
 
         private static long? ToLongNullable(string value, long existing)
         {
-            var parsed = ParseNumber(value);
-            return parsed.HasValue ? (long?)Convert.ToInt64(Math.Round(parsed.Value)) : existing;
+            if (string.IsNullOrWhiteSpace(value)) return existing;
+            long parsed;
+            return TryParsePrice(value, false, out parsed) ? (long?)parsed : null;
         }
 
         private static string ToIntOrExistingText(string value, int existing)
         {
-            var parsed = ParseNumber(value);
-            return (parsed.HasValue ? Convert.ToInt32(Math.Round(parsed.Value)) : existing).ToString(CultureInfo.InvariantCulture);
+            if (string.IsNullOrWhiteSpace(value)) return existing.ToString(CultureInfo.InvariantCulture);
+            return NumberTextOrEmpty(value, false);
         }
 
         private static string ToLongOrExistingText(string value, long existing)
         {
-            var parsed = ParseNumber(value);
-            return (parsed.HasValue ? Convert.ToInt64(Math.Round(parsed.Value)) : existing).ToString(CultureInfo.InvariantCulture);
+            if (string.IsNullOrWhiteSpace(value)) return existing.ToString(CultureInfo.InvariantCulture);
+            return NumberTextOrEmpty(value, true);
         }
 
         private static string NumberTextOrEmpty(string value, bool allowLong)
         {
-            var parsed = ParseNumber(value);
-            if (!parsed.HasValue) return string.Empty;
-            return allowLong
-                ? Convert.ToInt64(Math.Round(parsed.Value)).ToString(CultureInfo.InvariantCulture)
-                : Convert.ToInt32(Math.Round(parsed.Value)).ToString(CultureInfo.InvariantCulture);
+            long parsed;
+            return TryParsePrice(value, !allowLong, out parsed)
+                ? parsed.ToString(CultureInfo.InvariantCulture)
+                : (value ?? string.Empty).Trim();
         }
 
         private sealed class HeaderDetection
