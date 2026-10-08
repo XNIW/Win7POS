@@ -66,13 +66,19 @@ normalizzazione del resolver esistente. Identità DB, metadata e outbox coerenti
 | --- | --- | --- |
 | MerchandiseControlSplitView | `0ce946b0c30e9498d0d8e4d94722aad9bd22a577` | CI `37699554438` SUCCESS; namespace com.example.merchandisecontrolsplitview, Room v22, PRODUCTION_MIGRATIONS. |
 | iOSMerchandiseControl | `aca531bf1f87c94558020b46b4c4be0de24c69da` | CI `37697432811` SUCCESS; SwiftData tramite syncStoreGenerationController.modelContainer. Failure UI del 6 ottobre storici. |
-| merchandise-control-admin-web | `82af13ef0005ecfb767809bd362327e91692b5ba` | CI `37176343479` SUCCESS; Cloudflare `37176343496` build SUCCESS, deployment staging/prod SKIPPED. Deployment/schema installati non attestati. |
+| merchandise-control-admin-web | `02ea44b95d4a05baddbf46f24251f0d5f0dea294` | Aggiornato durante questa sessione da `82af13ef0005ecfb767809bd362327e91692b5ba`, PR131 alle15:46:30UTC. CI `37803517965` SUCCESS; Cloudflare `37803518056` build SUCCESS, deployment staging/prod SKIPPED. Deployment/schema installati non attestati. |
 | cashregistersystem | `cbe8e87dc4490bdc4a0c01b1288273f82c558083` | Repo proprietario com.example.cashregistersystem; launcher MainActivity→PosScreenVM→PosViewModel→AppDatabase(pos.db,v3), exportSchema=false, sola MIGRATION_1_2. Ultimo push 2025-09-15, non archived, nessuna CI/PR corrente. Distinto dal riferimento Android attivo verificato. |
 
 Nell'allegato ricevuto esiste soltanto Pasted text.txt: i 25 Kotlin non sono
 disponibili e l'identità rispetto al repository non è attestata. Nessuna patch
 mobile/Admin eseguita; la chiamata recordSale fire-and-forget nel cashregister
 proprietario è evidenza sorgente, non prova runtime del mobile corrente.
+
+Ricontrollo finale Admin: PR131 riguarda l'intento di creazione indirizzi,
+con ultima migrazione sorgente `20261008151018_customer_address_create_intent_v3.sql`.
+Questo aggiornamento non pubblica la readiness POS: il file canonico è assente
+anche sul nuovo SHA. Una migrazione presente nel repository non attesta il suo
+apply su staging né la registry live. Gli SHA Android/iOS sono rimasti invariati.
 
 Su richiesta dell'utente è stato controllato anche il progresso Codex Mac:
 chat **Completa integrazione e collaudi**, **Correggi blocchi recovery mobile** e
@@ -157,8 +163,9 @@ offline e retry sul documento persistito; una fake printer non attesta la carta.
 ## Acceptance C01–C12
 
 Nessuna nuova cella live esercitata. Readiness canonica
-`docs/HANDOFFS/WIN7POS_ARTICLE_ACCEPTANCE_READY.json`: HTTP404 sullo SHA Admin
-corrente. Non vengono promossi test locali, build o conteggi outbox a PASS live.
+`docs/HANDOFFS/WIN7POS_ARTICLE_ACCEPTANCE_READY.json`: HTTP404 sia sullo SHA Admin
+iniziale `82af13ef` sia sul nuovo main `02ea44b9`, ricontrollato prima del merge.
+Non vengono promossi test locali, build o conteggi outbox a PASS live.
 
 | Celle | Stato delle direzioni live supportate / limite |
 | --- | --- |
