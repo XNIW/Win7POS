@@ -27,6 +27,7 @@ using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf.Pos.Online;
@@ -235,7 +236,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         var presentation = host.ViewModel.ImportRecoveries.Single();
                         CheckPresentation(presentation, fixture);
                         causes.Add(presentation.Cause);
-                        Capture(host.Center, "sync-center-blocked-" + language);
+                        Capture(host.Center, "sync-center-blocked-" + language, host.OpenButton());
                         var dialog = await host.OpenRecoveryAsync();
                         try
                         {
@@ -245,14 +246,40 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             Require(error.Contains(PosLocalization.T("importRecovery.retail")) && error.Contains(fixture.Rows[0].Barcode), "recovery field error not localized");
                             foreach (var name in new[] { "PrepareButton", "CommitButton", "CancelRecoveryButton" }) CheckBounds(Named<Button>(dialog, name), dialog, language);
                             Require(Named<DataGrid>(dialog, "RecoveryRows").Items.Count == 3, "translated recovery lost rows");
-                            Capture(dialog, "recovery-invalid-" + language);
+                            Capture(dialog, "recovery-invalid-" + language,
+                                Named<Button>(dialog, "PrepareButton"), Named<Button>(dialog, "CommitButton"), Named<Button>(dialog, "CancelRecoveryButton"));
                         }
                         finally { dialog.Close(); }
                     }
                 }
                 Require(causes.Count == 4, "recovery cause fell back to one language");
+                await CheckOverlayFallbackGeometryAsync();
             }
             finally { PosLocalization.Current.SetLanguage(original); }
+        }
+
+        private static async Task CheckOverlayFallbackGeometryAsync()
+        {
+            var fixture = await Fixture.CreateAsync("geometry-fallback");
+            using (var host = new CenterHost(fixture, forceOwnerOutsideWorkArea: true))
+            {
+                await host.ReadyAsync();
+                var geometry = RecordGeometry(host.Center, "causal_owner_outside_workarea");
+                var workArea = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(host.Owner);
+                Evidence.Add("causal_workarea_fallback; oldExactSizeAssumptionWouldPass=" +
+                    (Math.Abs(host.Center.ActualWidth - 1024) < 1 && Math.Abs(host.Center.ActualHeight - 768) < 1) + "; " + geometry);
+                Require(!Contains(workArea, WindowBounds(host.Owner)), "QA owner did not leave the work area: " + geometry);
+                Require(SameBounds(WindowBounds(host.Center), workArea) && !SameBounds(WindowBounds(host.Center), WindowBounds(host.Owner)), "overlay did not use the standard work-area fallback: " + geometry);
+                Capture(host.Center, "sync-center-causal-workarea-fallback", host.OpenButton());
+                var dialog = await host.OpenRecoveryAsync();
+                try
+                {
+                    await ReadyAsync(dialog);
+                    Capture(dialog, "recovery-causal-workarea-fallback",
+                        Named<Button>(dialog, "PrepareButton"), Named<Button>(dialog, "CommitButton"), Named<Button>(dialog, "CancelRecoveryButton"));
+                }
+                finally { dialog.Close(); }
+            }
         }
 
         private static async Task CheckAcceptedReplacementAsync()
@@ -541,30 +568,70 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             internal readonly Window Owner;
             internal readonly SyncCenterDialog Center;
+            private readonly TaskCompletionSource<bool> _rendered = new TaskCompletionSource<bool>();
+            private EventHandler _renderedHandler;
             internal SyncCenterViewModel ViewModel => (SyncCenterViewModel)Center.DataContext;
-            internal CenterHost(Fixture fixture, Func<bool> allow = null)
+            internal CenterHost(Fixture fixture, Func<bool> allow = null, bool forceOwnerOutsideWorkArea = false)
             {
                 allow = allow ?? (() => true);
                 Owner = new Window { Width = 1024, Height = 768, WindowStartupLocation = WindowStartupLocation.CenterScreen, ShowInTaskbar = false };
                 Owner.Show();
+                if (forceOwnerOutsideWorkArea)
+                {
+                    // Only the plain QA caller is positioned outside its monitor.
+                    // Dialog positioning remains entirely in DialogShellWindow.
+                    var workArea = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(Owner);
+                    Owner.Left = workArea.Left - 32;
+                    Owner.Top = workArea.Top;
+                }
                 Center = new SyncCenterDialog(fixture.Factory, (trigger, repair, token) => Task.FromResult(new CatalogSyncRunResult(true)),
                     _ => Task.FromResult(false), _ => Task.FromResult(allow()), allow, () => _generation) { Owner = Owner };
+                _renderedHandler = (_, __) =>
+                {
+                    Center.ContentRendered -= _renderedHandler;
+                    _rendered.TrySetResult(true);
+                };
+                Center.ContentRendered += _renderedHandler;
                 Center.Show();
             }
-            internal Task ReadyAsync() => WaitAsync(() => ViewModel.ImportRecoveries.Count == 1, "Sync Center recovery list");
+            internal async Task ReadyAsync()
+            {
+                await WaitAsync(() => _rendered.Task.IsCompleted, "Sync Center ContentRendered");
+                await WaitAsync(() => ViewModel.ImportRecoveries.Count == 1, "Sync Center recovery list");
+            }
             internal Button OpenButton() => Descendants(Center).OfType<Button>().Single(button => button.Tag is CatalogImportRecoveryBatch);
             internal async Task<CatalogImportRecoveryDialog> OpenRecoveryAsync()
             {
                 var open = OpenButton();
-                _ = Center.Dispatcher.BeginInvoke(new Action(() => open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))), DispatcherPriority.Input);
-                await WaitAsync(() => Application.Current.Windows.OfType<CatalogImportRecoveryDialog>().Any(), "nested recovery dialog");
-                var dialog = Application.Current.Windows.OfType<CatalogImportRecoveryDialog>().Single();
-                Require(ReferenceEquals(dialog.Owner, Center), "recovery did not use the Sync Center owner");
-                return dialog;
+                CatalogImportRecoveryDialog dialog = null;
+                var rendered = new TaskCompletionSource<bool>();
+                EventHandler renderedHandler = (_, __) => rendered.TrySetResult(true);
+                // Observe the real nested dialog before its first rendering operation;
+                // polling Application.Windows alone can discover it after that event.
+                DispatcherHookEventHandler posted = (_, __) =>
+                {
+                    if (!Center.Dispatcher.CheckAccess() || dialog != null) return;
+                    dialog = Application.Current.Windows.OfType<CatalogImportRecoveryDialog>().SingleOrDefault();
+                    if (dialog != null) dialog.ContentRendered += renderedHandler;
+                };
+                Center.Dispatcher.Hooks.OperationPosted += posted;
+                try
+                {
+                    _ = Center.Dispatcher.BeginInvoke(new Action(() => open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))), DispatcherPriority.Input);
+                    await WaitAsync(() => dialog != null && rendered.Task.IsCompleted, "nested recovery ContentRendered");
+                    Require(ReferenceEquals(dialog.Owner, Center), "recovery did not use the Sync Center owner");
+                    return dialog;
+                }
+                finally
+                {
+                    Center.Dispatcher.Hooks.OperationPosted -= posted;
+                    if (dialog != null) dialog.ContentRendered -= renderedHandler;
+                }
             }
             public void Dispose()
             {
                 foreach (var recovery in Application.Current.Windows.OfType<CatalogImportRecoveryDialog>().ToArray()) recovery.Close();
+                Center.ContentRendered -= _renderedHandler;
                 Center.Close(); Owner.Close();
             }
         }
@@ -764,16 +831,65 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Require(row.RetailPrice == value, "actual price editor did not retain correction");
         }
         private static string Digits(string value) => new string(value.Where(char.IsDigit).ToArray());
-        private static void Capture(Window visual, string name)
+        private static void Capture(Window visual, string name, params FrameworkElement[] actions)
         {
             visual.UpdateLayout();
-            Require(Math.Abs(visual.ActualWidth - 1024) < 1 && Math.Abs(visual.ActualHeight - 768) < 1, "translated screenshot escaped its actual 1024x768 host: " + name);
+            var geometry = RecordGeometry(visual, "live_" + name);
+            var workArea = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(visual.Owner ?? visual);
+            Require(Contains(workArea, WindowBounds(visual)), "live overlay escaped its monitor work area: " + geometry);
+            var root = visual.Content as FrameworkElement;
+            Require(root != null, "dialog has no rendered root: " + geometry);
+            var card = (root as Panel)?.Children.OfType<Border>().SingleOrDefault();
+            Require(card != null, "dialog has no rendered overlay card: " + geometry);
+            var requiredWidth = RequiredCardLength(card.Width, card.MinWidth);
+            var requiredHeight = RequiredCardLength(card.Height, card.MinHeight);
+            var ownerBounds = visual.Owner == null ? Rect.Empty : WindowBounds(visual.Owner);
+            var ownerCanHost = visual.Owner != null && workArea.Contains(ownerBounds) && ownerBounds.Width >= requiredWidth && ownerBounds.Height >= requiredHeight;
+            var expectedBounds = ownerCanHost ? ownerBounds : workArea;
+            var policyGeometry = geometry + "; required_card=" + requiredWidth.ToString(Invariant) + "," + requiredHeight.ToString(Invariant) + "; expected_native=" + RectText(expectedBounds);
+            Evidence.Add(policyGeometry);
+            Require(SameBounds(WindowBounds(visual), expectedBounds), "live overlay did not use its standard owner/work-area bounds: " + policyGeometry);
+            foreach (var action in actions) CheckBounds(action, visual, "live_" + name);
+
+            var originalSize = root.RenderSize;
+            var originalSlot = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(root);
+            var originalParent = VisualTreeHelper.GetParent(root);
+            var originalDataContext = root.ReadLocalValue(FrameworkElement.DataContextProperty);
+            var originalWidth = root.ReadLocalValue(FrameworkElement.WidthProperty);
+            var originalHeight = root.ReadLocalValue(FrameworkElement.HeightProperty);
             var dpi = VisualTreeHelper.GetDpi(visual);
-            var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(visual.ActualWidth * dpi.DpiScaleX)), Math.Max(1, (int)Math.Ceiling(visual.ActualHeight * dpi.DpiScaleY)), 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
-            bitmap.Render(visual);
-            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using (var stream = File.Create(Path.Combine(AppPaths.DataDirectory, name + ".png"))) encoder.Save(stream);
-            Evidence.Add("screenshot=" + name + "; logical_width=" + visual.ActualWidth + "; logical_height=" + visual.ActualHeight + "; dpi_scale_x=" + dpi.DpiScaleX + "; dpi_scale_y=" + dpi.DpiScaleY);
+            // Match Program's exact Measure/Arrange viewport. Keep the real root
+            // attached and preserve every binding; restore its native layout before
+            // the Dispatcher can resume the live window's pending layout work.
+            using (visual.Dispatcher.DisableProcessing())
+            {
+                try
+                {
+                    root.Measure(new Size(1024, 768));
+                    root.Arrange(new Rect(0, 0, 1024, 768));
+                    var viewportGeometry = "viewport=" + name + "; target=root_content; logical_width=" + root.ActualWidth.ToString(Invariant) + "; logical_height=" + root.ActualHeight.ToString(Invariant) + "; " + geometry;
+                    Evidence.Add(viewportGeometry);
+                    Require(Math.Abs(root.ActualWidth - 1024) < 1 && Math.Abs(root.ActualHeight - 768) < 1, "translated root screenshot escaped its exact 1024x768 viewport: " + viewportGeometry);
+                    foreach (var action in actions) CheckViewportBounds(action, root, viewportGeometry);
+                    var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(root.ActualWidth * dpi.DpiScaleX)), Math.Max(1, (int)Math.Ceiling(root.ActualHeight * dpi.DpiScaleY)), 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+                    bitmap.Render(root);
+                    var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    using (var stream = File.Create(Path.Combine(AppPaths.DataDirectory, name + ".png"))) encoder.Save(stream);
+                    Evidence.Add("screenshot=" + name + "; target=root_content_exact_viewport; logical_width=" + root.ActualWidth.ToString(Invariant) + "; logical_height=" + root.ActualHeight.ToString(Invariant) + "; dpi_scale_x=" + dpi.DpiScaleX.ToString(Invariant) + "; dpi_scale_y=" + dpi.DpiScaleY.ToString(Invariant));
+                }
+                finally
+                {
+                    root.Measure(originalSize);
+                    root.Arrange(originalSlot);
+                    visual.InvalidateMeasure(); visual.InvalidateArrange(); visual.UpdateLayout();
+                    var restored = RecordGeometry(visual, "restored_" + name);
+                    Require(Math.Abs(root.ActualWidth - originalSize.Width) < 1 && Math.Abs(root.ActualHeight - originalSize.Height) < 1 &&
+                        ReferenceEquals(VisualTreeHelper.GetParent(root), originalParent) &&
+                        Equals(root.ReadLocalValue(FrameworkElement.DataContextProperty), originalDataContext) &&
+                        Equals(root.ReadLocalValue(FrameworkElement.WidthProperty), originalWidth) && Equals(root.ReadLocalValue(FrameworkElement.HeightProperty), originalHeight),
+                        "exact viewport capture changed the live layout, parent or bindings: " + restored);
+                }
+            }
         }
         private static void CheckPresentation(ImportRecoveryPresentation item, Fixture fixture)
         {
@@ -782,8 +898,32 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static void CheckBounds(FrameworkElement element, Window window, string language)
         {
             var bounds = element.TransformToAncestor(window).TransformBounds(new Rect(element.RenderSize));
-            Require(bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right <= window.ActualWidth && bounds.Bottom <= window.ActualHeight, "recovery CTA clipped at 1024x768 in " + language);
+            var geometry = RecordGeometry(window, "live_cta_" + language) + "; cta=" + element.Name + "; cta_bounds=" + RectText(bounds);
+            Evidence.Add(geometry);
+            Require(element.IsVisible && bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right <= window.ActualWidth && bounds.Bottom <= window.ActualHeight, "recovery CTA clipped in its live window: " + geometry);
         }
+        private static void CheckViewportBounds(FrameworkElement element, FrameworkElement root, string geometry)
+        {
+            var bounds = element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize));
+            var received = geometry + "; cta=" + element.Name + "; cta_bounds=" + RectText(bounds);
+            Evidence.Add(received);
+            Require(element.IsVisible && bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right <= root.ActualWidth && bounds.Bottom <= root.ActualHeight,
+                "recovery CTA clipped in its exact 1024x768 root viewport: " + received);
+        }
+        private static string RecordGeometry(Window window, string stage)
+        {
+            var dpi = VisualTreeHelper.GetDpi(window);
+            var summary = "geometry=" + stage + "; dialog=" + RectText(WindowBounds(window)) + "; owner=" + (window.Owner == null ? "none" : RectText(WindowBounds(window.Owner))) +
+                "; work_area=" + RectText(MonitorHelper.GetWorkAreaForExactWindowOrPrimary(window.Owner ?? window)) +
+                "; dpi_scale_x=" + dpi.DpiScaleX.ToString(Invariant) + "; dpi_scale_y=" + dpi.DpiScaleY.ToString(Invariant);
+            Evidence.Add(summary);
+            return summary;
+        }
+        private static Rect WindowBounds(Window window) => new Rect(window.Left, window.Top, window.ActualWidth, window.ActualHeight);
+        private static string RectText(Rect value) => value.X.ToString(Invariant) + "," + value.Y.ToString(Invariant) + "," + value.Width.ToString(Invariant) + "," + value.Height.ToString(Invariant);
+        private static bool Contains(Rect container, Rect value) => value.Left >= container.Left - 1 && value.Top >= container.Top - 1 && value.Right <= container.Right + 1 && value.Bottom <= container.Bottom + 1;
+        private static bool SameBounds(Rect left, Rect right) => Math.Abs(left.Left - right.Left) < 1 && Math.Abs(left.Top - right.Top) < 1 && Math.Abs(left.Width - right.Width) < 1 && Math.Abs(left.Height - right.Height) < 1;
+        private static double RequiredCardLength(double explicitLength, double minimum) => !double.IsNaN(explicitLength) && !double.IsInfinity(explicitLength) && explicitLength > 0 ? explicitLength : (!double.IsNaN(minimum) && !double.IsInfinity(minimum) && minimum > 0 ? minimum : 1);
         private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
         {
             yield return root;

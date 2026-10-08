@@ -1232,6 +1232,13 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   CI dell'esatto SHA deve qualificare l'intera sequenza prima dell'integrazione.
 - Misure recovery locali campionate, query/batch worker e backup raccolti;
   rilascio memoria assoluto NOT_QUALIFIED. Nessuna qualifica Win7 o periferiche.
+- CI 37849987382: Core/Data 1385/1385 e 49 gate PASS, ma sequenza funzionale
+  fermata dalla fixture U2 che equiparava overlay nativo e viewport 1024x768;
+  un PASS, un FAIL, diciassette non eseguiti. Geometria hosted non osservata.
+  Separati i controlli live owner/workarea dal viewport esatto e dal ripristino
+  del layout; prova causale locale del fallback e 9 gruppi/10 PNG PASS, review
+  distinta e build senza warning/errori. Nessuna modifica a dialog di produzione,
+  budget o timeout; serve nuovo CI completo dell'esatto candidato.
 - Admin PR132 integrata; due DDL U2/deploy restano separatamente autorizzabili.
   TASK150 read-only PASS non sostituisce scope QA/metriche/READY. Manifest TASK148
   originale recuperato; nessuna readiness o prova live inventata.

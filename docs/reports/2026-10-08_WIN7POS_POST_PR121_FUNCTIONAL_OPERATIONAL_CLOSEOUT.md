@@ -142,6 +142,30 @@ of these new golden files. Their exact-byte `-text` attribute now follows the
 existing contract-fixture policy; all thirteen hashes must survive a checkout
 with `core.autocrlf=true`. Byte assertions and pins remain unchanged.
 
+Hosted CI 37849987382 on `f5bcfd7cd9559c783ca25848b1b533e0da7f645d`
+then passed Core/Data 1385/1385, all 49 gates, builds and 50 preliminary visual
+screens. Its functional sequence failed at `IMPORT_RECOVERY_completion`:
+one scenario passed, one failed and seventeen were not executed, including U1
+and PERF. Security 37849987422 succeeded. The failing screenshot assertion
+assumed every native overlay must measure 1024x768, although the shared dialog
+base legitimately uses the work area when its owner cannot host the overlay.
+The actual hosted owner/dialog/work-area/DPI dimensions were not recorded before
+the assertion and remain UNOBSERVED; the precise hosted geometry is not inferred.
+
+The fixture now records and checks live owner/work-area overlay bounds separately
+from the exact 1024x768 root-content layout viewport. Real ContentRendered events
+are observed before capture. The attached root is synchronously measured/arranged
+for the screenshot, with visible CTA bounds checked, then its original geometry,
+parent and local binding values are verified after restoration. No production
+dialog positioning, timeout, budget or product assertion changed. An independently
+reviewed targeted run passed all nine U2 groups and ten screenshots after one
+Release/x86 harness build with zero warnings/errors. A causal control moved only
+the plain QA owner partly outside the work area: owner -32,0,1024,768, native
+overlay 0,0,1440,852 at DPI 2. The old size assumption was false while exact
+1024x768 layout and restoration passed. This local proof demonstrates the fixture
+defect without inventing the earlier hosted dimensions. The previous FAIL remains;
+the successor SHA still requires complete hosted CI/Security before integration.
+
 ## Measurements and their limits
 
 The measured host is MIN-ASUS, Windows 11 Home Single Language 10.0.26300 x64;
@@ -196,9 +220,14 @@ source does not assert that either has been applied.
 
 The previously served Worker came from a staged checkout without a matching
 original build commit. A minimal staging candidate based on the equivalent
-served-tree commit `f401fc` is being prepared; its first foundation CI failed and
-is under diagnosis. It requires its own review and gates before a concrete deploy
-proposal. Admin main `62f513` is not treated as compatible merely because its
+served-tree commit `f401fc` is frozen in draft PR133 at
+`af365f0d8eb7e020e666d388bddbcfaedc3df0c8`. Its initial fixture failures remain
+recorded. The reviewed fixture corrections passed CI 37848375351 and Cloudflare
+build 37848375026: foundation 1023 passed/13 skipped, pgTAP 2627 passed, UI 48,
+pairing 2 and Cloudflare guards 29. Deployment and staging E2E were skipped.
+The concrete two-migration/staging proposal is prepared and awaits explicit
+authorization; no DDL, deploy or READY has been executed. Admin main `62f513`
+also passed its own CI/build but is not treated as compatible merely because its
 gates pass. All `cloudflare.yml` effects include the TASK150 secret update and smoke probes.
 Current runtime provenance, applied schema and actual HTTP503/CPU/memory
 telemetry must be refreshed for the final acceptance window. Empty metrics or
