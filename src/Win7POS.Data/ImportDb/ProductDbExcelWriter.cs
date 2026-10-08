@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Globalization;
 using ClosedXML.Excel;
 using Win7POS.Core.ImportDb;
 
@@ -47,7 +48,8 @@ namespace Win7POS.Data.ImportDb
                 ws.Cell(r, 3).Value = row.Name ?? "";
                 ws.Cell(r, 4).Value = row.Name2 ?? "";
                 ws.Cell(r, 5).Value = row.PurchasePrice;
-                ws.Cell(r, 6).Value = row.RetailPrice;
+                // Excel numeric cells cannot preserve every Int64 value.
+                ws.Cell(r, 6).Value = row.RetailPrice.ToString(CultureInfo.InvariantCulture);
                 ws.Cell(r, 7).Value = row.SupplierName ?? "";
                 ws.Cell(r, 8).Value = row.CategoryName ?? "";
                 ws.Cell(r, 9).Value = row.StockQty;
@@ -98,8 +100,8 @@ namespace Win7POS.Data.ImportDb
                 ws.Cell(r, 1).Value = row.ProductBarcode ?? "";
                 ws.Cell(r, 2).Value = row.Timestamp ?? "";
                 ws.Cell(r, 3).Value = row.Type ?? "retail";
-                ws.Cell(r, 4).Value = row.OldPrice.HasValue ? row.OldPrice.Value.ToString() : "";
-                ws.Cell(r, 5).Value = row.NewPrice;
+                ws.Cell(r, 4).Value = row.OldPrice.HasValue ? row.OldPrice.Value.ToString(CultureInfo.InvariantCulture) : "";
+                ws.Cell(r, 5).Value = row.NewPrice.ToString(CultureInfo.InvariantCulture);
                 ws.Cell(r, 6).Value = row.Source ?? "";
                 r++;
             }

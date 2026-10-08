@@ -1006,8 +1006,8 @@ VALUES
                             command,
                             2,
                             "retail",
-                            existing == null ? (int?)null : (int)existing.UnitPrice,
-                            (int)row.UnitPrice);
+                            existing == null ? (long?)null : existing.UnitPrice,
+                            row.UnitPrice);
                     }
                 }
                 else
@@ -1016,8 +1016,8 @@ VALUES
                         command,
                         1,
                         "retail",
-                        existing == null ? (int?)null : (int)existing.UnitPrice,
-                        (int)row.UnitPrice);
+                        existing == null ? (long?)null : existing.UnitPrice,
+                        row.UnitPrice);
                 }
 
                 metrics.RecordPriceHistory(count);
@@ -1061,8 +1061,8 @@ VALUES
                 SqliteCommand command,
                 int index,
                 string type,
-                int? oldPrice,
-                int newPrice)
+                long? oldPrice,
+                long newPrice)
             {
                 command.Parameters["@type" + index].Value = type;
                 command.Parameters["@oldPrice" + index].Value = (object)oldPrice ?? DBNull.Value;

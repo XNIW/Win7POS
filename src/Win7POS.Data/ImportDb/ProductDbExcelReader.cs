@@ -124,8 +124,9 @@ namespace Win7POS.Data.ImportDb
             var supplierCol = FindColumn(dt, "Proveedor", "Supplier", "SupplierName", "I");
             var categoryCol = FindColumn(dt, "Categoría", "Category", "CategoryName", "J");
             var stockCol = FindColumn(dt, "Existencias", "Stock", "StockQty", "K");
-            var purchaseOldCol = FindColumn(dt, "Compra (Antiguo)", "G");
-            var retailOldCol = FindColumn(dt, "Venta (Antiguo)", "H");
+            var canonicalLayout = FindColumn(dt, "RetailPrice") >= 0;
+            var purchaseOldCol = FindColumn(dt, "Compra (Antiguo)", canonicalLayout ? "PurchaseOld" : "G");
+            var retailOldCol = FindColumn(dt, "Venta (Antiguo)", canonicalLayout ? "RetailOld" : "H");
 
             for (var r = 0; r < dt.Rows.Count; r++)
             {
@@ -134,7 +135,7 @@ namespace Win7POS.Data.ImportDb
                 if (string.IsNullOrEmpty(barcode)) continue;
 
                 var purchasePrice = NormalizeMoneyClp(GetCell(row, purchaseCol));
-                var retailPrice = NormalizeMoneyClp(GetCell(row, retailCol));
+                var retailPrice = NormalizeMoneyClp64(GetCell(row, retailCol));
                 if (retailPrice < 0) retailPrice = 0;
 
                 rows.Add(new ProductRow
@@ -146,7 +147,7 @@ namespace Win7POS.Data.ImportDb
                     PurchasePrice = purchasePrice,
                     RetailPrice = retailPrice,
                     PurchaseOld = NormalizeMoneyClp(GetCell(row, purchaseOldCol)),
-                    RetailOld = NormalizeMoneyClp(GetCell(row, retailOldCol)),
+                    RetailOld = NormalizeMoneyClp64(GetCell(row, retailOldCol)),
                     SupplierName = NormalizeName(ToString(GetCell(row, supplierCol))),
                     CategoryName = NormalizeName(ToString(GetCell(row, categoryCol))),
                     StockQty = NormalizeStock(GetCell(row, stockCol))
@@ -240,8 +241,8 @@ namespace Win7POS.Data.ImportDb
                     ProductBarcode = barcode,
                     Timestamp = NormalizeTimestamp(GetCell(row, tsCol)),
                     Type = type.ToLowerInvariant(),
-                    OldPrice = NormalizeNullableInt(GetCell(row, FindColumn(dt, "oldPrice", "D"))),
-                    NewPrice = NormalizeMoneyClp(GetCell(row, newPriceCol)),
+                    OldPrice = NormalizeNullableMoneyClp64(GetCell(row, FindColumn(dt, "oldPrice", "D"))),
+                    NewPrice = NormalizeMoneyClp64(GetCell(row, newPriceCol)),
                     Source = ToString(GetCell(row, FindColumn(dt, "source", "F"))) ?? string.Empty
                 });
             }
@@ -269,7 +270,7 @@ namespace Win7POS.Data.ImportDb
                 if (string.IsNullOrEmpty(barcode)) continue;
 
                 var purchasePrice = NormalizeMoneyClp(GetCellValueWithFallback(ws, r, headerMap, "E", 4, "Precio de compra", "PurchasePrice"));
-                var retailPrice = NormalizeMoneyClp(GetCellValueWithFallback(ws, r, headerMap, "F", 5, "Precio de venta", "Precio venta", "RetailPrice"));
+                var retailPrice = NormalizeMoneyClp64(GetCellValueWithFallback(ws, r, headerMap, "F", 5, "Precio de venta", "Precio venta", "RetailPrice"));
                 if (retailPrice < 0) retailPrice = 0;
 
                 rows.Add(new ProductRow
@@ -280,8 +281,12 @@ namespace Win7POS.Data.ImportDb
                     Name2 = ToString(GetCellValueWithFallback(ws, r, headerMap, "D", 3, "Segundo nombre", "Segundo nombre del producto", "Nome 2", "Secondo nome", "Name2")),
                     PurchasePrice = purchasePrice,
                     RetailPrice = retailPrice,
-                    PurchaseOld = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "Compra (Antiguo)", "G", 6)),
-                    RetailOld = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "Venta (Antiguo)", "H", 7)),
+                    PurchaseOld = NormalizeMoneyClp(headerMap.ContainsKey("RetailPrice")
+                        ? GetOptionalCellValue(ws, r, headerMap, "Compra (Antiguo)", "PurchaseOld")
+                        : GetCellValue(ws, r, headerMap, "Compra (Antiguo)", "G", 6)),
+                    RetailOld = NormalizeMoneyClp64(headerMap.ContainsKey("RetailPrice")
+                        ? GetOptionalCellValue(ws, r, headerMap, "Venta (Antiguo)", "RetailOld")
+                        : GetCellValue(ws, r, headerMap, "Venta (Antiguo)", "H", 7)),
                     SupplierName = NormalizeName(ToString(GetCellValueWithFallback(ws, r, headerMap, "I", 8, "Proveedor", "Supplier", "SupplierName"))),
                     CategoryName = NormalizeName(ToString(GetCellValueWithFallback(ws, r, headerMap, "J", 9, "Categoría", "Category", "CategoryName"))),
                     StockQty = NormalizeStock(GetCellValueWithFallback(ws, r, headerMap, "K", 10, "Existencias", "Stock", "StockQty"))
@@ -350,12 +355,19 @@ namespace Win7POS.Data.ImportDb
                     ProductBarcode = barcode,
                     Timestamp = NormalizeTimestamp(GetCellValue(ws, r, headerMap, "timestamp", "B", 1)),
                     Type = type.ToLowerInvariant(),
-                    OldPrice = NormalizeNullableInt(GetCellValue(ws, r, headerMap, "oldPrice", "D", 3)),
-                    NewPrice = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "newPrice", "E", 4)),
+                    OldPrice = NormalizeNullableMoneyClp64(GetCellValue(ws, r, headerMap, "oldPrice", "D", 3)),
+                    NewPrice = NormalizeMoneyClp64(GetCellValue(ws, r, headerMap, "newPrice", "E", 4)),
                     Source = ToString(GetCellValue(ws, r, headerMap, "source", "F", 5)) ?? string.Empty
                 });
             }
             return rows;
+        }
+
+        private static object GetOptionalCellValue(IXLWorksheet ws, int row, IReadOnlyDictionary<string, int> headerMap, params string[] names)
+        {
+            foreach (var name in names)
+                if (headerMap.TryGetValue(name, out var column)) return CellText(ws.Cell(row, column + 1));
+            return null;
         }
 
         private static object GetCellValue(IXLWorksheet ws, int row, IReadOnlyDictionary<string, int> headerMap, string headerName, string fallbackCol, int fallbackColIdx)
@@ -440,11 +452,29 @@ namespace Win7POS.Data.ImportDb
             return 0;
         }
 
-        private static int? NormalizeNullableInt(object cell)
+        private static long NormalizeMoneyClp64(object cell)
         {
-            if (cell == null) return null;
-            var v = NormalizeMoneyClp(cell);
-            return v;
+            if (cell == null || cell == DBNull.Value) return 0;
+            if (cell is long l) return l;
+            if (cell is int i) return i;
+            if (cell is double d)
+            {
+                if (double.IsNaN(d) || double.IsInfinity(d)) throw new FormatException("Invalid price.");
+                // Preserve this workbook reader's existing rounding policy.
+                return checked((long)Math.Round(d, MidpointRounding.AwayFromZero));
+            }
+            var text = cell.ToString()?.Trim() ?? string.Empty;
+            if (text.Length == 0) return 0;
+            text = text.Replace(".", "").Replace(",", "");
+            if (!long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+                throw new FormatException("Price outside Int64 storage range.");
+            return value;
+        }
+
+        private static long? NormalizeNullableMoneyClp64(object cell)
+        {
+            if (cell == null || cell == DBNull.Value || string.IsNullOrWhiteSpace(cell.ToString())) return null;
+            return NormalizeMoneyClp64(cell);
         }
 
         private static string NormalizeTimestamp(object cell)

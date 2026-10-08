@@ -941,7 +941,7 @@ namespace Win7POS.Wpf.Products
                     StatusMessage = PosLocalization.T("products.notFound");
                     return;
                 }
-                ProductPriceHistoryDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner(), full.Id, full.Barcode ?? "", full.Name ?? "", (int)full.UnitPrice, full.PurchasePrice, CanEditPrices);
+                ProductPriceHistoryDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner(), full.Id, full.Barcode ?? "", full.Name ?? "", full.UnitPrice, full.PurchasePrice, CanEditPrices);
             }
             catch (Exception ex)
             {

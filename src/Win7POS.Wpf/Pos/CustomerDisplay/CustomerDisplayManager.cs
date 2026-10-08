@@ -51,6 +51,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         private bool _disposed;
         private bool _cashierMinimized;
         private bool _operatorLocked;
+        private bool _openRequested;
         private bool _monitorWasMissing;
         private bool _manuallyClosed;
         private bool _hiddenForCashierMinimize;
@@ -107,6 +108,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
 
             if (_settings.Enabled && _settings.AutoOpen)
             {
+                _openRequested = true;
                 TryOpenOrUpdate(false);
             }
         }
@@ -142,6 +144,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             _settings = settings.Clone();
             _logo = logo;
             if (_disposed) return;
+            _openRequested = settings.Enabled;
             _manuallyClosed = false;
             _monitorWasMissing = false;
             _reopenBlocked = false;
@@ -175,6 +178,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         public void OpenDisplay()
         {
             ThrowIfDisposed();
+            _openRequested = true;
             _manuallyClosed = false;
             _monitorWasMissing = false;
             _reopenBlocked = false;
@@ -184,6 +188,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         public void CloseDisplay()
         {
             StopPreview();
+            _openRequested = false;
             _manuallyClosed = true;
             _hiddenForCashierMinimize = false;
             CloseWindow();
@@ -314,7 +319,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
                 return;
             }
 
-            if (settings.Enabled && (_hiddenForCashierMinimize || settings.AutoOpen))
+            if (settings.Enabled && (_openRequested || _previewSettings != null))
             {
                 TryOpenOrUpdate(false);
             }
@@ -376,7 +381,9 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             CustomerDisplaySettings settings = null)
         {
             settings = settings ?? _previewSettings ?? _settings;
-            if (!settings.Enabled || _manuallyClosed)
+            // Enabled permits a display; only startup AutoOpen or an explicit
+            // runtime action requests one. Preview is a temporary separate intent.
+            if (!settings.Enabled || _manuallyClosed || (!_openRequested && _previewSettings == null))
             {
                 _hiddenForCashierMinimize = false;
                 CloseWindow();
@@ -472,6 +479,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             if (sender is CustomerDisplayWindow window) window.Closed -= OnWindowClosed;
             if (ReferenceEquals(sender, _window))
             {
+                _openRequested = false;
                 _manuallyClosed = true;
                 _hiddenForCashierMinimize = false;
                 _window = null;

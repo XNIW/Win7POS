@@ -1,5 +1,20 @@
 # Supplier Excel Import Contract
 
+Price boundaries verified after PR120: local catalog storage and retail history
+use nonnegative Int64 values (`0..9223372036854775807`); purchase storage remains
+`0..2147483647`. Supplier parsing validates these bounds before the existing CLP
+ToEven rounding. The current Admin catalog-import v1 receiver has a narrower
+`0..999999999` bound for both prices (`catalog-import-sync.ts`,
+`nonNegativeNumber`, Admin commit `02ea44b95d4a05baddbf46f24251f0d5f0dea294`).
+The WPF sync preview, outbox builder and pending-payload validator enforce that
+bound explicitly. A rejected row retains its draft and cannot write products,
+history or outbox. This does not widen the Admin API or lower the local Int64
+storage domain. Existing manual article input keeps its Int32 retail contract;
+an edit retaining an existing larger retail value fails explicitly rather than
+wrapping it. History readers and workbook export/import preserve Int64 values;
+export uses text cells to avoid Excel numeric precision loss. Existing damaged
+history is not reconstructed or repaired by this change.
+
 Android is the canonical source for supplier Excel import behavior. The current comparison baseline is Android main `4b2b4a93dd5d4db7d1cfb83e897aa5cbac40366e`; the cross-platform classification and intentional exclusions are recorded in `docs/reports/2026-08-03-current-android-import-parity.md`. Public import keys are: `barcode`, `productName`, `itemNumber`, `purchasePrice`, `retailPrice`, `quantity`, `supplier`, `category`, `secondProductName`, `totalPrice`, `rowNumber`, `discount`, `discountedPrice`, `oldPurchasePrice`, `oldRetailPrice`, `realQuantity`, `complete`.
 
 Forbidden names such as `stockQuantity`, `supplierName`, `categoryName`, `articleCode`, `unitPrice`, `name`, `name2`, `cost`, `prevPurchase`, and `prevRetail` are allowed only as storage/model boundary details or legacy aliases normalized before preview.

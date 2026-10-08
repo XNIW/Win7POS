@@ -229,7 +229,7 @@ namespace Win7POS.Data.Repositories
             return _localProductWriter.UpdateProductAndMetaWithPriceHistoryAsync(productId, name, unitPriceMinor, barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty, source);
         }
 
-        public Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source, ProductWriteOrigin origin)
+        public Task InsertPriceHistoryAsync(string barcode, string type, long newPrice, string source, ProductWriteOrigin origin)
         {
             EnsureLegacyNonUserOrigin(origin);
             return _localProductWriter.InsertPriceHistoryAsync(barcode, type, newPrice, source);
@@ -250,7 +250,7 @@ namespace Win7POS.Data.Repositories
             _queries.ListAllPriceHistoryAsync();
 
         /// <summary>Aggiorna prezzi prodotto e scrive storico nella stessa transazione. source es. MANUAL_EDIT, IMPORT.</summary>
-        public Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source, ProductWriteOrigin origin)
+        public Task UpdateProductPricesAsync(long productId, int newPurchasePrice, long newRetailPrice, string source, ProductWriteOrigin origin)
         {
             EnsureLegacyNonUserOrigin(origin);
             return _localProductWriter.UpdateProductPricesAsync(productId, newPurchasePrice, newRetailPrice, source);

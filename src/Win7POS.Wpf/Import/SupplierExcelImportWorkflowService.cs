@@ -83,7 +83,9 @@ namespace Win7POS.Wpf.Import
             {
                 DbInitializer.EnsureCreated(_options);
                 var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
-                return await applier.BuildPreviewAsync(capturedRows, cancellationToken).ConfigureAwait(false);
+                var preview = await applier.BuildPreviewAsync(capturedRows, cancellationToken).ConfigureAwait(false);
+                CatalogImportOutboxPayloadBuilder.ValidateSupplierExcelPreview(preview);
+                return preview;
             }, cancellationToken);
         }
 
