@@ -6,8 +6,8 @@ namespace Win7POS.Core.Models
         public string ProductBarcode { get; set; } = string.Empty;
         public string ChangedAt { get; set; } = string.Empty;
         public string PriceType { get; set; } = string.Empty; // "retail" | "purchase"
-        public int? OldPrice { get; set; }
-        public int NewPrice { get; set; }
+        public long? OldPrice { get; set; }
+        public long NewPrice { get; set; }
         public string Source { get; set; } = string.Empty; // IMPORT, MANUAL_EDIT, BULK_IMPORT
         public string Note { get; set; } = string.Empty;
     }

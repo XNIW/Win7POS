@@ -21,9 +21,9 @@ namespace Win7POS.Core.ImportDb
         public string Name { get; set; } = string.Empty;
         public string Name2 { get; set; } = string.Empty;
         public int PurchasePrice { get; set; }
-        public int RetailPrice { get; set; }
+        public long RetailPrice { get; set; }
         public int PurchaseOld { get; set; }
-        public int RetailOld { get; set; }
+        public long RetailOld { get; set; }
         public string SupplierName { get; set; } = string.Empty;
         public int? SupplierId { get; set; }
         public string CategoryName { get; set; } = string.Empty;
@@ -48,8 +48,8 @@ namespace Win7POS.Core.ImportDb
         public string ProductBarcode { get; set; } = string.Empty;
         public string Timestamp { get; set; } = string.Empty;
         public string Type { get; set; } = string.Empty;
-        public int? OldPrice { get; set; }
-        public int NewPrice { get; set; }
+        public long? OldPrice { get; set; }
+        public long NewPrice { get; set; }
         public string Source { get; set; } = string.Empty;
     }
 }

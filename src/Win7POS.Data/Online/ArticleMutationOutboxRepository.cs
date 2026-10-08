@@ -2401,7 +2401,7 @@ WHERE mutation_id = @mutationId
             public long Id { get; set; }
             public string Timestamp { get; set; }
             public string Type { get; set; }
-            public int NewPrice { get; set; }
+            public long NewPrice { get; set; }
             public string Source { get; set; }
             public string RemotePriceId { get; set; }
             public string ArticleMutationId { get; set; }

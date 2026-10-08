@@ -24,7 +24,7 @@ namespace Win7POS.Wpf.Products
         private string _statusMessage = "";
         private bool _isBusy;
 
-        public ProductPriceHistoryViewModel(long productId, string barcode, string name, int currentRetail, int currentPurchase, ProductsWorkflowService service, bool canEditPrices)
+        public ProductPriceHistoryViewModel(long productId, string barcode, string name, long currentRetail, int currentPurchase, ProductsWorkflowService service, bool canEditPrices)
         {
             _productId = productId;
             _service = service ?? throw new ArgumentNullException(nameof(service));
@@ -145,11 +145,11 @@ namespace Win7POS.Wpf.Products
                 StatusMessage = PosLocalization.T("priceHistory.priceEditDenied");
                 return;
             }
-            var retail = ParseClp(NewRetailText);
+            long retail = ParseClp(NewRetailText);
             var purchase = ParseClp(NewPurchaseText);
             var details = await _service.GetDetailsByIdAsync(_productId).ConfigureAwait(true);
             if (details == null) { StatusMessage = PosLocalization.T("products.notFound"); return; }
-            var currentRetail = (int)details.UnitPrice;
+            var currentRetail = details.UnitPrice;
             var currentPurchase = details.PurchasePrice;
             if (retail < 0) retail = currentRetail;
             if (purchase < 0) purchase = currentPurchase;

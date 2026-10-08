@@ -397,13 +397,12 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
 
                         var changedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
                         var src = source ?? "MANUAL_EDIT";
-                        var newRetail = (int)unitPriceMinor;
                         if (current.UnitPrice != unitPriceMinor)
                         {
                             await conn.ExecuteAsync(@"
 INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
 VALUES(@barcode, @changedAt, 'retail', @oldPrice, @newPrice, @source)",
-                                new { barcode, changedAt, oldPrice = (int)current.UnitPrice, newPrice = newRetail, source = src },
+                                new { barcode, changedAt, oldPrice = current.UnitPrice, newPrice = unitPriceMinor, source = src },
                                 tx).ConfigureAwait(false);
                         }
 
@@ -431,7 +430,7 @@ VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
             }
         }
 
-        internal async Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source)
+        internal async Task InsertPriceHistoryAsync(string barcode, string type, long newPrice, string source)
         {
             var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             using var conn = _factory.Open();
@@ -441,7 +440,7 @@ VALUES(@barcode, @timestamp, @type, NULL, @newPrice, @source)",
                 new { barcode, timestamp, type, newPrice, source }).ConfigureAwait(false);
         }
 
-        internal async Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source)
+        internal async Task UpdateProductPricesAsync(long productId, int newPurchasePrice, long newRetailPrice, string source)
         {
             if (productId <= 0) throw new ArgumentException("Invalid product id.");
             using var conn = _factory.Open();
@@ -452,7 +451,7 @@ SELECT p.barcode, p.unitPrice FROM products p WHERE p.id = @productId", new { pr
             var purchaseCurrent = await conn.ExecuteScalarAsync<int?>(@"
 SELECT purchase_price FROM product_meta WHERE barcode = @barcode", new { barcode = product.Barcode }).ConfigureAwait(false);
             var currentPurchase = purchaseCurrent ?? 0;
-            var currentRetail = (int)product.UnitPrice;
+            var currentRetail = product.UnitPrice;
 
             using var tx = conn.BeginTransaction();
             try

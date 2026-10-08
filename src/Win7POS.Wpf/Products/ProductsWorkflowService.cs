@@ -274,7 +274,7 @@ namespace Win7POS.Wpf.Products
                 Name = d.Name ?? "",
                 Name2 = d.Name2 ?? "",
                 PurchasePrice = d.PurchasePrice,
-                RetailPrice = (int)d.UnitPrice,
+                RetailPrice = d.UnitPrice,
                 SupplierId = d.SupplierId,
                 SupplierName = d.SupplierName ?? "",
                 CategoryId = d.CategoryId,
@@ -360,7 +360,7 @@ namespace Win7POS.Wpf.Products
         }
 
         /// <summary>Aggiorna prezzi e scrive storico (stessa transazione). source es. MANUAL_EDIT, IMPORT.</summary>
-        public async Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source)
+        public async Task UpdateProductPricesAsync(long productId, int newPurchasePrice, long newRetailPrice, string source)
         {
             var current = await _products.GetDetailsByIdAsync(productId)
                 .ConfigureAwait(false);

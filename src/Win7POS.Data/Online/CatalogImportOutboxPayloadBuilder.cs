@@ -14,6 +14,36 @@ namespace Win7POS.Data.Online
     public static class CatalogImportOutboxPayloadBuilder
     {
         private const string Source = "supplier_excel";
+        // Admin catalog-import-sync.ts nonNegativeNumber, contract v1.
+        public const long MaximumAdminPrice = 999999999L;
+
+        public static void ValidateSupplierExcelPreview(SupplierImportSyncPreview preview)
+        {
+            if (preview == null) throw new ArgumentNullException(nameof(preview));
+            foreach (var row in preview.NewProducts.Concat(preview.UpdatedProducts.Select(item => item.Updated)))
+            {
+                ValidateAdminPrice(preview, row, "purchasePrice", row.PurchasePrice);
+                ValidateAdminPrice(preview, row, "retailPrice", row.RetailPrice);
+            }
+            preview.Summary.ErrorCount = preview.Errors.Count;
+        }
+
+        private static void ValidateAdminPrice(SupplierImportSyncPreview preview, SupplierImportProductRow row, string field, string value)
+        {
+            if (IsAdminPrice(value)) return;
+            var message = "supplier_import_invalid_price|" + field + "|" +
+                MaximumAdminPrice.ToString(CultureInfo.InvariantCulture);
+            if (!preview.Errors.Any(error => error.RowIndex == row.RowNumber && error.Barcode == row.Barcode && error.Message == message))
+                preview.Errors.Add(new SupplierImportError(message, row.RowNumber, row.Barcode));
+        }
+
+        internal static bool IsAdminPrice(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return true;
+            decimal parsed;
+            return decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture, out parsed) && parsed >= 0 && parsed <= MaximumAdminPrice;
+        }
 
         public static CatalogImportOutboxEntry BuildSupplierExcelEntry(
             SupplierImportSyncPreview preview,
@@ -21,6 +51,10 @@ namespace Win7POS.Data.Online
             string appVersion)
         {
             if (preview == null) throw new ArgumentNullException(nameof(preview));
+            ValidateSupplierExcelPreview(preview);
+            if (preview.Errors.Count > 0)
+                throw new InvalidOperationException("supplier_import_admin_price_invalid: " +
+                    string.Join("; ", preview.Errors.Select(error => error.Message)));
             var items = BuildItems(preview).ToArray();
             if (items.Length == 0)
             {

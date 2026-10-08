@@ -8,10 +8,12 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Win7POS.Core;
 using Win7POS.Core.Pos;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure.Displays;
+using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.CustomerDisplay;
 
 namespace Win7POS.Wpf.UiSmokeHarness
@@ -22,21 +24,104 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             var root = Path.Combine(Path.GetTempPath(), "Win7POS-display-completion-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
-            var failures = new List<string>();
+            var outcomes = new List<string>();
             try
             {
-                await CheckAsync(failures, "W5_manual_minimize_restore_without_snapshot", () => CheckMinimizeAsync(root));
-                await CheckAsync(failures, "W6_snapshot_before_and_after_reconnect_debounce", () => CheckReconnectAsync(root, false, true));
-                await CheckAsync(failures, "W6_reopen_off_debounce_before_snapshot", () => CheckReconnectAsync(root, false, false));
-                await CheckAsync(failures, "W6_reopen_on_debounce_before_snapshot", () => CheckReconnectAsync(root, true, false));
-                await CheckAsync(failures, "W6_reopen_on_snapshot_before_debounce", () => CheckReconnectAsync(root, true, true));
-                await CheckAsync(failures, "display_close_disable_lock_cart_focus", () => CheckLifecycleAsync(root));
+                await CheckAsync(outcomes, "R2_full_startup_AutoOpen_false", () => CheckStartupAsync(root, false));
+                await CheckAsync(outcomes, "R2_full_startup_AutoOpen_true", () => CheckStartupAsync(root, true));
+                await CheckAsync(outcomes, "R2_preview_and_explicit_settings_open_intent", () => CheckPreviewAndSettingsAsync(root));
+                await CheckAsync(outcomes, "W5_manual_minimize_restore_without_snapshot", () => CheckMinimizeAsync(root));
+                await CheckAsync(outcomes, "W6_snapshot_before_and_after_reconnect_debounce", () => CheckReconnectAsync(root, false, true));
+                await CheckAsync(outcomes, "W6_reopen_off_debounce_before_snapshot", () => CheckReconnectAsync(root, false, false));
+                await CheckAsync(outcomes, "W6_reopen_on_debounce_before_snapshot", () => CheckReconnectAsync(root, true, false));
+                await CheckAsync(outcomes, "W6_reopen_on_snapshot_before_debounce", () => CheckReconnectAsync(root, true, true));
+                await CheckAsync(outcomes, "display_close_disable_lock_cart_focus", () => CheckLifecycleAsync(root));
             }
             finally
             {
                 try { Directory.Delete(root, true); } catch (IOException) { }
             }
-            Require(failures.Count == 0, string.Join("; ", failures));
+            File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "display-completion.txt"), outcomes);
+            var failures = outcomes.Where(outcome => outcome.StartsWith("FAIL ", StringComparison.Ordinal)).ToArray();
+            Require(failures.Length == 0, string.Join("; ", failures));
+        }
+
+        private static async Task CheckStartupAsync(string root, bool autoOpen)
+        {
+            var topology = new FixtureTopology();
+            using (var manager = await CreateAsync(root, topology, false, autoOpen))
+            using (var pos = new PosViewModel())
+            {
+                var scanner = new TextBox();
+                var cashier = new Window { DataContext = pos, Content = scanner, Width = 280, Height = 140, ShowInTaskbar = false };
+                var failures = new List<string>();
+                Action<string> checkOpening = stage =>
+                {
+                    if (manager.IsOpen != autoOpen) failures.Add(stage + ": IsOpen=" + manager.IsOpen + " expected=" + autoOpen);
+                };
+                try
+                {
+                    cashier.Show();
+                    cashier.Activate();
+                    scanner.Focus();
+                    Keyboard.Focus(scanner);
+                    await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.Input);
+                    Require(ReferenceEquals(Keyboard.FocusedElement, scanner), "startup scanner fixture did not receive focus");
+                    checkOpening("InitializeAsync");
+                    Publish(pos, "cart at attach");
+                    manager.Attach(pos);
+                    checkOpening("Attach(current snapshot)");
+                    Publish(pos, "cart before first open");
+                    checkOpening("subsequent PosViewModel snapshot");
+                    await TopologyChangeAsync(manager, topology, true);
+                    checkOpening("topology debounce before first open");
+                    manager.SetOperatorLocked(true);
+                    checkOpening("lock before first open");
+                    manager.SetOperatorLocked(false);
+                    checkOpening("unlock before first open");
+                    manager.SetCashierMinimized(true);
+                    manager.SetCashierMinimized(false);
+                    checkOpening("minimize/restore before first open");
+
+                    if (!autoOpen) manager.OpenDisplay();
+                    Require(manager.IsOpen && ViewModel(manager).Lines.Single().Name == "cart before first open", "first open did not render the latest stored PosViewModel snapshot");
+                    Publish(pos, "cart after first open");
+                    Require(ViewModel(manager).Lines.Single().Name == "cart after first open", "opened display ignored PosViewModel snapshot");
+                    var display = DisplayWindow(manager);
+                    manager.SetCashierMinimized(true);
+                    Publish(pos, "cart updated while minimized");
+                    manager.SetCashierMinimized(false);
+                    Require(manager.IsOpen && ReferenceEquals(display, DisplayWindow(manager)) && ViewModel(manager).Lines.Single().Name == "cart updated while minimized", "full startup path did not restore the same display with current content");
+                    Require(ReferenceEquals(Keyboard.FocusedElement, scanner), "startup/open/snapshot/restore stole scanner focus");
+                    Require(failures.Count == 0, string.Join(", ", failures));
+                }
+                finally { cashier.Close(); }
+            }
+        }
+
+        private static async Task CheckPreviewAndSettingsAsync(string root)
+        {
+            var topology = new FixtureTopology();
+            using (var manager = await CreateAsync(root, topology, false))
+            using (var pos = new PosViewModel())
+            {
+                manager.Attach(pos);
+                manager.Preview(manager.Settings);
+                Require(manager.IsOpen && manager.IsPreviewActive, "explicit preview did not open before a runtime opening request");
+                Publish(pos, "cart during preview");
+                Require(ViewModel(manager).Lines.All(line => line.Name != "cart during preview"), "preview displayed runtime cart");
+                manager.StopPreview();
+                Require(!manager.IsOpen, "preview enabled a previously unopened runtime display");
+                Publish(pos, "cart after preview");
+                Require(!manager.IsOpen, "snapshot after preview created runtime opening intent");
+                await manager.SaveAndApplyAsync(manager.Settings);
+                Require(manager.IsOpen && ViewModel(manager).Lines.Single().Name == "cart after preview", "explicit settings apply no longer opens enabled display");
+                manager.CloseDisplay();
+                manager.Preview(manager.Settings);
+                manager.StopPreview();
+                Publish(pos, "cart after closed preview");
+                Require(!manager.IsOpen, "preview forgot explicit runtime close");
+            }
         }
 
         private static async Task CheckMinimizeAsync(string root)
@@ -167,14 +252,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
         }
 
-        private static async Task<CustomerDisplayManager> CreateAsync(string root, FixtureTopology topology, bool reopen)
+        private static async Task<CustomerDisplayManager> CreateAsync(string root, FixtureTopology topology, bool reopen, bool autoOpen = false)
         {
             var options = PosDbOptions.ForPath(Path.Combine(root, Guid.NewGuid().ToString("N") + ".db"));
             DbInitializer.EnsureCreated(options);
             var repository = new CustomerDisplaySettingsRepository(new SqliteConnectionFactory(options));
             var settings = CustomerDisplaySettings.CreateDefault(2);
             settings.Enabled = true;
-            settings.AutoOpen = false;
+            settings.AutoOpen = autoOpen;
             settings.AlwaysOnTop = false;
             settings.FollowCashierMinimize = true;
             settings.ThankYouSeconds = 1;
@@ -194,6 +279,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static void NotifyTopology(CustomerDisplayManager manager) => Invoke(manager, "OnDisplaySettingsChanged", null, EventArgs.Empty);
         private static void Publish(CustomerDisplayManager manager, CustomerDisplaySnapshot snapshot) => Invoke(manager, "OnSnapshotChanged", snapshot);
+        private static void Publish(PosViewModel pos, string name)
+        {
+            pos.CartItems.Clear();
+            pos.CartItems.Add(new PosViewModel.PosCartLineRow { LineKey = "startup", Barcode = "STARTUP", Name = name, Quantity = 1, UnitPrice = 1000, LineTotal = 1000 });
+            pos.Subtotal = 1000;
+            pos.Total = 1000;
+            // Exercise the real public snapshot publisher and its subscribed event.
+            pos.SetCustomerDisplayShopName(name);
+        }
         private static void Invoke(CustomerDisplayManager manager, string name, params object[] args) =>
             typeof(CustomerDisplayManager).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance).Invoke(manager, args);
         private static bool Flag(CustomerDisplayManager manager, string name) =>
@@ -207,10 +301,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             new CustomerDisplayProjectionLine { StableKey = "fixture", Name = name, Quantity = 1, UnitPrice = 1000, LineTotal = 1000 }
         }, 1000, 1000, "TEST", "fixture", false, DateTimeOffset.UtcNow);
 
-        private static async Task CheckAsync(List<string> failures, string name, Func<Task> check)
+        private static async Task CheckAsync(List<string> outcomes, string name, Func<Task> check)
         {
-            try { await check(); }
-            catch (Exception error) { failures.Add(name + ": " + error.Message); }
+            try { await check(); outcomes.Add("PASS " + name); }
+            catch (Exception error) { outcomes.Add("FAIL " + name + ": " + error.Message); }
         }
 
         private static void Require(bool condition, string message) => FunctionalCompletionSmoke.Require(condition, message);

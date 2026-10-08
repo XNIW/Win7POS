@@ -15,6 +15,7 @@ using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Backup;
+using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Import;
@@ -38,6 +39,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return true;
             };
             var service = new SupplierExcelImportWorkflowService(authorize);
+            await CheckRetailHistoryAndAdminBoundsAsync(service, lines);
+            await ProductPriceHistoryCompletionSmoke.RunAsync(lines);
             var rows = MakeRows(20000, "IMPORT-BASELINE-");
             await service.BuildSyncPreviewAsync(rows);
             await service.ApplyAsync(rows, true);
@@ -72,6 +75,81 @@ namespace Win7POS.Wpf.UiSmokeHarness
             lines.Add(name + " samples=5 p50_ms=" + samples[2].ToString("F1", CultureInfo.InvariantCulture) +
                 " p95_nearest_rank_ms=" + samples[4].ToString("F1", CultureInfo.InvariantCulture) +
                 " max_ms=" + samples[4].ToString("F1", CultureInfo.InvariantCulture));
+        }
+
+        private static async Task CheckRetailHistoryAndAdminBoundsAsync(SupplierExcelImportWorkflowService service, List<string> lines)
+        {
+            var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+            var products = new ProductRepository(factory);
+            var applier = new SupplierExcelImportApplier(factory);
+            var values = new[] { 0L, 999999999L, int.MaxValue, 2147483648L, 4294967296L, long.MaxValue };
+            var cases = 0;
+            foreach (var update in new[] { false, true })
+            foreach (var value in values)
+            {
+                var barcode = "IMPORT-LONG-" + cases++;
+                var oldPrice = value == 4294967296L ? 2147483648L : 4294967296L;
+                if (update)
+                    await products.UpsertAsync(new Product { Barcode = barcode, Name = "Before", UnitPrice = oldPrice }, ProductWriteOrigin.SupplierImportApply);
+                var row = MakeRows(1, barcode)[0];
+                row.Barcode = barcode;
+                row.RetailPrice = value.ToString(CultureInfo.InvariantCulture);
+                var localPreview = await applier.BuildPreviewAsync(new[] { row });
+                var result = await applier.ApplyAsync(localPreview, new SupplierExcelImportApplyOptions { InsertNew = true });
+                Require(result.Errors == 0, "local Int64 retail apply failed");
+                var history = (await products.GetPriceHistoryByBarcodeAsync(barcode)).Single(item => item.PriceType == "retail");
+                Require((await products.GetByBarcodeAsync(barcode)).UnitPrice == value && history.NewPrice == value &&
+                    history.OldPrice == (update ? (long?)oldPrice : null), "local Int64 retail history lost precision");
+            }
+            var rejectedCases = 0;
+            foreach (var update in new[] { false, true })
+            foreach (var field in new[] { "retailPrice", "purchasePrice" })
+            {
+                var row = MakeRows(1, "IMPORT-ADMIN-REJECT-" + rejectedCases++)[0];
+                if (update)
+                    await products.UpsertAsync(new Product { Barcode = row.Barcode, Name = "Before", UnitPrice = 4294967296L }, ProductWriteOrigin.SupplierImportApply);
+                if (field == "retailPrice") row.RetailPrice = "1000000000";
+                else row.PurchasePrice = "1000000000";
+                long productCount, historyCount, outboxCount;
+                using (var connection = factory.Open())
+                {
+                    productCount = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM products");
+                    historyCount = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history");
+                    outboxCount = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_outbox");
+                }
+                var backupCount = Directory.GetFiles(AppPaths.BackupsDirectory).Length;
+                var preview = await service.BuildSyncPreviewAsync(new[] { row });
+                Require(!preview.CanApply && preview.Errors.Any(error => error.RowIndex == row.RowNumber && error.Message.Contains(field)), "Admin preview did not reject unsupported price in its field");
+                Require(preview.FinalRows.Single().RetailPrice == row.RetailPrice && preview.FinalRows.Single().PurchasePrice == row.PurchasePrice, "Admin rejection changed the editable draft");
+                var rejected = false;
+                try { await service.ApplyAsync(preview, false, "admin-rejected.xlsx"); }
+                catch (SupplierExcelImportWorkflowException) { rejected = true; }
+                using (var connection = factory.Open())
+                {
+                    Require(rejected && connection.ExecuteScalar<long>("SELECT COUNT(*) FROM products") == productCount &&
+                        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history") == historyCount &&
+                        connection.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_outbox") == outboxCount &&
+                        Directory.GetFiles(AppPaths.BackupsDirectory).Length == backupCount, "Admin rejection wrote products/history/outbox or created backup");
+                }
+                if (update)
+                {
+                    var product = await products.GetByBarcodeAsync(row.Barcode);
+                    Require(product.Name == "Before" && product.UnitPrice == 4294967296L, "Admin rejection changed existing product economics");
+                }
+            }
+            var accepted = MakeRows(1, "IMPORT-ADMIN-MAX-")[0];
+            accepted.PurchasePrice = accepted.RetailPrice = "999999999";
+            var acceptedPreview = await service.BuildSyncPreviewAsync(new[] { accepted });
+            var applied = await service.ApplyAsync(acceptedPreview, false, "admin-max.xlsx");
+            var acceptedHistory = await products.GetPriceHistoryByBarcodeAsync(accepted.Barcode);
+            using (var connection = factory.Open())
+            {
+                var payload = connection.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox WHERE id=@id", new { id = applied.CatalogImportOutboxId });
+                Require(applied.Success && (await products.GetByBarcodeAsync(accepted.Barcode)).UnitPrice == 999999999L &&
+                    acceptedHistory.All(item => item.NewPrice == 999999999L) && payload.Contains("\"retailPrice\":\"999999999\"") &&
+                    payload.Contains("\"purchasePrice\":\"999999999\""), "Admin maximum lost price parity");
+            }
+            lines.Add("retail_int64_history=PASS local_insert_update_cases=" + cases + " Admin_rejections=" + rejectedCases + " Admin_max=999999999 exact_product_history_outbox=True");
         }
 
         private static async Task CheckVerifiedBackupWithWriterAsync(Func<bool> authorize, List<string> lines)

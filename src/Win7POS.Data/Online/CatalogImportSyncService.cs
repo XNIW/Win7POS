@@ -1102,6 +1102,11 @@ namespace Win7POS.Data.Online
                     return CatalogImportOutboxPayloadValidationResult.Fail("invalid_operation");
                 }
 
+                if (!CatalogImportOutboxPayloadBuilder.IsAdminPrice(payloadItem.PurchasePrice))
+                    return CatalogImportOutboxPayloadValidationResult.Fail("invalid_admin_purchasePrice");
+                if (!CatalogImportOutboxPayloadBuilder.IsAdminPrice(payloadItem.RetailPrice))
+                    return CatalogImportOutboxPayloadValidationResult.Fail("invalid_admin_retailPrice");
+
                 if (string.Equals(payloadItem.ChangeKind, "new", StringComparison.OrdinalIgnoreCase))
                 {
                     newCount++;

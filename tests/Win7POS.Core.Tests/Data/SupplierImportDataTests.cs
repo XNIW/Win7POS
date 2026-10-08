@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.Serialization.Json;
 using System.Text;
@@ -19,6 +21,272 @@ namespace Win7POS.Core.Tests.Data;
 [TestClass]
 public sealed class SupplierImportDataTests
 {
+    [TestMethod]
+    public async Task LocalHistoryWriters_PreserveInt64OldAndNewPrices()
+    {
+        using var db = TestDb.Create();
+        var products = new ProductRepository(db.Factory);
+        var id = await products.UpsertAsync(new Product { Barcode = "LEGACY-LONG", Name = "Before", UnitPrice = 4294967296L }, ProductWriteOrigin.SupplierImportApply);
+        await products.UpdateProductAndMetaWithPriceHistoryAsync(
+            id, "After", long.MaxValue, "LEGACY-LONG", "", "", 100, null, "", null, "", 0,
+            "IMPORT", ProductWriteOrigin.SupplierImportApply);
+        await products.UpdateProductPricesAsync(id, 100, 2147483648L, "IMPORT", ProductWriteOrigin.SupplierImportApply);
+        await products.InsertPriceHistoryAsync("LEGACY-LONG", "retail", long.MaxValue, "INITIAL", ProductWriteOrigin.SupplierImportApply);
+        var history = (await products.GetPriceHistoryByBarcodeAsync("LEGACY-LONG")).Where(row => row.PriceType == "retail").ToArray();
+        Assert.IsTrue(history.Any(row => row.OldPrice == 4294967296L && row.NewPrice == long.MaxValue));
+        Assert.IsTrue(history.Any(row => row.OldPrice == long.MaxValue && row.NewPrice == 2147483648L));
+        Assert.IsTrue(history.Any(row => row.OldPrice == null && row.NewPrice == long.MaxValue));
+        Assert.AreEqual(2147483648L, (await products.GetByBarcodeAsync("LEGACY-LONG"))!.UnitPrice);
+    }
+
+    [TestMethod]
+    public async Task SupplierImport_RetailOnlyHistoryCommand_PreservesInt64()
+    {
+        using var db = TestDb.Create();
+        var products = new ProductRepository(db.Factory);
+        await products.UpsertAsync(new Product { Barcode = "RETAIL-ONLY", Name = "Before", UnitPrice = 4294967296L }, ProductWriteOrigin.SupplierImportApply);
+        var applier = new SupplierExcelImportApplier(db.Factory);
+        var preview = await applier.BuildPreviewAsync(new[]
+        {
+            new SupplierImportEditableRow { RowNumber = 2, Barcode = "RETAIL-ONLY", ProductName = "After", RetailPrice = long.MaxValue.ToString(CultureInfo.InvariantCulture) }
+        });
+        var result = await applier.ApplyAsync(preview, new SupplierExcelImportApplyOptions { InsertNew = true });
+        Assert.AreEqual(0, result.Errors);
+        var history = (await products.GetPriceHistoryByBarcodeAsync("RETAIL-ONLY")).Single();
+        Assert.AreEqual(4294967296L, history.OldPrice);
+        Assert.AreEqual(long.MaxValue, history.NewPrice);
+    }
+
+    [TestMethod]
+    public async Task LocalArticlePriceChange_PreservesHighPreviousRetailWithoutExtendingApiInput()
+    {
+        using var db = TestDb.Create();
+        var products = new ProductRepository(db.Factory);
+        var id = await products.UpsertAsync(new Product { Barcode = "ARTICLE-LONG", Name = "Before", UnitPrice = 4294967296L }, ProductWriteOrigin.SupplierImportApply);
+        var result = await products.UpdateLocalArticleAsync(new LocalArticleUpdateRequest
+        {
+            ProductId = id, Barcode = "ARTICLE-LONG", PrimaryName = "Before", RetailPrice = 200,
+            PurchasePrice = 0, StockQuantity = 0
+        }, ProductWriteOrigin.LocalUserSave);
+        Assert.AreEqual(1, result.Mutations.Count);
+        var history = (await products.GetPriceHistoryByBarcodeAsync("ARTICLE-LONG")).Single();
+        Assert.AreEqual(4294967296L, history.OldPrice);
+        Assert.AreEqual(200L, history.NewPrice);
+        await Assert.ThrowsAsync<ArgumentException>(() => products.UpdateLocalArticleAsync(new LocalArticleUpdateRequest
+        {
+            ProductId = id, Barcode = "ARTICLE-LONG", PrimaryName = "Before", RetailPrice = 2147483648L
+        }, ProductWriteOrigin.LocalUserSave));
+        Assert.AreEqual(200L, (await products.GetByBarcodeAsync("ARTICLE-LONG"))!.UnitPrice);
+        Assert.AreEqual(1, (await products.GetPriceHistoryByBarcodeAsync("ARTICLE-LONG")).Count);
+    }
+
+    [TestMethod]
+    [DataRow("retailPrice", "1000000000")]
+    [DataRow("retailPrice", "9223372036854775807")]
+    [DataRow("purchasePrice", "1000000000")]
+    public async Task PersistedOutbox_AdminPriceBound_RejectsWithoutChangingStoredPayload(string field, string text)
+    {
+        using var db = TestDb.Create();
+        var entry = BuildCatalogEntry("legacy-high-price", 2);
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(entry.PayloadJson));
+        var request = (PosCatalogImportRequest)new DataContractJsonSerializer(typeof(PosCatalogImportRequest)).ReadObject(stream)!;
+        if (field == "retailPrice") request.Items[0].RetailPrice = text;
+        else request.Items[0].PurchasePrice = text;
+        entry.PayloadJson = Serialize(request);
+        entry.PayloadHash = CatalogImportOutboxPayloadBuilder.Sha256Hex(entry.PayloadJson);
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        await repository.EnqueueAsync(entry);
+        var item = (await repository.GetPendingAsync(10, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())).Single();
+        var validation = CatalogImportOutboxPayloadValidator.Validate(item);
+        Assert.IsFalse(validation.IsValid, "Previously queued prices outside the Admin contract must not be sent as null.");
+        Assert.AreEqual("invalid_admin_" + field, validation.Code);
+        // Exercise the real drain and observe that it never connects to Admin.
+        var admin = new TcpListener(IPAddress.Loopback, 0);
+        admin.Start();
+        try
+        {
+            var endpoint = (IPEndPoint)admin.LocalEndpoint;
+            var run = await new CatalogImportSyncService(db.Factory).SyncPendingAsync(
+                new PosAdminWebOptions(new Uri("http://127.0.0.1:" + endpoint.Port)),
+                new PosTrustedDeviceSession
+                {
+                    DeviceToken = "test-device", SessionToken = "test-session", PosSessionId = "test-pos",
+                    ShopDeviceId = "test-device-id", ShopCode = "TEST-SHOP", ShopId = "test-shop-id"
+                }, CancellationToken.None);
+            Assert.AreEqual(1, run.Blocked);
+            Assert.AreEqual(SyncFailureKind.LocalValidation, run.FailureKind);
+            Assert.AreEqual("invalid_admin_" + field.ToLowerInvariant(), run.DiagnosticCode);
+            Assert.IsFalse(admin.Pending(), "An unsupported persisted price must be blocked before any Admin connection.");
+        }
+        finally { admin.Stop(); }
+        Assert.AreEqual("failed_blocked", await ScalarStringAsync(db.Factory, "SELECT status FROM catalog_import_outbox"));
+        Assert.AreEqual(entry.PayloadJson, await ScalarStringAsync(db.Factory, "SELECT payload_json FROM catalog_import_outbox"));
+        Assert.AreEqual(entry.PayloadHash, await ScalarStringAsync(db.Factory, "SELECT payload_hash FROM catalog_import_outbox"));
+        Assert.AreEqual(0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM products"));
+        Assert.AreEqual(0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM product_price_history"));
+    }
+
+    [TestMethod]
+    [DataRow("0", false)]
+    [DataRow("999999999", false)]
+    [DataRow("2147483647", false)]
+    [DataRow("2147483648", false)]
+    [DataRow("4294967296", false)]
+    [DataRow("9223372036854775807", false)]
+    [DataRow("0", true)]
+    [DataRow("999999999", true)]
+    [DataRow("2147483647", true)]
+    [DataRow("2147483648", true)]
+    [DataRow("4294967296", true)]
+    [DataRow("9223372036854775807", true)]
+    public async Task SupplierImport_RetailStorageBounds_PreserveProductHistoryReaderAndOutbox(string text, bool update)
+    {
+        using var db = TestDb.Create();
+        var products = new ProductRepository(db.Factory);
+        var expected = long.Parse(text, CultureInfo.InvariantCulture);
+        var oldPrice = expected == 4294967296L ? 2147483648L : 4294967296L;
+        if (update)
+        {
+            await products.UpsertProductAndMetaInTransactionAsync(
+                new Product { Barcode = "RETAIL-BOUND", Name = "Before", UnitPrice = oldPrice },
+                "OLD", "Before second", 90, null, "", null, "", 1,
+                ProductWriteOrigin.SupplierImportApply);
+        }
+        var row = new SupplierImportEditableRow
+        {
+            RowNumber = 2, Barcode = "RETAIL-BOUND", ProductName = "After",
+            PurchasePrice = "100", RetailPrice = text, Quantity = "2"
+        };
+        var applier = new SupplierExcelImportApplier(db.Factory);
+        var preview = await applier.BuildPreviewAsync(new[] { row });
+        Assert.AreEqual(0, preview.Errors.Count, "The local Int64 retail contract must admit this value.");
+        // Local storage admits Int64. The current Admin contract admits only <= 999999999.
+        var entry = expected <= CatalogImportOutboxPayloadBuilder.MaximumAdminPrice
+            ? CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview, "bounds.xlsx", "test")
+            : null;
+        var result = await applier.ApplyAsync(preview, new SupplierExcelImportApplyOptions
+        {
+            InsertNew = true, CatalogImportOutboxEntry = entry
+        });
+        Assert.AreEqual(0, result.Errors);
+        var product = await products.GetByBarcodeAsync(row.Barcode);
+        using var conn = db.Factory.Open();
+        var rawNew = await conn.ExecuteScalarAsync<long>(
+            "SELECT new_price FROM product_price_history WHERE barcode = @barcode AND type = 'retail'",
+            new { barcode = row.Barcode });
+        var rawOld = await conn.ExecuteScalarAsync<long?>(
+            "SELECT old_price FROM product_price_history WHERE barcode = @barcode AND type = 'retail'",
+            new { barcode = row.Barcode });
+        string? outboxRetail = null;
+        if (entry != null)
+        {
+            var payload = await conn.ExecuteScalarAsync<string>("SELECT payload_json FROM catalog_import_outbox");
+            Assert.IsNotNull(payload);
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(payload!));
+            var request = (PosCatalogImportRequest)new DataContractJsonSerializer(typeof(PosCatalogImportRequest)).ReadObject(stream)!;
+            outboxRetail = request.Items.Single().RetailPrice;
+            Assert.AreEqual(text, outboxRetail);
+        }
+        else
+            Assert.AreEqual(0L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM catalog_import_outbox"));
+        Console.WriteLine($"retail={text}; update={update}; product={product!.UnitPrice}; history.old={rawOld}; history.new={rawNew}; outbox={outboxRetail ?? "local-only"}");
+        Assert.AreEqual(expected, product!.UnitPrice);
+        Assert.AreEqual(expected, rawNew, "SQLite history must preserve the same retail amount as product and outbox.");
+        Assert.AreEqual(update ? (long?)oldPrice : null, rawOld, "History must preserve the previous Int64 amount.");
+        var history = (await products.GetPriceHistoryByBarcodeAsync(row.Barcode)).Single(h => h.PriceType == "retail");
+        Assert.AreEqual(expected, Convert.ToInt64(history.NewPrice));
+        Assert.AreEqual(update ? (long?)oldPrice : null, history.OldPrice.HasValue ? Convert.ToInt64(history.OldPrice.Value) : (long?)null);
+        var exported = (await products.ListAllPriceHistoryAsync()).Single(h => h.PriceType == "retail");
+        Assert.AreEqual(expected, Convert.ToInt64(exported.NewPrice));
+    }
+
+    [TestMethod]
+    [DataRow("retailPrice", "1000000000", false)]
+    [DataRow("retailPrice", "2147483647", false)]
+    [DataRow("retailPrice", "2147483648", false)]
+    [DataRow("retailPrice", "4294967296", false)]
+    [DataRow("retailPrice", "9223372036854775807", false)]
+    [DataRow("retailPrice", "1000000000", true)]
+    [DataRow("retailPrice", "2147483647", true)]
+    [DataRow("retailPrice", "2147483648", true)]
+    [DataRow("retailPrice", "4294967296", true)]
+    [DataRow("retailPrice", "9223372036854775807", true)]
+    [DataRow("retailPrice", "", true)]
+    [DataRow("purchasePrice", "1000000000", false)]
+    [DataRow("purchasePrice", "2147483647", true)]
+    public async Task SupplierImport_AdminPriceBound_RejectsWithFieldErrorDraftAndZeroWrites(string field, string text, bool update)
+    {
+        using var db = TestDb.Create();
+        var products = new ProductRepository(db.Factory);
+        if (update)
+            await products.UpsertAsync(new Product { Barcode = "ADMIN-REJECT", Name = "Before", UnitPrice = 4294967296L }, ProductWriteOrigin.SupplierImportApply);
+        var row = new SupplierImportEditableRow
+        {
+            RowNumber = 8, Barcode = "ADMIN-REJECT", ProductName = "After",
+            PurchasePrice = field == "purchasePrice" ? text : "100",
+            RetailPrice = field == "retailPrice" ? text : "200", Quantity = "2"
+        };
+        var applier = new SupplierExcelImportApplier(db.Factory);
+        var preview = await applier.BuildPreviewAsync(new[] { row });
+        Assert.IsTrue(preview.CanApply, "This amount is representable in the local storage domain.");
+        try
+        {
+            CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview, "rejected.xlsx", "test");
+            Assert.Fail("Outbox publication must enforce the current Admin bound even without workflow validation.");
+        }
+        catch (InvalidOperationException error)
+        {
+            StringAssert.Contains(error.Message, field);
+        }
+        Assert.IsTrue(preview.Errors.Any(e => e.Message.Contains(field) && e.RowIndex == row.RowNumber));
+        Assert.IsFalse(preview.CanApply);
+        Assert.AreEqual(row.RetailPrice, preview.FinalRows.Single().RetailPrice);
+        Assert.AreEqual(row.PurchasePrice, preview.FinalRows.Single().PurchasePrice);
+        var result = await applier.ApplyAsync(preview, new SupplierExcelImportApplyOptions { InsertNew = true });
+        Assert.IsTrue(result.Errors > 0);
+        Assert.AreEqual(update ? 1L : 0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM products"));
+        if (update)
+        {
+            var product = await products.GetByBarcodeAsync(row.Barcode);
+            Assert.AreEqual("Before", product!.Name);
+            Assert.AreEqual(4294967296L, product.UnitPrice);
+        }
+        Assert.AreEqual(0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM product_meta"));
+        Assert.AreEqual(0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM product_price_history"));
+        Assert.AreEqual(0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM catalog_import_outbox"));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task SupplierImport_FirstOutsideRetailStorageBound_PreservesDraftAndWritesNothing(bool update)
+    {
+        using var db = TestDb.Create();
+        var products = new ProductRepository(db.Factory);
+        if (update)
+            await products.UpsertAsync(new Product { Barcode = "RETAIL-REJECT", Name = "Before", UnitPrice = 4294967296L }, ProductWriteOrigin.SupplierImportApply);
+        var row = new SupplierImportEditableRow
+        {
+            RowNumber = 7, Barcode = "RETAIL-REJECT", ProductName = "After",
+            PurchasePrice = "100", RetailPrice = "9223372036854775808", Quantity = "2"
+        };
+        var applier = new SupplierExcelImportApplier(db.Factory);
+        var preview = await applier.BuildPreviewAsync(new[] { row });
+        Assert.IsTrue(preview.Errors.Any(e => e.Message.Contains("retailPrice") && e.RowIndex == 7));
+        Assert.AreEqual(row.RetailPrice, preview.FinalRows.Single().RetailPrice);
+        var result = await applier.ApplyAsync(preview, new SupplierExcelImportApplyOptions { InsertNew = true });
+        Assert.IsTrue(result.Errors > 0);
+        Assert.AreEqual(update ? 1L : 0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM products"));
+        if (update)
+        {
+            var product = await products.GetByBarcodeAsync(row.Barcode);
+            Assert.AreEqual("Before", product!.Name);
+            Assert.AreEqual(4294967296L, product.UnitPrice);
+        }
+        Assert.AreEqual(0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM product_price_history"));
+        Assert.AreEqual(0L, await ScalarLongAsync(db.Factory, "SELECT COUNT(*) FROM catalog_import_outbox"));
+    }
+
     [TestMethod]
     public async Task ProductRepository_UpsertAsync_ReactivatesSoftDeletedBarcode()
     {
