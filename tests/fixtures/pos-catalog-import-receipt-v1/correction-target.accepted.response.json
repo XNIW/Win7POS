@@ -1,0 +1,67 @@
+{
+  "ok": true,
+  "code": "success",
+  "schemaVersion": "pos-catalog-import-receipt-v1",
+  "status": "accepted",
+  "shopId": "10000000-0000-4000-8000-000000000094",
+  "shopDeviceId": "30000000-0000-4000-8000-000000000094",
+  "clientImportId": "receipt-fixture-correction-1",
+  "idempotencyKey": "correction-idem-1",
+  "payloadHash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+  "canonicalPayloadHash": "sha256:3316daaff1fa2b14af2e86205cd3e6da45d57b290186a577f376f92d1afedf13",
+  "receipt": {
+    "ok": true,
+    "batchId": "b0000000-0000-4000-8000-000000000094",
+    "status": "accepted",
+    "items": [
+      {
+        "clientItemId": "receipt-fixture-row-1",
+        "remoteProductId": "80000000-0000-4000-8000-000000000094",
+        "status": "accepted",
+        "unchangedFields": [],
+        "authoritativeRevision": "2026-10-08T20:00:00.000001Z"
+      }
+    ],
+    "remoteProductIds": [
+      {
+        "clientItemId": "receipt-fixture-row-1",
+        "barcode": "REMOTE-CODE",
+        "remoteProductId": "80000000-0000-4000-8000-000000000094",
+        "authoritativeRevision": "2026-10-08T20:00:00.000001Z"
+      }
+    ],
+    "remotePriceIds": [
+      {
+        "clientItemId": "receipt-fixture-row-1",
+        "barcode": "REMOTE-CODE",
+        "remoteProductId": "80000000-0000-4000-8000-000000000094",
+        "remotePriceId": "90000000-0000-4000-8000-000000000094",
+        "priceType": "purchase"
+      },
+      {
+        "clientItemId": "receipt-fixture-row-1",
+        "barcode": "REMOTE-CODE",
+        "remoteProductId": "80000000-0000-4000-8000-000000000094",
+        "remotePriceId": "a0000000-0000-4000-8000-000000000094",
+        "priceType": "retail"
+      }
+    ],
+    "summary": {
+      "acceptedItemCount": 1,
+      "duplicateItemCount": 0,
+      "productCount": 1
+    }
+  },
+  "originalSchemaVersion": "pos-catalog-import-correction-v1",
+  "currentProductSnapshots": [
+    {
+      "clientItemId": "receipt-fixture-row-1",
+      "remoteProductId": "80000000-0000-4000-8000-000000000094",
+      "snapshotStatus": "available",
+      "baseRevision": "2026-10-08T20:00:00.000001Z",
+      "retailPrice": 1300,
+      "purchasePrice": 950,
+      "stockQuantity": 1.5
+    }
+  ]
+}

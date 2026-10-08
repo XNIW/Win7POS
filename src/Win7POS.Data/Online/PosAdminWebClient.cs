@@ -93,6 +93,41 @@ namespace Win7POS.Data.Online
                 cancellationToken).ConfigureAwait(false);
         }
 
+        public Task<PosOnlineResult<PosCatalogImportReceiptResponse>> CatalogImportReceiptAsync(
+            PosCatalogImportReceiptRequest request, CancellationToken cancellationToken)
+        {
+            return PostJsonAsync<PosCatalogImportReceiptRequest, PosCatalogImportReceiptResponse>(
+                PosCatalogImportReceiptContract.EndpointPath, request, cancellationToken, noStore: true);
+        }
+
+        public Task<PosOnlineResult<PosCatalogImportReceiptResponse>> CatalogImportRetireAsync(
+            PosCatalogImportReceiptRequest request, CancellationToken cancellationToken)
+        {
+            return PostJsonAsync<PosCatalogImportReceiptRequest, PosCatalogImportReceiptResponse>(
+                PosCatalogImportReceiptContract.RetirementEndpointPath, request, cancellationToken, noStore: true);
+        }
+
+        public Task<PosOnlineResult<PosCatalogImportReceiptResponse>> CatalogImportReceiptAsync(
+            PosCatalogImportCorrectionReceiptRequest request, CancellationToken cancellationToken)
+        {
+            return PostJsonAsync<PosCatalogImportCorrectionReceiptRequest, PosCatalogImportReceiptResponse>(
+                PosCatalogImportReceiptContract.EndpointPath, request, cancellationToken, noStore: true);
+        }
+
+        public Task<PosOnlineResult<PosCatalogImportReceiptResponse>> CatalogImportRetireAsync(
+            PosCatalogImportCorrectionReceiptRequest request, CancellationToken cancellationToken)
+        {
+            return PostJsonAsync<PosCatalogImportCorrectionReceiptRequest, PosCatalogImportReceiptResponse>(
+                PosCatalogImportReceiptContract.RetirementEndpointPath, request, cancellationToken, noStore: true);
+        }
+
+        public Task<PosOnlineResult<PosCatalogImportCorrectionResponse>> CatalogImportCorrectionAsync(
+            PosCatalogImportCorrectionRequest request, CancellationToken cancellationToken)
+        {
+            return PostJsonAsync<PosCatalogImportCorrectionRequest, PosCatalogImportCorrectionResponse>(
+                PosCatalogImportCorrectionContract.EndpointPath, request, cancellationToken, noStore: true);
+        }
+
         public async Task<PosOnlineResult<PosCatalogImportResponse>> CatalogImportAsync(
             PosCatalogImportRequest request,
             CancellationToken cancellationToken)
@@ -806,7 +841,9 @@ namespace Win7POS.Data.Online
                 Stream stream,
                 TransportContext context)
             {
-                var serializer = new DataContractJsonSerializer(typeof(T));
+                var serializer = typeof(T) == typeof(PosCatalogImportCorrectionRequest) || typeof(T) == typeof(PosCatalogImportCorrectionReceiptRequest)
+                    ? new DataContractJsonSerializer(typeof(T), new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true })
+                    : new DataContractJsonSerializer(typeof(T));
                 serializer.WriteObject(stream, _value);
                 return Task.CompletedTask;
             }

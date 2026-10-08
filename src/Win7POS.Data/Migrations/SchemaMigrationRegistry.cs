@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Dapper;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Migrations
 {
@@ -228,8 +232,28 @@ postcondition=current-structural-schema",
                     "Additive table and indexes; downgrade requires restoring the verified backup.",
                     true,
                     DbInitializer.EnsureCustomerOrderInboxSchema,
+                    IsPostCustomerOrderInboxSchemaStructurallyValid,
+                    IsRecognizedPostCustomerOrderInboxLedgerlessBaseline),
+                new SchemaMigration(
+                    "0013-catalog-import-recovery",
+                    "Persist catalog-import delivery, replacement and accepted contribution evidence without inferring legacy delivery.",
+                    @"0013-catalog-import-recovery/v1
+table=catalog_import_recovery:original outbox identity, durable dispatch evidence, authenticated receipt and unique replacement
+table=catalog_import_recovery_contributions:original and contributor outbox identities, payload hash and authenticated receipt
+legacy=no backfill; attempt_count is never delivery evidence
+operation=DbInitializer.EnsureCatalogImportRecoverySchema
+schema-sql=" + DbInitializer.CatalogImportRecoverySchemaSql + @"
+predecessor=0012-customer-order-inbox:1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3
+ledgerless-baseline=PostCustomerOrderInboxLedgerlessKnownSchemaSql plus canonical recovery and contribution tables
+ledgerless-correction=typed raw hash and immutable original business identity; unique ascending accepted root or authenticated retired correction parent links, maximum 128 corrections; invalid current proof rejects before legacy backfill
+postcondition=current-structural-schema",
+                    "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883",
+                    "1.0.0",
+                    "Additive delivery and contribution evidence tables; downgrade requires restoring the verified backup.",
+                    true,
+                    DbInitializer.EnsureCatalogImportRecoverySchema,
                     IsCurrentSchemaStructurallyValid,
-                    IsRecognizedPostCustomerOrderInboxLedgerlessBaseline)
+                    IsRecognizedPostCatalogImportRecoveryLedgerlessBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -258,6 +282,29 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+        {
+            if (detector == null)
+                throw new ArgumentNullException(nameof(detector));
+            return
+                HasBaseSchema(
+                    detector,
+                    DbInitializer.PostCatalogImportRecoveryLedgerlessKnownSchemaSql) &&
+                HasSupportedLegacyColumns(detector) &&
+                HasDependentSchema(
+                    detector,
+                    DbInitializer.PostCatalogImportRecoveryLedgerlessKnownSchemaSql) &&
+                HasCanonicalIndexes(detector) &&
+                detector.ColumnMatchesDefinition(DbInitializer.ReceiptShopSnapshotColumn) &&
+                HasOnlineSyncGenerationSchema(detector) &&
+                HasCatalogAuthoritativeIdStageSchema(detector) &&
+                HasArticleMutationSchema(detector) &&
+                HasProductImageSchema(detector) &&
+                HasCustomerOrderInboxSchema(detector) &&
+                detector.HasCatalogImportRecoverySchema();
+        }
+
+        private static bool IsPostCustomerOrderInboxSchemaStructurallyValid(
+            LegacySchemaDetector detector)
         {
             if (detector == null)
                 throw new ArgumentNullException(nameof(detector));
@@ -558,6 +605,127 @@ WHERE (
 LIMIT 1;");
         }
 
+        private static bool HasSafeRecoveryOutboxBindings(LegacySchemaDetector detector)
+        {
+            return HasValidCorrectionRecoveryLinks(detector) && detector.NoRows(@"
+SELECT 1
+FROM sales_sync_outbox outbox
+WHERE (
+    status IN ('pending', 'retry', 'in_progress')
+    AND (
+      COALESCE(schema_version, '') <> 'pos-sales-ledger-v2'
+      OR COALESCE(operation_type, '') <> CASE COALESCE(
+           (SELECT kind FROM sales WHERE sales.id = outbox.sale_id), 0)
+           WHEN 1 THEN 'refund'
+           WHEN 2 THEN 'void'
+           ELSE 'sale'
+         END
+      OR TRIM(COALESCE(origin_shop_code, '')) = ''
+    )
+  )
+   OR (
+    status = 'failed_blocked'
+    AND (
+      (
+        (COALESCE(schema_version, '') <> 'pos-sales-ledger-v2'
+         OR COALESCE(operation_type, '') <> CASE COALESCE(
+              (SELECT kind FROM sales WHERE sales.id = outbox.sale_id), 0)
+              WHEN 1 THEN 'refund'
+              WHEN 2 THEN 'void'
+              ELSE 'sale'
+            END)
+        AND COALESCE(last_error_code, '') <> 'legacy_contract_mismatch'
+      )
+      OR (
+        TRIM(COALESCE(origin_shop_code, '')) = ''
+        AND COALESCE(last_error_code, '') NOT IN (
+          'legacy_origin_ambiguous',
+          'legacy_contract_mismatch')
+      )
+    )
+  )
+LIMIT 1;") &&
+                detector.NoRows(@"
+SELECT 1
+FROM catalog_import_outbox
+WHERE COALESCE(operation_type, '') <> 'catalog_import_correction' AND ((
+    status IN ('pending', 'retry', 'in_progress')
+    AND (
+      COALESCE(schema_version, '') <> 'pos-catalog-import-v1'
+      OR COALESCE(operation_type, '') <> 'catalog_import'
+      OR TRIM(COALESCE(origin_shop_code, '')) = ''
+    )
+  )
+   OR (
+    status = 'failed_blocked'
+    AND (
+      (
+        (COALESCE(schema_version, '') <> 'pos-catalog-import-v1'
+         OR COALESCE(operation_type, '') <> 'catalog_import')
+        AND COALESCE(last_error_code, '') <> 'legacy_contract_mismatch'
+      )
+      OR (
+        TRIM(COALESCE(origin_shop_code, '')) = ''
+        AND COALESCE(last_error_code, '') NOT IN (
+          'legacy_origin_ambiguous',
+          'legacy_contract_mismatch')
+      )
+    )
+  )
+)
+LIMIT 1;");
+        }
+
+        private static bool HasValidCorrectionRecoveryLinks(LegacySchemaDetector detector)
+        {
+            const string columns = @"o.id AS Id,o.client_import_id AS ClientImportId,o.idempotency_key AS IdempotencyKey,
+o.schema_version AS SchemaVersion,o.operation_type AS OperationType,o.origin_shop_id AS OriginShopId,
+o.origin_shop_code AS OriginShopCode,o.payload_json AS PayloadJson,o.payload_hash AS PayloadHash,o.status AS Status";
+            var outbox = detector.Connection.Query<CatalogImportOutboxItem>(
+                "SELECT " + columns + " FROM catalog_import_outbox o WHERE o.operation_type IN ('catalog_import','catalog_import_correction');",
+                transaction: detector.Transaction).ToDictionary(row => row.Id);
+            var links = detector.Connection.Query<CorrectionRecoveryLink>(@"SELECT original_id AS ParentId,
+replacement_id AS ChildId,receipt_status AS ReceiptStatus,receipt_json AS ReceiptJson
+FROM catalog_import_recovery WHERE replacement_id IS NOT NULL;", transaction: detector.Transaction).ToDictionary(row => row.ChildId);
+            var roots = new Dictionary<long, CatalogImportOutboxItem>();
+            var depths = new Dictionary<long, int>();
+            // Every parent predates its child. Ordered validation both bounds the
+            // chain and rejects cycles without recursively traversing payloads.
+            foreach (var correction in outbox.Values.Where(row => row.OperationType == "catalog_import_correction").OrderBy(row => row.Id))
+            {
+                CorrectionRecoveryLink link;
+                CatalogImportOutboxItem parent;
+                if (!links.TryGetValue(correction.Id, out link) || link.ParentId >= correction.Id ||
+                    !outbox.TryGetValue(link.ParentId, out parent) || parent.Status != "failed_blocked" && parent.Status != "recovered")
+                    return false;
+                CatalogImportOutboxItem original;
+                var depth = 1;
+                if (parent.OperationType == "catalog_import")
+                {
+                    if (link.ReceiptStatus != "accepted") return false;
+                    original = parent;
+                }
+                else
+                {
+                    if (link.ReceiptStatus != "retired" || !roots.TryGetValue(parent.Id, out original) ||
+                        !CatalogImportCorrectionTransport.MatchesRetirementEvidence(parent, link.ReceiptJson)) return false;
+                    depth = depths[parent.Id] + 1;
+                }
+                if (depth > 128 || !CatalogImportCorrectionTransport.MatchesRecoveryOriginal(correction, original)) return false;
+                roots.Add(correction.Id, original);
+                depths.Add(correction.Id, depth);
+            }
+            return true;
+        }
+
+        private sealed class CorrectionRecoveryLink
+        {
+            public long ParentId { get; set; }
+            public long ChildId { get; set; }
+            public string ReceiptStatus { get; set; }
+            public string ReceiptJson { get; set; }
+        }
+
         private static bool HasCanonicalIndexes(LegacySchemaDetector detector)
         {
             return detector.HasAllIndexDefinitions(DbInitializer.CanonicalIndexSql);
@@ -626,9 +794,23 @@ LIMIT 1;");
             LegacySchemaDetector detector)
         {
             return
-                IsCurrentSchemaStructurallyValid(detector) &&
+                IsPostCustomerOrderInboxSchemaStructurallyValid(detector) &&
                 HasRemotePriceOwnership(detector) &&
                 HasSafeOutboxBindings(detector) &&
+                DbInitializer.IsSecuritySeedSatisfied(
+                    detector.Connection,
+                    detector.Transaction);
+        }
+
+        private static bool IsRecognizedPostCatalogImportRecoveryLedgerlessBaseline(
+            LegacySchemaDetector detector)
+        {
+            if (!IsCurrentSchemaStructurallyValid(detector))
+                return false;
+            if (!HasSafeRecoveryOutboxBindings(detector))
+                throw new InvalidDataException("Current catalog recovery database contains unsafe outbox evidence; legacy backfill is not applicable.");
+            return
+                HasRemotePriceOwnership(detector) &&
                 DbInitializer.IsSecuritySeedSatisfied(
                     detector.Connection,
                     detector.Transaction);

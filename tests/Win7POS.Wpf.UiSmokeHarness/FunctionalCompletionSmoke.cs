@@ -31,6 +31,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             if (performance) return await CartPerformanceSmoke.RunAsync(dataDir, int.TryParse(productCount, out var count) ? count : 20000);
             var results = new List<string>();
             await CheckAsync(results, "IMPORT_completion", SupplierImportCompletionSmoke.RunAsync);
+            await CheckAsync(results, "IMPORT_RECOVERY_completion", CatalogImportRecoveryCompletionSmoke.RunAsync);
+            await CheckAsync(results, "PRICE_HISTORY_completion", () => ProductPriceHistoryCompletionSmoke.RunAsync(new List<string>()));
             await CheckAsync(results, "REFUND_completion", RefundCompletionSmoke.RunAsync);
             await CheckAsync(results, "REVERSAL_authorization", ReversalAuthorizationCompletionSmoke.RunAsync);
             await CheckAsync(results, "PERF_visual_lifetime_and_public_commands", CartPerformanceRegressionSmoke.RunAsync);

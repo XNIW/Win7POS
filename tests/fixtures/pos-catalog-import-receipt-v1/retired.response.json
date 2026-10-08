@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "code": "success",
+  "schemaVersion": "pos-catalog-import-retirement-v1",
+  "status": "retired",
+  "shopId": "10000000-0000-4000-8000-000000000094",
+  "shopDeviceId": "30000000-0000-4000-8000-000000000094",
+  "clientImportId": "receipt-fixture-import-1",
+  "idempotencyKey": "receipt-fixture-idem-1",
+  "payloadHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "canonicalPayloadHash": "sha256:4fb7dfe81c98ab859a1a64992475b114c524233a83962ba548f1414110a39655",
+  "retiredAt": "2026-10-08T20:00:00.000Z",
+  "oldIdentityBlocked": true,
+  "originalSchemaVersion": "pos-catalog-import-v1"
+}

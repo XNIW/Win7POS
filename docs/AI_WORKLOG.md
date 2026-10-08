@@ -1213,3 +1213,35 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Package D, SHA finale, readiness e ReleasePack verificato sono tracciati da
   `reports/2026-10-03_FUNCTIONAL_SYNC_OPERATIONS_CLOSEOUT.md` e dal receipt
   machine-readable post-merge indicato nel report.
+
+## 2026-10-08 - Post-PR121 functional and operational closeout
+
+- U1: riprodotti sei salvataggi parziali nel vero WPF/SQLite; validazione di
+  entrambi i prezzi prima delle scritture, draft/focus conservati e single-flight.
+  Limiti manuali Int32, retail locale Int64 e import Admin distinti; 13 gruppi PASS.
+- U2: riprodotti tre intenti ridotti a un solo delta, anche con risposta persa
+  in loopback (nessun commit Admin live dimostrato). Recupero completo con originale immutabile, ricevuta/ritiro esplicito,
+  correzioni CAS e contributori/catene durabili; backup verificato e autorizzazione
+  transazionale. Omissioni originali e movimenti locali successivi preservati.
+- Review indipendenti chiuse; Core/Data 1385/1385 senza skip, 49/49 gate e build
+  net48/x86 senza warning/errori. U2 WPF 9/9 e 8 screenshot nuovi in quattro lingue;
+  prima fixture UUID/ACK errata conservata e corretta senza allentare asserzioni.
+- Sequenza funzionale locale 18/19: PERF esistente fallisce il drain Background
+  nel restart dell'indicatore immagini; baseline PR121 isolata PASS, causa ancora
+  non dimostrata. Avvio isolato candidato rifiutato dalla review automatica.
+  CI dell'esatto SHA deve qualificare l'intera sequenza prima dell'integrazione.
+- Misure recovery locali campionate, query/batch worker e backup raccolti;
+  rilascio memoria assoluto NOT_QUALIFIED. Nessuna qualifica Win7 o periferiche.
+- CI 37849987382: Core/Data 1385/1385 e 49 gate PASS, ma sequenza funzionale
+  fermata dalla fixture U2 che equiparava overlay nativo e viewport 1024x768;
+  un PASS, un FAIL, diciassette non eseguiti. Geometria hosted non osservata.
+  Separati i controlli live owner/workarea dal viewport esatto e dal ripristino
+  del layout; prova causale locale del fallback e 9 gruppi/10 PNG PASS, review
+  distinta e build senza warning/errori. Nessuna modifica a dialog di produzione,
+  budget o timeout; serve nuovo CI completo dell'esatto candidato.
+- Admin PR132 integrata; due DDL U2/deploy restano separatamente autorizzabili.
+  TASK150 read-only PASS non sostituisce scope QA/metriche/READY. Manifest TASK148
+  originale recuperato; nessuna readiness o prova live inventata.
+- Nuovo installer e integrazione finale nella ricevuta privata post-merge,
+  evitando commit documentali per il proprio SHA futuro. Report:
+  reports/2026-10-08_WIN7POS_POST_PR121_FUNCTIONAL_OPERATIONAL_CLOSEOUT.md.

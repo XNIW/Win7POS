@@ -1,0 +1,45 @@
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.CatalogImportRecoveryDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
+    xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+    Title="{loc:Loc importRecovery.title}" ShowHeader="False" UseModalOverlay="True"
+    WindowStartupLocation="CenterOwner" SizeToContent="Manual" ResizeMode="CanResize"
+    Width="860" Height="640" MinWidth="680" MinHeight="420" ShowInTaskbar="False">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel>
+            <TextBlock Text="{loc:Loc importRecovery.title}" Style="{StaticResource DialogTitleStyle}"/>
+            <TextBlock Text="{loc:Loc importRecovery.explanation}" TextWrapping="Wrap" Style="{StaticResource TypeBodyStyle}" Margin="0,6,0,8"/>
+            <TextBlock Text="{loc:Loc importRecovery.quantityExplanation}" TextWrapping="Wrap" Style="{StaticResource TypeCaptionStyle}" Margin="0,0,0,6"/>
+            <TextBlock x:Name="ReceiptText" TextWrapping="Wrap" Style="{StaticResource TypeCaptionStyle}"/>
+        </StackPanel>
+        <ProgressBar x:Name="RecoveryProgress" Grid.Row="1" Height="4" Margin="0,8" Visibility="Collapsed" IsIndeterminate="False"/>
+        <DataGrid x:Name="RecoveryRows" Grid.Row="2" Margin="0,8,0,0" AutoGenerateColumns="False"
+                  CanUserAddRows="False" CanUserDeleteRows="False" SelectionMode="Single"
+                  EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                  ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True"
+                  AutomationProperties.Name="{loc:Loc importRecovery.rows}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="{loc:Loc importRecovery.barcode}" Binding="{Binding Barcode}" Width="140" IsReadOnly="True"/>
+                <DataGridTextColumn Header="{loc:Loc importRecovery.product}" Binding="{Binding ProductName}" Width="*" MinWidth="150" IsReadOnly="True"/>
+                <DataGridTextColumn Header="{loc:Loc importRecovery.purchase}" Binding="{Binding PurchasePrice, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
+                <DataGridTextColumn Header="{loc:Loc importRecovery.retail}" Binding="{Binding RetailPrice, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
+                <DataGridTextColumn Header="{loc:Loc importRecovery.quantity}" Binding="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
+            </DataGrid.Columns>
+        </DataGrid>
+        <ScrollViewer Grid.Row="3" MaxHeight="110" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+            <TextBlock x:Name="RecoveryStatus" TextWrapping="Wrap" Style="{StaticResource TypeBodyStyle}"
+                       AutomationProperties.LiveSetting="Assertive" AutomationProperties.Name="{loc:Loc sync.center.operationStatus}"/>
+        </ScrollViewer>
+        <WrapPanel Grid.Row="4" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button x:Name="RetireButton" Content="{loc:Loc importRecovery.retire}" Style="{StaticResource DialogCancelButtonStyle}" Margin="0,0,8,8" Visibility="Collapsed" Click="OnRetireClick"/>
+            <Button x:Name="PrepareButton" Content="{loc:Loc importRecovery.verify}" Style="{StaticResource DialogCancelButtonStyle}" Margin="0,0,8,8" Click="OnPrepareClick"/>
+            <Button x:Name="CommitButton" Content="{loc:Loc importRecovery.commit}" Style="{StaticResource DialogActionButtonStyle}" Margin="0,0,8,8" IsEnabled="False" Click="OnCommitClick"/>
+            <Button x:Name="CancelRecoveryButton" Content="{loc:Loc common.cancel}" Style="{StaticResource DialogCancelButtonStyle}" Margin="0,0,0,8" IsCancel="True" Click="OnCancelClick"/>
+        </WrapPanel>
+    </Grid>
+</chrome:DialogShellWindow>

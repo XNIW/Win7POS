@@ -1,0 +1,291 @@
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Dapper;
+using Microsoft.Data.Sqlite;
+using Win7POS.Core.Online;
+
+namespace Win7POS.Data.Online
+{
+    public sealed partial class CatalogImportOutboxRepository
+    {
+        internal static async Task ReconcileRecoveryContributionAsync(SqliteConnection conn,SqliteTransaction tx,
+            CatalogImportRecoveryOriginal original,PosCatalogImportRequest originalRequest,CatalogImportRecoveryContribution contribution,
+            CatalogImportAckResult authoritativeAck=null)
+        {
+            var item=new CatalogImportOutboxItem { Id=contribution.ContributorId,ClientImportId=contribution.Request.Batch.ClientImportId,
+                IdempotencyKey=contribution.Request.Batch.IdempotencyKey,PayloadHash=contribution.PayloadHash };
+            var ack=authoritativeAck ?? CatalogImportRecoveryService.BuildPersistedAck(new CatalogImportRecoveryOriginal
+                { Id=item.Id,ClientImportId=item.ClientImportId,IdempotencyKey=item.IdempotencyKey,PayloadHash=item.PayloadHash },contribution.Request,contribution.Receipt.Receipt);
+            EnsureRecoveryAckComplete(contribution.Request,ack,true);
+            await ApplyRecoveryProductIdsAsync(conn,tx,ack.RemoteProductIds).ConfigureAwait(false);
+            var history=(await conn.QueryAsync<RecoveryHistoryProof>(@"
+SELECT catalog_import_idempotency_key AS IdempotencyKey,catalog_import_client_item_id AS ClientItemId,
+ barcode AS Barcode,LOWER(type) AS PriceType,new_price AS NewPrice,remote_price_id AS RemotePriceId
+FROM product_price_history WHERE catalog_import_idempotency_key IN @keys OR remote_price_id IN @remoteIds;",
+                new { keys=new[] { original.IdempotencyKey,contribution.Request.Batch.IdempotencyKey },remoteIds=ack.RemotePriceIds.Select(price=>price.RemotePriceId).ToArray() },tx).ConfigureAwait(false)).ToArray();
+            var historyBySlot=history.GroupBy(row=>HistoryKey(row.IdempotencyKey,row.ClientItemId,row.Barcode,row.PriceType),StringComparer.Ordinal)
+                .ToDictionary(group=>group.Key,group=>group.ToArray(),StringComparer.Ordinal);
+            var historyByRemote=history.Where(row=>!string.IsNullOrWhiteSpace(row.RemotePriceId)).GroupBy(row=>row.RemotePriceId,StringComparer.Ordinal)
+                .ToDictionary(group=>group.Key,group=>group.ToArray(),StringComparer.Ordinal);
+            var originals=originalRequest.Items.ToDictionary(row=>row.Barcode,StringComparer.Ordinal);
+            var contributed=contribution.Request.Items.ToDictionary(row=>row.Barcode,StringComparer.Ordinal);
+            var originalPrices=new System.Collections.Generic.List<CatalogImportRemotePriceId>();
+            foreach (var price in ack.RemotePriceIds)
+            {
+                var source=contributed[price.Barcode];
+                var value=price.PriceType=="retail" ? source.RetailPrice : source.PurchasePrice;
+                if (historyByRemote.TryGetValue(price.RemotePriceId,out var mapped))
+                {
+                    if (mapped.Length!=1 || mapped[0].Barcode!=price.Barcode || mapped[0].PriceType!=price.PriceType ||
+                        !CatalogImportOutboxPayloadBuilder.EqualNumber(value,mapped[0].NewPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+                        throw new CatalogImportRecoveryException("receipt_history_conflict");
+                    continue;
+                }
+                if (!historyBySlot.TryGetValue(HistoryKey(contribution.Request.Batch.IdempotencyKey,price.ClientItemId,price.Barcode,price.PriceType),out var exact))
+                    exact=Array.Empty<RecoveryHistoryProof>();
+                if (exact.Length==0)
+                {
+                    if (!originals.TryGetValue(price.Barcode,out var originalItem) ||
+                        !CatalogImportOutboxPayloadBuilder.EqualNumber(value,price.PriceType=="retail" ? originalItem.RetailPrice : originalItem.PurchasePrice))
+                        throw new CatalogImportRecoveryException("receipt_history_unmatched");
+                    if (!historyBySlot.TryGetValue(HistoryKey(original.IdempotencyKey,originalItem.ClientItemId,price.Barcode,price.PriceType),out exact))
+                        exact=Array.Empty<RecoveryHistoryProof>();
+                    originalPrices.Add(new CatalogImportRemotePriceId { Barcode=price.Barcode,ClientItemId=originalItem.ClientItemId,
+                        PriceType=price.PriceType,RemotePriceId=price.RemotePriceId });
+                }
+                if (exact.Length!=1 || !CatalogImportOutboxPayloadBuilder.EqualNumber(value,exact[0].NewPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)) ||
+                    !string.IsNullOrWhiteSpace(exact[0].RemotePriceId) && exact[0].RemotePriceId!=price.RemotePriceId)
+                    throw new CatalogImportRecoveryException("receipt_history_conflict");
+            }
+            await ApplyRemotePriceIdsAsync(conn,tx,originalPrices,original.IdempotencyKey).ConfigureAwait(false);
+            await ApplyRemotePriceIdsAsync(conn,tx,ack.RemotePriceIds,contribution.Request.Batch.IdempotencyKey).ConfigureAwait(false);
+            var wasAcked=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM catalog_import_outbox WHERE id=@id AND status='acked';",
+                new { id=contribution.ContributorId },tx).ConfigureAwait(false)==1;
+            var rows=await conn.ExecuteAsync(@"UPDATE catalog_import_outbox SET status='acked',server_import_id=@serverImportId,
+server_request_id=@serverRequestId,last_error_code=NULL,last_error_at=NULL,claim_generation_id=NULL,claim_token=NULL,updated_at=@now
+WHERE id=@id AND payload_hash=@hash AND status IN ('pending','retry','failed_blocked','acked');",
+                new { id=contribution.ContributorId,hash=contribution.PayloadHash,serverImportId=NormalizeTechnicalId(ack.ServerImportId,160),
+                    serverRequestId=NormalizeTechnicalId(ack.ServerRequestId,160),now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() },tx).ConfigureAwait(false);
+            if (rows!=1) throw new CatalogImportRecoveryException("recovery_overlap_pending");
+            if (!wasAcked)
+            {
+                var raw=await conn.ExecuteScalarAsync<string>("SELECT value FROM app_settings WHERE key=@key;",
+                    new { key=CatalogShopStateRepository.ImportAckGenerationKey },tx).ConfigureAwait(false);
+                long generation=0;
+                if (!string.IsNullOrEmpty(raw) && (!long.TryParse(raw,System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,out generation) || generation<0) || generation==long.MaxValue)
+                    throw new CatalogImportRecoveryException("catalog_import_ack_generation_invalid");
+                await conn.ExecuteAsync(@"INSERT INTO app_settings(key,value) VALUES(@key,@value)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;",new { key=CatalogShopStateRepository.ImportAckGenerationKey,
+                    value=(generation+1).ToString(System.Globalization.CultureInfo.InvariantCulture) },tx).ConfigureAwait(false);
+            }
+            await CompleteRecoveryAsync(conn,tx,contribution.ContributorId,ack,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+        }
+
+        private static async Task ApplyAckMappingsAsync(SqliteConnection conn, SqliteTransaction tx, long outboxId,
+            CatalogImportAckResult ack, string idempotencyKey)
+        {
+            var recovery = await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM catalog_import_recovery WHERE replacement_id=@outboxId", new { outboxId }, tx).ConfigureAwait(false) > 0;
+            if (!recovery)
+            {
+                await ApplyRemoteProductIdsAsync(conn, tx, ack.RemoteProductIds).ConfigureAwait(false);
+                await ApplyRemotePriceIdsAsync(conn, tx, ack.RemotePriceIds, idempotencyKey).ConfigureAwait(false);
+                return;
+            }
+            var request = await ReadIntendedRequestAsync(conn,tx,outboxId).ConfigureAwait(false);
+            EnsureRecoveryAckComplete(request, ack, true);
+            await ApplyRecoveryProductIdsAsync(conn, tx, ack.RemoteProductIds).ConfigureAwait(false);
+            var slots = new System.Collections.Generic.HashSet<string>((await conn.QueryAsync<RecoveryHistorySlot>(@"
+SELECT catalog_import_client_item_id AS ClientItemId,barcode AS Barcode,LOWER(type) AS PriceType
+FROM product_price_history WHERE catalog_import_idempotency_key=@idempotencyKey;",new { idempotencyKey },tx).ConfigureAwait(false))
+                .Select(price => PriceKey(price.ClientItemId,price.Barcode,price.PriceType)),StringComparer.Ordinal);
+            var corrected = ack.RemotePriceIds.Where(price => slots.Contains(PriceKey(price.ClientItemId,price.Barcode,price.PriceType))).ToArray();
+            await ApplyRemotePriceIdsAsync(conn, tx, corrected, idempotencyKey).ConfigureAwait(false);
+        }
+
+        internal async Task<bool> RecordDispatchAsync(CatalogImportOutboxItem item, int attempt, OnlineSyncAttemptFence fence)
+        {
+            using (var conn = _factory.Open())
+            {
+                // Missing legacy evidence stays unknown. Do not promote it using
+                // attempt_count, which release/defer paths deliberately decrement.
+                return await conn.ExecuteScalarAsync<long>(@"
+UPDATE catalog_import_recovery SET dispatch_count=dispatch_count+1,updated_at=@now
+WHERE original_id=@id AND EXISTS (
+ SELECT 1 FROM catalog_import_outbox o WHERE o.id=@id AND o.payload_hash=@hash
+ AND o.status='in_progress' AND o.attempt_count=@attempt
+ AND ((@generationId IS NULL AND o.claim_generation_id IS NULL AND o.claim_token IS NULL
+       AND NOT EXISTS(SELECT 1 FROM pos_sync_session_generation WHERE singleton_id=1 AND active=1))
+ OR (o.claim_generation_id=@generationId AND o.claim_token=@claimToken AND EXISTS(
+ SELECT 1 FROM pos_sync_session_generation WHERE singleton_id=1 AND active=1
+ AND generation_id=@generationId AND fingerprint=@generationFingerprint))));
+SELECT COUNT(1) FROM catalog_import_outbox o WHERE o.id=@id AND o.payload_hash=@hash
+ AND o.status='in_progress' AND o.attempt_count=@attempt
+ AND ((@generationId IS NULL AND o.claim_generation_id IS NULL AND o.claim_token IS NULL
+       AND NOT EXISTS(SELECT 1 FROM pos_sync_session_generation WHERE singleton_id=1 AND active=1))
+ OR (o.claim_generation_id=@generationId AND o.claim_token=@claimToken AND EXISTS(
+ SELECT 1 FROM pos_sync_session_generation WHERE singleton_id=1 AND active=1
+ AND generation_id=@generationId AND fingerprint=@generationFingerprint)));",
+                    FenceParameters(new { id=item.Id, hash=item.PayloadHash, attempt, now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }, fence)).ConfigureAwait(false) == 1;
+            }
+        }
+
+        private static async Task CompleteRecoveryAsync(SqliteConnection conn, SqliteTransaction tx, long replacementId,
+            CatalogImportAckResult ack, long now,bool leafAck=true,PosCatalogImportRequest acknowledgedIntent=null)
+        {
+            var original = await conn.QuerySingleOrDefaultAsync<CatalogImportRecoveryOriginal>(@"
+SELECT o.id AS Id,o.payload_json AS PayloadJson,o.payload_hash AS PayloadHash,o.idempotency_key AS IdempotencyKey,
+o.client_import_id AS ClientImportId,o.status AS Status
+FROM catalog_import_recovery r JOIN catalog_import_outbox o ON o.id=r.original_id
+WHERE r.replacement_id=@replacementId AND r.resolved_at IS NULL;", new { replacementId }, tx).ConfigureAwait(false);
+            if (original == null) return;
+            if(CatalogImportOutboxPayloadBuilder.Sha256Hex(original.PayloadJson)!=original.PayloadHash)
+                throw new CatalogImportRecoveryException("payload_hash_mismatch");
+            var replacement = await ReadIntendedRequestAsync(conn,tx,replacementId).ConfigureAwait(false);
+            if(leafAck) EnsureRecoveryAckComplete(replacement, ack, true);
+            acknowledgedIntent=acknowledgedIntent ?? replacement;
+            var request = await ReadIntendedRequestAsync(conn,tx,original.Id).ConfigureAwait(false);
+            var originals = request.Items.ToDictionary(item => item.Barcode,StringComparer.Ordinal);
+            var replacements = replacement.Items.ToDictionary(item => item.Barcode,StringComparer.Ordinal);
+            var acknowledged=acknowledgedIntent.Items.ToDictionary(item=>item.Barcode,StringComparer.Ordinal);
+            var originalPrices = ack.RemotePriceIds.Where(price => originals.TryGetValue(price.Barcode,out var before) &&
+                replacements.TryGetValue(price.Barcode,out var after) && acknowledged.TryGetValue(price.Barcode,out var effective) &&
+                CatalogImportOutboxPayloadBuilder.EqualNumber(
+                price.PriceType=="retail" ? before.RetailPrice : before.PurchasePrice,
+                price.PriceType=="retail" ? effective.RetailPrice : effective.PurchasePrice) && CatalogImportOutboxPayloadBuilder.EqualNumber(
+                price.PriceType == "retail" ? before.RetailPrice : before.PurchasePrice,
+                price.PriceType == "retail" ? after.RetailPrice : after.PurchasePrice))
+                .Select(price => new CatalogImportRemotePriceId
+            {
+                Barcode = price.Barcode, PriceType = price.PriceType, RemotePriceId = price.RemotePriceId,
+                ClientItemId = originals[price.Barcode].ClientItemId
+            }).ToArray();
+            // Unchanged local rows retained their original history correlation.
+            // Assign their ACK identities without adding economic history rows.
+            await ApplyRemotePriceIdsAsync(conn, tx, originalPrices, original.IdempotencyKey).ConfigureAwait(false);
+            var changed = await conn.ExecuteAsync(@"
+UPDATE catalog_import_outbox SET status='recovered',updated_at=@now
+WHERE id=@id AND status='failed_blocked' AND payload_hash=@hash;
+UPDATE catalog_import_recovery SET resolved_at=@now,updated_at=@now
+WHERE original_id=@id AND replacement_id=@replacementId AND resolved_at IS NULL;",
+                new { id=original.Id, hash=original.PayloadHash, now, replacementId }, tx).ConfigureAwait(false);
+            if (changed != 2) throw new CatalogImportRecoveryException("recovery_state_changed");
+            // A retired correction can have a replacement of its own. The
+            // accepted leaf closes each durable ancestor link in this same TX.
+            await CompleteRecoveryAsync(conn,tx,original.Id,ack,now,false,acknowledgedIntent).ConfigureAwait(false);
+        }
+
+        private static async Task<PosCatalogImportRequest> ReadIntendedRequestAsync(SqliteConnection conn,SqliteTransaction tx,long id)
+        {
+            var item=await conn.QuerySingleAsync<CatalogImportOutboxItem>("SELECT payload_json AS PayloadJson,operation_type AS OperationType FROM catalog_import_outbox WHERE id=@id",new { id },tx).ConfigureAwait(false);
+            return item.OperationType=="catalog_import_correction" ? CatalogImportCorrectionTransport.ReadAckIntendedRequest(item.PayloadJson) :
+                CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(item.PayloadJson);
+        }
+
+        internal static void EnsureRecoveryAckComplete(PosCatalogImportRequest request, CatalogImportAckResult ack, bool requirePrices)
+        {
+            var items = request.Items.ToDictionary(item => item.ClientItemId,StringComparer.Ordinal);
+            var products = new System.Collections.Generic.Dictionary<string,string>(StringComparer.Ordinal);
+            var prices = new System.Collections.Generic.Dictionary<string,string>(StringComparer.Ordinal);
+            var productOwners = new System.Collections.Generic.Dictionary<string,string>(StringComparer.Ordinal);
+            var priceOwners = new System.Collections.Generic.Dictionary<string,string>(StringComparer.Ordinal);
+            foreach (var product in ack.RemoteProductIds)
+            {
+                if (product == null || !items.TryGetValue(product.ClientItemId ?? "",out var item) || product.Barcode != item.Barcode ||
+                    string.IsNullOrWhiteSpace(product.RemoteProductId) || NormalizeTechnicalId(product.RemoteProductId,160) != product.RemoteProductId ||
+                    products.TryGetValue(item.ClientItemId,out var existing) && existing != product.RemoteProductId)
+                    throw new CatalogImportRecoveryException("receipt_conflict");
+                products[item.ClientItemId] = product.RemoteProductId;
+                if (productOwners.TryGetValue(product.RemoteProductId,out var owner) && owner != item.Barcode)
+                    throw new CatalogImportRecoveryException("receipt_conflict");
+                productOwners[product.RemoteProductId] = item.Barcode;
+            }
+            foreach (var price in ack.RemotePriceIds)
+            {
+                if (price == null || !items.TryGetValue(price.ClientItemId ?? "",out var item) || price.Barcode != item.Barcode ||
+                    string.IsNullOrWhiteSpace(price.RemotePriceId) || NormalizeTechnicalId(price.RemotePriceId,160) != price.RemotePriceId ||
+                    price.PriceType != "retail" && price.PriceType != "purchase")
+                    throw new CatalogImportRecoveryException("receipt_conflict");
+                var key = PriceKey(price.ClientItemId,price.Barcode,price.PriceType);
+                if (prices.TryGetValue(key,out var existing) && existing != price.RemotePriceId)
+                    throw new CatalogImportRecoveryException("receipt_conflict");
+                prices[key] = price.RemotePriceId;
+                if (priceOwners.TryGetValue(price.RemotePriceId,out var owner) && owner != key)
+                    throw new CatalogImportRecoveryException("receipt_conflict");
+                priceOwners[price.RemotePriceId] = key;
+            }
+            foreach (var item in request.Items)
+            {
+                if (!products.ContainsKey(item.ClientItemId))
+                    throw new CatalogImportRecoveryException("receipt_incomplete");
+                if (!requirePrices) continue;
+                foreach (var type in new[] { "purchase", "retail" })
+                {
+                    var value = type == "retail" ? item.RetailPrice : item.PurchasePrice;
+                    if (!string.IsNullOrWhiteSpace(value) && CatalogImportOutboxPayloadBuilder.IsAdminPrice(value) &&
+                        !prices.ContainsKey(PriceKey(item.ClientItemId,item.Barcode,type)))
+                        throw new CatalogImportRecoveryException("receipt_incomplete");
+                }
+            }
+        }
+        internal static async Task ApplyRecoveryProductIdsAsync(SqliteConnection conn, SqliteTransaction tx,
+            System.Collections.Generic.IReadOnlyList<CatalogImportRemoteProductId> mappings)
+        {
+            await ApplyRemoteProductIdsAsync(conn,tx,mappings).ConfigureAwait(false);
+            var actual = (await conn.QueryAsync<RecoveryProductSlot>(@"
+SELECT barcode AS Barcode,remote_product_id AS RemoteProductId,COALESCE(is_active,1) AS IsActive
+FROM products WHERE barcode IN @barcodes;",new { barcodes=mappings.Select(mapping=>mapping.Barcode).Distinct(StringComparer.Ordinal).ToArray() },tx).ConfigureAwait(false))
+                .ToDictionary(product=>product.Barcode,StringComparer.Ordinal);
+            foreach (var mapping in mappings)
+                if (!actual.TryGetValue(mapping.Barcode,out var product) || product.RemoteProductId != mapping.RemoteProductId || !product.IsActive)
+                    throw new CatalogImportRecoveryException("receipt_conflict");
+        }
+        private static string PriceKey(string clientItemId,string barcode,string type) => clientItemId + "\0" + barcode + "\0" + (type ?? "").ToLowerInvariant();
+        private static string HistoryKey(string idempotencyKey,string clientItemId,string barcode,string type) => idempotencyKey + "\0" + PriceKey(clientItemId,barcode,type);
+        private sealed class RecoveryHistorySlot
+        {
+            public string ClientItemId { get; set; }
+            public string Barcode { get; set; }
+            public string PriceType { get; set; }
+        }
+        private sealed class RecoveryProductSlot
+        {
+            public string Barcode { get; set; }
+            public string RemoteProductId { get; set; }
+            public bool IsActive { get; set; }
+        }
+        private sealed class RecoveryHistoryProof
+        {
+            public string IdempotencyKey { get; set; }
+            public string ClientItemId { get; set; }
+            public string Barcode { get; set; }
+            public string PriceType { get; set; }
+            public long NewPrice { get; set; }
+            public string RemotePriceId { get; set; }
+        }
+    }
+
+    internal sealed class CatalogImportRecoveryOriginal : CatalogImportRecoveryState
+    {
+        public long Id { get; set; }
+        public string ClientImportId { get; set; }
+        public string IdempotencyKey { get; set; }
+        public string PayloadHash { get; set; }
+        public string PayloadJson { get; set; }
+        public string OriginShopId { get; set; }
+        public string OriginShopCode { get; set; }
+        public string LastErrorCode { get; set; }
+        public string Status { get; set; }
+        public string OperationType { get; set; }
+    }
+
+    internal class CatalogImportRecoveryState
+    {
+        public bool DeliveryKnown { get; set; }
+        public long DispatchCount { get; set; }
+        public string ReceiptStatus { get; set; }
+        public string ReceiptJson { get; set; }
+        public long? ReplacementId { get; set; }
+    }
+}
