@@ -3,3 +3,4 @@ tests/fixtures/pos-product-image-v1/** -text
 tests/fixtures/product-image-v1/** -text
 tests/fixtures/pos-catalog-import-receipt-v1/*.json -text
 tests/fixtures/pos-catalog-import-wire-v1/**/*.json -text
+tests/fixtures/pos-catalog-import-wire-v1/**/*.zip -text
