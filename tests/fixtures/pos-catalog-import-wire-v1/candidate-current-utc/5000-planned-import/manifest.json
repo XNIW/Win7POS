@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "win7pos-admin-wire-evidence-v1",
+  "scenario": "5000-planned-import",
+  "syntheticCredentials": true,
+  "source": "production C# builder -\u003E SQLite -\u003E production recovery/sync -\u003E production HTTP serializer",
+  "acceptanceClaim": false,
+  "files": [
+    {
+      "path": "part-0.persisted.json",
+      "bytes": 255190,
+      "sha256": "3dd3b568c3181d916430b65832346f611af331d5e5aba0d47dffe8af1847ee2b"
+    },
+    {
+      "path": "part-0.ordinary.request.json",
+      "bytes": 255521,
+      "sha256": "16c509e0dfab35a9d6b1a50cb120fbd3fa5d3eb4f9af6e45541ff8cbb6517133"
+    },
+    {
+      "path": "part-1.persisted.json",
+      "bytes": 259618,
+      "sha256": "88d2aa45a67557e569967f538f650f43162f8378482c5520530edcde0dccf2e1"
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "bytes": 259949,
+      "sha256": "83da3dab20e33c6986b08d4f2198ff51cb5aa85648ea75789c61bdde2c8d7a6c"
+    },
+    {
+      "path": "part-2.persisted.json",
+      "bytes": 259618,
+      "sha256": "d2b321bd3082333ec8253160a5e3ae597f6856d92a945f6ff8f9dc97c34074e5"
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "bytes": 259949,
+      "sha256": "e15d4ffd2293f3fe621d193cf5716455155c3731bc6f7b5137de95e5874334be"
+    },
+    {
+      "path": "part-3.persisted.json",
+      "bytes": 259618,
+      "sha256": "07c19022b3c1c931e343caadd9236f7222539874a2214e655c44b52f7695e65f"
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "bytes": 259949,
+      "sha256": "576ab4495e7e274cd0a71ef656e83b3451c4648d9f0f3103a09f606911ef9777"
+    },
+    {
+      "path": "part-4.persisted.json",
+      "bytes": 259618,
+      "sha256": "d886c49c5646f7b01f31d457040756559d58ce0c26ce63a0a8c574c0c38541aa"
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "bytes": 259949,
+      "sha256": "f82fcc0c171157e4dad00204354888f114a419c5577793ad94b9a0f57a18a66c"
+    },
+    {
+      "path": "local-state.json",
+      "bytes": 1571,
+      "sha256": "6d508630b254373e22614e720c668e69553d0916dd0e2c8b255bf11b3b1b8d09"
+    }
+  ]
+}

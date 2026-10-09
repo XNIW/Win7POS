@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "win7pos-admin-wire-evidence-v1",
+  "scenario": "5000-never-sent-recovery",
+  "syntheticCredentials": true,
+  "source": "production C# builder -\u003E SQLite -\u003E production recovery/sync -\u003E production HTTP serializer",
+  "acceptanceClaim": false,
+  "files": [
+    {
+      "path": "legacy-original.persisted.json",
+      "bytes": 1346201,
+      "sha256": "9302459fe39cc638e92036622b1648cba023c6b96018963b0c0e5d2fdf808dff"
+    },
+    {
+      "path": "part-0.persisted.json",
+      "bytes": 295089,
+      "sha256": "fdc44e7740022151429bcaf2a02d8a7b9723d1956d5d7495a2302d72df2ac7ad"
+    },
+    {
+      "path": "part-0.ordinary.request.json",
+      "bytes": 295420,
+      "sha256": "df079f06625fae7db983d1f665544494a010564c43bb289ac3e356d00a123000"
+    },
+    {
+      "path": "part-1.persisted.json",
+      "bytes": 299517,
+      "sha256": "19dd6be3695b46eaff1fbf17a92832512f12b633a295990359a9639390d41c80"
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "bytes": 299848,
+      "sha256": "b27d64526d25b76fac4060c6fca1c48809f51826a5c17b9c4a72b99f050cf012"
+    },
+    {
+      "path": "part-2.persisted.json",
+      "bytes": 299517,
+      "sha256": "46affee1eeea7fde7ca5e5a98edd7768f7f65851711d469eb66768d32f58412b"
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "bytes": 299848,
+      "sha256": "8061a2d64a2dbdfeff983cfd4c66c73880366baff56c0c93098dafaee2a0c9e7"
+    },
+    {
+      "path": "part-3.persisted.json",
+      "bytes": 299517,
+      "sha256": "04f96382b5ad181e7b0278f4f4919d3d51f6a7a81a2f55cbdec357211ae12d8b"
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "bytes": 299848,
+      "sha256": "7671ec6812bc551a65af1523301b027a81fda7c8f599387c7c308cd8af8d310b"
+    },
+    {
+      "path": "part-4.persisted.json",
+      "bytes": 299517,
+      "sha256": "18d75f582761816ccbfc441b8ddbc993816b5351545bf090ed6b1b36a0607380"
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "bytes": 299848,
+      "sha256": "f68ac4a8079151b946c297aad3398ce399bcf0ff96d6dada6edfdea6fbbee414"
+    },
+    {
+      "path": "local-state.json",
+      "bytes": 1900,
+      "sha256": "edcf64457568d90f4bd67f8ff54ee740cff5f2038d94ca5f683f4d3944248027"
+    }
+  ]
+}
