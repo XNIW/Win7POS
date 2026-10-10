@@ -117,3 +117,15 @@ L'archivio contiene anche il rifiuto SQL dell'originale tardivo
 (`identity_retired`) con conteggi e valori invariati. Autenticazione esterna,
 sessione/lease e dipendenze restano sintetici, come dichiarato nel manifest:
 questa prova non attesta staging, TEST condiviso o autenticazione live.
+
+`candidate-supersession` aggiunge 115 richieste C# immutate per quattro casi:
+successione con una parte già accettata, retirement con risposta persa,
+convergenza senza nuovi figli e registrazione senza figli con risposta persa.
+`admin-db-3da549a5` conserva il rifiuto iniziale dovuto a `itemCount` assente
+nelle parti della risposta Admin; quattro test negativi lo verificano prima
+di inviare il primo ritiro. `admin-db-2a34851c` contiene il replay corretto
+su quattro database isolati e il reingest C# positivo: otto test complessivi
+passati, mappe di tutti i 1001 prodotti e 2002 prezzi per caso confrontate,
+bozze preservate e chiusura soltanto dopo le conferme necessarie. I README
+dei due archivi separano i fallimenti storici, le correzioni al test e le
+prove positive; nessun byte HTTP viene aggiustato per ottenere il risultato.

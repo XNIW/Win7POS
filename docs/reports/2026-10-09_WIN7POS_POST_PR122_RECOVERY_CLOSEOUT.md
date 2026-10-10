@@ -1,0 +1,134 @@
+# WIN7POS post-PR122 recovery completion
+
+## Baseline and evidence
+
+The integrated baseline is Win7POS `8ede85ee37ed9ecd0af83203df8551cc5a91f6aa`
+(PR122), with Admin `62f513f6ca15662e6bbb384a7510977fe68e1267` (PR132).
+The PR122 installer remains a historical baseline. Final source, workflow,
+package and served-runtime identities are recorded from observed results in
+the delivery receipt, rather than by a later documentation commit.
+
+The private evidence directory is
+`C:\Dev\_codex-evidence\win7pos-post-pr122-20261009`.
+Initial failures, intermediate failures and subsequent results occupy separate
+directories. WPF remains net48/x86; Core and Data remain netstandard2.0.
+
+The initial interoperability reproduction used the C# builder, SQLite outbox,
+real client serializer and Admin's official loader/parser/handler. The saved
+ordinary original omitted `attemptCount`; all six U2 requests were rejected
+with HTTP 400 before authentication/RPC. A mock HTTP 200 was not used to claim
+contract acceptance. A separate baseline WPF reproduction confirmed that edits
+were lost after closing the recovery window, without changing applied data.
+
+PR122's 5000-row result established virtualized display and rejection of a
+1105961-byte request. Its supported final local commit test covered 1000 rows.
+It did not certify completed 5000-row Admin reconciliation.
+
+## Implementation
+
+Ordinary import and recovery use durable operation groups attached to the
+existing outbox. Each ordinary request is limited independently by row count
+and the complete serialized UTF-8 HTTP body. Planning includes the maximum
+allowed escaped credentials and transport metadata; sending measures again
+with current credentials. Saved operation identities and payloads remain
+stable on retry. Local product, stock, history, membership and outbox writes
+share the existing transaction and follow a verified backup.
+
+Uncertain large originals use bounded proof uploads of the complete immutable
+saved JSON. The server verifies uploaded bytes, operation identity and its own
+canonical hash. Receipt lookup remains a snapshot; replacement requires an
+authoritative retirement fence. Large recovery plans bind complete row coverage
+to saved children or accepted contributor receipts. Partial ACKs preserve
+progress and keep the original unresolved.
+
+Additive migration 0014 stores group membership, operator drafts, shared
+correction proof, the prepared-plan journal and immutable succession archives. Migration 0013 and previously
+integrated checksum material remain unchanged. A correction group shares one
+original/receipt proof locally, avoiding one full copy per child.
+
+The journal preserves the prepared children and exact remote plan document
+before its first upload. Remote registration and local economic commit are
+separate states. A draft can be discarded without deleting a possibly sent
+plan. Changing an already sent plan requires authoritative reconciliation and
+succession; clearing a local journal is not a recovery mechanism.
+
+Draft edits survive close/reopen and are never automatically applied or treated
+as remote confirmation. Reopening checks original/hash, shop/session, generation,
+permissions and revisions. The dialog exposes draft status and confirmed
+row/part progress in four languages, using the existing dialog resources,
+ownership rules and virtualized grid.
+
+## Verification scopes
+
+| Evidence | Result and scope |
+| --- | --- |
+| Original C# U2 bytes against Admin `bee0670` | 7 parser and 6 handler checks pass; authentication dependency is synthetic. Omitted/zero original attempts are accepted, while ordinary sends still require a positive attempt. |
+| Complete HTTP reader boundary | 524287/524288 bytes accepted, 524289 rejected before RPC. |
+| Two recorded PostgreSQL 5000-row ordinary response archives | Reingestion through the C# sync service passes: 5000 product IDs, 10000 price IDs, saved values and closure only after all five ACKs. Economic SQL ran in the owned isolated Admin database; this is not a live staging result. |
+| Uncertain-original multipart corpus | Exact C# bytes in corpus `7e287719d52d854908fd532be86ae45af46aefcf` were replayed through official Admin handlers and economic SQL in the owned isolated database. The real response archive published at Admin `7faecb54` is pinned by SHA256 `f813a28b28a6eabf10d651b4ac569d5a4fd1dc78e7a42086b3eb2226461afbbf`. C# reingestion passes 9/9 cases, verifying all 5000 product IDs, 10000 price IDs, stock, edited values and history. Outer authentication is synthetic; this is not staging or physical Win7 qualification. |
+| Lost third response | Restart retries only the third operation with identical bytes after the existing 30-second backoff. The same official Admin receipt is reingested; the local root remains unresolved until its fifth durable ACK, even when the recorded server parent is already complete. Stock/history are not reapplied. |
+| Shared correction planning | 5000/60000-row local planning tests pass, with one shared proof. This does not qualify the upper limit on Admin, WPF or physical Win7. |
+| Legacy upper local reconciliation | 60000 product IDs and 120000 price IDs reconcile against the full SQLite history in 20 seconds, preserving stock and original bytes. A preceding run was stopped after demonstrating repeated full-history scans; an equivalent existence query removes that cause. ACKs in this upper test are synthetic: large Admin proof normalization remains a separate qualification. |
+| Succession wire generation and real reingestion | Corpus `9a87550244a00a322d70bc066ac19c0a84f6c494` preserves 115 unchanged HTTP requests across four 1001-row sequences: mixed accepted/retired parts, lost retirement response, empty-child successor and lost empty-child registration response. Admin `3da549a5` responses initially failed C# reingestion because `plan.parts[].itemCount` was omitted, before the first child retirement. The corrected actual response archive at `2a34851c` has SHA256 `7baef9303b7be9c20ae4dc183aae0e305c4948efea035a7ab42dc3521d876797`. All four positive roundtrips and four historical negative cases pass, verifying every request byte/hash/route/index, lost replies, 1001 product IDs, 2002 price IDs, stock/history, deferred drafts and partial-to-complete group progress. Original request JSON is unchanged. Economic SQL is real and isolated; outer authentication is synthetic. An intermediate enum-label comparison failure in the test harness is kept distinct from the original server defect. |
+| Phased upper input provenance | Checkpoint `51964ac2ec242a6f0f75c0ee65d44ad57a99a352` contains real builder/SQLite/precommit planner inputs for 5000 and 59999 dense Unicode rows. The latter represents 60000 worksheet rows including its header: original 58466463 bytes, recovery plan 71664104 bytes and 120 children. SQLite integrity and raw hashes are verified. This is planning evidence; the real Admin cursor schedule and byte-exact replay remain separate qualifications. |
+| Dense 5000-row Admin cursor probe | The first probe stopped at coverage projection with `projection_too_large`; no economic writes had occurred. Admin `26f06a84988d1e56d18ed3db7237430dcc976990` removes a duplicate nested item projection without changing the persisted proof or HTTP limits. Resuming from the failed cursor completed ten real ACKs, 5000 products and 10000 prices with stock 1.25. C# schedule-driven wire capture and fresh equivalent-database replay remain separate qualifications. |
+| Phased client boundaries | 81 focused tests, 33 upload/progress tests, six schedule-selector tests and four 128/129-count routing tests pass. A prior trailing-JSON validation failure is preserved separately. Request sizing, fresh authorization, cancellation, stable hashes and bounded manifest paging are covered; these tests do not replace the real Admin database replay. |
+| Invalid Unicode before writing | Seven focused tests pass: NUL and unpaired surrogates are rejected with a row/field error before recovery backup or business writes; valid paired emoji and CJK survive serialization. |
+| Deferred draft after an accepted contributor | Two current-service tests pass through startup before and after the new ACK. The previous status, receipt and aggregate proof remain immutable; the new correction keeps the shop barrier until its own ACK and uses distinct historical price IDs. Stock remains 1.25 and duplicate ACK is harmless. Initial startup schema rejection, runtime `legacy_contract_mismatch` and overwritten historical ACK are preserved separately. The startup fix changes runtime validation only, preserving historical migration SQL and checksums. |
+| Original retirement reply lost | Initial client/SQLite qualification passed seven of nine tests and exposed two restore defects: small correction target/receipt missing locally, and multipart transport options missing after an explicit authoritative retirement retry. The same unchanged test source now passes nine of nine, including six identity/hash/shop refusals. Ordinary local fallback already passed. Lookup `conflict/identity_retired` still provides no fence and cannot authorize commit. These tests use explicitly synthetic peers; real handler/database retry evidence remains separately qualified. |
+| Admin draft candidate automatic gates | PR134 head `54a7a3cf7c01e60ea032d9d7444e9b445fa36511`: CI `38012792208` Verify and migrations/pgTAP pass; Cloudflare build `38012792107` passes. Staging E2E and deployments are skipped. The earlier `ce1493e7` source gates remain separately recorded. This source is a draft candidate, not the final integrated or served runtime. |
+| Migration and dialog structural gates | Additive ledger/checksum guard and 36/36 dialog checks pass on the current source. Final canonical gates bind the frozen candidate. |
+
+Local WPF and harness x86 compilation after all four review fixes succeeds
+with zero errors and warnings. Frozen-candidate canonical qualification remains
+separate. Final
+local `IMPORT_RECOVERY_completion` launch was rejected by automatic approval
+review with `blocked by policy`, with no more specific reason. No equivalent
+local retry is used. Final UI qualification uses the canonical independent
+Windows CI runner after source freeze. Earlier intermediate UI failures remain
+in the evidence and are not presented as final passes.
+
+The prior PERF failure occurred in its own process. U2 windows in a different
+process do not establish its cause. Existing comparison with a plain WPF control
+does not establish absolute release of native window roots; the owner of the
+observed retention remains unidentified. No timeout or budget was increased.
+
+The development review and new restart tests identified additional succession
+defects: locally pending retired parts could still drain before final closure;
+an unapplied successor could lose the last applied stock baseline; inherited
+accepted parts could lack local ACK publication; unchanged successor rows could
+reuse a retired identity. These findings, initial failures and fixes are kept
+separately. Succession, deferred contributor drafts and empty-child convergence
+passed their earlier focused restart tests. A later current-service test
+identified incomplete aggregate provenance when an accepted contributor covers
+part of a member and its recovery covers the remainder. The fix records both
+authoritative sources and passes the focused tests. Further review reproduced
+an edited descendant value being rejected against the ancestor's frozen value,
+then a subset descendant proof being accepted. Six focused tests now pass with
+complete row coverage and distinct historical price mappings. Their initial
+failures remain separate. Applying a deferred draft to an already accepted
+contributor also reproduced a startup schema rejection before its new ACK;
+the runtime and immutable-receipt fixes now pass both complete restart tests
+and the independent review. These findings do not establish
+missing remote economic effects from receipts already reconciled.
+Locked restore and all 49 canonical source gates pass on the complete source
+checkpoint `2717037` with the corrected interop tests. They remain separate
+from final exact-SHA hosted qualification and package verification.
+
+## Operational qualification
+
+The isolated Admin staging candidate must contain the final protocol changes
+and be qualified on its exact SHA. Shared TEST DDL, staging Worker deployment,
+the existing QA secret update and smoke remain subject to one updated concrete
+change proposal. Build and merge alone do not prove the served runtime.
+
+READY requires the authoritative complete current contributor registry,
+classification of shared bootstrap, current metrics and fresh deployment
+readback in the consumer's exact 22-field format. The old observed disjoint image
+runs do not establish a clean QA universe. Live acceptance starts only after
+valid READY and a final Release Pack, with a fresh verified download directory.
+
+Android's active source is MerchandiseControlSplitView. Mobile propagation,
+physical Win7 installation/peripherals/backup and read-only historical business
+audit are reported only when actually executed with the corresponding access,
+operator, recoverable TEST data or authorized business copy.
