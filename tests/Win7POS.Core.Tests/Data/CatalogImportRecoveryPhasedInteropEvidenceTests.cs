@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -22,6 +23,98 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
     private const string OriginalTime = "2026-10-10T00:50:00.0000000+00:00";
     private const string RecoveryTime = "2026-10-10T00:51:00.0000000+00:00";
     private static readonly UTF8Encoding Utf8 = new(false, true);
+
+    [TestMethod]
+    public async Task Dense5000_ActualFreshAdminReplies_ReenterExactCSharpRequestsAndCompleteRecovery()
+    {
+        const string captureHash = "1c8633eeb70db8d6b0ec8b5fadf9c42ab20a5f9fcad8606a7e5f35791b53b90e";
+        const string responseHash = "3351fd42d40c5b07385f3aa61cc00dc84f513a615494ee7dd9e4da6c617880c5";
+        var source = new DirectoryInfo(AppContext.BaseDirectory);
+        while (source != null && !File.Exists(Path.Combine(source.FullName, "Win7POS.slnx"))) source = source.Parent;
+        Assert.IsNotNull(source, "The pinned repository fixtures are required; missing evidence cannot skip qualification.");
+        var fixtures = Path.Combine(source.FullName, "tests", "fixtures", "pos-catalog-import-wire-v1");
+        var capturePath = Path.Combine(fixtures, "dense5000-csharp-169", "dense5000-csharp-capture-v1.zip");
+        var responsePath = Path.Combine(fixtures, "dense5000-admin-e88-169", "exact-csharp-dense5000-169-e88-minimal-csharp-reingest.zip");
+        Assert.AreEqual(captureHash, FileHash(capturePath));
+        Assert.AreEqual(responseHash, FileHash(responsePath));
+        using var capture = ZipFile.OpenRead(capturePath);
+        using var responses = ZipFile.OpenRead(responsePath);
+        byte[] Bytes(ZipArchive archive, string path)
+        {
+            var entry = archive.GetEntry(path); Assert.IsNotNull(entry, path);
+            using var stream = entry.Open(); using var bytes = new MemoryStream(); stream.CopyTo(bytes); return bytes.ToArray();
+        }
+        string HashBytes(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        var scheduleBytes = Bytes(responses, "schedule.json");
+        var manifestBytes = Bytes(responses, "manifest.json");
+        var captureBytes = Bytes(capture, "capture/capture.manifest.json");
+        Assert.AreEqual("de0548d0435b6ce886e00a9e1a1fa2317409eac0a10c129fb1f0a23bd9d9c617", HashBytes(scheduleBytes));
+        Assert.AreEqual("3dec396f32ea18666f56e23f3628e0b29d49fbee5b93bd630ed46eb65422d6e6", HashBytes(manifestBytes));
+        Assert.AreEqual("9463f5403b815e8726451f1e2568be946c4162e7e1fa33932e54b6ed210f22b4", HashBytes(captureBytes));
+        using var scheduleJson = JsonDocument.Parse(scheduleBytes);
+        using var manifestJson = JsonDocument.Parse(manifestBytes);
+        using var captureJson = JsonDocument.Parse(captureBytes);
+        var manifest = manifestJson.RootElement;
+        Assert.AreEqual("2bcee6e84c5a6a8cdb5c8165bf235848b981152d", manifest.GetProperty("sourceCommit").GetString());
+        Assert.AreEqual("e88d17783f89fc307bb2f62c1d2e5d6fb645fa6d3c3b3a4b7d723b50d94f9aca", manifest.GetProperty("SQLSha256").GetString());
+        Assert.AreEqual(captureHash, manifest.GetProperty("sourceCapture").GetProperty("zipSha256").GetString());
+        Assert.IsFalse(manifest.GetProperty("responseBytesReserialized").GetBoolean());
+        var replay = manifest.GetProperty("replay");
+        Assert.IsTrue(replay.GetProperty("requestBodiesUnchanged").GetBoolean());
+        Assert.IsTrue(replay.GetProperty("parentCompleteOnlyLastACK").GetBoolean());
+        CollectionAssert.AreEqual(Enumerable.Range(0, 169).ToArray(),
+            replay.GetProperty("requestIndicesDispatchedExactlyOnce").EnumerateArray().Select(value => value.GetInt32()).ToArray());
+        var database = replay.GetProperty("finalTypedDBPostcheck");
+        Assert.AreEqual(5000, database.GetProperty("products").GetInt32());
+        Assert.AreEqual(5000, database.GetProperty("stock125").GetInt32());
+        Assert.AreEqual(10000, database.GetProperty("prices").GetInt32());
+        Assert.AreEqual(10, database.GetProperty("completeACKs").GetInt32());
+        var records = scheduleJson.RootElement.GetProperty("requests");
+        var originalRecords = captureJson.RootElement.GetProperty("requests");
+        Assert.AreEqual(169, records.GetArrayLength()); Assert.AreEqual(169, originalRecords.GetArrayLength());
+        var temporaryName = "Win7POS-dense-actual-" + Guid.NewGuid().ToString("N");
+        var temporary = Path.Combine(Path.GetTempPath(), temporaryName);
+        var inputs = Path.Combine(temporary, "inputs"); var actualResponses = Path.Combine(temporary, "responses");
+        Directory.CreateDirectory(inputs); Directory.CreateDirectory(actualResponses);
+        var passed = false;
+        try
+        {
+            foreach (var name in new[] { "original.persisted.json", "plan.document.json", "original.sqlite", "trust.synthetic.json", "inputs.manifest.json" })
+                await File.WriteAllBytesAsync(Path.Combine(inputs, name), Bytes(capture, "inputs/" + name));
+            await File.WriteAllBytesAsync(Path.Combine(actualResponses, "schedule.json"), scheduleBytes);
+            for (var index = 0; index < records.GetArrayLength(); index++)
+            {
+                var record = records[index]; var original = originalRecords[index];
+                Assert.AreEqual(original.GetProperty("action").GetString(), record.GetProperty("action").GetString());
+                Assert.AreEqual(original.GetProperty("requestSha256").GetString(), record.GetProperty("requestSha256").GetString());
+                Assert.AreEqual(record.GetProperty("requestSha256").GetString(), "sha256:" +
+                    HashBytes(Bytes(capture, "capture/" + original.GetProperty("requestFile").GetString())));
+                var name = record.GetProperty("responseFile").GetString()!;
+                Assert.AreEqual(index.ToString("D5") + ".response.json", name);
+                var response = Bytes(responses, name);
+                Assert.AreEqual(record.GetProperty("responseSha256").GetString(), "sha256:" + HashBytes(response));
+                await File.WriteAllBytesAsync(Path.Combine(actualResponses, name), response);
+            }
+            // No selected pilot subset and no synthetic fallback: every actual
+            // fresh-DB response is consumed once, after its exact request hash.
+            await CaptureRecordedDenseRecoveryAsync(inputs, actualResponses, Path.Combine(temporary, "readback"), 5000);
+            passed = true;
+        }
+        finally
+        {
+            // Keep a failed readback for diagnosis; the initial official run is
+            // retained separately even when this permanent regression passes.
+            if (passed)
+            {
+                var tempRoot = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var deleteTarget = Path.GetFullPath(temporary);
+                Assert.IsTrue(deleteTarget.StartsWith(tempRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+                Assert.AreEqual(tempRoot, Path.GetDirectoryName(deleteTarget), true, "Only our direct temporary child may be deleted.");
+                Assert.AreEqual(temporaryName, Path.GetFileName(deleteTarget), "The generated prefix and GUID must match exactly.");
+                Directory.Delete(deleteTarget, true);
+            }
+        }
+    }
 
     [TestMethod]
     [DataRow(5000)]
@@ -109,10 +202,8 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
         Write(destination, "inputs.manifest.json", JsonSerializer.Serialize(metadata, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    // This entry point deliberately has no TestMethod until an official response
-    // archive is pinned. Missing evidence cannot turn into a passing/skipped CI
-    // qualification. The same path is used for pilot-guided request capture and
-    // for replaying the subsequent fresh-database response archive.
+    // Shared by pilot-guided capture and the pinned actual fresh-DB regression
+    // above. Missing evidence cannot turn into a passing/skipped qualification.
     internal static async Task CaptureRecordedDenseRecoveryAsync(string inputsDirectory, string scheduleDirectory, string outputDirectory, int count, string? selectionManifestPath = null)
     {
         inputsDirectory = Path.GetFullPath(inputsDirectory);

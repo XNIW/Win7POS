@@ -2,6 +2,12 @@ name: wpf-build
 
 on:
   workflow_dispatch:
+    inputs:
+      functional_completion_smoke:
+        description: Run the canonical functional wrapper with unchanged scenario budgets
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -31,6 +37,35 @@ jobs:
         shell: pwsh
         run: pwsh -File scripts/check-dialog-standards.ps1
       - run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+      - name: Restore and build functional harness
+        if: ${{ inputs.functional_completion_smoke == true }}
+        shell: pwsh
+        run: |
+          dotnet restore tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked harness restore failed.' }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Harness build failed.' }
+      - name: Canonical functional completion smoke
+        if: ${{ inputs.functional_completion_smoke == true }}
+        shell: pwsh
+        run: |
+          $diagnosticRoot = Join-Path $env:RUNNER_TEMP 'functional-diagnostics'
+          New-Item -ItemType Directory -Path $diagnosticRoot -ErrorAction Stop | Out-Null
+          $env:TEMP = $diagnosticRoot
+          $env:TMP = $diagnosticRoot
+          pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Configuration Release -Platform x86
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical functional smoke failed; diagnostics preserved.' }
+      - name: Upload functional diagnostics
+        if: ${{ always() && inputs.functional_completion_smoke == true }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Win7POS-Functional-Diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/functional-diagnostics/**/*.txt
+            ${{ runner.temp }}/functional-diagnostics/**/*.csv
+            ${{ runner.temp }}/functional-diagnostics/**/*.png
+          if-no-files-found: warn
+          retention-days: 14
       - name: List WPF bin output
         run: Get-ChildItem -Path "src/Win7POS.Wpf/bin" -Recurse | Select-Object FullName
       - name: Upload WPF artifact

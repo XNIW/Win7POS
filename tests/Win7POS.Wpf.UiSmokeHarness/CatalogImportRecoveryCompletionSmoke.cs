@@ -196,14 +196,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Require(dialog.IsVisible && Rows(dialog)[0].RetailPrice == "321" && fixture.Counts() == before,
                         "failed draft flush closed the window, lost edits or applied data");
                     using (var connection = fixture.Factory.Open()) connection.Execute("DROP TRIGGER fail_draft_save");
-                    var confirmationOperation = Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
-                    {
-                        var confirmation = Application.Current.Windows.OfType<ApplyConfirmDialog>().Single();
-                        Descendants(confirmation).OfType<Button>().Single(button => button.IsDefault)
-                            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    }), DispatcherPriority.ApplicationIdle);
+                    var confirmationOperation = AcceptConfirmationAsync(dialog, "discard_draft");
                     Click(dialog, "DiscardDraftButton");
-                    await confirmationOperation.Task;
+                    await confirmationOperation;
                     await IdleAsync(dialog);
                     Require(Rows(dialog)[0].RetailPrice == "2147483648" && fixture.Counts() == before,
                         "discarding the draft removed the original or applied data");
@@ -421,13 +416,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             await EditRetailAsync(dialog, "300");
                             await CheckAllRecoveryButtonsAsync(dialog);
                             var before = fixture.Counts();
-                            var confirmationOperation = Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
-                            {
-                                var confirmation = Application.Current.Windows.OfType<ApplyConfirmDialog>().Single();
-                                Descendants(confirmation).OfType<Button>().Single(button => button.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                            }), DispatcherPriority.ApplicationIdle);
+                            var confirmationOperation = AcceptConfirmationAsync(dialog, "retire_child");
                             Click(dialog, "RetireButton");
-                            await confirmationOperation.Task;
+                            await confirmationOperation;
                             await IdleAsync(dialog);
                             Require(Draft(dialog).RequiresAcceptedReconciliation && Rows(dialog)[0].RetailPrice == "300" && Named<DataGrid>(dialog, "RecoveryRows").IsReadOnly,
                                 "accepted retirement race lost the unsent draft or allowed another correction");
@@ -977,6 +968,54 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
         private static void Click(CatalogImportRecoveryDialog dialog, string name) => Named<Button>(dialog, name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         private static Task ReadyAsync(CatalogImportRecoveryDialog dialog) => WaitAsync(() => !Busy(dialog) && Named<DataGrid>(dialog, "RecoveryRows").ItemsSource != null, "recovery original rows");
         private static Task IdleAsync(CatalogImportRecoveryDialog dialog) => WaitAsync(() => !Busy(dialog), "recovery operation completion");
+        private static async Task AcceptConfirmationAsync(CatalogImportRecoveryDialog owner, string stage)
+        {
+            RecordPhase(stage + ":confirmation_requested");
+            ApplyConfirmDialog confirmation = null;
+            var rendered = new TaskCompletionSource<bool>();
+            EventHandler onRendered = (_, __) => rendered.TrySetResult(true);
+            DispatcherHookEventHandler posted = (_, __) =>
+            {
+                if (!owner.Dispatcher.CheckAccess() || confirmation != null) return;
+                confirmation = Application.Current.Windows.OfType<ApplyConfirmDialog>()
+                    .SingleOrDefault(window => ReferenceEquals(window.Owner, owner));
+                if (confirmation != null) confirmation.ContentRendered += onRendered;
+            };
+            owner.Dispatcher.Hooks.OperationPosted += posted;
+            try
+            {
+                // Retirement first flushes the draft asynchronously. One posted
+                // click can run before ShowConfirm; observe its real owner and
+                // render event instead, within the existing ten-second bound.
+                var watch = Stopwatch.StartNew();
+                while (confirmation == null || !rendered.Task.IsCompleted)
+                {
+                    Require(watch.Elapsed < TimeSpan.FromSeconds(10), stage + " confirmation timed out");
+                    await Task.Delay(10);
+                }
+                Require(confirmation.IsVisible && ReferenceEquals(confirmation.Owner, owner),
+                    stage + " confirmation did not render under its recovery owner");
+                RecordPhase(stage + ":confirmation_rendered");
+                Descendants(confirmation).OfType<Button>().Single(button => button.IsDefault)
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                RecordPhase(stage + ":confirmation_clicked");
+            }
+            catch (Exception ex)
+            {
+                RecordPhase(stage + ":confirmation_failed:" + ex.Message);
+                // A synchronous ShowDialog may still be pumping inside Click.
+                // Cancel only this observed QA confirmation so its caller can
+                // return and report the bounded failure without the outer kill.
+                if (confirmation != null && confirmation.IsVisible &&
+                    ReferenceEquals(confirmation.Owner, owner)) confirmation.Close();
+                throw;
+            }
+            finally
+            {
+                owner.Dispatcher.Hooks.OperationPosted -= posted;
+                if (confirmation != null) confirmation.ContentRendered -= onRendered;
+            }
+        }
         private static async Task VerifyAsync(CatalogImportRecoveryDialog dialog) { Click(dialog, "PrepareButton"); await IdleAsync(dialog); Require(Named<Button>(dialog, "CommitButton").IsEnabled, "corrected recovery did not verify: " + Named<TextBlock>(dialog, "RecoveryStatus").Text); }
         private static async Task EditRetailAsync(CatalogImportRecoveryDialog dialog, string value)
         {
@@ -1097,9 +1136,12 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
         }
         private static async Task WaitAsync(Func<bool> complete, string stage)
         {
+            RecordPhase("wait_begin:" + stage);
             var watch = Stopwatch.StartNew();
             while (!complete()) { Require(watch.Elapsed < TimeSpan.FromSeconds(10), stage + " timed out"); await Task.Delay(10); }
+            RecordPhase("wait_condition_complete:" + stage);
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            RecordPhase("wait_idle_complete:" + stage);
         }
         private static async Task DrainAndCollectAsync(IReadOnlyList<WeakReference> closed = null, string scope = "warmup")
         {
@@ -1123,9 +1165,17 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
         }
         private static async Task CheckAsync(List<string> failures, string name, Func<Task> action)
         {
+            RecordPhase(name + "=BEGIN");
             try { await action(); Evidence.Add(name + "=PASS"); }
             catch (Exception ex) { Evidence.Add(name + "=FAIL " + ex); failures.Add(name + ": " + ex.Message); }
             File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt"), Evidence);
+            Console.WriteLine("IMPORT_RECOVERY_PHASE=" + Evidence[Evidence.Count - 1]);
+        }
+        private static void RecordPhase(string phase)
+        {
+            Evidence.Add("phase=" + phase + "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
+            File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt"), Evidence);
+            Console.WriteLine("IMPORT_RECOVERY_PHASE=" + phase);
         }
         private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException("import_recovery_ui: " + message); }
         private static string Serialize<T>(T value) { using (var stream = new MemoryStream()) { new DataContractJsonSerializer(typeof(T), new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true }).WriteObject(stream, value); return Encoding.UTF8.GetString(stream.ToArray()); } }

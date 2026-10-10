@@ -115,6 +115,86 @@ Locked restore and all 49 canonical source gates pass on the complete source
 checkpoint `2717037` with the corrected interop tests. They remain separate
 from final exact-SHA hosted qualification and package verification.
 
+## Subsequent source qualification
+
+The immutable 249-file checkpoint at `7ae17532b7d1f7e609cf5db471689e7c918409a7`
+passes locked restore, 49/49 gates, solution build, 1584/1584 Core/Data tests
+with no skips, CLI selftest, and WPF/harness x86 compilation with no warnings
+or errors. The local test run took 12 minutes 10 seconds. Its TRX SHA256 is
+`450451c47b22fcd4f8412093cf36a2df23db0d7595f0f5fb31cbec4b408c2d76`.
+Security run `38014290431` passes on that SHA. Hosted CI `38014290304` was
+cancelled when the branch advanced; it did not complete Core/Data or WPF
+qualification and is not reported as a hosted pass.
+
+Checkpoint `cd89ba8472c1f02d643e1ac027af183cb995d915` adds only the dense
+test-helper selection and strict price-kind comparison, plus its immutable
+capture fixture. Its first official Core.Tests capture passes 1/1 without skips
+in 10.273 seconds. All 169 C# HTTP bodies follow Prepare, repeated original
+proof, explicit retirement, commit and ten individual ACKs. The 169 responses
+are unchanged actual Admin pilot replies; 41 additional QA frames remain
+explicitly accounted for. Every body is at most 350059 UTF-8 bytes. All 5000
+product IDs, 10000 price IDs, stock 1.25, 10000 historical rows, original bytes
+and final queue closure are checked. The ZIP SHA256 is
+`1c8633eeb70db8d6b0ec8b5fadf9c42ab20a5f9fcad8606a7e5f35791b53b90e`.
+The helper's prior case mismatch was a static assertion defect, not a product
+or SQL failure. Independent review closes it and verifies the complete
+169/41 partition and all archived byte hashes. Fresh-database replay and C#
+reingestion of its newly recorded responses remain separate steps.
+
+Admin source `2bcee6e84c5a6a8cdb5c8165bf235848b981152d` preserves the collision
+checks while projecting scalar identities before the global join. The SQL
+LF SHA256 is `e88d17783f89fc307bb2f62c1d2e5d6fb645fa6d3c3b3a4b7d723b50d94f9aca`.
+CI `38015030219` and Cloudflare build `38015030261` pass. The isolated staging
+candidate `acb3e4ac0eb41568ce9980dc82f1b293a6fd2e35` independently passes CI
+`38015414663` and build `38015414649`; deployments and staging E2E are skipped.
+
+The upper executor records the original timeout at cursor 59750 before any
+economic writes, followed by an identical-request retry in a new equivalent
+clone with unchanged timeouts. Its composed continuation completes 120 durable
+ACKs, 59999 products, 119998 price mappings and stock 1.25. The prefix uses
+the earlier SQL source and the continuation uses `e88`; this is not a uniform
+source or uninterrupted maximum-volume qualification. PostgreSQL VmHWM was
+sampled at about 2.15 GiB; the complete peak and Worker memory were not measured.
+The failure database remains preserved.
+
+The new Admin replay of all 169 unchanged C# bodies completes in a fresh
+isolated database, with ten durable ACKs. Its runner initially confused
+child receipt `complete` with group `parentStatus`; the first successful apply
+response was preserved and only the remaining requests were dispatched after
+correcting that assertion. Each request was dispatched once. Publication of
+the resulting proof archive was rejected by automatic approval review under
+the Admin AGENTS.md constraint. A minimal response-only archive was subsequently
+acquired through read-only command output in the authorized conversation:
+175 segments, 1069478 bytes, SHA256
+`3351fd42d40c5b07385f3aa61cc00dc84f513a615494ee7dd9e4da6c617880c5`.
+Every segment, ZIP member and raw reply hash was checked mechanically on Asus.
+No alternative remote-repository mutation was attempted.
+
+The first official C# reingestion passes 1/1 without skips in 9.019 seconds;
+the permanent test passes 1/1 in 9.039 seconds with a normal build and no
+transient runner. It regenerates all 169 service requests and compares their
+exact SHA256 before consuming each actual fresh-database reply. Prepare,
+retirement, local commit and ten individual sync ACKs complete. All 5000
+product IDs and 10000 price IDs match; stock, history, immutable original and
+closure are checked. The test and response fixture are mandatory, with no
+mock or missing-evidence fallback. This happy path uses actual parser/handler
+and economic SQL, with synthetic dependency schema and outer authentication;
+it does not qualify a served Worker, physical Win7, or a new dense crash run.
+
+Hosted CI `38016143128` on `cd89ba8472c1f02d643e1ac027af183cb995d915`
+passes 1584/1584 Core/Data tests, locked restore, 49 gates, CLI selftest,
+x86 WPF/harness builds, product-image serialization smoke, functional visual
+checks and IMPORT_completion. IMPORT_RECOVERY_completion then reaches its
+unchanged 60-second timeout. Later functional scenarios and runtime checks
+are not qualified by that run. The FAIL and full log remain preserved.
+The timeout cause is not proven: that branch did not expose its last subcase
+or wait phase. A concrete race in the harness's premature confirmation click
+is addressed by waiting for the actual owned ContentRendered dialog within
+the existing ten-second bound. Added phase diagnostics survive timeout; the
+canonical wrapper's scenarios, timeout and assertions remain unchanged.
+The existing manual WPF workflow can execute that same wrapper and retain
+diagnostics, without replacing required canonical CI qualification.
+
 ## Operational qualification
 
 The isolated Admin staging candidate must contain the final protocol changes
