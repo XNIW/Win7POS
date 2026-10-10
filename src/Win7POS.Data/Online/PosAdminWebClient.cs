@@ -128,6 +128,71 @@ namespace Win7POS.Data.Online
                 PosCatalogImportCorrectionContract.EndpointPath, request, cancellationToken, noStore: true);
         }
 
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryUploadAsync(
+            PosCatalogImportRecoveryUploadRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("upload", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryManifestAsync(
+            PosCatalogImportRecoveryManifestRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("upload", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoverySealAsync(
+            PosCatalogImportRecoverySealRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("upload", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryBytesAsync(
+            PosCatalogImportRecoveryBytesRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("upload", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryFinalizePhaseAsync(
+            PosCatalogImportRecoveryPhaseRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("finalize", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryPlanPhaseAsync(
+            PosCatalogImportRecoveryPhaseRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("plan", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryFinalizeAsync(
+            PosCatalogImportRecoveryHandleRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("finalize", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryReceiptAsync(
+            PosCatalogImportRecoveryHandleRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryReceiptAsync("receipt", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryRetireAsync(
+            PosCatalogImportRecoveryHandleRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryReceiptAsync("retire", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryPlanAsync(
+            PosCatalogImportRecoveryHandleRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("plan", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryApplyAsync(
+            PosCatalogImportRecoveryApplyRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("apply", request, cancellationToken);
+
+        public Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> CatalogImportRecoveryReceiptPageAsync(
+            PosCatalogImportRecoveryReceiptPageRequest request, CancellationToken cancellationToken) =>
+            PostRecoveryMultipartAsync("receipt-page", request, cancellationToken);
+
+        private Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> PostRecoveryReceiptAsync(
+            string action, PosCatalogImportRecoveryHandleRequest request, CancellationToken cancellationToken)
+        {
+            CatalogImportRecoveryProofTransport.ValidateReceiptSelector(request);
+            return PostRecoveryMultipartAsync(action, request, cancellationToken);
+        }
+
+        private Task<PosOnlineResult<PosCatalogImportRecoveryMultipartResponse>> PostRecoveryMultipartAsync<T>(
+            string action, T request, CancellationToken cancellationToken) where T : PosCatalogImportRecoveryMultipartRequest
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            // These exact measured bytes are the bytes sent over HTTP.
+            var bytes = CatalogImportRecoveryProofTransport.Encode(request);
+            return PostJsonAsync<T, PosCatalogImportRecoveryMultipartResponse>(
+                PosCatalogImportRecoveryMultipartContract.BasePath + action, request, cancellationToken, bytes, noStore: true);
+        }
+
         public async Task<PosOnlineResult<PosCatalogImportResponse>> CatalogImportAsync(
             PosCatalogImportRequest request,
             CancellationToken cancellationToken)

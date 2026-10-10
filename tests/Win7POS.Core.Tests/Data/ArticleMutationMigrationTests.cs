@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Data;
 using Win7POS.Data.Migrations;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Core.Tests.Data;
 
@@ -31,6 +32,7 @@ public sealed class ArticleMutationMigrationTests
             DbInitializer.EnsureProductImageSchema(connection, transaction);
             DbInitializer.EnsureCustomerOrderInboxSchema(connection, transaction);
             DbInitializer.EnsureCatalogImportRecoverySchema(connection, transaction);
+            CatalogImportPlanSchema.Apply(connection, transaction);
             transaction.Commit();
         }
 
@@ -72,7 +74,7 @@ public sealed class ArticleMutationMigrationTests
             SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(detector),
             "Fresh schema does not satisfy the current migration invariant.");
         Assert.AreEqual(
-            "0013-catalog-import-recovery",
+            "0014-catalog-import-plans-and-drafts",
             SchemaMigrationRegistry.Latest.MigrationId);
     }
 

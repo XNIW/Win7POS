@@ -70,3 +70,50 @@ controlla il limite byte sia con Content-Length sia senza. Le varianti tentativo
 omesso/zero/positivo verificano separatamente il contratto ordinario e quello
 forense. Solo la modalità `accept` richiede che U2 accetti gli originali validi
 e rifiuti le alterazioni di identità/hash/shop/device e autenticazione corrente.
+
+Il replay indipendente Asus su Admin `bee0670a6b9b9fd56d2abb9f29e22ccc45293888`
+accetta ora gli stessi sette body sia della baseline iniziale sia del corpus
+UTC: sette parser e sei handler U2. Il tentativo ordinario omesso/zero resta
+rifiutato. Il fixture foundation verifica i token e lo shop nel vero handler;
+per gli ID della sessione/device, il caricatore ufficiale fornisce un lease
+sintetico. Il nostro controllo verifica il diniego della dipendenza e gli ID
+effettivamente inoltrati, senza dichiarare un'autenticazione database reale.
+
+`admin-db-3f2c691` conserva le risposte effettive del database isolato per il
+vecchio `candidate-5000`; `admin-db-bee0670` quelle del nuovo corpus UTC,
+con 15 postcheck PostgreSQL superati. Il test C# reingesta entrambi gli archivi
+senza cambiare richieste o risposte e confronta ogni ID prodotto/prezzo, valori,
+storico e completamento del gruppo. I due risultati restano distinti.
+
+`candidate-uncertain-5000` contiene il successivo percorso di recupero per un
+originale legacy con esito incerto: byte C# reali, upload completo, retirement,
+bozza riaperta, piano e cinque apply. Il README interno distingue le risposte
+sintetiche di generazione dalla successiva prova Admin/PostgreSQL richiesta.
+Un test separato perde la risposta della terza parte, attende il backoff reale
+di 30 secondi e riapre factory/servizio: ripete soltanto l'apply della terza
+parte, con body identico, prima di completare le ultime due. Non riscrive tempi,
+stati o payload della coda per anticipare il retry.
+
+Tre prove aggiuntive del journal interrompono il recupero dopo la registrazione
+del piano: risposta HTTP persa, errore prima della pubblicazione del backup
+verificato e rollback dopo l'enqueue SQLite. Prima del primo upload del piano
+controllano già sul database intenti, operazioni, documento, hash e barriera
+di invio. Dopo la riapertura riusano le stesse identità e gli stessi byte; se la
+receipt di registrazione era stata salvata, non ripetono la registrazione.
+Nessun apply economico parte prima del commit locale e i cinque ACK successivi
+non riapplicano stock o storico. Le risposte di questi tre scenari restano
+quelle del peer sintetico: qualificano il journal client e la serializzazione,
+non PostgreSQL o un runtime distribuito.
+
+`admin-db-7faecb54` conserva la successiva prova effettiva degli handler Admin
+e del database PostgreSQL isolato sugli stessi 39 body di
+`candidate-uncertain-5000`, oltre al retry identico dell'apply 036. I due casi
+`RecordedAdminMultipartDatabaseResponses_ReenterExactThirtyNineRequestsAndDurableRetry`
+sono passati nel runner C# ufficiale, compreso quello con la terza risposta
+persa e riavvio dopo il backoff reale. Il client verifica indice, route e hash
+di ogni richiesta/risposta, tutti i 5000 ID prodotto e 10000 ID prezzo, stock,
+valori e storico; il padre si chiude soltanto dopo il quinto ACK locale.
+L'archivio contiene anche il rifiuto SQL dell'originale tardivo
+(`identity_retired`) con conteggi e valori invariati. Autenticazione esterna,
+sessione/lease e dipendenze restano sintetici, come dichiarato nel manifest:
+questa prova non attesta staging, TEST condiviso o autenticazione live.

@@ -125,6 +125,8 @@ namespace Win7POS.Data.Online
                 foreach (var item in pending)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
                     var stop = await SyncOneAsync(
                         client,
                         trustedSession,
@@ -137,6 +139,8 @@ namespace Win7POS.Data.Online
                     {
                         break;
                     }
+                    }
+                    finally { item.SharedProof=null; }
                 }
             }
 
@@ -175,6 +179,7 @@ namespace Win7POS.Data.Online
                 : new OnlineSyncAttemptFence(generation, claimToken, preparedAttempt);
             try
             {
+                await _outbox.LoadSharedProofAsync(item).ConfigureAwait(false);
                 var bindingError = OutboxShopBinding.GetMismatchCode(
                     item.OriginShopId,
                     item.OriginShopCode,
@@ -203,6 +208,9 @@ namespace Win7POS.Data.Online
                     return false;
                 }
 
+                var remotePlan=await _outbox.GetRemotePlanAsync(item.Id).ConfigureAwait(false);
+                if(remotePlan!=null)
+                    return await SyncPlannedAsync(client,trustedSession,item,remotePlan,preparedAttempt,run,fence,executionContext,cancellationToken).ConfigureAwait(false);
                 if (item.OperationType=="catalog_import_correction")
                     return await SyncCorrectionAsync(client,trustedSession,item,preparedAttempt,run,fence,executionContext,cancellationToken).ConfigureAwait(false);
 
@@ -1092,6 +1100,8 @@ namespace Win7POS.Data.Online
             }
 
             var items = request.Items ?? Array.Empty<PosCatalogImportItemRequest>();
+            if (items.Length > CatalogImportPlanBuilder.MaximumRowsPerRequest)
+                return CatalogImportOutboxPayloadValidationResult.Fail("catalog_import_row_limit_exceeded");
             if (items.Length == 0)
             {
                 return CatalogImportOutboxPayloadValidationResult.Fail("missing_items");

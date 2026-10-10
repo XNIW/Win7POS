@@ -252,8 +252,19 @@ postcondition=current-structural-schema",
                     "Additive delivery and contribution evidence tables; downgrade requires restoring the verified backup.",
                     true,
                     DbInitializer.EnsureCatalogImportRecoverySchema,
+                    IsPostCatalogImportRecoverySchemaStructurallyValid,
+                    IsRecognizedPostCatalogImportRecoveryLedgerlessBaseline),
+                new SchemaMigration(
+                    "0014-catalog-import-plans-and-drafts",
+                    "Persist bounded import operation plans and recoverable operator drafts.",
+                    "0014-catalog-import-plans-and-drafts/v1\n" + CatalogImportPlanSchema.Sql,
+                    "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff",
+                    "1.0.0",
+                    "Additive plan and draft tables; downgrade requires restoring the verified backup.",
+                    true,
+                    CatalogImportPlanSchema.Apply,
                     IsCurrentSchemaStructurallyValid,
-                    IsRecognizedPostCatalogImportRecoveryLedgerlessBaseline)
+                    IsRecognizedCatalogImportPlanBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -282,6 +293,9 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+            => IsPostCatalogImportRecoverySchemaStructurallyValid(detector) && CatalogImportPlanSchema.IsSatisfied(detector) && HasSafeConvergenceBindings(detector);
+
+        private static bool IsPostCatalogImportRecoverySchemaStructurallyValid(LegacySchemaDetector detector)
         {
             if (detector == null)
                 throw new ArgumentNullException(nameof(detector));
@@ -687,6 +701,30 @@ o.origin_shop_code AS OriginShopCode,o.payload_json AS PayloadJson,o.payload_has
             var links = detector.Connection.Query<CorrectionRecoveryLink>(@"SELECT original_id AS ParentId,
 replacement_id AS ChildId,receipt_status AS ReceiptStatus,receipt_json AS ReceiptJson
 FROM catalog_import_recovery WHERE replacement_id IS NOT NULL;", transaction: detector.Transaction).ToDictionary(row => row.ChildId);
+            if (detector.TableExists("catalog_import_plan"))
+            {
+                if (!CatalogImportPlanSchema.IsSatisfied(detector) || !HasSafePlanBindings(detector)) return false;
+                var members = detector.Connection.Query<CorrectionRecoveryLink>(@"SELECT p.original_id AS ParentId,m.outbox_id AS ChildId,
+r.receipt_status AS ReceiptStatus,r.receipt_json AS ReceiptJson FROM catalog_import_plan p
+JOIN catalog_import_plan_part m ON m.plan_id=p.plan_id JOIN catalog_import_recovery r ON r.original_id=p.original_id
+WHERE p.original_id IS NOT NULL", transaction: detector.Transaction);
+                foreach (var member in members)
+                {
+                    if (links.TryGetValue(member.ChildId, out var prior) && prior.ParentId != member.ParentId) return false;
+                    links[member.ChildId] = member;
+                }
+            }
+            var published = detector.Connection.Query<CorrectionRecoveryLink>(@"SELECT c.original_id AS ParentId,c.contributor_id AS ChildId,
+r.receipt_status AS ReceiptStatus,r.receipt_json AS ReceiptJson,c.receipt_json AS ChildReceiptJson
+FROM catalog_import_recovery_contributions c JOIN catalog_import_outbox child ON child.id=c.contributor_id
+JOIN catalog_import_recovery r ON r.original_id=c.original_id
+WHERE child.operation_type='catalog_import_correction' AND child.status='acked' AND child.payload_hash=c.payload_hash", transaction:detector.Transaction);
+            foreach(var member in published)
+            {
+                if(links.TryGetValue(member.ChildId,out var prior) && prior.ParentId!=member.ParentId) return false;
+                links[member.ChildId]=member;
+            }
+            var proofCache=new Dictionary<string,CatalogImportCorrectionSharedProof>();
             var roots = new Dictionary<long, CatalogImportOutboxItem>();
             var depths = new Dictionary<long, int>();
             // Every parent predates its child. Ordered validation both bounds the
@@ -696,8 +734,17 @@ FROM catalog_import_recovery WHERE replacement_id IS NOT NULL;", transaction: de
                 CorrectionRecoveryLink link;
                 CatalogImportOutboxItem parent;
                 if (!links.TryGetValue(correction.Id, out link) || link.ParentId >= correction.Id ||
-                    !outbox.TryGetValue(link.ParentId, out parent) || parent.Status != "failed_blocked" && parent.Status != "recovered")
+                    !outbox.TryGetValue(link.ParentId, out parent) || parent.Status != "failed_blocked" && parent.Status != "recovered" && parent.Status != "acked")
                     return false;
+                try
+                {
+                    var proofHash=CatalogImportCorrectionTransport.SharedProofHash(correction.PayloadJson);
+                    if(proofHash!=null && !proofCache.ContainsKey(proofHash)) proofCache.Clear();
+                    correction.SharedProof=CatalogImportCorrectionSharedProof.LoadAsync(detector.Connection,detector.Transaction,correction.PayloadJson,proofCache).GetAwaiter().GetResult();
+                    if(parent.OperationType=="catalog_import_correction")
+                        parent.SharedProof=CatalogImportCorrectionSharedProof.LoadAsync(detector.Connection,detector.Transaction,parent.PayloadJson,proofCache).GetAwaiter().GetResult();
+                }
+                catch(CatalogImportRecoveryException) { return false; }
                 CatalogImportOutboxItem original;
                 var depth = 1;
                 if (parent.OperationType == "catalog_import")
@@ -712,10 +759,95 @@ FROM catalog_import_recovery WHERE replacement_id IS NOT NULL;", transaction: de
                     depth = depths[parent.Id] + 1;
                 }
                 if (depth > 128 || !CatalogImportCorrectionTransport.MatchesRecoveryOriginal(correction, original)) return false;
+                if(link.ChildReceiptJson!=null)
+                {
+                    try
+                    {
+                        var receipt=CatalogImportRecoveryService.Deserialize<Win7POS.Core.Online.PosCatalogImportReceiptResponse>(link.ChildReceiptJson);
+                        var request=CatalogImportCorrectionTransport.ReadSavedRequest(correction.PayloadJson,correction.SharedProof);
+                        request.ShopDeviceId=receipt.ShopDeviceId;request.Correction.PayloadHash=correction.PayloadHash;
+                        request.RecoveryOf.OriginalRequest.PayloadHash=request.RecoveryOf.PayloadHash;
+                        CatalogImportCorrectionTransport.ValidateResponse(correction,request,new Win7POS.Core.Online.PosCatalogImportCorrectionResponse
+                        { Ok=receipt.Ok,Code="success",SchemaVersion=correction.SchemaVersion,Status=receipt.Status,ShopId=receipt.ShopId,ShopDeviceId=receipt.ShopDeviceId,
+                            ClientImportId=receipt.ClientImportId,IdempotencyKey=receipt.IdempotencyKey,PayloadHash=receipt.PayloadHash,
+                            CanonicalPayloadHash=receipt.CanonicalPayloadHash,Receipt=receipt.Receipt });
+                    }
+                    catch { return false; }
+                }
                 roots.Add(correction.Id, original);
                 depths.Add(correction.Id, depth);
+                var retainedProof=correction.SharedProof;proofCache.Clear();
+                if(retainedProof!=null) proofCache.Add(retainedProof.Hash,retainedProof);
+                correction.SharedProof=null;parent.SharedProof=null;
             }
             return true;
+        }
+
+        private static bool HasSafePlanBindings(LegacySchemaDetector detector)
+        {
+            if (!detector.NoRows(@"SELECT 1 FROM catalog_import_plan p WHERE p.total_parts<>(SELECT COUNT(*) FROM catalog_import_plan_part m WHERE m.plan_id=p.plan_id)
+OR p.total_rows<>(SELECT COALESCE(SUM(row_count),0) FROM catalog_import_plan_part m WHERE m.plan_id=p.plan_id)
+OR (p.completed_at IS NOT NULL AND EXISTS(SELECT 1 FROM catalog_import_plan_part m JOIN catalog_import_outbox o ON o.id=m.outbox_id
+ WHERE m.plan_id=p.plan_id AND (o.status NOT IN ('acked','recovered') OR m.ack_json IS NULL)))
+UNION ALL SELECT 1 FROM catalog_import_plan_part m JOIN catalog_import_plan p ON p.plan_id=m.plan_id JOIN catalog_import_outbox o ON o.id=m.outbox_id
+WHERE o.payload_hash<>m.payload_hash OR (p.original_id IS NOT NULL AND p.original_id>=m.outbox_id) LIMIT 1")) return false;
+            var documents=detector.Connection.Query<PlanMigrationDocument>(@"SELECT recovery_rows_json AS RowsJson,recovery_rows_hash AS RowsHash,
+remote_plan_json AS RemoteJson,remote_plan_hash AS RemoteHash FROM catalog_import_plan",transaction:detector.Transaction,buffered:false);
+            foreach(var document in documents)
+                if((document.RowsJson==null)!=(document.RowsHash==null) || (document.RemoteJson==null)!=(document.RemoteHash==null) ||
+                    document.RowsJson!=null && CatalogImportOutboxPayloadBuilder.Sha256Hex(document.RowsJson)!=document.RowsHash ||
+                    document.RemoteJson!=null && CatalogImportOutboxPayloadBuilder.Sha256Hex(document.RemoteJson)!=document.RemoteHash) return false;
+            var parts = detector.Connection.Query<PlanMigrationPart>(@"SELECT m.outbox_id AS OutboxId,m.payload_hash AS PayloadHash,o.payload_json AS PayloadJson,o.operation_type AS OperationType,
+m.row_count AS RowCount,m.ack_json AS AckJson FROM catalog_import_plan_part m JOIN catalog_import_outbox o ON o.id=m.outbox_id ORDER BY m.plan_id,m.ordinal", transaction: detector.Transaction);
+            var proofCache=new Dictionary<string,CatalogImportCorrectionSharedProof>();
+            foreach (var part in parts)
+            {
+                if (CatalogImportOutboxPayloadBuilder.Sha256Hex(part.PayloadJson) != part.PayloadHash) return false;
+                try
+                {
+                    var proofHash=part.OperationType=="catalog_import_correction" ? CatalogImportCorrectionTransport.SharedProofHash(part.PayloadJson) : null;
+                    if(proofHash!=null && !proofCache.ContainsKey(proofHash)) proofCache.Clear();
+                    var count = part.OperationType == "catalog_import_correction" ? CatalogImportCorrectionTransport.ReadSavedRequest(part.PayloadJson, CatalogImportCorrectionSharedProof.LoadAsync(detector.Connection,detector.Transaction,part.PayloadJson,proofCache).GetAwaiter().GetResult()).Correction.Items.Length :
+                        CatalogImportRecoveryService.Deserialize<Win7POS.Core.Online.PosCatalogImportRequest>(part.PayloadJson).Items.Length;
+                    if (part.RowCount != count) return false;
+                    CatalogImportOutboxRepository.ValidateConvergenceMembershipAsync(detector.Connection,detector.Transaction,part.OutboxId,part.AckJson).GetAwaiter().GetResult();
+                }
+                catch { return false; }
+            }
+            return true;
+        }
+        private sealed class PlanMigrationDocument
+        {
+            public string RowsJson { get; set; } public string RowsHash { get; set; }
+            public string RemoteJson { get; set; } public string RemoteHash { get; set; }
+        }
+        private sealed class PlanMigrationPart
+        {
+            public long OutboxId { get; set; }
+            public string PayloadHash { get; set; } public string PayloadJson { get; set; } public string OperationType { get; set; } public int RowCount { get; set; } public string AckJson { get; set; }
+        }
+
+        private static bool HasSafeConvergenceBindings(LegacySchemaDetector detector)
+        {
+            try
+            {
+                var parts=detector.Connection.Query<PlanMigrationPart>(@"SELECT outbox_id AS OutboxId,ack_json AS AckJson FROM catalog_import_plan_part
+WHERE json_extract(ack_json,'$.ConvergenceJson') IS NOT NULL OR json_extract(ack_json,'$.ConvergenceHash') IS NOT NULL
+OR json_extract(ack_json,'$.AggregationJson') IS NOT NULL OR json_extract(ack_json,'$.AggregationHash') IS NOT NULL
+OR outbox_id IN (SELECT id FROM catalog_import_outbox WHERE status='recovered')",transaction:detector.Transaction);
+                foreach(var part in parts)
+                    CatalogImportOutboxRepository.ValidateConvergenceMembershipAsync(detector.Connection,detector.Transaction,part.OutboxId,part.AckJson).GetAwaiter().GetResult();
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static bool IsRecognizedCatalogImportPlanBaseline(LegacySchemaDetector detector)
+        {
+            if (!IsCurrentSchemaStructurallyValid(detector)) return false;
+            if (!HasSafePlanBindings(detector) || !HasSafeRecoveryOutboxBindings(detector))
+                throw new InvalidDataException("Catalog import plan database contains unsafe operation evidence.");
+            return HasRemotePriceOwnership(detector) && DbInitializer.IsSecuritySeedSatisfied(detector.Connection,detector.Transaction);
         }
 
         private sealed class CorrectionRecoveryLink
@@ -724,6 +856,7 @@ FROM catalog_import_recovery WHERE replacement_id IS NOT NULL;", transaction: de
             public long ChildId { get; set; }
             public string ReceiptStatus { get; set; }
             public string ReceiptJson { get; set; }
+            public string ChildReceiptJson { get; set; }
         }
 
         private static bool HasCanonicalIndexes(LegacySchemaDetector detector)
@@ -805,7 +938,7 @@ FROM catalog_import_recovery WHERE replacement_id IS NOT NULL;", transaction: de
         private static bool IsRecognizedPostCatalogImportRecoveryLedgerlessBaseline(
             LegacySchemaDetector detector)
         {
-            if (!IsCurrentSchemaStructurallyValid(detector))
+            if (!IsPostCatalogImportRecoverySchemaStructurallyValid(detector))
                 return false;
             if (!HasSafeRecoveryOutboxBindings(detector))
                 throw new InvalidDataException("Current catalog recovery database contains unsafe outbox evidence; legacy backfill is not applicable.");

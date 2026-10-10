@@ -17,7 +17,7 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class CatalogImportRecoveryFlowTests
 {
     [TestMethod]
-    public async Task RecoveryBusinessJustBelowBodyLimit_RejectsCapturedTransportOverheadBeforeAnyBackupOrWrite()
+    public async Task RecoveryBusinessJustBelowBodyLimit_PlansTransportOverheadBeforeAnyBackupOrWrite()
     {
         const int targetBytes=512*1024-188;
         var rows=Enumerable.Range(0,1000).Select(index=>new SupplierImportEditableRow { RowNumber=index+2,Barcode="RECOVERY-"+index,
@@ -62,9 +62,14 @@ public sealed class CatalogImportRecoveryFlowTests
         var session=Trusted();session.DeviceToken=new string('d',256);session.SessionToken=new string('s',256);
         var service=new CatalogImportRecoveryService(fixture.Factory);
         var draft=await service.PrepareAsync(original.Id,null!,session,null!,CancellationToken.None);draft.Rows[0].RetailPrice="200";
-        var tooLarge=await Assert.ThrowsAsync<CatalogImportRecoveryException>(()=>service.BuildPreviewAsync(draft,draft.Rows,CancellationToken.None));
-        Assert.AreEqual("recovery_payload_too_large",tooLarge.Code);
-        await Assert.ThrowsAsync<CatalogImportRecoveryException>(()=>service.CommitAsync(draft,draft.Rows,()=>true,null!,CancellationToken.None));
+        var valid=await service.BuildPreviewAsync(draft,draft.Rows,CancellationToken.None);
+        var plan=CatalogImportOutboxPayloadBuilder.BuildRecoveryPlan(valid,draft.OriginalRequest,draft.Original.PayloadHash,false,
+            Array.Empty<CatalogImportRecoveryContribution>(),null);
+        var complete=CatalogImportOutboxPayloadBuilder.BuildRecoveryEntry(valid,draft.OriginalRequest,draft.Original.PayloadHash,false,
+            Array.Empty<CatalogImportRecoveryContribution>());
+        Assert.IsTrue(CatalogImportPlanBuilder.Measure(complete)>512*1024);
+        Assert.AreNotEqual(complete.PayloadJson,plan.Entries[0].PayloadJson);
+        Assert.IsTrue(plan.Entries.All(e=>CatalogImportPlanBuilder.Measure(e)<=512*1024));
         using var final=fixture.Factory.Open();Assert.AreEqual(1L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_outbox"));
         Assert.AreEqual(2000L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
         Assert.AreEqual(2147483648L,final.ExecuteScalar<long>("SELECT unitPrice FROM products WHERE barcode='RECOVERY-0'"));
@@ -73,16 +78,16 @@ public sealed class CatalogImportRecoveryFlowTests
     }
 
     [TestMethod]
-    public async Task OversizeReceiptLookupAndRetirement_FailTypedBeforeHttpOrProofWrites()
+    public async Task MultipartLookupAndRetirement_RejectInvalidScopeAndOversizedCredentialsBeforeHttp()
     {
         using(var large=new Fixture())
         {
             var original=await large.SeedAsync(rowCount:5000);
             using(var conn=large.Factory.Open()) conn.Execute("DELETE FROM catalog_import_recovery WHERE original_id=@id",new { id=original.Id });
-            using var neverCalled=new Server(body=>throw new AssertFailedException("Oversize lookup must not reach HTTP."));
+            using var neverCalled=new Server(body=>throw new AssertFailedException("Invalid synthetic scope must not reach proof HTTP."));
             var failure=await Assert.ThrowsAsync<CatalogImportRecoveryException>(()=>new CatalogImportRecoveryService(large.Factory)
                 .PrepareAsync(original.Id,neverCalled.Options,Trusted(),null!,CancellationToken.None));
-            Assert.AreEqual("recovery_payload_too_large",failure.Code);Assert.AreEqual(0,neverCalled.Requests);
+            Assert.AreEqual("authentication_required",failure.Code);Assert.AreEqual(0,neverCalled.Requests);
             using var final=large.Factory.Open();Assert.AreEqual(0L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_recovery"));
             Assert.AreEqual(original.Json,final.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox WHERE id=@id",new { id=original.Id }));
         }
@@ -95,10 +100,48 @@ public sealed class CatalogImportRecoveryFlowTests
         using var noRetirement=new Server(body=>throw new AssertFailedException("Oversize retirement must not reach HTTP."));
         var retirementFailure=await Assert.ThrowsAsync<CatalogImportRecoveryException>(()=>service.RetireAsync(draft,noRetirement.Options,
             oversized,null!,()=>true,CancellationToken.None));
-        Assert.AreEqual("recovery_payload_too_large",retirementFailure.Code);Assert.AreEqual(0,noRetirement.Requests);
+        Assert.AreEqual("authentication_required",retirementFailure.Code);Assert.AreEqual(0,noRetirement.Requests);
         Assert.AreEqual("not_found",draft.ReceiptStatus);Assert.AreEqual("200",draft.Rows[0].RetailPrice);
         using var final2=fixture.Factory.Open();Assert.AreEqual("not_found",final2.ExecuteScalar<string>("SELECT receipt_status FROM catalog_import_recovery WHERE original_id=@id",new { id=small.Id }));
         Assert.AreEqual(1L,final2.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_outbox"));
+    }
+
+    [TestMethod]
+    [DataRow(524287)] [DataRow(524288)] [DataRow(524289)]
+    public async Task OrdinarySend_ExactUtf8BoundaryWithMaximumEscapedCredentials_PreservesPersistedBytes(int targetBytes)
+    {
+        using var fixture=new Fixture();
+        var session=CatalogImportPlanBuilder.MaximumSession();session.ShopId="test-shop-id";
+        using(var conn=fixture.Factory.Open()) conn.Execute("UPDATE app_settings SET value=@value WHERE key=@key",new { value=session.ShopCode,key=OutboxShopBinding.OfficialShopCodeKey });
+        var preview=new SupplierImportSyncPreview { Fingerprint=new string('f',64) };
+        preview.Summary.NewProducts=1000;
+        preview.NewProducts.AddRange(Enumerable.Range(1,1000).Select(n=>new SupplierImportProductRow { RowNumber=n+1,
+            Barcode="B"+n,ProductName=new string('界',40),SecondProductName="a",RetailPrice="200",PurchasePrice="100",Quantity="1" }));
+        CatalogImportOutboxEntry Build()=>CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview,"boundary.xlsx","test");
+        string ExpectedWire(CatalogImportOutboxEntry e)
+        {
+            var r=Read<PosCatalogImportRequest>(e.PayloadJson);r.PayloadHash=e.PayloadHash;r.Batch.AttemptCount=1;
+            r.DeviceToken=session.DeviceToken;r.SessionToken=session.SessionToken;r.PosSessionId=session.PosSessionId;
+            r.ShopDeviceId=session.ShopDeviceId;r.ShopCode=session.ShopCode;return Write(r);
+        }
+        var initial=Build();var extra=targetBytes-Encoding.UTF8.GetByteCount(ExpectedWire(initial));
+        Assert.IsTrue(extra>=0);
+        foreach(var row in preview.NewProducts) { var add=Math.Min(239,extra);row.SecondProductName+=new string('x',add);extra-=add; }
+        Assert.AreEqual(0,extra);
+        var entry=Build();Assert.AreEqual(targetBytes,Encoding.UTF8.GetByteCount(ExpectedWire(entry)));
+        var plan=CatalogImportOutboxPayloadBuilder.BuildSupplierExcelPlan(preview,"boundary.xlsx","test");
+        Assert.AreEqual(1000,plan.TotalRows);Assert.IsTrue(plan.Entries.All(e=>CatalogImportPlanBuilder.Measure(e)<=524288));
+        var id=await new CatalogImportOutboxRepository(fixture.Factory).EnqueueAsync(entry);
+        string? actual=null;
+        using var server=new Server(body=> { actual=body;return null; });
+        await new CatalogImportSyncService(fixture.Factory).SyncPendingAsync(server.Options,session,CancellationToken.None);
+        Assert.AreEqual(targetBytes>524288 ? 0 : 1,server.Requests);
+        if(targetBytes<=524288) { Assert.IsNotNull(actual);Assert.AreEqual(targetBytes,Encoding.UTF8.GetByteCount(actual));Assert.AreEqual(ExpectedWire(entry),actual); }
+        using var final=fixture.Factory.Open();
+        Assert.AreEqual(entry.PayloadJson,final.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox WHERE id=@id",new { id }));
+        Assert.AreEqual(entry.PayloadHash,final.ExecuteScalar<string>("SELECT payload_hash FROM catalog_import_outbox WHERE id=@id",new { id }));
+        Assert.AreEqual(targetBytes>524288 ? "failed_blocked" : "retry",final.ExecuteScalar<string>("SELECT status FROM catalog_import_outbox WHERE id=@id",new { id }));
+        Assert.AreEqual(0L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM products"));Assert.AreEqual(0L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
     }
 
     [TestMethod]
@@ -230,13 +273,15 @@ supplier_id=7,supplier_name='Local supplier',category_id=8,category_name='Local 
     }
 
     [TestMethod]
-    public async Task RecoveryOversizePreview_RejectsBeforeBackupOrEconomicWrites()
+    public async Task Recovery5000Preview_PlansBeforeBackupOrEconomicWrites()
     {
         using var fixture=new Fixture();var original=await fixture.SeedAsync(rowCount:5000);
         var service=new CatalogImportRecoveryService(fixture.Factory);
         var draft=await service.PrepareAsync(original.Id,null!,Trusted(),null!,CancellationToken.None);draft.Rows[0].RetailPrice="200";
-        var tooLarge=await Assert.ThrowsAsync<CatalogImportRecoveryException>(()=>service.BuildPreviewAsync(draft,draft.Rows,CancellationToken.None));
-        Assert.AreEqual("recovery_payload_too_large",tooLarge.Code);Assert.AreEqual("200",draft.Rows[0].RetailPrice);
+        var preview=await service.BuildPreviewAsync(draft,draft.Rows,CancellationToken.None);
+        var plan=CatalogImportOutboxPayloadBuilder.BuildRecoveryPlan(preview,draft.OriginalRequest,draft.Original.PayloadHash,false,
+            Array.Empty<CatalogImportRecoveryContribution>(),null);
+        Assert.AreEqual(5,plan.Entries.Count);Assert.AreEqual(5000,plan.TotalRows);Assert.AreEqual("200",draft.Rows[0].RetailPrice);
         using var conn=fixture.Factory.Open();Assert.AreEqual(1L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_outbox"));
         Assert.AreEqual(10000L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
         Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Root,"backups")));
@@ -256,7 +301,7 @@ supplier_id=7,supplier_name='Local supplier',category_id=8,category_name='Local 
             IdempotencyKey=request.Batch.IdempotencyKey,SchemaVersion=request.SchemaVersion,Source=request.Source,PayloadJson=json,PayloadHash=hash });
         using var server=new Server(body=>throw new AssertFailedException("Oversize must not reach HTTP."));
         var run=await new CatalogImportSyncService(fixture.Factory).SyncPendingAsync(server.Options,Trusted(),CancellationToken.None);
-        Assert.AreEqual(1,run.Blocked);Assert.AreEqual("recovery_payload_too_large",run.DiagnosticCode);Assert.AreEqual(0,server.Requests);
+        Assert.AreEqual(1,run.Blocked);Assert.AreEqual("catalog_import_row_limit_exceeded",run.DiagnosticCode);Assert.AreEqual(0,server.Requests);
         using var conn=fixture.Factory.Open();Assert.AreEqual(0L,conn.ExecuteScalar<long>("SELECT dispatch_count FROM catalog_import_recovery WHERE original_id=@id",new { id }));
         Assert.AreEqual(json,conn.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox WHERE id=@id",new { id }));
         Assert.AreEqual(hash,conn.ExecuteScalar<string>("SELECT payload_hash FROM catalog_import_outbox WHERE id=@id",new { id }));
@@ -387,6 +432,7 @@ supplier_id=7,supplier_name='Local supplier',category_id=8,category_name='Local 
         }
         var draft=await service.PrepareAsync(original.Id,receipt.Options,Trusted(),null!,CancellationToken.None);
         Assert.IsTrue(draft.RequiresAcceptedReconciliation);draft.Rows[0].RetailPrice="300";
+        await service.SaveDraftAsync(draft,draft.Rows,CancellationToken.None);
         await Assert.ThrowsAsync<CatalogImportRecoveryException>(()=>service.CommitAsync(draft,draft.Rows,()=>true,null!,CancellationToken.None));
         var finalized=await service.ReconcileAcceptedReplacementAsync(draft,()=>true,null!,CancellationToken.None);
         Assert.IsTrue(finalized.RecoveryAlreadyConverged);Assert.AreEqual("300",draft.Rows[0].RetailPrice);
@@ -394,6 +440,22 @@ supplier_id=7,supplier_name='Local supplier',category_id=8,category_name='Local 
         Assert.AreEqual(7L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
         Assert.AreEqual(2L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_outbox"));
         Assert.AreEqual("recovered",final.ExecuteScalar<string>("SELECT status FROM catalog_import_outbox WHERE id=@id",new { id=original.Id }));
+        var reopenedService=new CatalogImportRecoveryService(fixture.Factory);
+        Assert.IsTrue((await reopenedService.ListAsync(CancellationToken.None)).Any(b=>b.OutboxId==original.Id && b.HasSavedDraft));
+        var offline=await reopenedService.PrepareLocalAsync(original.Id,Trusted(),null!,CancellationToken.None);
+        Assert.IsFalse(offline.CanCommit);Assert.AreEqual("300",offline.Rows[0].RetailPrice);
+        using var refreshedRoot=new Server(body=> { var result=Lookup(Read<PosCatalogImportReceiptRequest>(body),"accepted");
+            result.CurrentProductSnapshots[0].RetailPrice=200;result.CurrentProductSnapshots[0].BaseRevision="2026-10-08T00:00:00.000001Z";return Write(result); });
+        var resumed=await reopenedService.PrepareAsync(original.Id,refreshedRoot.Options,Trusted(),null!,CancellationToken.None);
+        Assert.AreEqual("300",resumed.Rows[0].RetailPrice);Assert.AreEqual("200",resumed.InitialIntentRequest.Items[0].RetailPrice);
+        var next=await reopenedService.CommitAsync(resumed,resumed.Rows,()=>true,null!,CancellationToken.None);
+        Assert.AreEqual(1,next.Updated);
+        Assert.AreEqual(300L,final.ExecuteScalar<long>("SELECT unitPrice FROM products WHERE barcode='RECOVERY-0'"));
+        Assert.AreEqual(8L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
+        Assert.AreEqual(1m,final.ExecuteScalar<decimal>("SELECT stock_qty FROM product_meta WHERE barcode='RECOVERY-0'"));
+        Assert.AreEqual(0L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_recovery_draft"));
+        await Assert.ThrowsAsync<CatalogImportRecoveryException>(()=>reopenedService.CommitAsync(resumed,resumed.Rows,()=>true,null!,CancellationToken.None));
+        Assert.AreEqual(8L,final.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
     }
 
     [TestMethod]
@@ -895,6 +957,97 @@ UPDATE products SET unitPrice=999 WHERE barcode='RECOVERY-1';");
         Assert.AreEqual(6L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
         Assert.AreEqual(1L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_outbox"));
         Assert.AreEqual(failure == "invalid" ? "1000000000" : "200",draft.Rows[0].RetailPrice);
+    }
+
+    [TestMethod]
+    [DataRow(false,false,false)] [DataRow(true,false,false)] [DataRow(true,true,false)] [DataRow(true,true,true)]
+    public async Task OrdinaryFailedPlanMember_ReopensOnlyDueRowsAndClosesParentAfterAuthoritativeAck(bool acceptedRace,bool editAccepted,bool anotherOwnedHistory)
+    {
+        using var db=new Fixture();
+        var original=await db.SeedAsync(rowCount:2001);
+        var service=new CatalogImportRecoveryService(db.Factory,db.Root);
+        var draft=await service.PrepareAsync(original.Id,null!,Trusted(),null!,CancellationToken.None);
+        draft.Rows[0].RetailPrice="200";
+        if(anotherOwnedHistory) draft.Rows[1001].RetailPrice="201";
+        await service.CommitAsync(draft,draft.Rows,()=>true,null!,CancellationToken.None);
+        var repo=new CatalogImportOutboxRepository(db.Factory);
+        var parts=(await repo.GetPendingAsync(10,Now())).ToArray();
+        Assert.HasCount(3,parts);
+        foreach(var part in new[] { parts[0],parts[2] })
+        {
+            Assert.IsTrue(await repo.PrepareAttemptAsync(part,Now()));
+            Assert.IsTrue(await repo.MarkAckedAsync(part.Id,Ack(Read<PosCatalogImportRequest>(part.PayloadJson)),Now(),1));
+        }
+        var failed=parts[1];
+        Assert.IsTrue(await repo.PrepareAttemptAsync(failed,Now()));
+        Assert.IsTrue(await repo.RecordDispatchAsync(failed,1,null!));
+        Assert.IsTrue(await repo.MarkBlockedAsync(failed.Id,"permanent_remote_validation",Now(),1));
+        using(var conn=db.Factory.Open()) conn.Execute("UPDATE product_meta SET stock_qty=7 WHERE barcode='RECOVERY-1000'");
+        service=new CatalogImportRecoveryService(db.Factory,db.Root);
+        Assert.IsTrue((await service.ListAsync(CancellationToken.None)).Single(b=>b.OutboxId==original.Id).CanRecoverReplacement);
+        var offline=await service.PrepareLocalAsync(original.Id,Trusted(),null!,CancellationToken.None);
+        Assert.AreEqual(failed.Id,offline.Batch.OutboxId);Assert.HasCount(1000,offline.Rows);
+        using var server=new Server(json=>
+        {
+            var request=Read<PosCatalogImportReceiptRequest>(json);
+            Assert.AreEqual(failed.ClientImportId,request.ClientImportId);
+            Assert.AreEqual(failed.PayloadHash,request.PayloadHash);
+            Assert.HasCount(1000,request.OriginalRequest.Items);
+            return Write(Lookup(request,acceptedRace ? "accepted" : request.SchemaVersion==PosCatalogImportReceiptContract.RetirementSchemaVersion ? "retired" : "not_found"));
+        },acceptedRace ? 1 : 2);
+        draft=await service.PrepareAsync(original.Id,server.Options,Trusted(),null!,CancellationToken.None);
+        Assert.AreEqual(failed.Id,draft.Batch.OutboxId);
+        if(!acceptedRace)
+        {
+            Assert.IsFalse(draft.CanCommit);Assert.IsTrue(draft.CanRetire);
+            draft=await service.RetireAsync(draft,server.Options,Trusted(),null!,()=>true,CancellationToken.None);
+            draft.Rows[0].RetailPrice="300";
+        }
+        if(editAccepted) draft.Rows[0].RetailPrice="300";
+        long historyBefore;
+        using(var conn=db.Factory.Open()) historyBefore=conn.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history");
+        var result=await service.CommitAsync(draft,draft.Rows,()=>true,null!,CancellationToken.None);
+        Assert.AreEqual(0,result.Errors);
+        if(!acceptedRace || editAccepted)
+        {
+            var replacements=(await repo.GetPendingAsync(10,Now())).ToArray();
+            Assert.HasCount(1,replacements);
+            Assert.IsFalse(parts.Any(p=>p.Id==replacements[0].Id));
+            CatalogImportAckResult ack;
+            if(editAccepted)
+            {
+                var request=CatalogImportCorrectionTransport.BuildTransportRequest(replacements[0],Trusted());
+                Assert.HasCount(1,request.Correction.Items);
+                Assert.AreEqual(300m,request.Correction.Items[0].Changes.RetailPrice);
+                using(var conn=db.Factory.Open())
+                {
+                    var oldRemote=Ack(Read<PosCatalogImportRequest>(failed.PayloadJson)).RemotePriceIds.Single(p=>p.Barcode=="RECOVERY-1000" && p.PriceType=="retail").RemotePriceId;
+                    Assert.AreEqual(200L,conn.ExecuteScalar<long>("SELECT new_price FROM product_price_history WHERE remote_price_id=@oldRemote",new { oldRemote }));
+                    Assert.AreEqual(1L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history WHERE barcode='RECOVERY-1000' AND new_price=300 AND remote_price_id IS NULL"));
+                }
+                ack=CatalogImportCorrectionTransport.ValidateResponse(replacements[0],request,CorrectionReceipt(request));
+            }
+            else
+            {
+                var request=Read<PosCatalogImportRequest>(replacements[0].PayloadJson);
+                Assert.HasCount(1000,request.Items);
+                Assert.IsTrue(request.Items.All(i=>i.RowNumber>=1002 && i.RowNumber<=2001));
+                ack=Ack(request);
+            }
+            using(var conn=db.Factory.Open()) Assert.AreEqual("failed_blocked",conn.ExecuteScalar<string>("SELECT status FROM catalog_import_outbox WHERE id=@id",new { id=original.Id }));
+            Assert.IsTrue(await repo.PrepareAttemptAsync(replacements[0],Now()));
+            Assert.IsTrue(await repo.MarkAckedAsync(replacements[0].Id,ack,Now(),1));
+        }
+        using var final=db.Factory.Open();
+        Assert.AreEqual("recovered",final.ExecuteScalar<string>("SELECT status FROM catalog_import_outbox WHERE id=@id",new { id=original.Id }));
+        Assert.AreEqual(original.Json,final.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox WHERE id=@id",new { id=original.Id }));
+        Assert.AreEqual(7m,final.ExecuteScalar<decimal>("SELECT stock_qty FROM product_meta WHERE barcode='RECOVERY-1000'"));
+        Assert.AreEqual(acceptedRace && !editAccepted ? 200L : 300L,final.ExecuteScalar<long>("SELECT unitPrice FROM products WHERE barcode='RECOVERY-1000'"));
+        Assert.AreEqual(historyBefore+(acceptedRace && !editAccepted ? 0 : 1),final.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
+        foreach(var part in new[] { parts[0],parts[2] })
+            Assert.AreEqual(1,final.ExecuteScalar<int>("SELECT attempt_count FROM catalog_import_outbox WHERE id=@id",new { id=part.Id }));
+        Assert.AreEqual(3,(await service.GetPlanProgressAsync(original.Id,CancellationToken.None)).CompletedParts);
+        Assert.IsFalse(await repo.HasUnresolvedAsync());
     }
 
     private static CatalogImportAckResult Ack(PosCatalogImportRequest request) => new()

@@ -127,7 +127,8 @@ $expectedIds = @(
     "0010-article-mutation-outbox",
     "0011-product-image-outbox",
     "0012-customer-order-inbox",
-    "0013-catalog-import-recovery"
+    "0013-catalog-import-recovery",
+    "0014-catalog-import-plans-and-drafts"
 )
 if (($ids -join "|") -ne ($expectedIds -join "|")) {
     Fail "registry is not the expected append-only ordered migration sequence"
@@ -149,7 +150,8 @@ $expectedChecksums = @(
     "a881c8100282eef1352df3db13a249eaa200be0ee3fa023b93bfb46ae28197e6",
     "59eff792775e9c2e65f15d158a75ab80430bed6d69c409e9bfb97a425e5f74d0",
     "1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3",
-    "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883"
+    "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883",
+    "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or
@@ -161,7 +163,7 @@ if (-not $failed) { Pass "published ID-to-checksum mapping is pinned in registry
 
 $trueBeforeApplyCount = [regex]::Matches(
     $registry,
-    'true,\s*\r?\n\s*DbInitializer\.').Count
+    'true,\s*\r?\n\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply)').Count
 if ($trueBeforeApplyCount -ne $expectedIds.Count) {
     Fail "every published PR-B migration must require a pre-migration backup"
 }

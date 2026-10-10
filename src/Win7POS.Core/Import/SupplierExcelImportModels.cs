@@ -217,6 +217,7 @@ namespace Win7POS.Core.Import
 
     public sealed class SupplierImportSyncPreview
     {
+        public string OperationCreatedAtUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
         public SupplierImportSyncSummary Summary { get; set; } = new SupplierImportSyncSummary();
         public List<SupplierImportProductRow> NewProducts { get; } = new List<SupplierImportProductRow>();
         public List<SupplierImportSyncRow> UpdatedProducts { get; } = new List<SupplierImportSyncRow>();

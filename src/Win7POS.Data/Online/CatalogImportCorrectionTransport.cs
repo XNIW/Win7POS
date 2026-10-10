@@ -13,22 +13,34 @@ namespace Win7POS.Data.Online
     internal static class CatalogImportCorrectionTransport
     {
         internal const string OperationType = "catalog_import_correction";
+        internal static PosCatalogImportReceiptResponse ReadSavedReceipt(string json, CatalogImportCorrectionSharedProof proof = null) => ReadSaved(json, proof).OriginalReceipt;
         private static readonly Regex IdPattern = new Regex("^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$", RegexOptions.CultureInvariant);
         private static readonly Regex HashPattern = new Regex("^[A-Za-z0-9:_-]{16,128}$", RegexOptions.CultureInvariant);
         private static readonly Regex UuidPattern = new Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", RegexOptions.CultureInvariant);
         private static readonly Regex CanonicalHashPattern = new Regex("^sha256:[0-9a-f]{64}$", RegexOptions.CultureInvariant);
 
-        internal static string SerializeSaved(PosCatalogImportCorrectionRequest request, PosCatalogImportReceiptResponse originalReceipt)
+        internal static string SerializeSaved(PosCatalogImportCorrectionRequest request, PosCatalogImportReceiptResponse originalReceipt, CatalogImportCorrectionSharedProof proof = null)
         {
             ValidateIntent(request);
-            var copy = CatalogImportRecoveryService.Deserialize<PosCatalogImportCorrectionRequest>(CatalogImportRecoveryService.Serialize(request));
-            copy.DeviceToken = null;
-            copy.SessionToken = null;
+            // Clone only the child operation. The immutable shared original and
+            // authoritative receipt are retained once for the complete plan.
+            var copy = new PosCatalogImportCorrectionRequest {
+                SchemaVersion=request.SchemaVersion, ShopCode=request.ShopCode,
+                RecoveryOf=new PosCatalogImportRecoveryOf { ClientImportId=request.RecoveryOf.ClientImportId,
+                    IdempotencyKey=request.RecoveryOf.IdempotencyKey, PayloadHash=request.RecoveryOf.PayloadHash,
+                    OriginalRequest=request.RecoveryOf.OriginalRequest },
+                Correction=CatalogImportRecoveryService.Deserialize<PosCatalogImportCorrectionOperation>(CatalogImportRecoveryService.Serialize(request.Correction)) };
             copy.Correction.PayloadHash = null;
-            copy.RecoveryOf.OriginalRequest.DeviceToken = null;
-            copy.RecoveryOf.OriginalRequest.SessionToken = null;
             var saved = new SavedCorrection { Request = copy, OriginalReceipt = originalReceipt };
             ValidateProof(saved);
+            if (proof != null)
+            {
+                if (proof.OriginalRequest.Batch.ClientImportId != request.RecoveryOf.ClientImportId ||
+                    !ReferenceEquals(proof.OriginalReceipt, originalReceipt)) throw new CatalogImportRecoveryException("receipt_conflict");
+                saved.SharedProofHash=proof.Hash;
+                copy.RecoveryOf.OriginalRequest=null;
+                saved.OriginalReceipt=null;
+            }
             return CatalogImportRecoveryService.Serialize(saved);
         }
 
@@ -41,7 +53,7 @@ namespace Win7POS.Data.Online
                 return "payload_hash_mismatch";
             try
             {
-                var saved = ReadSaved(item.PayloadJson);
+                var saved = ReadSaved(item.PayloadJson, item.SharedProof);
                 var request = saved.Request;
                 ValidateIntent(request);
                 ValidateProof(saved);
@@ -60,22 +72,22 @@ namespace Win7POS.Data.Online
             catch (ArgumentException) { return "payload_invalid"; }
         }
 
-        internal static PosCatalogImportRequest ReadIntendedRequest(string payloadJson)
+        internal static PosCatalogImportRequest ReadIntendedRequest(string payloadJson, CatalogImportCorrectionSharedProof proof = null)
         {
-            return ProjectIntent(ReadSaved(payloadJson), false);
+            return ProjectIntent(ReadSaved(payloadJson, proof), false);
         }
 
-        internal static PosCatalogImportCorrectionRequest ReadSavedRequest(string payloadJson)
+        internal static PosCatalogImportCorrectionRequest ReadSavedRequest(string payloadJson, CatalogImportCorrectionSharedProof proof = null)
         {
-            var saved = ReadSaved(payloadJson);
+            var saved = ReadSaved(payloadJson, proof);
             ValidateIntent(saved.Request);
             ValidateProof(saved);
             return saved.Request;
         }
 
-        internal static PosCatalogImportRequest ReadAckIntendedRequest(string payloadJson)
+        internal static PosCatalogImportRequest ReadAckIntendedRequest(string payloadJson, CatalogImportCorrectionSharedProof proof = null)
         {
-            return ProjectIntent(ReadSaved(payloadJson), true);
+            return ProjectIntent(ReadSaved(payloadJson, proof), true);
         }
 
         internal static bool MatchesRecoveryOriginal(CatalogImportOutboxItem item, CatalogImportOutboxItem original)
@@ -86,7 +98,7 @@ namespace Win7POS.Data.Online
                 return false;
             try
             {
-                var saved = ReadSaved(item.PayloadJson);
+                var saved = ReadSaved(item.PayloadJson, item.SharedProof);
                 var recovery = saved.Request.RecoveryOf;
                 return recovery.ClientImportId == original.ClientImportId && recovery.IdempotencyKey == original.IdempotencyKey &&
                     recovery.PayloadHash == original.PayloadHash && item.OriginShopId == original.OriginShopId &&
@@ -103,7 +115,7 @@ namespace Win7POS.Data.Online
             if (ValidateSaved(item).Length != 0 || string.IsNullOrWhiteSpace(receiptJson)) return false;
             try
             {
-                var saved = ReadSaved(item.PayloadJson);
+                var saved = ReadSaved(item.PayloadJson, item.SharedProof);
                 var receipt = CatalogImportRecoveryService.Deserialize<PosCatalogImportReceiptResponse>(receiptJson);
                 DateTimeOffset retiredAt;
                 return receipt != null && receipt.Ok && receipt.Code == "success" && receipt.Status == "retired" &&
@@ -160,7 +172,7 @@ namespace Win7POS.Data.Online
                 throw new CatalogImportRecoveryException("authentication_required");
             if (OutboxShopBinding.GetMismatchCode(item.OriginShopId, item.OriginShopCode, session.ShopId, session.ShopCode).Length != 0)
                 throw new CatalogImportRecoveryException("origin_shop_mismatch");
-            var saved = ReadSaved(item.PayloadJson);
+            var saved = ReadSaved(item.PayloadJson, item.SharedProof);
             var request = saved.Request; // A fresh transport copy; saved bytes never change.
             if (saved.OriginalReceipt.ShopDeviceId != session.ShopDeviceId)
                 throw new CatalogImportRecoveryException("origin_shop_mismatch");
@@ -182,7 +194,7 @@ namespace Win7POS.Data.Online
             var code = ValidateSaved(item);
             if (code.Length != 0) throw new CatalogImportRecoveryException(code);
             ValidateIntent(request);
-            var saved = ReadSaved(item.PayloadJson);
+            var saved = ReadSaved(item.PayloadJson, item.SharedProof);
             var originals = ValidateIntent(saved.Request);
             var snapshots = ValidateProof(saved);
             if (BusinessIntent(request.Correction) != BusinessIntent(saved.Request.Correction) ||
@@ -349,7 +361,7 @@ namespace Win7POS.Data.Online
                 original?.SchemaVersion != PosOnlineContract.CatalogImportSchemaVersion || original.Batch == null ||
                 original.Batch.ClientImportId != recovery.ClientImportId || original.Batch.IdempotencyKey != recovery.IdempotencyKey ||
                 original.PayloadHash != null && original.PayloadHash != recovery.PayloadHash ||
-                original.Items == null || original.Items.Length == 0 || original.Items.Length > 5000 ||
+                original.Items == null || original.Items.Length == 0 || original.Items.Length > Import.SupplierExcelImportLimits.MaximumWorksheetRows ||
                 operation.Items == null || operation.Items.Length == 0 || operation.Items.Length > Math.Min(1000, original.Items.Length))
                 throw new CatalogImportRecoveryException("payload_invalid");
             var originals = new Dictionary<string, PosCatalogImportItemRequest>(StringComparer.Ordinal);
@@ -384,12 +396,24 @@ namespace Win7POS.Data.Online
             return originals;
         }
 
-        private static SavedCorrection ReadSaved(string json)
+        private static SavedCorrection ReadSaved(string json, CatalogImportCorrectionSharedProof proof = null)
         {
             var saved = CatalogImportRecoveryService.Deserialize<SavedCorrection>(json);
             if (saved?.Request == null) throw new CatalogImportRecoveryException("payload_invalid");
+            if (saved.SharedProofHash != null)
+            {
+                if (proof == null || proof.Hash != saved.SharedProofHash || saved.Request.RecoveryOf?.OriginalRequest != null || saved.OriginalReceipt != null)
+                    throw new CatalogImportRecoveryException("receipt_required");
+                saved.Request.RecoveryOf.OriginalRequest=CloneOriginalEnvelope(proof.OriginalRequest);
+                saved.OriginalReceipt=proof.OriginalReceipt;
+            }
             return saved;
         }
+        internal static PosCatalogImportRequest CloneOriginalEnvelope(PosCatalogImportRequest source) => new PosCatalogImportRequest {
+            AppVersion=source.AppVersion,Batch=source.Batch,Items=source.Items,PayloadHash=source.PayloadHash,
+            PosSessionId=source.PosSessionId,SchemaVersion=source.SchemaVersion,ShopCode=source.ShopCode,
+            ShopDeviceId=source.ShopDeviceId,Source=source.Source,Summary=source.Summary };
+        internal static string SharedProofHash(string json) => CatalogImportRecoveryService.Deserialize<SavedCorrection>(json)?.SharedProofHash;
         private static bool Matches(Regex pattern, string value) => value != null && pattern.IsMatch(value);
         private static bool ValidPrice(decimal? value) => !value.HasValue || value.Value >= 0 && value.Value <= 999999999m && decimal.Round(value.Value, 3) == value.Value;
         private static string BusinessIntent(PosCatalogImportCorrectionOperation operation) => CatalogImportRecoveryService.Serialize(
@@ -417,7 +441,8 @@ namespace Win7POS.Data.Online
         private sealed class SavedCorrection
         {
             [DataMember(Name = "request")] public PosCatalogImportCorrectionRequest Request { get; set; }
-            [DataMember(Name = "originalReceipt")] public PosCatalogImportReceiptResponse OriginalReceipt { get; set; }
+            [DataMember(Name = "sharedProofHash", EmitDefaultValue=false)] public string SharedProofHash { get; set; }
+            [DataMember(Name = "originalReceipt", EmitDefaultValue=false)] public PosCatalogImportReceiptResponse OriginalReceipt { get; set; }
         }
     }
 }

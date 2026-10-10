@@ -14,6 +14,95 @@ public sealed class CatalogImportRecoveryMigrationTests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
+    public void UpgradeFrom0013_AddsPlansAndDraftsWithoutChangingOriginalsOrDeliveryProof(bool ledgerless)
+    {
+        using var database = MigrationDatabase.Create();
+        new SchemaMigrationRunner(database.Factory, SchemaMigrationRegistry.All.Take(13)).Run();
+        string[] originalRows;
+        string[] originalLedger;
+        string? proof;
+        using (var connection = database.Factory.Open())
+        {
+            InsertOutbox(connection, 1, 7);
+            connection.Execute(@"INSERT INTO catalog_import_recovery(original_id,delivery_known,dispatch_count,receipt_status,created_at,updated_at)
+VALUES(1,0,4,'unverified',10,20);");
+            originalRows = ReadImports(connection);
+            originalLedger = ReadLedger(connection);
+            proof = connection.ExecuteScalar<string>("SELECT original_id||'|'||delivery_known||'|'||dispatch_count||'|'||receipt_status FROM catalog_import_recovery");
+            Assert.IsFalse(new LegacySchemaDetector(connection).TableExists("catalog_import_plan"));
+            if (ledgerless) connection.Execute("DROP TABLE schema_migrations;");
+        }
+
+        var migrated = new SchemaMigrationRunner(database.Factory).Run();
+        CollectionAssert.AreEqual(new[] { "0014-catalog-import-plans-and-drafts" }, migrated.AppliedMigrationIds.ToArray());
+        Assert.AreEqual(ledgerless ? 13 : 0, migrated.BootstrappedMigrationIds.Count);
+        Assert.IsFalse(string.IsNullOrEmpty(migrated.BackupFileName));
+        using (var connection = database.Factory.Open())
+        {
+            CollectionAssert.AreEqual(originalRows, ReadImports(connection));
+            if (!ledgerless) CollectionAssert.AreEqual(originalLedger, ReadLedger(connection).Take(13).ToArray());
+            Assert.AreEqual(proof, connection.ExecuteScalar<string>("SELECT original_id||'|'||delivery_known||'|'||dispatch_count||'|'||receipt_status FROM catalog_import_recovery"));
+            foreach (var table in new[] { "catalog_import_plan", "catalog_import_plan_part", "catalog_import_recovery_draft", "catalog_import_correction_proof", "catalog_import_prepared_plan", "catalog_import_recovery_supersession" })
+                Assert.AreEqual(0L, connection.ExecuteScalar<long>("SELECT COUNT(*) FROM " + table));
+            Assert.IsTrue(SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(new LegacySchemaDetector(connection)));
+        }
+        Assert.IsTrue(new SchemaMigrationRunner(database.Factory).Run().WasNoOp);
+    }
+
+    [TestMethod]
+    [DataRow("catalog_import_plan")]
+    [DataRow("catalog_import_plan_part")]
+    [DataRow("catalog_import_recovery_draft")]
+    [DataRow("catalog_import_correction_proof")]
+    [DataRow("catalog_import_prepared_plan")]
+    [DataRow("catalog_import_recovery_supersession")]
+    public void CurrentLedger_WithMissingPlanStructure_IsRejectedWithoutRewritingLedger(string table)
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        string[] beforeLedger;
+        using (var connection = database.Factory.Open())
+        {
+            beforeLedger = ReadLedger(connection);
+            connection.Execute("DROP TABLE " + table);
+            Assert.IsFalse(SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(new LegacySchemaDetector(connection)));
+        }
+        Assert.ThrowsExactly<InvalidDataException>(() => DbInitializer.EnsureCreated(database.Options));
+        using var verify = database.Factory.Open();
+        CollectionAssert.AreEqual(beforeLedger, ReadLedger(verify));
+        Assert.IsFalse(new LegacySchemaDetector(verify).TableExists(table));
+    }
+
+    [TestMethod]
+    public void PlanMembership_RejectsDuplicateIdentityInvalidRowCountAndDanglingReferences()
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        using var connection = database.Factory.Open();
+        for (var id = 1; id <= 4; id++) InsertOutbox(connection, id, 0);
+        connection.Execute(@"INSERT INTO catalog_import_plan(plan_id,original_id,total_rows,total_parts,created_at) VALUES('plan',1,1001,2,10);
+INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_count) VALUES('plan',0,2,'hash',1000),('plan',1,3,'hash3',1);");
+        foreach (var invalid in new[]
+        {
+            "INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_count) VALUES('plan',2,4,'hash',0)",
+            "INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_count) VALUES('plan',2,4,'hash',1001)",
+            "INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_count) VALUES('plan',0,4,'hash',1)",
+            "INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_count) VALUES('plan',2,2,'hash',1)",
+            "INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_count) VALUES('missing',2,4,'hash',1)",
+            "INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_count) VALUES('plan',2,99,'hash',1)",
+            "INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_count) VALUES('plan',2,4,NULL,1)",
+            "DELETE FROM catalog_import_outbox WHERE id=1",
+            "DELETE FROM catalog_import_outbox WHERE id=2",
+            "DELETE FROM catalog_import_plan WHERE plan_id='plan'"
+        })
+            Assert.AreEqual(19, Assert.ThrowsExactly<SqliteException>(() => connection.Execute(invalid)).SqliteErrorCode, invalid);
+        Assert.AreEqual(1001L, connection.ExecuteScalar<long>("SELECT SUM(row_count) FROM catalog_import_plan_part"));
+        Assert.AreEqual(0L, connection.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_plan WHERE completed_at IS NOT NULL"));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     public void UpgradeFrom0012_PreservesLegacyImportsWithoutInventingDeliveryProof(bool ledgerless)
     {
         using var database = MigrationDatabase.Create();
@@ -35,7 +124,7 @@ public sealed class CatalogImportRecoveryMigrationTests
         var result = new SchemaMigrationRunner(database.Factory).Run();
 
         CollectionAssert.AreEqual(
-            new[] { "0013-catalog-import-recovery" },
+            new[] { "0013-catalog-import-recovery", "0014-catalog-import-plans-and-drafts" },
             result.AppliedMigrationIds.ToArray());
         Assert.AreEqual(ledgerless ? 12 : 0, result.BootstrappedMigrationIds.Count);
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.BackupFileName));
@@ -54,11 +143,11 @@ public sealed class CatalogImportRecoveryMigrationTests
     }
 
     [TestMethod]
-    public void NewDatabaseAndCurrentLedgerlessBaseline_UseCanonical0013()
+    public void NewDatabaseAndCurrentLedgerlessBaseline_UseCanonical0014()
     {
         using var database = MigrationDatabase.Create();
         var first = new SchemaMigrationRunner(database.Factory).Run();
-        Assert.AreEqual(13, first.AppliedMigrationIds.Count);
+        Assert.AreEqual(14, first.AppliedMigrationIds.Count);
         Assert.AreEqual(0, first.BootstrappedMigrationIds.Count);
         using (var connection = database.Factory.Open())
         {
@@ -72,7 +161,7 @@ public sealed class CatalogImportRecoveryMigrationTests
 
         var bootstrapped = new SchemaMigrationRunner(database.Factory).Run();
 
-        Assert.AreEqual(13, bootstrapped.BootstrappedMigrationIds.Count);
+        Assert.AreEqual(14, bootstrapped.BootstrappedMigrationIds.Count);
         Assert.AreEqual(0, bootstrapped.AppliedMigrationIds.Count);
         using var verify = database.Factory.Open();
         CollectionAssert.AreEqual(
@@ -322,7 +411,7 @@ VALUES(@priorId,0,1,'retired',@retirement,@id,3,6);",
         if (valid)
         {
             var result = new SchemaMigrationRunner(database.Factory).Run();
-            Assert.AreEqual(13, result.BootstrappedMigrationIds.Count);
+            Assert.AreEqual(14, result.BootstrappedMigrationIds.Count);
             Assert.AreEqual(0, result.AppliedMigrationIds.Count);
         }
         else
