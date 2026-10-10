@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "win7pos-dense-csharp-transfer-envelope-v1",
+  "archive": {
+    "path": "dense5000-csharp-capture-v1.zip",
+    "byteLength": 8831308,
+    "sha256": "1c8633eeb70db8d6b0ec8b5fadf9c42ab20a5f9fcad8606a7e5f35791b53b90e"
+  },
+  "bundleManifest": {
+    "path": "bundle.manifest.json",
+    "byteLength": 62293,
+    "sha256": "52fa63c71f8d4f3830635be3809e707e05a0de2ce6c0dda648dd0b4723691d9e"
+  },
+  "receipt": {
+    "path": "capture.receipt.json",
+    "byteLength": 5343,
+    "sha256": "220e82907f3e6ec1311b5751caa12ae23e396d4a11c07cfa92c98d2ca47cef8d"
+  },
+  "captureManifest": {
+    "path": "capture/capture.manifest.json",
+    "byteLength": 325351,
+    "sha256": "9463f5403b815e8726451f1e2568be946c4162e7e1fa33932e54b6ed210f22b4"
+  },
+  "clientHelperBeforeSha256": "ba87da421af4046dbbaccde6f2de7f8ca76c70509de7d5f18a33a53dcef0c74c",
+  "clientHelperAfterSha256": "8abbd9e6a8c61ef94bc0a682002c673b3b6734cfca39e66b324781e8776f46ba",
+  "archiveFileCount": 363,
+  "archiveVerifiedEveryFile": true,
+  "scope": "Happy-path C# capture driven by unchanged actual Admin pilot replies; fresh Admin exact-wire replay and reingest are pending.",
+  "pending": [
+    "Fresh equivalent isolated Admin database replay of the 169 exact captured C# request bodies under the final server SQL",
+    "C# reingest of newly captured actual replay responses with exact ID/value/receipt/closure assertions",
+    "Pinned permanent positive CI proof after that roundtrip"
+  ]
+}

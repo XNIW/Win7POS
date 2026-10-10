@@ -113,7 +113,7 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
     // archive is pinned. Missing evidence cannot turn into a passing/skipped CI
     // qualification. The same path is used for pilot-guided request capture and
     // for replaying the subsequent fresh-database response archive.
-    internal static async Task CaptureRecordedDenseRecoveryAsync(string inputsDirectory, string scheduleDirectory, string outputDirectory, int count)
+    internal static async Task CaptureRecordedDenseRecoveryAsync(string inputsDirectory, string scheduleDirectory, string outputDirectory, int count, string? selectionManifestPath = null)
     {
         inputsDirectory = Path.GetFullPath(inputsDirectory);
         outputDirectory = Path.GetFullPath(outputDirectory);
@@ -178,7 +178,7 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
         Assert.AreEqual(count * 2L, fixture.Number("SELECT COUNT(*) FROM product_price_history"));
         Assert.AreEqual(count, fixture.Number("SELECT COUNT(*) FROM product_meta WHERE stock_qty=1.25"));
 
-        using var handler = new RecordedScheduleHandler(scheduleDirectory, outputDirectory);
+        using var handler = new RecordedScheduleHandler(scheduleDirectory, outputDirectory, selectionManifestPath);
         using var peer = new RecordedSchedulePeer(handler);
         var service = new CatalogImportRecoveryService(fixture.Factory, Path.Combine(outputDirectory, "backups"), freshSession: () => session);
         var draft = await service.PrepareAsync(rootId, peer.Options, session, null!, CancellationToken.None);
@@ -212,8 +212,8 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
         Assert.AreEqual(count, fixture.Number("SELECT COUNT(*) FROM product_meta WHERE stock_qty=1.25"));
         Assert.AreEqual(count * 2L, fixture.Number("SELECT COUNT(*) FROM product_price_history"));
         Assert.AreEqual(count * 2L, fixture.Number("SELECT COUNT(*) FROM product_price_history WHERE remote_price_id IS NOT NULL"));
-        Assert.AreEqual(count, fixture.Number("SELECT COUNT(*) FROM product_price_history WHERE type='purchase' AND new_price=900"));
-        Assert.AreEqual(count, fixture.Number("SELECT COUNT(*) FROM product_price_history WHERE type='retail' AND new_price=1200"));
+        Assert.AreEqual(count, fixture.Number("SELECT COUNT(*) FROM product_price_history WHERE UPPER(TRIM(type))='PURCHASE' AND new_price=900"));
+        Assert.AreEqual(count, fixture.Number("SELECT COUNT(*) FROM product_price_history WHERE UPPER(TRIM(type))='RETAIL' AND new_price=1200"));
         Assert.AreEqual(0, fixture.Number("SELECT COUNT(*) FROM catalog_import_prepared_plan"));
         Assert.AreEqual(originalJson, fixture.Saved(rootId));
         Assert.AreEqual(Hash(originalJson), fixture.Text("SELECT payload_hash FROM catalog_import_outbox WHERE id=@id", new { id = rootId }));
@@ -242,16 +242,23 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
             Assert.AreEqual(plan.PlanId, reply.PlanId); Assert.IsTrue(reply.Complete == true);
             var items = plan.Parts.Single(part => part.Index == reply.PartIndex).Request.Items.ToDictionary(item => item.ClientItemId, StringComparer.Ordinal);
             foreach (var product in reply.Receipt.RemoteProductIds) products.Add(items[product.ClientItemId].Barcode, product.RemoteProductId);
-            foreach (var price in reply.Receipt.RemotePriceIds) prices.Add(items[price.ClientItemId].Barcode + "|" + price.PriceType, price.RemotePriceId);
+            foreach (var price in reply.Receipt.RemotePriceIds) prices.Add(items[price.ClientItemId].Barcode + "|" + PriceKind(price.PriceType), price.RemotePriceId);
         }
         using var connection = fixture.Factory.Open();
         foreach (var product in connection.Query("SELECT barcode,remote_product_id FROM products"))
             Assert.AreEqual(products[(string)product.barcode], (string)product.remote_product_id);
         foreach (var price in connection.Query("SELECT barcode,type,remote_price_id FROM product_price_history"))
-            Assert.AreEqual(prices[(string)price.barcode + "|" + (string)price.type], (string)price.remote_price_id);
+            Assert.AreEqual(prices[(string)price.barcode + "|" + PriceKind((string)price.type)], (string)price.remote_price_id);
         return new { products = products.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => new { barcode = pair.Key, remoteProductId = pair.Value }).ToArray(),
             prices = prices.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => new { key = pair.Key, remotePriceId = pair.Value }).ToArray() };
     }
+
+    private static string PriceKind(string value) => value?.Trim().ToUpperInvariant() switch
+    {
+        "PURCHASE" => "purchase",
+        "RETAIL" => "retail",
+        _ => throw new AssertFailedException("Unexpected price kind: " + value)
+    };
 
     // Kept independent of the synthetic test peer. Each response and its actual
     // HTTP status is supplied by the isolated official Admin/SQL probe. Request
@@ -261,31 +268,65 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
         private readonly string directory;
         private readonly string output;
         private readonly JsonDocument schedule;
+        private readonly JsonDocument? selection;
+        private readonly string? selectionSha256;
+        private readonly int[] selectedIndexes;
         private readonly List<object> captured = new();
         private int index;
         internal List<PosCatalogImportRecoveryMultipartResponse> AcceptedApplies { get; } = new();
-        internal RecordedScheduleHandler(string directory, string output)
+        internal RecordedScheduleHandler(string directory, string output, string? selectionManifestPath = null)
         {
             this.directory = Path.GetFullPath(directory); this.output = Path.GetFullPath(output);
             Directory.CreateDirectory(this.output);
             schedule = JsonDocument.Parse(File.ReadAllText(Path.Combine(this.directory, "schedule.json"), Utf8));
             Assert.AreEqual("win7pos-phased-admin-schedule-v1", schedule.RootElement.GetProperty("schemaVersion").GetString());
+            var records = schedule.RootElement.GetProperty("requests");
+            selectedIndexes = Enumerable.Range(0, records.GetArrayLength()).ToArray();
+            if (selectionManifestPath != null)
+            {
+                selection = JsonDocument.Parse(File.ReadAllText(selectionManifestPath, Utf8));
+                selectionSha256 = FileHash(selectionManifestPath);
+                var manifest = selection.RootElement;
+                Assert.AreEqual("win7pos-phased-pilot-selection-v1", manifest.GetProperty("schemaVersion").GetString());
+                Assert.AreEqual(manifest.GetProperty("sourceScheduleSha256").GetString(), FileHash(Path.Combine(this.directory, "schedule.json")));
+                Assert.AreEqual(records.GetArrayLength(), manifest.GetProperty("sourceResponseCount").GetInt32());
+                var selected = manifest.GetProperty("selected").EnumerateArray().ToArray();
+                var excluded = manifest.GetProperty("excluded").EnumerateArray().ToArray();
+                Assert.AreEqual(manifest.GetProperty("selectedCount").GetInt32(), selected.Length);
+                Assert.AreEqual(manifest.GetProperty("excludedCount").GetInt32(), excluded.Length);
+                selectedIndexes = selected.Select(record => record.GetProperty("sourceIndex").GetInt32()).ToArray();
+                CollectionAssert.AreEqual(selectedIndexes.OrderBy(value => value).ToArray(), selectedIndexes, "Preserve source order.");
+                var allIndexes = selected.Concat(excluded).Select(record => record.GetProperty("sourceIndex").GetInt32()).ToArray();
+                CollectionAssert.AreEquivalent(Enumerable.Range(0, records.GetArrayLength()).ToArray(), allIndexes, "Every original frame is selected or explicitly excluded exactly once.");
+                foreach (var record in selected.Concat(excluded))
+                {
+                    var original = records[record.GetProperty("sourceIndex").GetInt32()];
+                    foreach (var key in new[] { "action", "httpStatus", "responseFile", "responseSha256" })
+                        Assert.AreEqual(original.GetProperty(key).GetRawText(), record.GetProperty(key).GetRawText(), "Immutable original " + key);
+                    var selector = original.GetProperty("selector");
+                    Assert.AreEqual(selector.EnumerateObject().Count(), record.GetProperty("selector").EnumerateObject().Count());
+                    foreach (var field in selector.EnumerateObject())
+                        Assert.AreEqual(field.Value.GetRawText(), record.GetProperty("selector").GetProperty(field.Name).GetRawText(), "Immutable selector " + field.Name);
+                }
+            }
         }
         internal void AssertConsumed()
         {
-            Assert.AreEqual(schedule.RootElement.GetProperty("requests").GetArrayLength(), index);
+            Assert.AreEqual(selectedIndexes.Length, index);
             Write(output, "capture.manifest.json", JsonSerializer.Serialize(new
             {
                 schemaVersion = "win7pos-phased-csharp-capture-v1", sourceScheduleSha256 = FileHash(Path.Combine(directory, "schedule.json")),
-                sourceSchedule = schedule.RootElement.Clone(), requests = captured
+                sourceSchedule = schedule.RootElement.Clone(), sourceSelectionSha256 = selectionSha256,
+                sourceSelection = selection?.RootElement.Clone(), requests = captured
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             var bytes = await request.Content!.ReadAsByteArrayAsync(token); Assert.IsTrue(bytes.Length <= 512 * 1024);
-            Assert.IsTrue(index < schedule.RootElement.GetProperty("requests").GetArrayLength(), "Unexpected request after the official schedule ended: " + request.RequestUri);
-            var record = schedule.RootElement.GetProperty("requests")[index];
+            Assert.IsTrue(index < selectedIndexes.Length, "Unexpected request after the official schedule ended: " + request.RequestUri);
+            var sourceIndex = selectedIndexes[index];
+            var record = schedule.RootElement.GetProperty("requests")[sourceIndex];
             Assert.AreEqual(record.GetProperty("action").GetString(), request.RequestUri!.Segments.Last());
             using var actual = JsonDocument.Parse(bytes);
             foreach (var expected in record.GetProperty("selector").EnumerateObject())
@@ -304,14 +345,15 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
             var prefix = (index++).ToString("D5");
             await File.WriteAllBytesAsync(Path.Combine(output, prefix + ".request.json"), bytes, token);
             await File.WriteAllBytesAsync(Path.Combine(output, prefix + ".response.json"), response, token);
-            captured.Add(new { index = index - 1, action = record.GetProperty("action").GetString(), selector = record.GetProperty("selector").Clone(),
+            captured.Add(new { index = index - 1, sourceIndex, sourceResponseFile = responseFile,
+                action = record.GetProperty("action").GetString(), selector = record.GetProperty("selector").Clone(),
                 httpStatus = record.GetProperty("httpStatus").GetInt32(), requestFile = prefix + ".request.json",
                 requestSha256 = CatalogImportRecoveryProofTransport.Hash(bytes), requestByteLength = bytes.Length,
                 responseFile = prefix + ".response.json", responseSha256 = CatalogImportRecoveryProofTransport.Hash(response), responseByteLength = response.Length });
             return new((HttpStatusCode)record.GetProperty("httpStatus").GetInt32())
                 { Content = new ByteArrayContent(response) { Headers = { ContentType = new("application/json") } } };
         }
-        protected override void Dispose(bool disposing) { if (disposing) schedule.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing) { schedule.Dispose(); selection?.Dispose(); } base.Dispose(disposing); }
     }
 
     // A loopback adapter is needed because the production recovery/sync services
