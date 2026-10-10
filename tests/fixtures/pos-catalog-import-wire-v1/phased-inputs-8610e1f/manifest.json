@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "win7pos-phased-input-transfer-v1",
+  "qualification": "Source/input checkpoint only; no Admin acceptance or shared rollout",
+  "adminSourceCheckpoint": "8610e1f8c91c992f975bca9b04e169a8ef8f8310",
+  "zipFile": "inputs.zip",
+  "zipBytes": 3183998,
+  "zipSha256": "fea881689dceace73144f13a830f2b795511efe4b4a381f4e5db13ceee7ad76c",
+  "officialTrx": "phased-inputs-export-pool-corrected.trx",
+  "passed": 2,
+  "failed": 0,
+  "sourceTest": "tests/Win7POS.Core.Tests/Data/CatalogImportRecoveryPhasedInteropEvidenceTests.cs",
+  "sourceTestSha256": "a350ff21113d4d919fed0da6e6e2ef942f8f83ce6d0026e855848ba625e73926",
+  "scenarios": [
+    {
+      "schemaVersion": "win7pos-phased-input-v1",
+      "qualification": "builder + SQLite + pure precommit planning; no remote authority or recovery commit",
+      "logicalRows": 5000,
+      "sheetRowsIncludingHeader": 5001,
+      "originalTime": "2026-10-09T21:50:00-03:00",
+      "recoveryTime": "2026-10-09T21:51:00-03:00",
+      "syntheticHistoricalUncertainty": true,
+      "originalOutboxId": 1,
+      "original": {
+        "clientImportId": "win7pos-catalog-import-20b8c37ede3eab05f4a60f48",
+        "idempotencyKey": "win7pos-catalog-import-20b8c37ede3eab05f4a60f48:pos-catalog-import-v1",
+        "schemaVersion": "pos-catalog-import-v1",
+        "operationType": "catalog_import",
+        "rawSha256": "sha256:9f5f164646d70b5376a90a257bcfd5984811eabe21a8e665bbca909251c46e10",
+        "declaredPayloadHash": "9f5f164646d70b5376a90a257bcfd5984811eabe21a8e665bbca909251c46e10",
+        "rawByteLength": 4857436,
+        "verifiedOriginalId": "9bdb44a6-1d95-45cb-82bc-e5e11ffba1e9"
+      },
+      "plan": {
+        "planId": "0cf18f5d-bca2-47c8-8291-5b4f350910e0",
+        "verifiedOriginalId": "9bdb44a6-1d95-45cb-82bc-e5e11ffba1e9",
+        "rawSha256": "sha256:f5200da9c5aece8f0b2b35f44e891f14c12cb1a411c17806653bcec5f374bba5",
+        "rawByteLength": 5940971,
+        "uploadId": "6a099899-dce2-4e47-8d8e-74510a4897cb",
+        "partCount": 10,
+        "coveredRows": 5000
+      },
+      "localState": {
+        "outboxCount": 1,
+        "stockEach": "1.25",
+        "historyCount": 10000,
+        "recoveryCommitted": false
+      },
+      "files": [
+        {
+          "name": "children.saved.json",
+          "byteLength": 5180973,
+          "sha256": "9b10ba304231219b498b6776e8531d6a228675dac81ece13ee677d40972270d2"
+        },
+        {
+          "name": "original.persisted.json",
+          "byteLength": 4857436,
+          "sha256": "9f5f164646d70b5376a90a257bcfd5984811eabe21a8e665bbca909251c46e10"
+        },
+        {
+          "name": "original.sqlite",
+          "byteLength": 19447808,
+          "sha256": "72436b352e3656b3662cbec055d7d7f1a865a0e1059997730f907c95f3e5f550"
+        },
+        {
+          "name": "plan.document.json",
+          "byteLength": 5940971,
+          "sha256": "f5200da9c5aece8f0b2b35f44e891f14c12cb1a411c17806653bcec5f374bba5"
+        },
+        {
+          "name": "trust.synthetic.json",
+          "byteLength": 246,
+          "sha256": "3f72e8527490f54dd5c0ceff2fa1129a5ff8a8252faf670808f229a41990d21b"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "win7pos-phased-input-v1",
+      "qualification": "builder + SQLite + pure precommit planning; no remote authority or recovery commit",
+      "logicalRows": 59999,
+      "sheetRowsIncludingHeader": 60000,
+      "originalTime": "2026-10-09T21:50:00-03:00",
+      "recoveryTime": "2026-10-09T21:51:00-03:00",
+      "syntheticHistoricalUncertainty": true,
+      "originalOutboxId": 1,
+      "original": {
+        "clientImportId": "win7pos-catalog-import-bf039603f5894deafde5ca72",
+        "idempotencyKey": "win7pos-catalog-import-bf039603f5894deafde5ca72:pos-catalog-import-v1",
+        "schemaVersion": "pos-catalog-import-v1",
+        "operationType": "catalog_import",
+        "rawSha256": "sha256:05d86e6c1fea21529449e71c52bb4d335eff6a434d86cbdc266a4c672479a646",
+        "declaredPayloadHash": "05d86e6c1fea21529449e71c52bb4d335eff6a434d86cbdc266a4c672479a646",
+        "rawByteLength": 58466463,
+        "verifiedOriginalId": "16bd74a3-82e8-46e3-8409-20bd54dc0734"
+      },
+      "plan": {
+        "planId": "9bf0a4a0-480f-49f1-8f0f-652adb7f443f",
+        "verifiedOriginalId": "16bd74a3-82e8-46e3-8409-20bd54dc0734",
+        "rawSha256": "sha256:41ae7f081476cd592bd936b46440cba80d1b5e34779f69034d9dd1c10ae3bb8f",
+        "rawByteLength": 71664104,
+        "uploadId": "eaeac8d6-b53a-4e6c-85e8-b177edc50433",
+        "partCount": 120,
+        "coveredRows": 59999
+      },
+      "localState": {
+        "outboxCount": 1,
+        "stockEach": "1.25",
+        "historyCount": 119998,
+        "recoveryCommitted": false
+      },
+      "files": [
+        {
+          "name": "children.saved.json",
+          "byteLength": 62357129,
+          "sha256": "71d5f5c226d085ed1ef20ad43133950ed67af16b3c8f723a1dc37628bbe16c62"
+        },
+        {
+          "name": "original.persisted.json",
+          "byteLength": 58466463,
+          "sha256": "05d86e6c1fea21529449e71c52bb4d335eff6a434d86cbdc266a4c672479a646"
+        },
+        {
+          "name": "original.sqlite",
+          "byteLength": 227622912,
+          "sha256": "e4334e79a21f17efa1eede9402b3aa1c9579a359d951fd3c3f18e7ecda84e13a"
+        },
+        {
+          "name": "plan.document.json",
+          "byteLength": 71664104,
+          "sha256": "41ae7f081476cd592bd936b46440cba80d1b5e34779f69034d9dd1c10ae3bb8f"
+        },
+        {
+          "name": "trust.synthetic.json",
+          "byteLength": 246,
+          "sha256": "3f72e8527490f54dd5c0ceff2fa1129a5ff8a8252faf670808f229a41990d21b"
+        }
+      ]
+    }
+  ]
+}
