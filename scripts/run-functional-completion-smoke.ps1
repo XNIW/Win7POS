@@ -36,7 +36,14 @@ $dataDir = Join-Path ([IO.Path]::GetTempPath()) ('Win7POS.Functional.' + [Guid]:
 $process = Start-Process -FilePath $exe -ArgumentList @('--data-dir', ('"' + $dataDir + '"'), '--functional-completion-smoke', '--scenario', $scenario) -WindowStyle Hidden -PassThru
 if (-not $process.WaitForExit(60000)) {
     Stop-Process -Id $process.Id -ErrorAction SilentlyContinue
-    throw "Functional completion smoke timed out. Evidence: $dataDir"
+    foreach ($diagnosticName in @('import-recovery-completion.txt','cart-regression-error.txt','harness-error.txt')) {
+        $diagnosticPath = Join-Path $dataDir $diagnosticName
+        if (Test-Path -LiteralPath $diagnosticPath -PathType Leaf) {
+            Write-Host "FUNCTIONAL_TIMEOUT_DIAGNOSTIC=$scenario/$diagnosticName"
+            Get-Content -LiteralPath $diagnosticPath
+        }
+    }
+    throw "Functional completion smoke timed out ($scenario). Evidence: $dataDir"
 }
 $result = Join-Path $dataDir 'functional-completion.txt'
 if (Test-Path -LiteralPath $result) { Get-Content -LiteralPath $result }

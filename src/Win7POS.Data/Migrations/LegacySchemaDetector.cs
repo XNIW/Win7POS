@@ -138,6 +138,18 @@ WHERE type = 'index'
                 : Regex.Replace(part, @"\s+", string.Empty).ToLowerInvariant()));
         }
 
+        internal bool HasExactCatalogImportPlanDefinitions()
+        {
+            using (var expected = new SqliteConnection("Data Source=:memory:"))
+            {
+                expected.Open();
+                expected.Execute(Online.CatalogImportPlanSchema.Sql);
+                foreach (var table in new[] { "catalog_import_plan", "catalog_import_plan_part", "catalog_import_recovery_draft", "catalog_import_correction_proof", "catalog_import_prepared_plan", "catalog_import_recovery_supersession" })
+                    if (NormalizeRecoveryTableSql(ReadTableSql(expected, null, table)) != NormalizeRecoveryTableSql(ReadTableSql(_connection, _transaction, table))) return false;
+                return true;
+            }
+        }
+
         public bool HasKnownTableDefinitions(
             string requiredSchemaSql,
             string allowedSchemaSql,

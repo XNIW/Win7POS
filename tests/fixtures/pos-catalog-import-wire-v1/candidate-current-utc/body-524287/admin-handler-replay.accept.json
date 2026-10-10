@@ -1,0 +1,55 @@
+{
+  "expectation": "accept",
+  "evidenceScope": "actual Admin parser and handler; official foundation lease/RPC fixtures; no database mutation",
+  "adminRoot": "C:/Dev/Admin-post-pr122-interop-baseline",
+  "officialLoaderSha256": "c0b558e42ff1af288acba176076469dfb5fe00104f1da2b30cce6899aa3f366d",
+  "reports": [
+    {
+      "path": "ordinary.request.json",
+      "sha256": "da0c4cff16129f20a5eccfe80786edb08d333d9568ce94016752c0719aed3ca3",
+      "parserAccepted": true,
+      "canonicalHash": "sha256:df03dd390b00109726a10274747d0383c6529ce2212001b8757e60c1f99874a3",
+      "ordinaryAttemptCount": 2147483647
+    }
+  ],
+  "checks": [
+    {
+      "path": "ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": false,
+      "bytes": 524287,
+      "accepted": true
+    },
+    {
+      "path": "ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": true,
+      "bytes": 524287,
+      "accepted": true
+    },
+    {
+      "path": "ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": "omitted",
+      "parserAccepted": false
+    },
+    {
+      "path": "ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 0,
+      "parserAccepted": false
+    },
+    {
+      "path": "ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 1,
+      "parserAccepted": true
+    },
+    {
+      "path": "ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 17,
+      "parserAccepted": true
+    }
+  ]
+}

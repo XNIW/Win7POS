@@ -16,6 +16,8 @@
             <TextBlock Text="{loc:Loc importRecovery.explanation}" TextWrapping="Wrap" Style="{StaticResource TypeBodyStyle}" Margin="0,6,0,8"/>
             <TextBlock Text="{loc:Loc importRecovery.quantityExplanation}" TextWrapping="Wrap" Style="{StaticResource TypeCaptionStyle}" Margin="0,0,0,6"/>
             <TextBlock x:Name="ReceiptText" TextWrapping="Wrap" Style="{StaticResource TypeCaptionStyle}"/>
+            <TextBlock x:Name="DraftStateText" TextWrapping="Wrap" Style="{StaticResource TypeCaptionStyle}" Margin="0,4,0,0" AutomationProperties.LiveSetting="Polite"/>
+            <TextBlock x:Name="PlanProgressText" TextWrapping="Wrap" Style="{StaticResource TypeCaptionStyle}" Margin="0,4,0,0"/>
         </StackPanel>
         <ProgressBar x:Name="RecoveryProgress" Grid.Row="1" Height="4" Margin="0,8" Visibility="Collapsed" IsIndeterminate="False"/>
         <DataGrid x:Name="RecoveryRows" Grid.Row="2" Margin="0,8,0,0" AutoGenerateColumns="False"
@@ -36,6 +38,7 @@
                        AutomationProperties.LiveSetting="Assertive" AutomationProperties.Name="{loc:Loc sync.center.operationStatus}"/>
         </ScrollViewer>
         <WrapPanel Grid.Row="4" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button x:Name="DiscardDraftButton" Content="{loc:Loc importRecovery.discardDraft}" Style="{StaticResource DialogCancelButtonStyle}" Margin="0,0,8,8" Visibility="Collapsed" Click="OnDiscardDraftClick"/>
             <Button x:Name="RetireButton" Content="{loc:Loc importRecovery.retire}" Style="{StaticResource DialogCancelButtonStyle}" Margin="0,0,8,8" Visibility="Collapsed" Click="OnRetireClick"/>
             <Button x:Name="PrepareButton" Content="{loc:Loc importRecovery.verify}" Style="{StaticResource DialogCancelButtonStyle}" Margin="0,0,8,8" Click="OnPrepareClick"/>
             <Button x:Name="CommitButton" Content="{loc:Loc importRecovery.commit}" Style="{StaticResource DialogActionButtonStyle}" Margin="0,0,8,8" IsEnabled="False" Click="OnCommitClick"/>

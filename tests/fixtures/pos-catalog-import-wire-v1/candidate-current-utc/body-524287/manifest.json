@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "win7pos-admin-wire-evidence-v1",
+  "scenario": "body-524287",
+  "syntheticCredentials": true,
+  "source": "production C# builder -\u003E size preflight -\u003E production HTTP serializer; no SQLite write in this boundary test",
+  "acceptanceClaim": false,
+  "files": [
+    {
+      "path": "ordinary.request.json",
+      "bytes": 524287,
+      "sha256": "da0c4cff16129f20a5eccfe80786edb08d333d9568ce94016752c0719aed3ca3"
+    }
+  ]
+}

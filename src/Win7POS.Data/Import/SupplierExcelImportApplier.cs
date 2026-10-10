@@ -18,7 +18,9 @@ namespace Win7POS.Data.Import
     public sealed class SupplierExcelImportApplyOptions
     {
         public CatalogImportOutboxEntry CatalogImportOutboxEntry { get; set; }
+        public CatalogImportOutboxPlan CatalogImportOutboxPlan { get; set; }
         internal CatalogImportRecoveryCommit RecoveryCommit { get; set; }
+        internal IReadOnlyList<CatalogImportSupersessionAcceptedEntry> AcceptedRecoveryEntries { get; set; }
         public bool DryRun { get; set; }
         public bool InsertNew { get; set; } = true;
         internal SupplierExcelImportTestHooks TestHooks { get; set; }
@@ -38,6 +40,9 @@ namespace Win7POS.Data.Import
         public List<string> ErrorMessages { get; } = new List<string>();
         public List<string> ChangedBarcodes { get; } = new List<string>();
         public long CatalogImportOutboxId { get; set; }
+        public List<long> CatalogImportOutboxIds { get; } = new List<long>();
+        public int CatalogImportTotalParts { get; set; }
+        public int CatalogImportTotalRows { get; set; }
         public string CatalogImportOutboxStatus { get; set; } = string.Empty;
         public SupplierExcelImportSqlMetrics SqlMetrics { get; } = new SupplierExcelImportSqlMetrics();
     }
@@ -163,6 +168,7 @@ namespace Win7POS.Data.Import
         internal Action<int> AfterExistingProductBatch { get; set; }
         internal Action<int> AfterProductWrite { get; set; }
         internal Action<int> AfterHistoryWrite { get; set; }
+        internal Action<Exception> RollbackObserved { get; set; }
         internal Action BeforeCommit { get; set; }
 
         internal void ThrowIfRequested(SupplierExcelImportFaultPoint point, int completedWrites = 0)
@@ -448,7 +454,9 @@ namespace Win7POS.Data.Import
                     options.TestHooks?.ThrowIfRequested(SupplierExcelImportFaultPoint.AfterReferenceResolution);
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var catalogImportContext = CatalogImportApplyContext.FromEntry(options.CatalogImportOutboxEntry);
+                    var entries = options.CatalogImportOutboxPlan?.Entries ??
+                        (options.CatalogImportOutboxEntry == null ? Array.Empty<CatalogImportOutboxEntry>() : new[] { options.CatalogImportOutboxEntry });
+                    var contexts = CatalogImportApplyContext.FromEntries(entries.Concat((options.AcceptedRecoveryEntries ?? Array.Empty<CatalogImportSupersessionAcceptedEntry>()).Select(e=>e.Entry)).ToArray());
                     var productWrites = 0;
                     var historyWrites = 0;
                     using (var productCommands = new PreparedProductCommands(conn, tx))
@@ -486,7 +494,7 @@ namespace Win7POS.Data.Import
                                 prepared.Existing,
                                 prepared.Source,
                                 prepared.Merged,
-                                catalogImportContext,
+                                contexts.TryGetValue(prepared.Merged.Barcode, out var context) ? context : CatalogImportApplyContext.FromEntry(null),
                                 result.SqlMetrics,
                                 options.TestHooks,
                                 () => ++historyWrites,
@@ -494,17 +502,27 @@ namespace Win7POS.Data.Import
                         }
                     }
 
-                    if (options.CatalogImportOutboxEntry != null &&
+                    if(options.RecoveryCommit!=null)
+                        await options.RecoveryCommit.PublishAcceptedEntriesAsync(conn,tx,options.AcceptedRecoveryEntries).ConfigureAwait(false);
+                    if (entries.Count > 0 &&
                         (result.ChangedBarcodes.Count > 0 || options.RecoveryCommit != null))
                     {
                         options.TestHooks?.ThrowIfRequested(SupplierExcelImportFaultPoint.BeforeOutboxEnqueue);
                         cancellationToken.ThrowIfCancellationRequested();
-                        result.CatalogImportOutboxId = await CatalogImportOutboxRepository
-                            .EnqueueAsync(conn, tx, options.CatalogImportOutboxEntry, result.SqlMetrics.RecordOutboxCommand)
-                            .ConfigureAwait(false);
+                        foreach (var entry in entries)
+                            result.CatalogImportOutboxIds.Add(await CatalogImportOutboxRepository
+                                .EnqueueAsync(conn, tx, entry, result.SqlMetrics.RecordOutboxCommand).ConfigureAwait(false));
+                        result.CatalogImportOutboxId = result.CatalogImportOutboxIds[0];
+                        result.CatalogImportTotalParts = entries.Count;
+                        result.CatalogImportTotalRows = entries.Sum(CatalogImportPlanBuilder.CountRows);
                         result.CatalogImportOutboxStatus = "pending";
                         if (options.RecoveryCommit != null)
-                            await options.RecoveryCommit.AttachAsync(conn, tx, result.CatalogImportOutboxId).ConfigureAwait(false);
+                            await options.RecoveryCommit.AttachAsync(conn, tx, result.CatalogImportOutboxId, result.CatalogImportOutboxIds).ConfigureAwait(false);
+                        if (options.CatalogImportOutboxPlan != null)
+                            await CatalogImportOutboxRepository.SavePlanAsync(conn, tx, options.CatalogImportOutboxPlan,
+                                result.CatalogImportOutboxIds, options.RecoveryCommit?.OriginalId).ConfigureAwait(false);
+                        if(options.RecoveryCommit!=null && options.CatalogImportOutboxPlan!=null)
+                            await options.RecoveryCommit.BindSupersessionAsync(conn,tx,options.CatalogImportOutboxPlan.PlanId).ConfigureAwait(false);
                         options.TestHooks?.ThrowIfRequested(
                             SupplierExcelImportFaultPoint.AfterOutboxEnqueueBeforeCommit);
                     }
@@ -534,6 +552,7 @@ namespace Win7POS.Data.Import
                 catch (Exception ex)
                 {
                     try { tx.Rollback(); } catch { }
+                    options.TestHooks?.RollbackObserved?.Invoke(ex);
                     AddError(result, ex.Message);
                     return result;
                 }
@@ -1136,7 +1155,7 @@ VALUES
                 {
                     if (entry.OperationType=="catalog_import_correction")
                     {
-                        var correction=CatalogImportCorrectionTransport.ReadIntendedRequest(entry.PayloadJson);
+                        var correction=CatalogImportCorrectionTransport.ReadIntendedRequest(entry.PayloadJson, entry.SharedProof);
                         return new CatalogImportApplyContext(entry.IdempotencyKey,
                             correction.Items.ToDictionary(item=>item.Barcode,item=>item.ClientItemId,StringComparer.OrdinalIgnoreCase));
                     }
@@ -1164,6 +1183,21 @@ VALUES
                 {
                     return Empty;
                 }
+            }
+
+            public static Dictionary<string, CatalogImportApplyContext> FromEntries(IReadOnlyList<CatalogImportOutboxEntry> entries)
+            {
+                var result = new Dictionary<string, CatalogImportApplyContext>(StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in entries)
+                {
+                    var context = FromEntry(entry);
+                    foreach (var barcode in context._clientItemIdsByBarcode.Keys)
+                    {
+                        if (result.ContainsKey(barcode)) throw new CatalogImportRecoveryException("recovery_rows_changed");
+                        result.Add(barcode, context);
+                    }
+                }
+                return result;
             }
         }
     }

@@ -46,15 +46,16 @@ public sealed class CatalogImportOutboxPayloadBuilderTests
     }
 
     [TestMethod]
-    public void BuildSupplierExcelEntry_SameLogicalImport_ProducesStablePayloadHash()
+    public void BuildSupplierExcelEntry_SamePreparedOperation_ProducesStablePayloadHash()
     {
+        var preview = CreatePreview();
         var first = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
-            CreatePreview(),
+            preview,
             "supplier.xlsx",
             "test");
         System.Threading.Thread.Sleep(20);
         var second = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
-            CreatePreview(),
+            preview,
             "supplier.xlsx",
             "test");
 

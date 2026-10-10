@@ -54,6 +54,7 @@ namespace Win7POS.Data.Online
             if (string.IsNullOrWhiteSpace(entry.PayloadJson)) throw new ArgumentException("payload json is required.");
             if (string.IsNullOrWhiteSpace(entry.PayloadHash)) throw new ArgumentException("payload hash is required.");
 
+            await CatalogImportCorrectionSharedProof.SaveAsync(conn, tx, entry).ConfigureAwait(false);
             var nowMs = entry.CreatedAt > 0 ? entry.CreatedAt : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var origin = await OutboxShopBinding
                 .ResolveRequiredAsync(conn, tx, commandStarting)
@@ -157,8 +158,17 @@ WHERE (
 ORDER BY id ASC
 LIMIT @take;",
                     new { take, nowMs, staleInProgressBefore }).ConfigureAwait(false);
+                // Do not hydrate unrelated large roots for the entire drain.
+                // The claimed child loads its proof immediately before use.
                 return rows.ToList();
             }
+        }
+
+        internal async Task LoadSharedProofAsync(CatalogImportOutboxItem item)
+        {
+            if(item?.OperationType!="catalog_import_correction") return;
+            using(var conn=_factory.Open())
+                item.SharedProof=await CatalogImportCorrectionSharedProof.LoadAsync(conn,null,item.PayloadJson).ConfigureAwait(false);
         }
 
         public async Task<OutboxDrainState> GetDrainStateAsync(long nowMs)
@@ -235,9 +245,9 @@ LIMIT 1;").ConfigureAwait(false);
             using (var conn = _factory.Open())
             {
                 var count = await conn.ExecuteScalarAsync<long>(@"
-SELECT COUNT(1)
-FROM catalog_import_outbox
-WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');").ConfigureAwait(false);
+SELECT (SELECT COUNT(1) FROM catalog_import_outbox
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'))
++ (SELECT COUNT(1) FROM catalog_import_prepared_plan) + (SELECT COUNT(1) FROM catalog_import_recovery_supersession WHERE resolved_at IS NULL);").ConfigureAwait(false);
                 return count > 0;
             }
         }
@@ -343,7 +353,7 @@ WHERE id = @outboxId
         {
             using (var conn = _factory.Open())
             {
-                return await conn.QuerySingleOrDefaultAsync<CatalogImportOutboxItem>(@"
+                var item=await conn.QuerySingleOrDefaultAsync<CatalogImportOutboxItem>(@"
 SELECT
   id AS Id,
   client_import_id AS ClientImportId,
@@ -363,6 +373,8 @@ SELECT
 FROM catalog_import_outbox
 WHERE id = @outboxId;",
                     new { outboxId }).ConfigureAwait(false);
+                if(item?.OperationType=="catalog_import_correction") item.SharedProof=await CatalogImportCorrectionSharedProof.LoadAsync(conn,null,item.PayloadJson).ConfigureAwait(false);
+                return item;
             }
         }
 
@@ -842,9 +854,9 @@ AND NOT EXISTS (
                     }
 
                     var importRows = await conn.ExecuteScalarAsync<long>(@"
-SELECT COUNT(1)
+SELECT EXISTS(SELECT 1
 FROM product_price_history
-WHERE catalog_import_idempotency_key = @IdempotencyKey;",
+WHERE catalog_import_idempotency_key = @IdempotencyKey LIMIT 1);",
                         new { IdempotencyKey = idempotencyKey },
                         tx).ConfigureAwait(false);
 
@@ -1075,6 +1087,7 @@ WHERE barcode = @barcode
 
     public sealed class CatalogImportOutboxEntry
     {
+        internal CatalogImportCorrectionSharedProof SharedProof { get; set; }
         public string OperationType { get; set; } = "catalog_import";
         public string ClientImportId { get; set; } = string.Empty;
         public long CreatedAt { get; set; }
@@ -1087,6 +1100,7 @@ WHERE barcode = @barcode
 
     public sealed class CatalogImportOutboxItem
     {
+        internal CatalogImportCorrectionSharedProof SharedProof { get; set; }
         public int AttemptCount { get; set; }
         public string ClientImportId { get; set; } = string.Empty;
         public long Id { get; set; }

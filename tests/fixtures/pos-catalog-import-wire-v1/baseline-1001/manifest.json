@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "win7pos-admin-wire-evidence-v1",
+  "scenario": "1001-new-import",
+  "syntheticCredentials": true,
+  "source": "production C# builder -\u003E SQLite -\u003E production recovery/sync -\u003E production HTTP serializer",
+  "acceptanceClaim": false,
+  "files": [
+    {
+      "path": "original-0.persisted.json",
+      "bytes": 266464,
+      "sha256": "6d1ea3ffe1965bcaa56906db6d31edb2431dd8e03446a000258d2e546a2b2541"
+    }
+  ]
+}

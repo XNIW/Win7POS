@@ -171,6 +171,8 @@ SELECT
    FROM catalog_import_outbox
    WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'))
   +
+  (SELECT COUNT(1) FROM catalog_import_prepared_plan) + (SELECT COUNT(1) FROM catalog_import_recovery_supersession WHERE resolved_at IS NULL)
+  +
   (SELECT COUNT(1)
    FROM article_mutation_outbox
    WHERE state IN (
@@ -278,6 +280,8 @@ SELECT
   (SELECT COUNT(1)
    FROM catalog_import_outbox
    WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'))
+  +
+  (SELECT COUNT(1) FROM catalog_import_prepared_plan) + (SELECT COUNT(1) FROM catalog_import_recovery_supersession WHERE resolved_at IS NULL)
   +
   (SELECT COUNT(1)
    FROM article_mutation_outbox

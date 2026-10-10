@@ -61,7 +61,7 @@ namespace Win7POS.Data
             {
                 try
                 {
-                    BackfillLegacyOutboxBindings(connection, transaction);
+                    BackfillCurrentOutboxBindings(connection, transaction);
                     SeedSecurity(connection, transaction);
                     if (!IsSecuritySeedSatisfied(connection, transaction))
                     {
@@ -1425,10 +1425,31 @@ WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
             "payload-and-hash-immutable";
 
         internal static void BackfillLegacyOutboxBindings(SqliteConnection conn, SqliteTransaction tx)
+            => BackfillOutboxBindings(conn,tx,OutboxContractMismatchSql);
+
+        private static void BackfillCurrentOutboxBindings(SqliteConnection conn,SqliteTransaction tx)
+        {
+            // Published migration material and its legacy behavior remain fixed.
+            // Current startup runs after full correction-proof/link validation and
+            // recognizes both exact contract pairs when reconciling mutable rows.
+            var legacy=OutboxContractMismatchSql;
+            var catalogStart=legacy.IndexOf("UPDATE catalog_import_outbox",StringComparison.Ordinal);
+            if(catalogStart<0) throw new InvalidDataException("Catalog outbox normalization boundary is missing.");
+            var current=legacy.Substring(0,catalogStart)+@"
+UPDATE catalog_import_outbox
+SET status='failed_blocked',last_error_code='legacy_contract_mismatch',last_error_at=@nowMs,updated_at=@nowMs
+WHERE status IN ('pending','retry','in_progress','failed_blocked')
+ AND NOT (status='failed_blocked' AND COALESCE(last_error_code,'')='legacy_contract_mismatch')
+ AND NOT ((COALESCE(schema_version,'')='pos-catalog-import-v1' AND COALESCE(operation_type,'')='catalog_import')
+       OR (COALESCE(schema_version,'')='pos-catalog-import-correction-v1' AND COALESCE(operation_type,'')='catalog_import_correction'));";
+            BackfillOutboxBindings(conn,tx,current);
+        }
+
+        private static void BackfillOutboxBindings(SqliteConnection conn,SqliteTransaction tx,string contractMismatchSql)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             conn.Execute(OutboxNormalizationSql, transaction: tx);
-            conn.Execute(OutboxContractMismatchSql, new { nowMs }, tx);
+            conn.Execute(contractMismatchSql, new { nowMs }, tx);
             var legacySales = conn.Query<LegacySalesOutboxRow>(@"
 SELECT
   id AS Id,

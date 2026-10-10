@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "isolated-csharp-response-transfer-v1",
+  "observedUTC": "2026-10-09T01:09:23.704407+00:00",
+  "actor": "/root",
+  "scope": "synthetic C# corpus only; actual handler and isolated PostgreSQL economic RPC; outer auth fixtures; not live acceptance",
+  "result": "PASS_ARCHIVE_BYTES_FROM_EXISTING_RESPONSES_ONLY",
+  "archivePath": "/Users/minxiang/Projects/MerchandiseControl-Ecosistema/evidence/operational-completion-20261003/asus-pos-readiness-20261004/post-pr122-admin-20261009/postgres-interop/candidate-5000-responses.zip",
+  "archiveSha256": "bf960ae9e9a044244e191993d386ffba2951f680303a4f24536d8a24ab7519be",
+  "archiveBytes": 832970,
+  "sourceManifestSha256": "93ff27305f3239890bbf7f1b8beca09c1326f6627089bfac83ceeaaabf652ee9",
+  "entries": [
+    {
+      "name": "c66aeec8d0804f4e4b0eeff5d7b306e907571e9228ba55548b5f16c316de947e.response.json",
+      "bodySha256": "c66aeec8d0804f4e4b0eeff5d7b306e907571e9228ba55548b5f16c316de947e",
+      "responseSha256": "ce8bcdcf7485ff115cbfc4a5355c26a10f938899188175b2a4dc19fc4ed1122e",
+      "bytes": 866188,
+      "httpStatus": 200
+    },
+    {
+      "name": "291801b8971ffba22ed77aab0b53ed7d053903c97a4ec1b48551f9c10e0a1167.response.json",
+      "bodySha256": "291801b8971ffba22ed77aab0b53ed7d053903c97a4ec1b48551f9c10e0a1167",
+      "responseSha256": "088b1b75e2b9f666a55d127e097ad6b518b2013e9ab2fb2900c95daf85d4fa85",
+      "bytes": 875044,
+      "httpStatus": 200
+    },
+    {
+      "name": "00a6528d23e8b890f0f53afe87fac54453ac7d2646c9b10d287d63834ea20c94.response.json",
+      "bodySha256": "00a6528d23e8b890f0f53afe87fac54453ac7d2646c9b10d287d63834ea20c94",
+      "responseSha256": "33e187ad0b9da30cf6441e238f29660e975e94c085f12ffb8888c63995f74d14",
+      "bytes": 875044,
+      "httpStatus": 200
+    },
+    {
+      "name": "f7a45381a1c271de17c87199634eb40d15023031481100e6454a2730ee11ef83.response.json",
+      "bodySha256": "f7a45381a1c271de17c87199634eb40d15023031481100e6454a2730ee11ef83",
+      "responseSha256": "3c51d0128acc92729d1f62f955a3770bad29a455b070b4399e60b67c86753935",
+      "bytes": 875044,
+      "httpStatus": 200
+    },
+    {
+      "name": "2a6fb624cf5d704bc339ff608bc81b8e455340508a2ab0ef078639092b2ad5f1.response.json",
+      "bodySha256": "2a6fb624cf5d704bc339ff608bc81b8e455340508a2ab0ef078639092b2ad5f1",
+      "responseSha256": "4e5d4118a2864c11e5ba10b5cbf46657735064f6369115a90d5de3d27d247b0f",
+      "bytes": 875044,
+      "httpStatus": 200
+    }
+  ]
+}

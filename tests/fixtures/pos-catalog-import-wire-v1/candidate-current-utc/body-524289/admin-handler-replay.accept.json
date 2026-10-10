@@ -1,0 +1,37 @@
+{
+  "expectation": "accept",
+  "evidenceScope": "actual Admin parser and handler; official foundation lease/RPC fixtures; no database mutation",
+  "adminRoot": "C:/Dev/Admin-post-pr122-interop-baseline",
+  "officialLoaderSha256": "c0b558e42ff1af288acba176076469dfb5fe00104f1da2b30cce6899aa3f366d",
+  "reports": [
+    {
+      "path": "blocked-before-http.candidate.json",
+      "sha256": "645017e0863d5cc5c062cbdeb3ad1a639a05b3830673c83c2303ff42089931e0",
+      "bytes": 524289,
+      "blockedByBodyReader": true,
+      "httpStatus": 400,
+      "response": {
+        "code": "validation_failed",
+        "message": "Request payload is invalid.",
+        "ok": false
+      },
+      "actuallySentByClient": false
+    }
+  ],
+  "checks": [
+    {
+      "path": "blocked-before-http.candidate.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": false,
+      "bytes": 524289,
+      "accepted": false
+    },
+    {
+      "path": "blocked-before-http.candidate.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": true,
+      "bytes": 524289,
+      "accepted": false
+    }
+  ]
+}

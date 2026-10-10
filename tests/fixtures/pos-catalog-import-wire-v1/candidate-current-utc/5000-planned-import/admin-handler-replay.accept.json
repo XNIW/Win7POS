@@ -1,0 +1,235 @@
+{
+  "expectation": "accept",
+  "evidenceScope": "actual Admin parser and handler; official foundation lease/RPC fixtures; no database mutation",
+  "adminRoot": "C:/Dev/Admin-post-pr122-interop-baseline",
+  "officialLoaderSha256": "c0b558e42ff1af288acba176076469dfb5fe00104f1da2b30cce6899aa3f366d",
+  "reports": [
+    {
+      "path": "part-0.ordinary.request.json",
+      "sha256": "16c509e0dfab35a9d6b1a50cb120fbd3fa5d3eb4f9af6e45541ff8cbb6517133",
+      "parserAccepted": true,
+      "canonicalHash": "sha256:e361f1ea593768aea94fc5672c093d5205f58ee3498acc90ab60364268b54e62",
+      "ordinaryAttemptCount": 1
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "sha256": "83da3dab20e33c6986b08d4f2198ff51cb5aa85648ea75789c61bdde2c8d7a6c",
+      "parserAccepted": true,
+      "canonicalHash": "sha256:f02126aaedb4475cc7e28ed7b33e6a6cd605b127b000eefc14cd9c0f76ec0c98",
+      "ordinaryAttemptCount": 1
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "sha256": "e15d4ffd2293f3fe621d193cf5716455155c3731bc6f7b5137de95e5874334be",
+      "parserAccepted": true,
+      "canonicalHash": "sha256:7db6c071db7db70bcb3cd22ff8e833106e02cfbf848ebaf9c9a2d712fdc4a268",
+      "ordinaryAttemptCount": 1
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "sha256": "576ab4495e7e274cd0a71ef656e83b3451c4648d9f0f3103a09f606911ef9777",
+      "parserAccepted": true,
+      "canonicalHash": "sha256:5611a68752e80eaef7762b3020bfc3f329731a114ce19d16bfd32b4722368f2f",
+      "ordinaryAttemptCount": 1
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "sha256": "f82fcc0c171157e4dad00204354888f114a419c5577793ad94b9a0f57a18a66c",
+      "parserAccepted": true,
+      "canonicalHash": "sha256:a2e8968ef087d8608de7c1cc14b998984673c33f2b47d31a7edaea3ed6503812",
+      "ordinaryAttemptCount": 1
+    }
+  ],
+  "checks": [
+    {
+      "path": "part-0.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": false,
+      "bytes": 255521,
+      "accepted": true
+    },
+    {
+      "path": "part-0.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": true,
+      "bytes": 255521,
+      "accepted": true
+    },
+    {
+      "path": "part-0.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": "omitted",
+      "parserAccepted": false
+    },
+    {
+      "path": "part-0.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 0,
+      "parserAccepted": false
+    },
+    {
+      "path": "part-0.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 1,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-0.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 17,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": false,
+      "bytes": 259949,
+      "accepted": true
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": true,
+      "bytes": 259949,
+      "accepted": true
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": "omitted",
+      "parserAccepted": false
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 0,
+      "parserAccepted": false
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 1,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-1.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 17,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": false,
+      "bytes": 259949,
+      "accepted": true
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": true,
+      "bytes": 259949,
+      "accepted": true
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": "omitted",
+      "parserAccepted": false
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 0,
+      "parserAccepted": false
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 1,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-2.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 17,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": false,
+      "bytes": 259949,
+      "accepted": true
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": true,
+      "bytes": 259949,
+      "accepted": true
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": "omitted",
+      "parserAccepted": false
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 0,
+      "parserAccepted": false
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 1,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-3.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 17,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": false,
+      "bytes": 259949,
+      "accepted": true
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "check": "actual-bounded-body-reader",
+      "hasLength": true,
+      "bytes": 259949,
+      "accepted": true
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": "omitted",
+      "parserAccepted": false
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 0,
+      "parserAccepted": false
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 1,
+      "parserAccepted": true
+    },
+    {
+      "path": "part-4.ordinary.request.json",
+      "check": "ordinary-attempt",
+      "attempt": 17,
+      "parserAccepted": true
+    }
+  ]
+}

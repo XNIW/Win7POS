@@ -166,6 +166,7 @@ namespace Win7POS.Wpf.Import
             // the caller context until authorization has completed.
             var capturedPreview = CaptureApplyBaseline(preview);
             var rebuilt = await BuildSyncPreviewAsync(preview.FinalRows, cancellationToken).ConfigureAwait(true);
+            rebuilt.OperationCreatedAtUtc = capturedPreview.OperationCreatedAtUtc;
             await Task.Run(() =>
             {
                 if (!rebuilt.CanApply)
@@ -183,23 +184,28 @@ namespace Win7POS.Wpf.Import
                         "supplier_import_preview_stale:" + (applyBaselineMismatch ?? "baseline"));
             }, cancellationToken).ConfigureAwait(true);
 
+            CatalogImportOutboxPlan outboxPlan;
+            try
+            {
+                outboxPlan = dryRun
+                ? null
+                : await Task.Run(() =>
+                    CatalogImportOutboxPayloadBuilder.BuildSupplierExcelPlan(
+                        rebuilt,
+                        sourceFileName,
+                        typeof(SupplierExcelImportWorkflowService).Assembly.GetName().Version?.ToString()), cancellationToken)
+                    .ConfigureAwait(true);
+            }
+            catch (CatalogImportRecoveryException error)
+            {
+                throw new SupplierExcelImportWorkflowException(
+                    Win7POS.Wpf.Pos.Dialogs.ImportRecoveryPresentation.FriendlyCause(error.Code), error.Code);
+            }
             var backupPath = string.Empty;
             if (!dryRun)
             {
                 DemandApplyAuthorization();
                 backupPath = await CreateBackupBeforeApplyAsync(cancellationToken).ConfigureAwait(true);
-            }
-
-            var outboxEntry = dryRun
-                ? null
-                : await Task.Run(() =>
-                    CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
-                        rebuilt,
-                        sourceFileName,
-                        typeof(SupplierExcelImportWorkflowService).Assembly.GetName().Version?.ToString()), cancellationToken)
-                    .ConfigureAwait(true);
-            if (!dryRun)
-            {
                 DemandApplyAuthorization();
             }
             var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
@@ -207,7 +213,7 @@ namespace Win7POS.Wpf.Import
                 rebuilt,
                 new SupplierExcelImportApplyOptions
                 {
-                    CatalogImportOutboxEntry = outboxEntry,
+                    CatalogImportOutboxPlan = outboxPlan,
                     DryRun = dryRun,
                     InsertNew = true
                 }, cancellationToken), cancellationToken).ConfigureAwait(false);
@@ -332,7 +338,11 @@ namespace Win7POS.Wpf.Import
 
         private static SupplierImportSyncPreview CaptureApplyBaseline(SupplierImportSyncPreview preview)
         {
-            var captured = new SupplierImportSyncPreview { Fingerprint = preview.Fingerprint };
+            var captured = new SupplierImportSyncPreview
+            {
+                Fingerprint = preview.Fingerprint,
+                OperationCreatedAtUtc = preview.OperationCreatedAtUtc
+            };
             // Expectation matching uses only the count of these rows; retain no
             // mutable cell reads after leaving the caller's Dispatcher context.
             captured.ValidatedRows.AddRange(preview.ValidatedRows);
@@ -375,7 +385,9 @@ namespace Win7POS.Wpf.Import
                 PosLocalization.F("supplierExcelImport.resultPriceHistory", result.PriceHistoryInserted),
                 PosLocalization.F("supplierExcelImport.resultChangedProducts", result.ChangedBarcodes.Count),
                 result.CatalogImportOutboxId > 0
-                    ? PosLocalization.F("supplierExcelImport.resultOutboxPending", result.CatalogImportOutboxId)
+                    ? result.CatalogImportTotalParts > 1
+                        ? PosLocalization.F("importRecovery.partsQueued", result.CatalogImportTotalParts)
+                        : PosLocalization.F("supplierExcelImport.resultOutboxPending", result.CatalogImportOutboxId)
                     : PosLocalization.T("supplierExcelImport.resultOutboxNotQueued")
             };
             if (!string.IsNullOrWhiteSpace(backupPath))

@@ -17,6 +17,68 @@ namespace Win7POS.Data.Online
         // Admin catalog-import-sync.ts nonNegativeNumber, contract v1.
         public const long MaximumAdminPrice = 999999999L;
 
+        public static CatalogImportOutboxPlan BuildSupplierExcelPlan(SupplierImportSyncPreview preview, string sourceFileName, string appVersion)
+        {
+            if (preview == null) throw new ArgumentNullException(nameof(preview));
+            ValidateRepresentableRows(preview.ValidatedRows);
+            foreach (var row in preview.NewProducts.Concat(preview.UpdatedProducts.Select(r => r.Updated))) ValidateRepresentableRow(row);
+            return CatalogImportPlanBuilder.Split(BuildSupplierExcelEntry(preview, sourceFileName, appVersion));
+        }
+
+        internal static void ValidateRepresentableRows(IEnumerable<SupplierImportEditableRow> rows)
+        {
+            foreach(var row in rows.Where(row=>row!=null && !row.IsSkipped))
+                ValidateRepresentableRow(new SupplierImportProductRow { RowNumber=row.RowNumber,Barcode=row.Barcode,ProductName=row.ProductName,
+                    SecondProductName=row.SecondProductName,ItemNumber=row.ItemNumber,Supplier=row.Supplier,Category=row.Category,
+                    RetailPrice=row.RetailPrice,PurchasePrice=row.PurchasePrice,Quantity=row.Quantity });
+        }
+
+        private static void ValidateRepresentableRow(SupplierImportProductRow row)
+        {
+            var fields = new[] { Tuple.Create("barcode", row.Barcode, 80), Tuple.Create("productName", row.ProductName, 240),
+                Tuple.Create("secondProductName", row.SecondProductName, 240), Tuple.Create("itemNumber", row.ItemNumber, 120),
+                Tuple.Create("supplier", row.Supplier, 120), Tuple.Create("category", row.Category, 120),
+                Tuple.Create("retailPrice",row.RetailPrice,40),Tuple.Create("purchasePrice",row.PurchasePrice,40),Tuple.Create("quantity",row.Quantity,40) };
+            foreach (var field in fields)
+            {
+                var value=field.Item2??string.Empty;
+                for(var index=0;index<value.Length;index++)
+                {
+                    var character=value[index];
+                    if(character=='\0' || char.IsLowSurrogate(character) ||
+                        char.IsHighSurrogate(character) && (index+1==value.Length || !char.IsLowSurrogate(value[index+1])))
+                        throw new CatalogImportRecoveryException("supplier_import_field_invalid_unicode|"+row.RowNumber+"|"+field.Item1+"|"+row.Barcode);
+                    if(char.IsHighSurrogate(character)) index++;
+                }
+                if ((field.Item2 ?? string.Empty).Trim().Length > field.Item3)
+                    throw new CatalogImportRecoveryException("supplier_import_field_too_long|" + row.RowNumber + "|" + field.Item1 + "|" + field.Item3 + "|" + row.Barcode);
+            }
+        }
+
+        internal static CatalogImportOutboxPlan BuildRecoveryPlan(SupplierImportSyncPreview preview, PosCatalogImportRequest original,
+            string originalHash, bool accepted, IReadOnlyList<CatalogImportRecoveryContribution> contributions, PosCatalogImportReceiptResponse receipt,
+            PosCatalogImportRequest comparisonIntent = null, IReadOnlyCollection<string> acknowledgedBarcodes = null, string operationScope = null)
+        {
+            var acknowledged=new HashSet<string>(acknowledgedBarcodes ?? Array.Empty<string>(),StringComparer.Ordinal);
+            var all = preview.ValidatedRows.Where(r=>!acknowledged.Contains(r.Barcode)).Select(r => r.Barcode).ToArray();
+            foreach (var row in preview.NewProducts.Concat(preview.UpdatedProducts.Select(r => r.Updated)).Concat(preview.NoChangeRows.Select(r => r.Updated))) ValidateRepresentableRow(row);
+            var entries = new List<CatalogImportOutboxEntry>();
+            var sharedProof = accepted && all.Length > 1000 ? CatalogImportCorrectionSharedProof.Create(original, receipt) : null;
+            for (var offset = 0; offset < all.Length; offset += CatalogImportPlanBuilder.MaximumRowsPerRequest)
+            {
+                var set = new HashSet<string>(all.Skip(offset).Take(CatalogImportPlanBuilder.MaximumRowsPerRequest), StringComparer.Ordinal);
+                var part = new SupplierImportSyncPreview { Fingerprint = preview.Fingerprint, OperationCreatedAtUtc = preview.OperationCreatedAtUtc };
+                part.NewProducts.AddRange(preview.NewProducts.Where(r => set.Contains(r.Barcode)));
+                part.UpdatedProducts.AddRange(preview.UpdatedProducts.Where(r => set.Contains(r.Updated.Barcode)));
+                part.NoChangeRows.AddRange(preview.NoChangeRows.Where(r => set.Contains(r.Updated.Barcode)));
+                part.ValidatedRows.AddRange(preview.ValidatedRows.Where(r => set.Contains(r.Barcode)));
+                var entry = BuildRecoveryEntry(part, original, originalHash, accepted, contributions, receipt, comparisonIntent, sharedProof, operationScope);
+                var plan = CatalogImportPlanBuilder.Split(entry);
+                if (plan != null) entries.AddRange(plan.Entries);
+            }
+            return entries.Count == 0 ? null : CatalogImportPlanBuilder.Plan(entries);
+        }
+
         public static void ValidateSupplierExcelPreview(SupplierImportSyncPreview preview)
         {
             if (preview == null) throw new ArgumentNullException(nameof(preview));
@@ -64,10 +126,10 @@ namespace Win7POS.Data.Online
             var fingerprint = string.IsNullOrWhiteSpace(preview.Fingerprint)
                 ? BuildFallbackFingerprint(items)
                 : preview.Fingerprint.Trim();
-            var importHash = Sha256Hex(PosOnlineContract.CatalogImportSchemaVersion + "|" + fingerprint + "|" + BuildFallbackFingerprint(items));
+            var batchCreatedAt = preview.OperationCreatedAtUtc;
+            var importHash = Sha256Hex(PosOnlineContract.CatalogImportSchemaVersion + "|" + batchCreatedAt + "|" + fingerprint + "|" + BuildFallbackFingerprint(items));
             var clientImportId = "win7pos-catalog-import-" + importHash.Substring(0, 24);
             var idempotencyKey = clientImportId + ":" + PosOnlineContract.CatalogImportSchemaVersion;
-            var batchCreatedAt = BuildStableBatchCreatedAt(importHash);
             var outboxCreatedAt = DateTimeOffset.UtcNow;
 
             for (var i = 0; i < items.Length; i++)
@@ -114,33 +176,17 @@ namespace Win7POS.Data.Online
             };
         }
 
-        private static string BuildStableBatchCreatedAt(string importHash)
-        {
-            var hex = (importHash ?? string.Empty).Length >= 8
-                ? importHash.Substring(0, 8)
-                : "00000000";
-            long parsed;
-            if (!long.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out parsed))
-            {
-                parsed = 0;
-            }
-
-            var seconds = parsed % (10L * 365 * 24 * 60 * 60);
-            return new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)
-                .AddSeconds(seconds)
-                .ToUniversalTime()
-                .ToString("O", CultureInfo.InvariantCulture);
-        }
-
         internal static CatalogImportOutboxEntry BuildRecoveryEntry(
             SupplierImportSyncPreview preview, PosCatalogImportRequest original, string originalHash, bool accepted,
-            IReadOnlyList<CatalogImportRecoveryContribution> contributions,PosCatalogImportReceiptResponse receipt=null)
+            IReadOnlyList<CatalogImportRecoveryContribution> contributions,PosCatalogImportReceiptResponse receipt=null,
+            PosCatalogImportRequest comparisonIntent=null, CatalogImportCorrectionSharedProof sharedProof=null, string operationScope=null)
         {
+            var batchCreatedAt = preview.OperationCreatedAtUtc;
             var rows = preview.NewProducts.Concat(preview.UpdatedProducts.Select(row => row.Updated))
                 .Concat(preview.NoChangeRows.Select(row => row.Updated)).OrderBy(row => row.RowNumber).ToArray();
             var items = new List<PosCatalogImportItemRequest>();
             var corrections=new List<PosCatalogImportCorrectionItem>();
-            var originals = original.Items.ToDictionary(item => item.Barcode, StringComparer.Ordinal);
+            var originals = (comparisonIntent ?? original).Items.ToDictionary(item => item.Barcode, StringComparer.Ordinal);
             var edits=preview.ValidatedRows.ToDictionary(row=>row.Barcode,StringComparer.Ordinal);
             var snapshotsById=(receipt?.CurrentProductSnapshots ?? Array.Empty<PosCatalogImportProductSnapshot>())
                 .GroupBy(snapshot=>snapshot.ClientItemId,StringComparer.Ordinal).ToDictionary(group=>group.Key,group=>group.ToArray(),StringComparer.Ordinal);
@@ -198,29 +244,31 @@ namespace Win7POS.Data.Online
             {
                 if (corrections.Count==0) return null;
                 if(corrections.Count>1000) throw new CatalogImportRecoveryException("recovery_payload_too_large");
-                var correctionHash=Sha256Hex("correction-v1|"+original.Batch.ClientImportId+"|"+originalHash+"|"+
-                    Serialize(corrections.ToArray())+"|"+Serialize(receipt));
+                var correctionHash=Sha256Hex("correction-v1|"+batchCreatedAt+"|"+original.Batch.ClientImportId+"|"+originalHash+"|"+
+                    Serialize(corrections.ToArray())+"|"+(sharedProof?.Hash ?? Sha256Hex(Serialize(receipt)))+
+                    (operationScope==null ? "" : "|successor-of:"+operationScope));
                 var correctionId="win7pos-correction-"+correctionHash.Substring(0,32);
                 var correction=new PosCatalogImportCorrectionRequest { RecoveryOf=new PosCatalogImportRecoveryOf
                     { ClientImportId=original.Batch.ClientImportId,IdempotencyKey=original.Batch.IdempotencyKey,
                         PayloadHash=originalHash,OriginalRequest=original },
                     Correction=new PosCatalogImportCorrectionOperation { ClientImportId=correctionId,
                         IdempotencyKey=correctionId+":"+PosCatalogImportCorrectionContract.SchemaVersion,
-                        CreatedAt=BuildStableBatchCreatedAt(correctionHash),Items=corrections.ToArray() } };
-                var correctionJson=CatalogImportCorrectionTransport.SerializeSaved(correction,receipt);
-                return new CatalogImportOutboxEntry { OperationType="catalog_import_correction",ClientImportId=correctionId,
+                        CreatedAt=batchCreatedAt,Items=corrections.ToArray() } };
+                var correctionJson=CatalogImportCorrectionTransport.SerializeSaved(correction,receipt,sharedProof);
+                return new CatalogImportOutboxEntry { SharedProof=sharedProof,OperationType="catalog_import_correction",ClientImportId=correctionId,
                     IdempotencyKey=correction.Correction.IdempotencyKey,SchemaVersion=correction.SchemaVersion,Source=Source,
                     CreatedAt=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),PayloadJson=correctionJson,PayloadHash=Sha256Hex(correctionJson) };
             }
             if (items.Count == 0) return null;
-            var hash = Sha256Hex(original.Batch.ClientImportId + "|" + originalHash + "|" + Serialize(items.ToArray()));
+            var hash = Sha256Hex(batchCreatedAt + "|" + original.Batch.ClientImportId + "|" + originalHash + "|" + Serialize(items.ToArray())+
+                (operationScope==null ? "" : "|successor-of:"+operationScope));
             var id = "win7pos-recovery-" + hash.Substring(0, 32);
             foreach (var item in items) item.ClientItemId = id + "-row-" + item.RowNumber.ToString(CultureInfo.InvariantCulture);
             var request = new PosCatalogImportRequest
             {
                 SchemaVersion = PosOnlineContract.CatalogImportSchemaVersion, Source = Source,
                 Batch = new PosCatalogImportBatchRequest { ClientImportId = id, IdempotencyKey = id + ":" + PosOnlineContract.CatalogImportSchemaVersion,
-                    CreatedAt = BuildStableBatchCreatedAt(hash), SourceFileName = "recovery.xlsx", PreviewFingerprint = preview.Fingerprint },
+                    CreatedAt = batchCreatedAt, SourceFileName = "recovery.xlsx", PreviewFingerprint = Sha256Hex(preview.Fingerprint) },
                 Items = items.ToArray(), Summary = new PosCatalogImportSummaryRequest { UpdatedProducts = items.Count }
             };
             var json = Serialize(request);
@@ -258,7 +306,12 @@ namespace Win7POS.Data.Online
         {
             using (var sha = SHA256.Create())
             {
-                var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(value ?? string.Empty));
+                using(var sink=new CryptoStream(Stream.Null,sha,CryptoStreamMode.Write))
+                using(var writer=new StreamWriter(sink,new UTF8Encoding(false),4096,true))
+                {
+                    writer.Write(value??string.Empty);writer.Flush();sink.FlushFinalBlock();
+                }
+                var bytes=sha.Hash;
                 var sb = new StringBuilder(bytes.Length * 2);
                 foreach (var b in bytes)
                 {
@@ -287,6 +340,7 @@ namespace Win7POS.Data.Online
             SupplierImportProductRow row,
             string diffSummary)
         {
+            if(row!=null) ValidateRepresentableRow(row);
             return new PosCatalogImportItemRequest
             {
                 Barcode = TrimOrEmpty(row == null ? null : row.Barcode, 80),
@@ -354,7 +408,7 @@ namespace Win7POS.Data.Online
             using (var stream = new MemoryStream())
             {
                 serializer.WriteObject(stream, value);
-                return Encoding.UTF8.GetString(stream.ToArray());
+                return Encoding.UTF8.GetString(stream.GetBuffer(),0,checked((int)stream.Length));
             }
         }
     }

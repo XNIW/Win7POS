@@ -1,0 +1,87 @@
+{
+  "expectation": "baseline-rejection",
+  "evidenceScope": "actual Admin parser and handler; official foundation lease/RPC fixtures; no database mutation",
+  "adminRoot": "C:/Dev/Admin-post-pr122-interop-baseline",
+  "officialLoaderSha256": "c0b558e42ff1af288acba176076469dfb5fe00104f1da2b30cce6899aa3f366d",
+  "reports": [
+    {
+      "path": "ordinary.request.json",
+      "sha256": "e9cb58d2f7b2161f11a2c2257c6206473f653d843f07e1d8ddb1a427b82af1df",
+      "parserAccepted": true,
+      "canonicalHash": "sha256:84756988fc996b26fe9e1fb476a1d9626b32394a20169c6a4331c956505b4efd",
+      "ordinaryAttemptCount": 1
+    },
+    {
+      "path": "lookup.request.json",
+      "sha256": "0a2bd2c1ffc0d66fc8f2c8151f4fd3688cb54cfb2db5c8baf2ba4603c6314857",
+      "parserAccepted": false,
+      "httpStatus": 400,
+      "response": {
+        "ok": false,
+        "code": "validation_failed",
+        "message": "POS import receipt request failed."
+      },
+      "calls": []
+    },
+    {
+      "path": "retire.request.json",
+      "sha256": "da4bbf6a590c1bf83ab11f333e05025f5a22dac271a5f1f7d885b340998da15e",
+      "parserAccepted": false,
+      "httpStatus": 400,
+      "response": {
+        "ok": false,
+        "code": "validation_failed",
+        "message": "POS import receipt request failed."
+      },
+      "calls": []
+    },
+    {
+      "path": "correction.request.json",
+      "sha256": "f49e2f654db02e2a3e2750f140d3a49f5de4f79ade338c49c143737fca0af470",
+      "parserAccepted": false,
+      "httpStatus": 400,
+      "response": {
+        "ok": false,
+        "code": "validation_failed",
+        "message": "POS import correction request failed."
+      },
+      "calls": []
+    },
+    {
+      "path": "correction-target.lookup.request.json",
+      "sha256": "dde2014e60298831dcdc4391facb794a521585a2fb4507211ebd63dd68cd57ea",
+      "parserAccepted": false,
+      "httpStatus": 400,
+      "response": {
+        "ok": false,
+        "code": "validation_failed",
+        "message": "POS import receipt request failed."
+      },
+      "calls": []
+    },
+    {
+      "path": "correction-target.retire.request.json",
+      "sha256": "79b36c0f5e95ce5b3f288a4a792e22eaff56ca7f0fd55e28e8dfe6c51855af86",
+      "parserAccepted": false,
+      "httpStatus": 400,
+      "response": {
+        "ok": false,
+        "code": "validation_failed",
+        "message": "POS import receipt request failed."
+      },
+      "calls": []
+    },
+    {
+      "path": "refresh.correction-target.retire.request.json",
+      "sha256": "0a2bd2c1ffc0d66fc8f2c8151f4fd3688cb54cfb2db5c8baf2ba4603c6314857",
+      "parserAccepted": false,
+      "httpStatus": 400,
+      "response": {
+        "ok": false,
+        "code": "validation_failed",
+        "message": "POS import receipt request failed."
+      },
+      "calls": []
+    }
+  ]
+}

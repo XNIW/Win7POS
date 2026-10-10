@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +25,7 @@ using Win7POS.Core.Import;
 using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Import;
+using Win7POS.Data.Migrations;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Localization;
@@ -41,6 +43,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static OnlineSyncGeneration _generation;
         private static PosAdminWebOptions _options;
         private static readonly List<string> Evidence = new List<string>();
+        private static int _flushedEvidenceCount;
 
         internal static async Task RunAsync()
         {
@@ -56,16 +59,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var store = new PosTrustedDeviceStore();
                 store.SaveFirstLogin(AuthorizationLeaseWpfSmoke.BuildResponse(true), "qa-recovery-ui-" + Guid.NewGuid().ToString("N"));
                 Require(store.TryRead(out _session) && PosOnlineSyncSupervisorHost.TryCreateGeneration(_session, out _generation), "trusted generation fixture unavailable");
-                Evidence.Add("scope=local_net48_x86_real_sync_center_recovery_dialog; base_products_per_batch=3; invalid_rows=1; nochange_rows=2; supported_commit_rows=1000; oversize_legacy_rows=5000; accepted_child=loopback_receipt_retirement_race; live_admin=False; physical_hardware=False");
+                Evidence.Add("scope=local_net48_x86_real_sync_center_recovery_dialog; base_products_per_batch=3; invalid_rows=1; nochange_rows=2; supported_local_plan_rows=5000; authoritative_large_admin_test=separate_interop_corpus; accepted_child=loopback_receipt_retirement_race; live_admin=False; physical_hardware=False");
                 Evidence.Add("machine=" + Environment.MachineName + "; clr_reported_os_compatibility=" + Environment.OSVersion + "; clr=" + Environment.Version + "; pointer_bytes=" + IntPtr.Size);
                 await CheckAsync(failures, "sync_center_correct_verify_double_commit_backup", CheckFlowAsync);
                 await CheckAsync(failures, "failure_draft_rollback_retry", CheckFailureAsync);
+                await CheckAsync(failures, "draft_close_reopen_verify_apply_once", CheckDraftReopenAsync);
+                await CheckAsync(failures, "draft_failed_save_close_retry_explicit_discard", CheckDraftDiscardAsync);
                 await CheckAsync(failures, "cancel_pending_no_orphans", CheckCancelAsync);
                 await CheckAsync(failures, "authorization_denied_and_revoked", CheckAuthorizationAsync);
                 await CheckAsync(failures, "four_languages_1024x768", CheckLanguagesAsync);
                 await CheckAsync(failures, "accepted_replacement_retire_race_preserves_unsent_draft", CheckAcceptedReplacementAsync);
                 await CheckAsync(failures, "bounded_repeat_dispatcher_sql_memory_comparison", CheckMeasurementsAsync);
-                await CheckAsync(failures, "oversize_5000_list_prepare_virtualized_rejects_without_writes", () => CheckBatchAsync(5000, false));
+                await CheckAsync(failures, "supported_5000_local_plan_virtualized_backup_worker", () => CheckBatchAsync(5000, true));
                 await CheckAsync(failures, "supported_1000_commit_backup_worker", () => CheckBatchAsync(1000, true));
                 Require(!admin.Pending(), "never-sent recovery connected to Admin");
                 Require(failures.Count == 0, string.Join(" | ", failures));
@@ -74,7 +79,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 admin.Stop();
                 Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, previousUrl);
-                File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt"), Evidence);
+                FlushEvidence();
             }
         }
 
@@ -129,9 +134,90 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 finally { dialog.Close(); }
                 await WaitAsync(() => host.ViewModel.ImportRecoveries.Any(item => item.Batch.ReplacementOutboxId.HasValue), "Sync Center awaiting replacement ACK");
                 var waiting = host.ViewModel.ImportRecoveries.Single();
-                Require(!waiting.CanPrepare && waiting.State == PosLocalization.T("importRecovery.awaitingAck"), "original was presented as resolved before ACK");
+                Require(!waiting.CanPrepare && waiting.State.StartsWith(PosLocalization.T("importRecovery.awaitingAck"), StringComparison.Ordinal) &&
+                    waiting.Batch.PlanCompletedParts == 0 && waiting.Batch.PlanCompletedRows == 0,
+                    "original was presented as resolved before ACK");
             }
             Require(!Application.Current.Windows.OfType<CatalogImportRecoveryDialog>().Any(), "orphan recovery window after flow");
+        }
+
+        private static async Task CheckDraftReopenAsync()
+        {
+            var fixture = await Fixture.CreateAsync("draft-reopen");
+            using (var host = new CenterHost(fixture))
+            {
+                await host.ReadyAsync();
+                var dialog = await host.OpenRecoveryAsync();
+                await ReadyAsync(dialog);
+                var before = fixture.Counts();
+                await EditRetailAsync(dialog, "321");
+                dialog.Close();
+                await WaitAsync(() => !dialog.IsVisible, "draft flush before close");
+                Require(fixture.Counts() == before, "saving a draft applied economic changes");
+                var reopened = await host.OpenRecoveryAsync();
+                await ReadyAsync(reopened);
+                try
+                {
+                    Require(Rows(reopened)[0].RetailPrice == "321" && Draft(reopened).HasSavedDraft,
+                        "saved draft did not survive close/reopen");
+                    Require(!Named<Button>(reopened, "CommitButton").IsEnabled && fixture.Counts() == before,
+                        "reopened draft was automatically validated or applied");
+                    Require(Named<Button>(reopened, "DiscardDraftButton").IsVisible,
+                        "saved draft has no explicit discard action");
+                    await EditRetailAsync(reopened, "200");
+                    await VerifyAsync(reopened);
+                    Click(reopened, "CommitButton");
+                    Click(reopened, "CommitButton");
+                    await IdleAsync(reopened);
+                    fixture.CheckReplacement();
+                    using (var connection = fixture.Factory.Open())
+                        Require(connection.ExecuteScalar<int>("SELECT count(*) FROM catalog_import_recovery_draft") == 0,
+                            "applied draft remained as unapplied work");
+                    Evidence.Add("draft_close_reopen; entered=321; restored=321; automatic_apply=False; final_value=200; local_apply_count=1; authoritative_ack=False");
+                }
+                finally { reopened.Close(); }
+            }
+        }
+
+        private static async Task CheckDraftDiscardAsync()
+        {
+            var fixture = await Fixture.CreateAsync("draft-discard");
+            using (var host = new CenterHost(fixture))
+            {
+                await host.ReadyAsync();
+                var dialog = await host.OpenRecoveryAsync();
+                await ReadyAsync(dialog);
+                var before = fixture.Counts();
+                try
+                {
+                    using (var connection = fixture.Factory.Open())
+                        connection.Execute("CREATE TRIGGER fail_draft_save BEFORE INSERT ON catalog_import_recovery_draft BEGIN SELECT RAISE(ABORT,'draft_save_fault'); END;");
+                    await EditRetailAsync(dialog, "321");
+                    dialog.Close();
+                    await WaitAsync(() => Named<TextBlock>(dialog, "DraftStateText").Text ==
+                        PosLocalization.T("importRecovery.draftSaveFailed"), "failed draft save remains reviewable");
+                    Require(dialog.IsVisible && Rows(dialog)[0].RetailPrice == "321" && fixture.Counts() == before,
+                        "failed draft flush closed the window, lost edits or applied data");
+                    using (var connection = fixture.Factory.Open()) connection.Execute("DROP TRIGGER fail_draft_save");
+                    var confirmationOperation = AcceptConfirmationAsync(dialog, "discard_draft");
+                    Click(dialog, "DiscardDraftButton");
+                    await confirmationOperation;
+                    await IdleAsync(dialog);
+                    Require(Rows(dialog)[0].RetailPrice == "2147483648" && fixture.Counts() == before,
+                        "discarding the draft removed the original or applied data");
+                    using (var connection = fixture.Factory.Open())
+                        Require(connection.ExecuteScalar<int>("SELECT count(*) FROM catalog_import_recovery_draft") == 0 &&
+                            connection.ExecuteScalar<int>("SELECT count(*) FROM catalog_import_outbox") == 1,
+                            "explicit draft discard removed due operations or retained draft data");
+                    fixture.CheckOriginal();
+                    Evidence.Add("draft_save_failure; close_blocked=True; edited_value_retained=321; explicit_discard=True; economic_writes=0; original_outbox_preserved=True");
+                }
+                finally
+                {
+                    using (var connection = fixture.Factory.Open()) connection.Execute("DROP TRIGGER IF EXISTS fail_draft_save");
+                    dialog.Close();
+                }
+            }
         }
 
         private static async Task CheckFailureAsync()
@@ -228,7 +314,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 foreach (var language in new[] { "en", "es", "it", "zh-CN" })
                 {
+                    RecordPhase("language_switch:" + language + ":begin");
                     PosLocalization.Current.SetLanguage(language);
+                    RecordPhase("language_switch:" + language + ":complete");
                     var fixture = await Fixture.CreateAsync("lang-" + language);
                     using (var host = new CenterHost(fixture))
                     {
@@ -288,14 +376,25 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using (var connection = fixture.Factory.Open())
                 connection.Execute("DELETE FROM catalog_import_recovery WHERE original_id=@id", new { id = fixture.OriginalId });
             var childLookups = 0;
+            var childAccepted = false;
             using (var admin = new RecoveryReceiptServer(body =>
             {
                 var child = Deserialize<PosCatalogImportCorrectionReceiptRequest>(body);
                 if (child.OriginalRequest?.Correction == null)
-                    return Serialize(RootReceipt(Deserialize<PosCatalogImportReceiptRequest>(body)));
+                {
+                    var receipt = RootReceipt(Deserialize<PosCatalogImportReceiptRequest>(body));
+                    if (childAccepted)
+                        foreach (var snapshot in receipt.CurrentProductSnapshots)
+                        {
+                            snapshot.RetailPrice = 200;
+                            snapshot.BaseRevision = "2026-10-08T00:00:00.000001Z";
+                        }
+                    return Serialize(receipt);
+                }
                 var lookup = Interlocked.Increment(ref childLookups);
                 Require(lookup == 1 ? child.SchemaVersion == PosCatalogImportReceiptContract.SchemaVersion :
                     child.SchemaVersion == PosCatalogImportReceiptContract.RetirementSchemaVersion, "child lookup/retirement used the wrong wire operation");
+                if (lookup == 2) childAccepted = true;
                 return Serialize(ChildReceipt(child, lookup == 1 ? "not_found" : "accepted"));
             }))
             {
@@ -320,14 +419,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             await ReadyAsync(dialog);
                             Require(Draft(dialog).CanRetire && !Draft(dialog).CanCommit && Named<Button>(dialog, "RetireButton").Visibility == Visibility.Visible, "not-found child did not require explicit retirement");
                             await EditRetailAsync(dialog, "300");
+                            await CheckAllRecoveryButtonsAsync(dialog);
                             var before = fixture.Counts();
-                            var confirmationOperation = Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
-                            {
-                                var confirmation = Application.Current.Windows.OfType<ApplyConfirmDialog>().Single();
-                                Descendants(confirmation).OfType<Button>().Single(button => button.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                            }), DispatcherPriority.ApplicationIdle);
+                            var confirmationOperation = AcceptConfirmationAsync(dialog, "retire_child");
                             Click(dialog, "RetireButton");
-                            await confirmationOperation.Task;
+                            await confirmationOperation;
                             await IdleAsync(dialog);
                             Require(Draft(dialog).RequiresAcceptedReconciliation && Rows(dialog)[0].RetailPrice == "300" && Named<DataGrid>(dialog, "RecoveryRows").IsReadOnly,
                                 "accepted retirement race lost the unsent draft or allowed another correction");
@@ -354,10 +450,68 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             Evidence.Add("accepted_retirement_race original_intent=200; retained_draft=300; committed_local_price=200; outbox_rows=2; new_outbox_rows=0; history_rows=7; child_receipt_calls=2; http_calls=3; duplicate_confirmation_effects=0; live_admin=False");
                         }
                         finally { dialog.Close(); }
+                        await WaitAsync(() => host.ViewModel.ImportRecoveries.Any(item => item.Batch.HasSavedDraft && item.CanPrepare),
+                            "reconciled ancestor exposes retained draft");
+                        var resumed = await host.OpenRecoveryAsync();
+                        await ReadyAsync(resumed);
+                        try
+                        {
+                            Require(Rows(resumed)[0].RetailPrice == "300" && Draft(resumed).HasSavedDraft &&
+                                !Named<Button>(resumed, "CommitButton").IsEnabled,
+                                "retained draft was unreachable, lost or automatically approved after reconciliation");
+                            var beforeResume = fixture.Counts();
+                            await VerifyAsync(resumed);
+                            Require(fixture.Counts() == beforeResume, "reviewing retained draft applied data");
+                            Click(resumed, "CommitButton");
+                            Click(resumed, "CommitButton");
+                            await IdleAsync(resumed);
+                            Require(Named<TextBlock>(resumed, "RecoveryStatus").Text == PosLocalization.T("importRecovery.queued"),
+                                "retained draft could not be applied after accepted reconciliation");
+                            using (var connection = fixture.Factory.Open())
+                            {
+                                Require(connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_outbox") == 3 &&
+                                    connection.ExecuteScalar<long>("SELECT count(*) FROM product_price_history") == 8 &&
+                                    connection.ExecuteScalar<long>("SELECT unitPrice FROM products WHERE barcode=@barcode", new { barcode = fixture.Rows[0].Barcode }) == 300 &&
+                                    connection.ExecuteScalar<decimal>("SELECT sum(stock_qty) FROM product_meta") == 3 &&
+                                    connection.ExecuteScalar<string>("SELECT status FROM catalog_import_outbox WHERE id=@id", new { id = applied.CatalogImportOutboxId }) == "acked" &&
+                                    connection.ExecuteScalar<string>("SELECT payload_hash FROM catalog_import_outbox WHERE id=@id", new { id = fixture.OriginalId }) == fixture.Original.PayloadHash &&
+                                    connection.ExecuteScalar<int>("SELECT count(*) FROM catalog_import_recovery_draft") == 0,
+                                    "resumed draft duplicated stock/history, rewrote an accepted operation or remained unapplied");
+                            }
+                            Evidence.Add("accepted_retained_draft_reopened; baseline=200; draft=300; explicit_verify=True; local_apply_count=1; prior_child_ack_preserved=True; stock=3; new_authoritative_ack=False");
+                        }
+                        finally { resumed.Close(); }
                     }
                 }
                 finally { Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, previousUrl); }
             }
+        }
+
+        private static async Task CheckAllRecoveryButtonsAsync(CatalogImportRecoveryDialog dialog)
+        {
+            var originalLanguage = PosLocalization.Current.CurrentLanguage;
+            try
+            {
+                foreach (var language in new[] { "en", "es", "it", "zh-CN" })
+                {
+                    PosLocalization.Current.SetLanguage(language);
+                    await Dispatcher.CurrentDispatcher.InvokeAsync(() => dialog.UpdateLayout(), DispatcherPriority.Render);
+                    var buttons = new[] { "DiscardDraftButton", "RetireButton", "PrepareButton", "CommitButton", "CancelRecoveryButton" }
+                        .Select(name => Named<Button>(dialog, name)).ToArray();
+                    Require(buttons.All(button => button.IsVisible), "actual retirement and draft state did not expose every action");
+                    var draft = Draft(dialog);
+                    var labelKeys = new[] { "importRecovery.discardDraft",
+                        draft.HasPreparedPlan || draft.RequiresPlanRetirement ? "importRecovery.retirePreparedPlan" : "importRecovery.retire",
+                        "importRecovery.verify", draft.RequiresAcceptedReconciliation ? "importRecovery.reconcileAccepted" : "importRecovery.commit",
+                        Busy(dialog) ? "common.cancel" : "common.close" };
+                    for (var index = 0; index < buttons.Length; index++)
+                        Require(buttons[index].Content?.ToString() == PosLocalization.T(labelKeys[index]),
+                            "recovery action did not use the actual language before measuring: " + language + "/" + buttons[index].Name);
+                    foreach (var button in buttons) CheckBounds(button, dialog, language);
+                    Capture(dialog, "recovery-all-actions-" + language, buttons);
+                }
+            }
+            finally { PosLocalization.Current.SetLanguage(originalLanguage); }
         }
 
         private static async Task CheckMeasurementsAsync()
@@ -435,8 +589,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckBatchAsync(int rowCount, bool canCommit)
         {
-            // Setup is outside the observed interval. Oversize legacy batches remain
-            // inspectable; one supported batch is committed once with its backup.
+            // Setup is outside the observed interval. All legacy rows are retained;
+            // each supported local plan is committed once after a verified backup.
+            // Authoritative remote reconciliation is qualified by the separate corpus.
             var fixture = await Fixture.CreateAsync("batch-" + rowCount, rowCount);
             var before = fixture.Counts();
             var backupsBefore = Directory.GetFiles(AppPaths.BackupsDirectory, "before-catalog-recovery-*.db");
@@ -472,7 +627,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         return;
                     }
                     await VerifyAsync(dialog);
-                    var preview = await new CatalogImportRecoveryService(fixture.Factory).BuildPreviewAsync(Draft(dialog), Rows(dialog), CancellationToken.None);
+                    // VerifyAsync already exercised recovery validation and full
+                    // transport planning. This extra comparator only checks the
+                    // unchanged-row set and applier query shape, not a second plan.
+                    var draft = Draft(dialog);
+                    Require(draft.Batch.NeverSent && draft.TargetOriginal == null &&
+                        draft.Supersession == null && draft.Contributions.Count == 0,
+                        "query-shape comparator requires the unsent standalone fixture");
+                    var snapshotMethod = typeof(CatalogImportRecoveryService).GetMethod("SnapshotRows", BindingFlags.Static | BindingFlags.NonPublic);
+                    Require(snapshotMethod != null, "recovery row snapshot helper unavailable");
+                    var capturedRows = (SupplierImportEditableRow[])snapshotMethod.Invoke(null, new object[] { Rows(dialog) });
+                    RecordPhase("large_query_shape_preview:" + rowCount + ":begin");
+                    var preview = await Task.Run(() => new SupplierExcelImportApplier(fixture.Factory).BuildPreviewAsync(capturedRows, CancellationToken.None));
+                    Require(preview.CanApply, "query-shape fixture preview became invalid");
+                    RecordPhase("large_query_shape_preview:" + rowCount + ":complete");
                     Require(preview.NoChangeRows.Count == rowCount - 1, "large recovery fixture did not retain unchanged rows");
                     var expectedBatches = (rowCount + 499) / 500;
                     await CheckQueryShapeAsync(fixture, preview, expectedBatches);
@@ -508,7 +676,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             Require(connection.ExecuteScalar<long>("SELECT unitPrice FROM products WHERE barcode=@barcode", new { barcode = fixture.Rows[0].Barcode }) == 2147483648L &&
                                 connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_outbox") == 1, "large backup was captured after recovery effects");
                     });
-                    Evidence.Add("large_commit rows=" + rowCount + "; elapsed_ms=" + commitWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; verified_backup_bytes=" + new FileInfo(backups[0]).Length + "; observed_connections=" + sql.Connections + "; product_commands_on_dispatcher=" + sql.ProductCommandsOnCallingThread + "; apply_batch_queries=" + observedBatches + "; apply_product_writes=" + observedProductWrites + "; apply_history_writes=" + observedHistoryWrites + "; apply_operations_on_dispatcher=" + applyOperationsOnDispatcher + "; expected_replacement_count=1; expected_replacement_rows=" + rowCount + "; original_resolved=False");
+                    var progress = await new CatalogImportRecoveryService(fixture.Factory).GetPlanProgressAsync(fixture.OriginalId, CancellationToken.None);
+                    Require(progress.TotalRows == rowCount && progress.CompletedRows == 0 && progress.TotalParts >= (rowCount + 999) / 1000,
+                        "persisted plan progress lost rows or claimed a partial ACK");
+                    Evidence.Add("large_commit rows=" + rowCount + "; elapsed_ms=" + commitWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; verified_backup_bytes=" + new FileInfo(backups[0]).Length + "; observed_connections=" + sql.Connections + "; product_commands_on_dispatcher=" + sql.ProductCommandsOnCallingThread + "; apply_batch_queries=" + observedBatches + "; apply_product_writes=" + observedProductWrites + "; apply_history_writes=" + observedHistoryWrites + "; apply_operations_on_dispatcher=" + applyOperationsOnDispatcher + "; replacement_parts=" + progress.TotalParts + "; replacement_rows=" + rowCount + "; completed_parts=0; original_resolved=False");
                     Require(observedBatches == expectedBatches && observedProductWrites == 1 && observedHistoryWrites == 1 && applyOperationsOnDispatcher == 0, "large commit SQL batching or worker-thread execution regressed");
                     Require(sql.ProductCommandsOnCallingThread == 0, "large recovery product query ran on Dispatcher");
                     fixture.CheckReplacement();
@@ -638,14 +809,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private sealed class Fixture
         {
+            private static string _pristinePath;
+            private static string _pristineHash;
             internal SqliteConnectionFactory Factory;
             internal SupplierImportEditableRow[] Rows;
             internal CatalogImportOutboxEntry Original;
             internal long OriginalId;
             internal static async Task<Fixture> CreateAsync(string name, int rowCount = 3)
             {
+                var setupWatch = Stopwatch.StartNew();
+                RecordPhase("fixture_setup:" + name + ":begin");
                 var fixture = new Fixture { Factory = new SqliteConnectionFactory(PosDbOptions.ForPath(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + name + ".db"))) };
-                DbInitializer.EnsureCreated(PosDbOptions.ForPath(fixture.Factory.DbPath));
+                CreatePristineSchemaCopy(fixture.Factory, name);
                 using (var connection = fixture.Factory.Open())
                     connection.Execute("INSERT OR REPLACE INTO app_settings(key,value) VALUES(@id,@shop),(@code,@shopCode)", new { id = OutboxShopBinding.OfficialShopIdKey, shop = _session.ShopId, code = OutboxShopBinding.OfficialShopCodeKey, shopCode = _session.ShopCode });
                 await new OnlineSyncGenerationRepository(fixture.Factory).ActivateAndRecoverAsync(_generation, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -664,8 +839,72 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var blocked = await new CatalogImportSyncService(fixture.Factory).SyncPendingAsync(_options, _session, _generation, CancellationToken.None);
                 Require(blocked.Blocked == 1 && blocked.FailureKind == SyncFailureKind.LocalValidation, "legacy import was not locally blocked");
                 fixture.CheckOriginal();
+                RecordPhase("fixture_setup:" + name + ":complete; elapsed_ms=" + setupWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant));
                 return fixture;
             }
+            private static void CreatePristineSchemaCopy(SqliteConnectionFactory target, string name)
+            {
+                // Initialize and validate once inside the same bounded scenario.
+                // Each case still owns a distinct database and runs the real
+                // generation, import, local blocking, backup and recovery paths.
+                if (_pristinePath == null)
+                {
+                    var initializeWatch = Stopwatch.StartNew();
+                    var pristinePath = Path.Combine(AppPaths.DataDirectory, "recovery-ui-pristine-" + Guid.NewGuid().ToString("N") + ".db");
+                    DbInitializer.EnsureCreated(PosDbOptions.ForPath(pristinePath));
+                    VerifyPristine(new SqliteConnectionFactory(PosDbOptions.ForPath(pristinePath)), releasePool: true);
+                    RequireNoSidecars(pristinePath);
+                    var pristineHash = HashFile(pristinePath);
+                    _pristinePath = pristinePath;
+                    _pristineHash = pristineHash;
+                    RecordPhase("fixture_pristine_initialized; elapsed_ms=" + initializeWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; sha256=" + _pristineHash);
+                }
+                var copyWatch = Stopwatch.StartNew();
+                var expectedParent = Path.GetFullPath(AppPaths.DataDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                Require(string.Equals(Path.GetDirectoryName(target.DbPath), expectedParent, StringComparison.OrdinalIgnoreCase) &&
+                    Path.GetFileName(target.DbPath) == "recovery-ui-" + name + ".db" && !File.Exists(target.DbPath),
+                    "fixture copy target is not a new owned QA database");
+                RequireNoSidecars(_pristinePath);
+                Require(HashFile(_pristinePath) == _pristineHash, "pristine schema changed between fixtures");
+                File.Copy(_pristinePath, target.DbPath, false);
+                Require(HashFile(target.DbPath) == _pristineHash, "fixture is not an exact pristine schema copy");
+                VerifyPristine(target);
+                RecordPhase("fixture_pristine_copy:" + name + "; elapsed_ms=" + copyWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; sha256=" + _pristineHash + "; independent_database=True");
+            }
+            private static void VerifyPristine(SqliteConnectionFactory factory, bool releasePool = false)
+            {
+                using (var connection = factory.Open())
+                {
+                    Require(connection.ExecuteScalar<string>("PRAGMA journal_mode") == "delete", "pristine fixture requires the existing DELETE journal policy");
+                    Require(connection.ExecuteScalar<string>("PRAGMA integrity_check") == "ok" && !connection.Query("PRAGMA foreign_key_check").Any(),
+                        "pristine fixture integrity failed");
+                    var ledger = connection.Query<MigrationPin>("SELECT migration_id AS Id,checksum AS Checksum FROM schema_migrations ORDER BY migration_id")
+                        .Select(pin => pin.Id + ":" + pin.Checksum);
+                    Require(ledger.SequenceEqual(SchemaMigrationRegistry.All.Select(migration => migration.MigrationId + ":" + migration.Checksum)),
+                        "pristine fixture migration ledger differs from the full current registry");
+                    Require(connection.ExecuteScalar<long>(@"SELECT
+                        (SELECT count(*) FROM products)+(SELECT count(*) FROM sales)+(SELECT count(*) FROM product_price_history)+
+                        (SELECT count(*) FROM catalog_import_outbox)+(SELECT count(*) FROM catalog_import_plan)+
+                        (SELECT count(*) FROM catalog_import_recovery_draft)+(SELECT count(*) FROM catalog_import_prepared_plan)") == 0,
+                        "pristine fixture contains economic, outbox, plan or draft state");
+                    // The private source is never used by application services.
+                    // Release only its pool before the immutable file is hashed
+                    // and copied; disposing a pooled connection leaves a handle.
+                    if (releasePool) Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection);
+                }
+            }
+            private static void RequireNoSidecars(string path)
+            {
+                Require(!File.Exists(path + "-wal") && !File.Exists(path + "-shm") && !File.Exists(path + "-journal"),
+                    "pristine fixture has an active SQLite sidecar");
+            }
+            private static string HashFile(string path)
+            {
+                using (var stream = File.OpenRead(path))
+                using (var sha = SHA256.Create())
+                    return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+            }
+            private sealed class MigrationPin { public string Id { get; set; } public string Checksum { get; set; } }
             internal string Counts()
             {
                 using (var connection = Factory.Open()) return connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_outbox") + "/" + connection.ExecuteScalar<long>("SELECT count(*) FROM product_price_history") + "/" + connection.ExecuteScalar<long>("SELECT sum(unitPrice) FROM products");
@@ -684,12 +923,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 using (var connection = Factory.Open())
                 {
                     var replacementId = connection.ExecuteScalar<long>("SELECT replacement_id FROM catalog_import_recovery WHERE original_id=@id", new { id = OriginalId });
-                    var replacementJson = connection.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox WHERE id=@id", new { id = replacementId });
-                    Require(Encoding.UTF8.GetByteCount(replacementJson) <= 512 * 1024, "replacement exceeds the verified 512 KiB Admin route limit");
-                    var replacement = Deserialize<PosCatalogImportRequest>(replacementJson);
-                    Require(replacement.Batch.ClientImportId != Original.ClientImportId && replacement.Batch.IdempotencyKey != Original.IdempotencyKey && replacement.Items.Length == Rows.Length && replacement.Items.Select(item => item.Barcode).OrderBy(value => value).SequenceEqual(Rows.Select(row => row.Barcode).OrderBy(value => value)), "replacement reused identity or lost unchanged original rows");
-                    Require(replacement.Items.All(item => item.RetailPrice == "200" && item.PurchasePrice == "100" && item.Quantity == "1"), "replacement prices or quantity differ");
-                    Require(connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_outbox") == 2 && connection.ExecuteScalar<long>("SELECT count(*) FROM products WHERE unitPrice=200") == Rows.Length &&
+                    var parts = connection.Query<CatalogImportOutboxEntry>(@"SELECT o.payload_json AS PayloadJson,o.payload_hash AS PayloadHash,o.operation_type AS OperationType
+FROM catalog_import_plan p JOIN catalog_import_plan_part m ON m.plan_id=p.plan_id JOIN catalog_import_outbox o ON o.id=m.outbox_id
+WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
+                    Require(parts.Length > 0 && parts.All(part => CatalogImportPlanBuilder.Measure(part) <= 512 * 1024), "replacement envelope exceeds the verified 512 KiB Admin route limit");
+                    var requests = parts.Select(part => Deserialize<PosCatalogImportRequest>(part.PayloadJson)).ToArray();
+                    var items = requests.SelectMany(part => part.Items).ToArray();
+                    Require(requests.All(part => part.Items.Length <= 1000 && part.Batch.ClientImportId != Original.ClientImportId && part.Batch.IdempotencyKey != Original.IdempotencyKey) && items.Length == Rows.Length && items.Select(item => item.Barcode).OrderBy(value => value).SequenceEqual(Rows.Select(row => row.Barcode).OrderBy(value => value)), "replacement reused identity or lost unchanged original rows");
+                    Require(items.All(item => item.RetailPrice == "200" && item.PurchasePrice == "100" && item.Quantity == "1"), "replacement prices or quantity differ");
+                    Require(connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_outbox") == 1 + parts.Length && connection.ExecuteScalar<long>("SELECT count(*) FROM products WHERE unitPrice=200") == Rows.Length &&
                         connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_recovery WHERE original_id=@id AND replacement_id=@replacementId AND resolved_at IS NULL", new { id = OriginalId, replacementId }) == 1, "replacement duplicated queue, resolved before ACK or did not correct local price");
                 }
             }
@@ -812,6 +1054,54 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static void Click(CatalogImportRecoveryDialog dialog, string name) => Named<Button>(dialog, name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         private static Task ReadyAsync(CatalogImportRecoveryDialog dialog) => WaitAsync(() => !Busy(dialog) && Named<DataGrid>(dialog, "RecoveryRows").ItemsSource != null, "recovery original rows");
         private static Task IdleAsync(CatalogImportRecoveryDialog dialog) => WaitAsync(() => !Busy(dialog), "recovery operation completion");
+        private static async Task AcceptConfirmationAsync(CatalogImportRecoveryDialog owner, string stage)
+        {
+            RecordPhase(stage + ":confirmation_requested");
+            ApplyConfirmDialog confirmation = null;
+            var rendered = new TaskCompletionSource<bool>();
+            EventHandler onRendered = (_, __) => rendered.TrySetResult(true);
+            DispatcherHookEventHandler posted = (_, __) =>
+            {
+                if (!owner.Dispatcher.CheckAccess() || confirmation != null) return;
+                confirmation = Application.Current.Windows.OfType<ApplyConfirmDialog>()
+                    .SingleOrDefault(window => ReferenceEquals(window.Owner, owner));
+                if (confirmation != null) confirmation.ContentRendered += onRendered;
+            };
+            owner.Dispatcher.Hooks.OperationPosted += posted;
+            try
+            {
+                // Retirement first flushes the draft asynchronously. One posted
+                // click can run before ShowConfirm; observe its real owner and
+                // render event instead, within the existing ten-second bound.
+                var watch = Stopwatch.StartNew();
+                while (confirmation == null || !rendered.Task.IsCompleted)
+                {
+                    Require(watch.Elapsed < TimeSpan.FromSeconds(10), stage + " confirmation timed out");
+                    await Task.Delay(10);
+                }
+                Require(confirmation.IsVisible && ReferenceEquals(confirmation.Owner, owner),
+                    stage + " confirmation did not render under its recovery owner");
+                RecordPhase(stage + ":confirmation_rendered");
+                Descendants(confirmation).OfType<Button>().Single(button => button.IsDefault)
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                RecordPhase(stage + ":confirmation_clicked");
+            }
+            catch (Exception ex)
+            {
+                RecordPhase(stage + ":confirmation_failed:" + ex.Message);
+                // A synchronous ShowDialog may still be pumping inside Click.
+                // Cancel only this observed QA confirmation so its caller can
+                // return and report the bounded failure without the outer kill.
+                if (confirmation != null && confirmation.IsVisible &&
+                    ReferenceEquals(confirmation.Owner, owner)) confirmation.Close();
+                throw;
+            }
+            finally
+            {
+                owner.Dispatcher.Hooks.OperationPosted -= posted;
+                if (confirmation != null) confirmation.ContentRendered -= onRendered;
+            }
+        }
         private static async Task VerifyAsync(CatalogImportRecoveryDialog dialog) { Click(dialog, "PrepareButton"); await IdleAsync(dialog); Require(Named<Button>(dialog, "CommitButton").IsEnabled, "corrected recovery did not verify: " + Named<TextBlock>(dialog, "RecoveryStatus").Text); }
         private static async Task EditRetailAsync(CatalogImportRecoveryDialog dialog, string value)
         {
@@ -833,6 +1123,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static string Digits(string value) => new string(value.Where(char.IsDigit).ToArray());
         private static void Capture(Window visual, string name, params FrameworkElement[] actions)
         {
+            RecordPhase("capture:" + name + ":begin");
             visual.UpdateLayout();
             var geometry = RecordGeometry(visual, "live_" + name);
             var workArea = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(visual.Owner ?? visual);
@@ -890,6 +1181,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         "exact viewport capture changed the live layout, parent or bindings: " + restored);
                 }
             }
+            RecordPhase("capture:" + name + ":complete");
         }
         private static void CheckPresentation(ImportRecoveryPresentation item, Fixture fixture)
         {
@@ -932,9 +1224,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
         private static async Task WaitAsync(Func<bool> complete, string stage)
         {
+            RecordPhase("wait_begin:" + stage);
             var watch = Stopwatch.StartNew();
             while (!complete()) { Require(watch.Elapsed < TimeSpan.FromSeconds(10), stage + " timed out"); await Task.Delay(10); }
+            RecordPhase("wait_condition_complete:" + stage);
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            RecordPhase("wait_idle_complete:" + stage);
         }
         private static async Task DrainAndCollectAsync(IReadOnlyList<WeakReference> closed = null, string scope = "warmup")
         {
@@ -958,9 +1253,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
         private static async Task CheckAsync(List<string> failures, string name, Func<Task> action)
         {
+            RecordPhase(name + "=BEGIN");
             try { await action(); Evidence.Add(name + "=PASS"); }
             catch (Exception ex) { Evidence.Add(name + "=FAIL " + ex); failures.Add(name + ": " + ex.Message); }
-            File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt"), Evidence);
+            FlushEvidence();
+            Console.WriteLine("IMPORT_RECOVERY_PHASE=" + Evidence[Evidence.Count - 1]);
+        }
+        private static void RecordPhase(string phase)
+        {
+            Evidence.Add("phase=" + phase + "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
+            FlushEvidence();
+            Console.WriteLine("IMPORT_RECOVERY_PHASE=" + phase);
+        }
+        private static void FlushEvidence()
+        {
+            var pending = Evidence.Skip(_flushedEvidenceCount).ToArray();
+            if (pending.Length == 0) return;
+            var path = Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt");
+            if (_flushedEvidenceCount == 0) File.WriteAllLines(path, pending);
+            else File.AppendAllLines(path, pending);
+            _flushedEvidenceCount = Evidence.Count;
         }
         private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException("import_recovery_ui: " + message); }
         private static string Serialize<T>(T value) { using (var stream = new MemoryStream()) { new DataContractJsonSerializer(typeof(T), new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true }).WriteObject(stream, value); return Encoding.UTF8.GetString(stream.ToArray()); } }

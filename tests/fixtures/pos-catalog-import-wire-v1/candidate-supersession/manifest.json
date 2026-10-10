@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "win7pos-supersession-transfer-v1",
+  "zip": "requests-and-synthetic-generation-evidence.zip",
+  "zipSha256": "fc77839f807f3870f34db4f99447c3cda2c82b7827ae46560bfee06caae97d44",
+  "zipBytes": 9499974,
+  "provenanceSha256": "4caf8b32b5a43c2a7072d49f4c528132c7c0b3712143220f2923dfec6ff98025",
+  "cases": [
+    {
+      "directory": "supersession-retirement_reply_lost",
+      "manifestSha256": "590ded6c57cb76631d97f1ade5fb80200586f2adf598416c4e0b3f6c8edf822c",
+      "requestCount": 28,
+      "scenario": {
+        "scenario": "retirement_reply_lost",
+        "rowCount": 1001,
+        "operationCreatedAtUtc": "2026-10-10T00:29:19.1091751+00:00",
+        "rootId": 1,
+        "originalPayloadHash": "61205c1015e8cb4e119738d6cc27c7597c1dd30aa2557c798d99e42955e7f477",
+        "originalClientImportId": "win7pos-catalog-import-6cc184aad97c4786bcf4bf3a",
+        "originalIdempotencyKey": "win7pos-catalog-import-6cc184aad97c4786bcf4bf3a:pos-catalog-import-v1",
+        "predecessorPlanId": "f53f8e30-6028-4d67-8f6c-6f798e7a303d",
+        "successorPlanId": "7b168061-86d4-4c9d-8e7f-7a1ba71cf571",
+        "deferredDraftOwnerId": 2,
+        "actualExternalApplyCount": 1,
+        "finalLocalHistoryCount": 2004
+      }
+    },
+    {
+      "directory": "supersession-successor",
+      "manifestSha256": "ffecc5bcf8ab503fcfccd1e81ff218338d8f9029a0769f207a099e6b2c3291cf",
+      "requestCount": 27,
+      "scenario": {
+        "scenario": "successor",
+        "rowCount": 1001,
+        "operationCreatedAtUtc": "2026-10-10T00:29:14.1070561+00:00",
+        "rootId": 1,
+        "originalPayloadHash": "6553e996c9ae10920e6db5d9e278aaf2fc5364aa578d77767ab0cacb516d4ded",
+        "originalClientImportId": "win7pos-catalog-import-43e1fb42145f867df30adfba",
+        "originalIdempotencyKey": "win7pos-catalog-import-43e1fb42145f867df30adfba:pos-catalog-import-v1",
+        "predecessorPlanId": "9d2aacd8-861e-4976-8c0f-44c6e176e318",
+        "successorPlanId": "091d51f0-0a41-4c7b-831b-2a7abc667908",
+        "deferredDraftOwnerId": 2,
+        "actualExternalApplyCount": 1,
+        "finalLocalHistoryCount": 2004
+      }
+    },
+    {
+      "directory": "supersession-zerochild",
+      "manifestSha256": "55bb871e26c38669cb7ea2b463bfaeb5d98be43e4a70f2eb746b105beba7d82b",
+      "requestCount": 27,
+      "scenario": {
+        "scenario": "zerochild",
+        "rowCount": 1001,
+        "operationCreatedAtUtc": "2026-10-10T00:29:23.1858071+00:00",
+        "rootId": 1,
+        "originalPayloadHash": "fc63ce2a3d295d999ac5b88349253fc27386e22a5e44ebb5a0da2ade1d94940d",
+        "originalClientImportId": "win7pos-catalog-import-867787cded59904438010000",
+        "originalIdempotencyKey": "win7pos-catalog-import-867787cded59904438010000:pos-catalog-import-v1",
+        "predecessorPlanId": "1db331ba-0b80-4e35-84e8-f42933e6da1e",
+        "successorPlanId": "bca9c736-8e73-4578-8fca-1a7f07b50520",
+        "deferredDraftOwnerId": 2,
+        "actualExternalApplyCount": 2,
+        "finalLocalHistoryCount": 2003
+      }
+    },
+    {
+      "directory": "supersession-zerochild_reply_lost",
+      "manifestSha256": "beb6401f8acf3ab88304aef33682dde862970f941f8b3c413c8c3a0fadf11c30",
+      "requestCount": 33,
+      "scenario": {
+        "scenario": "zerochild_reply_lost",
+        "rowCount": 1001,
+        "operationCreatedAtUtc": "2026-10-10T00:29:26.0739054+00:00",
+        "rootId": 1,
+        "originalPayloadHash": "31e692056f14090a659e78a45dba8bef42cbed9e3fef072bb66d009e0f7a35b5",
+        "originalClientImportId": "win7pos-catalog-import-4691040ff0c7c7cbad283db6",
+        "originalIdempotencyKey": "win7pos-catalog-import-4691040ff0c7c7cbad283db6:pos-catalog-import-v1",
+        "predecessorPlanId": "3eff6aaa-9ba6-4583-8211-086addd2b03d",
+        "successorPlanId": "38a10ddf-05eb-4dd9-8efe-e926a8aa3f5e",
+        "deferredDraftOwnerId": 2,
+        "actualExternalApplyCount": 2,
+        "finalLocalHistoryCount": 2003
+      }
+    }
+  ],
+  "requestTotal": 115.0,
+  "officialRunnerPassed": 4,
+  "scope": "synthetic generation; actual handler and SQL replay pending"
+}

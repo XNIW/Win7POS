@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "win7pos-admin-wire-evidence-v1",
+  "scenario": "small",
+  "syntheticCredentials": true,
+  "source": "production C# builder -\u003E SQLite -\u003E production recovery/sync -\u003E production HTTP serializer",
+  "acceptanceClaim": false,
+  "files": [
+    {
+      "path": "original.persisted.json",
+      "bytes": 821,
+      "sha256": "23ef271fdb38a3f89ba0d386c3d927e16fd03bec24261e085bd9453b8111df89"
+    },
+    {
+      "path": "ordinary.request.json",
+      "bytes": 1152,
+      "sha256": "e9cb58d2f7b2161f11a2c2257c6206473f653d843f07e1d8ddb1a427b82af1df"
+    },
+    {
+      "path": "lookup.request.json",
+      "bytes": 1440,
+      "sha256": "0a2bd2c1ffc0d66fc8f2c8151f4fd3688cb54cfb2db5c8baf2ba4603c6314857"
+    },
+    {
+      "path": "retire.request.json",
+      "bytes": 1443,
+      "sha256": "da4bbf6a590c1bf83ab11f333e05025f5a22dac271a5f1f7d885b340998da15e"
+    },
+    {
+      "path": "correction.persisted.json",
+      "bytes": 3803,
+      "sha256": "52555ba3e09dfcc5ba3de57de2e18667fd4dccdee5cb4b5710866dd95ded6d04"
+    },
+    {
+      "path": "correction.request.json",
+      "bytes": 2066,
+      "sha256": "f49e2f654db02e2a3e2750f140d3a49f5de4f79ade338c49c143737fca0af470"
+    },
+    {
+      "path": "correction-target.lookup.request.json",
+      "bytes": 2390,
+      "sha256": "dde2014e60298831dcdc4391facb794a521585a2fb4507211ebd63dd68cd57ea"
+    },
+    {
+      "path": "correction-target.retire.request.json",
+      "bytes": 2393,
+      "sha256": "79b36c0f5e95ce5b3f288a4a792e22eaff56ca7f0fd55e28e8dfe6c51855af86"
+    },
+    {
+      "path": "refresh.correction-target.retire.request.json",
+      "bytes": 1440,
+      "sha256": "0a2bd2c1ffc0d66fc8f2c8151f4fd3688cb54cfb2db5c8baf2ba4603c6314857"
+    },
+    {
+      "path": "local-state.json",
+      "bytes": 1056,
+      "sha256": "372f49952d62ddef6a3200d7063d321a367a11be2ec82f088535d5d96daee37f"
+    }
+  ]
+}

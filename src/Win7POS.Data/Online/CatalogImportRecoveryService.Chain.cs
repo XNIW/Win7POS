@@ -27,29 +27,59 @@ namespace Win7POS.Data.Online
             {
                 using(var conn=_factory.Open())
                 {
-                    var id=draft.Original.ReplacementId.Value;
+                    var blocked = await FindBlockedReplacementAsync(conn,draft.Original.Id,null).ConfigureAwait(false);
+                    var id=blocked ?? draft.Original.ReplacementId.Value;
                     for(var depth=0;depth<128;depth++)
                     {
                         var row=await conn.QuerySingleOrDefaultAsync<CatalogImportRecoveryOriginal>(SelectOriginal+" WHERE o.id=@id",new { id }).ConfigureAwait(false);
-                        if(row==null || row.OperationType!="catalog_import_correction" || row.Status!="failed_blocked") return null;
-                        if(!row.ReplacementId.HasValue) return row;
+                        if(row==null || (row.OperationType!="catalog_import_correction" && row.OperationType!="catalog_import") || row.Status!="failed_blocked") return null;
+                        if(!row.ReplacementId.HasValue) {
+                            if(row.OperationType=="catalog_import_correction") row.SharedProof=await CatalogImportCorrectionSharedProof.LoadAsync(conn,null,row.PayloadJson).ConfigureAwait(false);
+                            return row;
+                        }
                         if(row.ReplacementId.Value<=row.Id) throw new CatalogImportRecoveryException("recovery_state_changed");
                         id=row.ReplacementId.Value;
                     }
                     throw new CatalogImportRecoveryException("recovery_state_changed");
                 }
             },token).ConfigureAwait(false);
-            if(target==null) return draft; // Ordinary pending/retry child continues through the normal drain.
+            if(target==null) return draft; // Pending/retry children continue through the normal drain.
+            if(target.OperationType=="catalog_import")
+                return await PrepareAsync(target.Id,options,session,draft.Generation,token).ConfigureAwait(false);
             if(options==null || session==null) throw new CatalogImportRecoveryException("authentication_required");
-            var operation=CatalogImportCorrectionTransport.ReadSavedRequest(target.PayloadJson);
+            await InitializeReplacementDraftAsync(draft,target).ConfigureAwait(false);
+            using(var client=new PosAdminWebClient(options))
+            {
+                var response=await QueryTargetReceiptAsync(draft,client,session,false,token).ConfigureAwait(false);
+                if(!response.Success) throw new CatalogImportRecoveryException(RecoveryTransportFailure(response,"receipt_unavailable"));
+                ValidateTargetReceipt(draft,response.Value);
+                await StoreTargetReceiptAsync(draft,response.Value,token).ConfigureAwait(false);
+                if(response.Value.Status=="retired")
+                    await RefreshRootReceiptAsync(draft,client,session,token).ConfigureAwait(false);
+            }
+            draft.Batch.CanRecoverReplacement=true;
+            draft.CanCommit=draft.TargetReceipt.Status=="accepted" || draft.TargetReceipt.Status=="retired" && draft.ReceiptStatus=="accepted";
+            await Task.Run(()=>LoadContributionsAsync(draft,options,session,token),token).ConfigureAwait(false);
+            return draft;
+        }
+
+        private async Task InitializeReplacementDraftAsync(CatalogImportRecoveryDraft draft,CatalogImportRecoveryOriginal target)
+        {
+            var operation=CatalogImportCorrectionTransport.ReadSavedRequest(target.PayloadJson, target.SharedProof);
             if(CatalogImportOutboxPayloadBuilder.Sha256Hex(target.PayloadJson)!=target.PayloadHash ||
                 operation.RecoveryOf.ClientImportId!=draft.Original.ClientImportId || operation.RecoveryOf.IdempotencyKey!=draft.Original.IdempotencyKey ||
                 operation.RecoveryOf.PayloadHash!=draft.Original.PayloadHash || operation.Correction.ClientImportId!=target.ClientImportId ||
                 operation.Correction.IdempotencyKey!=target.IdempotencyKey)
                 throw new CatalogImportRecoveryException("recovery_state_changed");
             draft.TargetOriginal=target;
-            draft.TargetAckRequest=CatalogImportCorrectionTransport.ReadAckIntendedRequest(target.PayloadJson);
-            draft.InitialIntentRequest=Deserialize<PosCatalogImportRequest>(Serialize(draft.OriginalRequest));
+            draft.TargetAckRequest=CatalogImportCorrectionTransport.ReadAckIntendedRequest(target.PayloadJson, target.SharedProof);
+            using(var conn=_factory.Open())
+            {
+                await LoadSettledBaselineAsync(conn,null,draft).ConfigureAwait(false);
+                draft.TargetPartOfGroup=await conn.ExecuteScalarAsync<long>(@"SELECT COUNT(*) FROM catalog_import_plan p
+JOIN catalog_import_plan_part m ON m.plan_id=p.plan_id WHERE m.outbox_id=@id AND p.total_parts>1",new { id=target.Id }).ConfigureAwait(false)>0;
+            }
+            draft.RemoteIntentBaseline=Deserialize<PosCatalogImportRequest>(Serialize(draft.InitialIntentRequest));
             var byId=draft.InitialIntentRequest.Items.ToDictionary(item=>item.ClientItemId,StringComparer.Ordinal);
             foreach(var item in operation.Correction.Items)
             {
@@ -64,22 +94,28 @@ namespace Win7POS.Data.Online
                 }
             }
             draft.Rows=draft.InitialIntentRequest.Items.Select(ToEditable).ToArray();
-            using(var client=new PosAdminWebClient(options))
-            {
-                var request=BuildReplacementReceiptRequest(draft,session);
-                CatalogImportSyncService.DemandTransportSize(request);
-                var response=await client.CatalogImportReceiptAsync(request,token).ConfigureAwait(false);
-                if(!response.Success) throw new CatalogImportRecoveryException(response.Denied ? "authentication_required" : "receipt_unavailable");
-                ValidateTargetReceipt(draft,response.Value);
-                await StoreTargetReceiptAsync(draft,response.Value,token).ConfigureAwait(false);
-                if(response.Value.Status=="retired")
-                    await RefreshRootReceiptAsync(draft,client,session,token).ConfigureAwait(false);
-            }
-            draft.Batch.CanRecoverReplacement=true;
-            draft.CanCommit=draft.TargetReceipt.Status=="accepted" || draft.TargetReceipt.Status=="retired" && draft.ReceiptStatus=="accepted";
-            await Task.Run(()=>LoadContributionsAsync(draft,options,session,token),token).ConfigureAwait(false);
-            return draft;
         }
+
+        internal static Task<long?> FindBlockedReplacementAsync(Microsoft.Data.Sqlite.SqliteConnection conn,long root,Microsoft.Data.Sqlite.SqliteTransaction tx)
+            => conn.ExecuteScalarAsync<long?>(@"WITH RECURSIVE links(parent,child) AS (
+SELECT original_id,replacement_id FROM catalog_import_recovery WHERE replacement_id IS NOT NULL
+UNION SELECT p.original_id,m.outbox_id FROM catalog_import_plan p JOIN catalog_import_plan_part m ON m.plan_id=p.plan_id WHERE p.original_id IS NOT NULL),
+descendants(id,depth) AS (SELECT child,1 FROM links WHERE parent=@root UNION ALL
+SELECT l.child,d.depth+1 FROM descendants d JOIN links l ON l.parent=d.id WHERE d.depth<128 AND l.child>d.id)
+SELECT o.id FROM descendants d JOIN catalog_import_outbox o ON o.id=d.id WHERE o.operation_type IN ('catalog_import','catalog_import_correction') AND o.status='failed_blocked'
+AND NOT EXISTS(SELECT 1 FROM links WHERE parent=o.id)
+AND NOT EXISTS(SELECT 1 FROM catalog_import_plan_part member JOIN catalog_import_plan plan ON plan.plan_id=member.plan_id
+ JOIN catalog_import_recovery_supersession superseded ON superseded.predecessor_plan_id=json_extract(plan.remote_plan_json,'$.Document.planId')
+ WHERE member.outbox_id=o.id AND superseded.successor_plan_id IS NOT NULL)
+ORDER BY d.depth DESC,o.id LIMIT 1",new { root },tx);
+
+        internal static Task<long> IsDescendantAsync(Microsoft.Data.Sqlite.SqliteConnection conn,long root,long target,Microsoft.Data.Sqlite.SqliteTransaction tx)
+            => conn.ExecuteScalarAsync<long>(@"WITH RECURSIVE links(parent,child) AS (
+SELECT original_id,replacement_id FROM catalog_import_recovery WHERE replacement_id IS NOT NULL
+UNION SELECT p.original_id,m.outbox_id FROM catalog_import_plan p JOIN catalog_import_plan_part m ON m.plan_id=p.plan_id WHERE p.original_id IS NOT NULL),
+descendants(id,depth) AS (SELECT child,1 FROM links WHERE parent=@root UNION ALL
+SELECT l.child,d.depth+1 FROM descendants d JOIN links l ON l.parent=d.id WHERE d.depth<128 AND l.child>d.id)
+SELECT COUNT(*) FROM descendants WHERE id=@target",new { root,target },tx);
 
         private async Task<CatalogImportRecoveryDraft> RetireReplacementAsync(CatalogImportRecoveryDraft draft,
             PosAdminWebOptions options,PosTrustedDeviceSession session,OnlineSyncGeneration generation,Func<bool> authorize,CancellationToken token)
@@ -95,12 +131,9 @@ namespace Win7POS.Data.Online
             DemandPermission(authorize);
             using(var client=new PosAdminWebClient(options))
             {
-                var request=BuildReplacementReceiptRequest(draft,session);
-                request.SchemaVersion=PosCatalogImportReceiptContract.RetirementSchemaVersion;
-                CatalogImportSyncService.DemandTransportSize(request);
-                var response=await client.CatalogImportRetireAsync(request,token);
+                var response=await QueryTargetReceiptAsync(draft,client,session,true,token,authorize);
                 DemandPermission(authorize);
-                if(!response.Success) throw new CatalogImportRecoveryException(response.Denied ? "authentication_required" : "receipt_retirement_unavailable");
+                if(!response.Success) throw new CatalogImportRecoveryException(RecoveryTransportFailure(response,"receipt_retirement_unavailable"));
                 ValidateTargetReceipt(draft,response.Value);
                 if(response.Value.Status!="accepted" && response.Value.Status!="retired")
                     throw new CatalogImportRecoveryException("receipt_retirement_unavailable");
@@ -108,6 +141,7 @@ namespace Win7POS.Data.Online
                 if(response.Value.Status=="retired") await RefreshRootReceiptAsync(draft,client,session,token);
                 DemandPermission(authorize);
             }
+            draft.TransportOptions=options;
             draft.CanCommit=draft.TargetReceipt.Status=="accepted" || draft.TargetReceipt.Status=="retired" && draft.ReceiptStatus=="accepted";
             return draft;
         }
@@ -115,10 +149,8 @@ namespace Win7POS.Data.Online
         private async Task RefreshRootReceiptAsync(CatalogImportRecoveryDraft draft,PosAdminWebClient client,
             PosTrustedDeviceSession session,CancellationToken token)
         {
-            var request=BuildReceiptRequest(draft,session);
-            CatalogImportSyncService.DemandTransportSize(request);
-            var response=await client.CatalogImportReceiptAsync(request,token).ConfigureAwait(false);
-            if(!response.Success) throw new CatalogImportRecoveryException(response.Denied ? "authentication_required" : "receipt_unavailable");
+            var response=await QueryRootReceiptAsync(draft,client,session,false,token).ConfigureAwait(false);
+            if(!response.Success) throw new CatalogImportRecoveryException(RecoveryTransportFailure(response,"receipt_unavailable"));
             ValidateReceipt(draft,response.Value);
             if(response.Value.Status!="accepted") throw new CatalogImportRecoveryException("receipt_required");
             await StoreReceiptAsync(draft,response.Value,token).ConfigureAwait(false);
@@ -148,11 +180,11 @@ VALUES(@id,0,0,@status,@json,@now,@now) ON CONFLICT(original_id) DO UPDATE SET r
             if(receipt.Status=="accepted")
             {
                 var saved=draft.TargetOriginal;
-                var item=new CatalogImportOutboxItem { Id=saved.Id,OperationType=saved.OperationType,
+                var item=new CatalogImportOutboxItem { SharedProof=saved.SharedProof,Id=saved.Id,OperationType=saved.OperationType,
                     SchemaVersion=PosCatalogImportCorrectionContract.SchemaVersion,PayloadHash=saved.PayloadHash,PayloadJson=saved.PayloadJson,
                     ClientImportId=saved.ClientImportId,IdempotencyKey=saved.IdempotencyKey,
                     OriginShopId=saved.OriginShopId,OriginShopCode=saved.OriginShopCode };
-                var request=CatalogImportCorrectionTransport.ReadSavedRequest(saved.PayloadJson);
+                var request=CatalogImportCorrectionTransport.ReadSavedRequest(saved.PayloadJson, saved.SharedProof);
                 request.ShopDeviceId=draft.ShopDeviceId;
                 request.Correction.PayloadHash=saved.PayloadHash;
                 request.RecoveryOf.OriginalRequest.PayloadHash=request.RecoveryOf.PayloadHash;
@@ -165,7 +197,7 @@ VALUES(@id,0,0,@status,@json,@now,@now) ON CONFLICT(original_id) DO UPDATE SET r
 
         private static PosCatalogImportCorrectionReceiptRequest BuildReplacementReceiptRequest(CatalogImportRecoveryDraft draft,PosTrustedDeviceSession session)
         {
-            var operation=CatalogImportCorrectionTransport.ReadSavedRequest(draft.TargetOriginal.PayloadJson);
+            var operation=CatalogImportCorrectionTransport.ReadSavedRequest(draft.TargetOriginal.PayloadJson, draft.TargetOriginal.SharedProof);
             operation.Correction.PayloadHash=draft.TargetOriginal.PayloadHash;
             operation.RecoveryOf.OriginalRequest.PayloadHash=operation.RecoveryOf.PayloadHash;
             return new PosCatalogImportCorrectionReceiptRequest { ClientImportId=draft.TargetOriginal.ClientImportId,
@@ -174,7 +206,7 @@ VALUES(@id,0,0,@status,@json,@now,@now) ON CONFLICT(original_id) DO UPDATE SET r
                 ShopDeviceId=session.ShopDeviceId,ShopCode=draft.Original.OriginShopCode };
         }
 
-        private static CatalogImportOutboxEntry BuildCommitEntry(CatalogImportRecoveryDraft draft,Win7POS.Core.Import.SupplierImportSyncPreview preview)
+        private static CatalogImportOutboxPlan BuildCommitPlan(CatalogImportRecoveryDraft draft,Win7POS.Core.Import.SupplierImportSyncPreview preview)
         {
             if(draft.TargetReceipt?.Status=="accepted")
             {
@@ -189,30 +221,25 @@ VALUES(@id,0,0,@status,@json,@now,@now) ON CONFLICT(original_id) DO UPDATE SET r
                 }
                 return null;
             }
-            var entry=CatalogImportOutboxPayloadBuilder.BuildRecoveryEntry(preview,draft.OriginalRequest,draft.Original.PayloadHash,
-                draft.ReceiptStatus=="accepted",draft.Contributions,draft.Receipt);
-            if(entry!=null)
+            if(draft.TargetOriginal!=null && draft.TargetPartOfGroup)
             {
-                string payload;
-                if(entry.OperationType=="catalog_import_correction")
-                    payload=Serialize(CatalogImportCorrectionTransport.BuildTransportRequest(new CatalogImportOutboxItem
-                    { OperationType=entry.OperationType,SchemaVersion=entry.SchemaVersion,ClientImportId=entry.ClientImportId,
-                        IdempotencyKey=entry.IdempotencyKey,PayloadJson=entry.PayloadJson,PayloadHash=entry.PayloadHash,
-                        OriginShopId=draft.Original.OriginShopId,OriginShopCode=draft.Original.OriginShopCode },draft.TransportSession));
-                else
+                // Other parts may already be accepted or still own a pending
+                // operation. A replacement edits only the retired child's rows.
+                var owned=new System.Collections.Generic.HashSet<string>(draft.TargetAckRequest.Items.Select(i=>i.Barcode),StringComparer.Ordinal);
+                var before=draft.InitialIntentRequest.Items.ToDictionary(i=>i.Barcode,StringComparer.Ordinal);
+                foreach(var row in preview.ValidatedRows.Where(r=>!owned.Contains(r.Barcode)))
                 {
-                    var request=Deserialize<PosCatalogImportRequest>(entry.PayloadJson);
-                    request.PayloadHash=entry.PayloadHash;
-                    request.Batch.AttemptCount=int.MaxValue; // Reserve the full typed counter width, including later attempts.
-                    request.DeviceToken=draft.TransportSession?.DeviceToken;request.SessionToken=draft.TransportSession?.SessionToken;
-                    request.PosSessionId=draft.TransportSession?.PosSessionId;request.ShopDeviceId=draft.TransportSession?.ShopDeviceId;
-                    request.ShopCode=draft.Original.OriginShopCode;
-                    payload=Serialize(request);
+                    var original=before[row.Barcode];
+                    if(!CatalogImportOutboxPayloadBuilder.EqualNumber(row.RetailPrice,original.RetailPrice) ||
+                        !CatalogImportOutboxPayloadBuilder.EqualNumber(row.PurchasePrice,original.PurchasePrice) ||
+                        !CatalogImportOutboxPayloadBuilder.EqualNumber(row.Quantity,original.Quantity))
+                        throw new CatalogImportRecoveryException("recovery_rows_changed");
                 }
-                if(System.Text.Encoding.UTF8.GetByteCount(payload)>512*1024)
-                    throw new CatalogImportRecoveryException("recovery_payload_too_large");
             }
-            return entry;
+            var carried=new System.Collections.Generic.HashSet<string>(draft.Supersession?.CarryCoverage.Select(c=>c.ClientItemId) ?? Array.Empty<string>(),StringComparer.Ordinal);
+            return CatalogImportOutboxPayloadBuilder.BuildRecoveryPlan(preview,draft.OriginalRequest,draft.Original.PayloadHash,
+                draft.ReceiptStatus=="accepted",draft.Contributions,draft.Receipt,draft.RemoteIntentBaseline ?? (draft.IsResumedSettledDraft ? draft.InitialIntentRequest : null),
+                draft.Supersession==null ? null : draft.OriginalRequest.Items.Where(item=>carried.Contains(item.ClientItemId)).Select(item=>item.Barcode).ToArray(),draft.Supersession?.PlanId);
         }
     }
 }
