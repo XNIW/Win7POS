@@ -837,11 +837,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (_pristinePath == null)
                 {
                     var initializeWatch = Stopwatch.StartNew();
-                    _pristinePath = Path.Combine(AppPaths.DataDirectory, "recovery-ui-pristine-" + Guid.NewGuid().ToString("N") + ".db");
-                    DbInitializer.EnsureCreated(PosDbOptions.ForPath(_pristinePath));
-                    VerifyPristine(new SqliteConnectionFactory(PosDbOptions.ForPath(_pristinePath)));
-                    RequireNoSidecars(_pristinePath);
-                    _pristineHash = HashFile(_pristinePath);
+                    var pristinePath = Path.Combine(AppPaths.DataDirectory, "recovery-ui-pristine-" + Guid.NewGuid().ToString("N") + ".db");
+                    DbInitializer.EnsureCreated(PosDbOptions.ForPath(pristinePath));
+                    VerifyPristine(new SqliteConnectionFactory(PosDbOptions.ForPath(pristinePath)), releasePool: true);
+                    RequireNoSidecars(pristinePath);
+                    var pristineHash = HashFile(pristinePath);
+                    _pristinePath = pristinePath;
+                    _pristineHash = pristineHash;
                     RecordPhase("fixture_pristine_initialized; elapsed_ms=" + initializeWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; sha256=" + _pristineHash);
                 }
                 var copyWatch = Stopwatch.StartNew();
@@ -856,7 +858,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 VerifyPristine(target);
                 RecordPhase("fixture_pristine_copy:" + name + "; elapsed_ms=" + copyWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; sha256=" + _pristineHash + "; independent_database=True");
             }
-            private static void VerifyPristine(SqliteConnectionFactory factory)
+            private static void VerifyPristine(SqliteConnectionFactory factory, bool releasePool = false)
             {
                 using (var connection = factory.Open())
                 {
@@ -872,6 +874,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         (SELECT count(*) FROM catalog_import_outbox)+(SELECT count(*) FROM catalog_import_plan)+
                         (SELECT count(*) FROM catalog_import_recovery_draft)+(SELECT count(*) FROM catalog_import_prepared_plan)") == 0,
                         "pristine fixture contains economic, outbox, plan or draft state");
+                    // The private source is never used by application services.
+                    // Release only its pool before the immutable file is hashed
+                    // and copied; disposing a pooled connection leaves a handle.
+                    if (releasePool) Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection);
                 }
             }
             private static void RequireNoSidecars(string path)

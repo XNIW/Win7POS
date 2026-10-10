@@ -217,6 +217,15 @@ costs. All eleven subcases, assertions, waits and memory/timeout budgets remain;
 no application source or process boundary changes. This removes redundant QA
 work; its timing benefit must be observed in the next exact-SHA hosted run.
 
+The first pristine-copy hosted run, `38021741032` at `b5f33c6`, fails in
+fixture setup before any recovery action: `File.OpenRead` cannot hash the
+source because a disposed Microsoft.Data.Sqlite connection remains pooled.
+The preserved stack points to `HashFile`, not a recovery transaction or
+timeout. The harness releases only the private source connection pool before
+disposal and publishes the reusable path/hash only after validation succeeds.
+Target fixture pools, file sharing, integrity checks, assertions and budgets
+are unchanged. This QA correction still requires exact-SHA hosted execution.
+
 ## Operational qualification
 
 The isolated Admin staging candidate must contain the final protocol changes
