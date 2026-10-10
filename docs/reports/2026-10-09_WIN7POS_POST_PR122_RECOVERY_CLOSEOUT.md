@@ -284,3 +284,49 @@ build has zero warnings/errors; required gates pass 49/49. The WPF runtime and
 canonical results of this delta remain pending until an exact-SHA hosted run.
 Local WPF actions previously denied by automatic approval review are not
 repeated.
+
+## Isolated recovery setup after the 82de72a canonical timeout
+
+Canonical CI `38025955514` on `82de72a6a95004180395ea2cdd0094cb221e6d6f`
+passes 1587/1587 Core/Data tests with zero skips and all 49 required gates.
+The mandatory actual dense5000 request/reply case passes in 26.162 seconds.
+The WPF recovery process nevertheless reaches its unchanged 60-second limit.
+All 421 recorded phases match the completed manual run in order and all 106
+recorded waits complete, including the final 1000-row commit wait. Its subsequent
+backup, progress and replacement checks are not completed, so this remains a
+canonical FAIL. The separate hosted run `38025970075` passes 19/19 scenarios,
+11/11 recovery subcases and 50 visual captures; it does not replace the failure.
+
+The isolated recovery scenario initializes a default database in its parent
+runner and then initializes its own private pristine schema. Source review
+confirms that this scenario uses explicit fixture factories throughout: the
+trusted store uses JSON/DPAPI, generation construction is pure, and Sync Center
+passes the fixture factory to status, recovery and nested dialogs. The parent
+now omits only its unused default initialization for the exact isolated
+`IMPORT_RECOVERY_completion` scenario, with performance mode excluded. Aggregate
+and all other scenarios retain the existing initialization. The full private
+schema initialization, integrity/foreign-key/ledger/empty-state checks, 15
+independent byte-exact copies, fixture imports, all eleven subcases and all
+assertions, screenshots, process boundaries and budgets remain unchanged.
+The previous pre-first-phase interval also includes startup and trust work;
+its whole duration is not attributed to the omitted initialization. A new
+exact-SHA canonical execution must qualify this reduction.
+
+The canonical workflow now uploads only functional diagnostic text, CSV and
+PNG files after success or failure. It discovers the existing temporary root
+without changing TEMP/TMP or moving the workload to another drive. This makes
+the final phase, observations and captures reviewable after a failed runner.
+
+Separately, a guarded owned testhost is forcibly terminated after reading the
+actual Admin reply for an accepted dense5000 part, before returning any HTTP
+response byte or storing its local ACK. Same-generation startup preserves the
+in-progress claim. Thirty-one read-only observations wait for the unmodified
+900000 ms production lease; the same-body retry occurs after its actual expiry.
+The final proof compares 171 client attempts, 170 actual archived Admin replies,
+17 SQLite snapshots, all 5000 product IDs and 10000 price IDs, unchanged stock
+and history, and parent completion only after the tenth ACK. The middle test
+run is intentionally aborted; the initial and resumed runs pass. Server replay
+and client reingest are separate phases with synthetic outer authentication;
+this is neither a deployed Worker test nor a crash inside an open SQLite
+transaction. The evidence bundle retains the initial QA fixture failures and
+the frozen source identity; it is not substituted for canonical qualification.

@@ -27,7 +27,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             _scenario = scenario;
             var options = PosDbOptions.Default();
-            DbInitializer.EnsureCreated(options);
+            // Isolated recovery owns its fully initialized, verified private fixture databases.
+            // Other scenarios (including the aggregate run) still require the default database.
+            if (!performance && string.Equals(scenario, "IMPORT_RECOVERY_completion", StringComparison.Ordinal))
+                Console.WriteLine("FUNCTIONAL_DB_SETUP=default_omitted; reason=isolated_recovery_private_schema");
+            else
+                DbInitializer.EnsureCreated(options);
             if (performance) return await CartPerformanceSmoke.RunAsync(dataDir, int.TryParse(productCount, out var count) ? count : 20000);
             var results = new List<string>();
             await CheckAsync(results, "IMPORT_completion", SupplierImportCompletionSmoke.RunAsync);
