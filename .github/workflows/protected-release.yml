@@ -335,7 +335,7 @@ jobs:
           if (-not $matchingRuleset) { throw "An active immutable semantic-version tag ruleset is required." }
 
       - name: Download immutable unsigned input
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: Win7POS-Protected-Unsigned-${{ github.run_id }}
           path: dist
@@ -874,7 +874,7 @@ jobs:
           ref: ${{ github.sha }}
 
       - name: Download validated signed candidate
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: Win7POS-Protected-Signed-${{ github.run_id }}
           path: dist
