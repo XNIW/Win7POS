@@ -358,6 +358,31 @@ VALUES(@originalId,@contributorId,@hash,@json,@now);",new { originalId=draft.Ori
         public Task<SupplierImportSyncPreview> BuildPreviewAsync(CatalogImportRecoveryDraft draft,
             IReadOnlyList<SupplierImportEditableRow> rows, CancellationToken cancellationToken)
         {
+            // Keep argument/row guards synchronous and validate the complete plan
+            // even when the caller only needs the preview.
+            return PreviewOnlyAsync(BuildPreviewWithPlanAsync(draft, rows, cancellationToken));
+        }
+
+        private static async Task<SupplierImportSyncPreview> PreviewOnlyAsync(Task<RecoveryPreviewPlan> previewTask)
+        {
+            return (await previewTask.ConfigureAwait(false)).Preview;
+        }
+
+        private sealed class RecoveryPreviewPlan
+        {
+            internal RecoveryPreviewPlan(SupplierImportSyncPreview preview, CatalogImportOutboxPlan plan)
+            {
+                Preview = preview;
+                Plan = plan;
+            }
+
+            internal SupplierImportSyncPreview Preview { get; }
+            internal CatalogImportOutboxPlan Plan { get; }
+        }
+
+        private Task<RecoveryPreviewPlan> BuildPreviewWithPlanAsync(CatalogImportRecoveryDraft draft,
+            IReadOnlyList<SupplierImportEditableRow> rows, CancellationToken cancellationToken)
+        {
             if (draft == null) throw new ArgumentNullException(nameof(draft));
             if(draft.Supersession!=null && !draft.Supersession.IsSettled) throw new CatalogImportRecoveryException("prepared_plan_retirement_incomplete");
             DemandRows(draft, rows);
@@ -385,8 +410,8 @@ VALUES(@originalId,@contributorId,@hash,@json,@now);",new { originalId=draft.Ori
                         if (!CatalogImportOutboxPayloadBuilder.IsAdminPrice(field == "retailPrice" ? row.RetailPrice : row.PurchasePrice))
                             preview.Errors.Add(new SupplierImportError("supplier_import_invalid_price|" + field + "|999999999", row.RowNumber, row.Barcode));
                 preview.Summary.ErrorCount = preview.Errors.Count;
-                if(preview.CanApply && draft.CanCommit) BuildCommitPlan(draft,preview);
-                return preview;
+                var plan = preview.CanApply && draft.CanCommit ? BuildCommitPlan(draft,preview) : null;
+                return new RecoveryPreviewPlan(preview, plan);
             }, cancellationToken);
         }
 
@@ -437,7 +462,8 @@ VALUES(@originalId,@contributorId,@hash,@json,@now);",new { originalId=draft.Ori
             var desiredRows=SnapshotRows(rows);
             var capturedRows = GetSupersessionActiveRows(draft,desiredRows);
             if(draft.Supersession!=null) await SaveDraftAsync(draft,desiredRows,cancellationToken).ConfigureAwait(false);
-            var preview = await BuildPreviewAsync(draft, capturedRows, cancellationToken);
+            var freshPreview = await BuildPreviewWithPlanAsync(draft, capturedRows, cancellationToken);
+            var preview = freshPreview.Preview;
             DemandPermission(authorizeCommit);
             if (!preview.CanApply)
             {
@@ -449,7 +475,13 @@ VALUES(@originalId,@contributorId,@hash,@json,@now);",new { originalId=draft.Ori
             DemandPermission(authorizeCommit);
             var plan=await LoadPreparedPlanAsync(draft,capturedRows,cancellationToken).ConfigureAwait(false);
             var wasPrepared=plan!=null;
-            if(plan==null) plan=await Task.Run(()=>BuildCommitPlan(draft,preview),cancellationToken);
+            if(plan==null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                // Reuse only this invocation's validated plan. A durable prepared
+                // plan above remains authoritative across retries and restarts.
+                plan=freshPreview.Plan;
+            }
             if(plan==null && draft.Supersession!=null) plan=CreateConvergencePlan(draft,capturedRows);
             if(plan!=null) plan.RecoveryRowsJson=Serialize(capturedRows);
             DemandPermission(authorizeCommit);

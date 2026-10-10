@@ -627,7 +627,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         return;
                     }
                     await VerifyAsync(dialog);
-                    var preview = await new CatalogImportRecoveryService(fixture.Factory).BuildPreviewAsync(Draft(dialog), Rows(dialog), CancellationToken.None);
+                    // VerifyAsync already exercised recovery validation and full
+                    // transport planning. This extra comparator only checks the
+                    // unchanged-row set and applier query shape, not a second plan.
+                    var draft = Draft(dialog);
+                    Require(draft.Batch.NeverSent && draft.TargetOriginal == null &&
+                        draft.Supersession == null && draft.Contributions.Count == 0,
+                        "query-shape comparator requires the unsent standalone fixture");
+                    var snapshotMethod = typeof(CatalogImportRecoveryService).GetMethod("SnapshotRows", BindingFlags.Static | BindingFlags.NonPublic);
+                    Require(snapshotMethod != null, "recovery row snapshot helper unavailable");
+                    var capturedRows = (SupplierImportEditableRow[])snapshotMethod.Invoke(null, new object[] { Rows(dialog) });
+                    RecordPhase("large_query_shape_preview:" + rowCount + ":begin");
+                    var preview = await Task.Run(() => new SupplierExcelImportApplier(fixture.Factory).BuildPreviewAsync(capturedRows, CancellationToken.None));
+                    Require(preview.CanApply, "query-shape fixture preview became invalid");
+                    RecordPhase("large_query_shape_preview:" + rowCount + ":complete");
                     Require(preview.NoChangeRows.Count == rowCount - 1, "large recovery fixture did not retain unchanged rows");
                     var expectedBatches = (rowCount + 499) / 500;
                     await CheckQueryShapeAsync(fixture, preview, expectedBatches);

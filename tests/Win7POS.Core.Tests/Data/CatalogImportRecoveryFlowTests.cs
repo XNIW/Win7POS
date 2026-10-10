@@ -812,6 +812,45 @@ UPDATE products SET unitPrice=999 WHERE barcode='RECOVERY-1';");
         Assert.AreEqual(1L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_recovery WHERE replacement_id IS NOT NULL"));
     }
     [TestMethod]
+    [DataRow(3)] [DataRow(1001)]
+    public async Task RecoveryCommit_AfterIndependentPreviewUsesFreshRowsAndIdenticalImmutablePlan(int rowCount)
+    {
+        using var fixture = new Fixture();
+        var original = await fixture.SeedAsync(rowCount:rowCount);
+        var service = new CatalogImportRecoveryService(fixture.Factory,fixture.Root);
+        var draft = await service.PrepareAsync(original.Id,null!,Trusted(),null!,CancellationToken.None);
+        draft.Rows[0].RetailPrice="200";
+        Assert.Throws<ArgumentNullException>(()=>service.BuildPreviewAsync(null!,draft.Rows,CancellationToken.None));
+        var firstPreview=await service.BuildPreviewAsync(draft,draft.Rows,CancellationToken.None);
+        Assert.IsTrue(firstPreview.CanApply);
+        using var conn=fixture.Factory.Open();
+        Assert.AreEqual(1L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM catalog_import_outbox"));
+        Assert.AreEqual(2147483648L,conn.ExecuteScalar<long>("SELECT unitPrice FROM products WHERE barcode='RECOVERY-0'"));
+        Assert.AreEqual(rowCount*2L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
+        Assert.AreEqual(0,Directory.GetFiles(fixture.Root,"before-catalog-recovery-*.db").Length);
+
+        // The operator changes the draft after a separate public preview. Commit must
+        // capture these new rows, not reuse that earlier invocation's validated plan.
+        draft.Rows[0].RetailPrice="300";
+        var expectedPreview=await new SupplierExcelImportApplier(fixture.Factory).BuildPreviewAsync(draft.Rows);
+        expectedPreview.OperationCreatedAtUtc=draft.OperationCreatedAtUtc;
+        var expected=CatalogImportOutboxPayloadBuilder.BuildRecoveryPlan(expectedPreview,draft.OriginalRequest,
+            original.Hash,false,draft.Contributions,draft.Receipt);
+        var result=await service.CommitAsync(draft,draft.Rows,()=>true,null!,CancellationToken.None);
+        Assert.AreEqual(0,result.Errors,string.Join(";",result.ErrorMessages));
+        var actual=conn.Query<Payload>("SELECT id AS Id,payload_json AS Json,payload_hash AS Hash FROM catalog_import_outbox WHERE id<>@id ORDER BY id",new { id=original.Id }).ToArray();
+        CollectionAssert.AreEqual(expected.Entries.Select(entry=>entry.PayloadJson).ToArray(),actual.Select(entry=>entry.Json).ToArray());
+        CollectionAssert.AreEqual(expected.Entries.Select(entry=>entry.PayloadHash).ToArray(),actual.Select(entry=>entry.Hash).ToArray());
+        Assert.AreEqual(expected.PlanId,conn.ExecuteScalar<string>("SELECT plan_id FROM catalog_import_plan WHERE original_id=@id",new { id=original.Id }));
+        Assert.AreEqual(300L,conn.ExecuteScalar<long>("SELECT unitPrice FROM products WHERE barcode='RECOVERY-0'"));
+        Assert.AreEqual(rowCount*2L+1,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM product_price_history"));
+        Assert.AreEqual((decimal)rowCount,conn.ExecuteScalar<decimal>("SELECT SUM(stock_qty) FROM product_meta"));
+        Assert.AreEqual(original.Json,conn.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox WHERE id=@id",new { id=original.Id }));
+        Assert.AreEqual(original.Hash,conn.ExecuteScalar<string>("SELECT payload_hash FROM catalog_import_outbox WHERE id=@id",new { id=original.Id }));
+        Assert.AreEqual(1,Directory.GetFiles(fixture.Root,"before-catalog-recovery-*.db").Length);
+    }
+
+    [TestMethod]
     public async Task NeverSent_AllThreeRowsConverge_OriginalOnlyResolvesAtCompleteAck()
     {
         using var fixture = new Fixture();

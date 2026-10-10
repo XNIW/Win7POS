@@ -243,3 +243,44 @@ Android's active source is MerchandiseControlSplitView. Mobile propagation,
 physical Win7 installation/peripherals/backup and read-only historical business
 audit are reported only when actually executed with the corresponding access,
 operator, recoverable TEST data or authorized business copy.
+
+## Targeted plan reuse after the b312 canonical timeout
+
+Canonical CI `38022219497` on `b31200bae6ee499242c7646bf14a2bb777e41b54`
+passes 1585/1585 Core/Data tests with zero skips, including the actual dense5000
+request/reply regression in 37.484 seconds. Visual, import and ten recovery
+subcases pass, including the local 5000-row commit. The unchanged 60-second
+recovery process then expires during the nested dialog rendering of its final
+1000-row case. This remains a canonical FAIL; the earlier hosted manual PASS
+does not replace it. The phase trace is a prefix of the completed manual trace
+and does not establish a deadlock or an application lifetime fault.
+
+The trace and source expose redundant plan construction. Recovery CommitAsync
+previously built a complete plan during its fresh preview, discarded it, then
+built the same plan again after checking for a durable prepared plan. It now
+keeps the fresh preview and plan together within that single invocation. A
+durable prepared plan still takes precedence. Public preview validation,
+synchronous guards, the cancellation checkpoint, permissions, current local
+baselines, backup and transaction remain in their original order; no plan is
+cached between calls or reused after a subsequent operator edit.
+
+The WPF QA comparator also built an extra complete recovery plan solely to
+assert unchanged rows and applier query shape after the UI had already verified
+the recovery. For the explicitly guarded standalone never-sent fixtures, it
+now uses the applier preview of the same immutable row snapshot. It preserves
+the unchanged-row and dry-run assertions; UI validation and commit still run
+their complete recovery service paths. New phase markers measure this
+comparator. Screenshots, all eleven subcases, process boundaries and timeout
+and memory budgets are unchanged.
+
+Two new behavioral cases (3 and 1001 rows) pass against both the previous and
+updated service. They check that preview has no economic effects, a later
+operator edit is captured freshly, and committed operation identities,
+payload bytes and hashes match the plan for the new intent. Targeted recovery,
+prepared-journal failures and zero-child convergence tests pass 57/57. The
+permanent actual dense5000 corpus passes 1/1 and the 115-request actual Admin
+succession/negative corpus passes 8/8 with the updated service. WPF/harness x86
+build has zero warnings/errors; required gates pass 49/49. The WPF runtime and
+canonical results of this delta remain pending until an exact-SHA hosted run.
+Local WPF actions previously denied by automatic approval review are not
+repeated.
