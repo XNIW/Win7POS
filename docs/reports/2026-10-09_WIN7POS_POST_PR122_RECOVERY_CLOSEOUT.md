@@ -195,6 +195,28 @@ canonical wrapper's scenarios, timeout and assertions remain unchanged.
 The existing manual WPF workflow can execute that same wrapper and retain
 diagnostics, without replacing required canonical CI qualification.
 
+Hosted manual workflow `38019175087` on `e73dfe3c88e60ef2dfd61e5e9b326cc6cc720206`
+passes all 19 functional scenarios and 50 visual captures. Its 11 recovery
+subcases and 106 waits complete. Canonical CI `38019158101` on the same SHA
+passes 1585/1585 Core/Data tests, including the mandatory actual dense 5000-row
+roundtrip in 27.385 seconds, but its recovery scenario again reaches the
+unchanged 60-second bound. The phase trace reaches the 5000-row local commit;
+the 1000-row subcase has not started. No deadlock is established. The largest
+extra interval against the manual run is between language cases, outside the
+recovery operation waits. Both complete observations are preserved separately.
+
+The QA fixture initialized the full schema fifteen times, and phase reporting
+rewrote its complete growing evidence file on the UI thread. The harness now
+initializes and validates one empty schema inside the same bounded scenario,
+then makes independent new database copies with matching byte hashes, full
+migration-ledger checks, integrity/foreign-key checks and empty economic,
+outbox, plan and draft state. Each fixture still runs the real generation,
+import and local blocking paths. Evidence is appended in full order without
+discarding records. Setup, capture and language-switch phases expose remaining
+costs. All eleven subcases, assertions, waits and memory/timeout budgets remain;
+no application source or process boundary changes. This removes redundant QA
+work; its timing benefit must be observed in the next exact-SHA hosted run.
+
 ## Operational qualification
 
 The isolated Admin staging candidate must contain the final protocol changes

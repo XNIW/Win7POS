@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +25,7 @@ using Win7POS.Core.Import;
 using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Import;
+using Win7POS.Data.Migrations;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Localization;
@@ -41,6 +43,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static OnlineSyncGeneration _generation;
         private static PosAdminWebOptions _options;
         private static readonly List<string> Evidence = new List<string>();
+        private static int _flushedEvidenceCount;
 
         internal static async Task RunAsync()
         {
@@ -76,7 +79,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 admin.Stop();
                 Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, previousUrl);
-                File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt"), Evidence);
+                FlushEvidence();
             }
         }
 
@@ -311,7 +314,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 foreach (var language in new[] { "en", "es", "it", "zh-CN" })
                 {
+                    RecordPhase("language_switch:" + language + ":begin");
                     PosLocalization.Current.SetLanguage(language);
+                    RecordPhase("language_switch:" + language + ":complete");
                     var fixture = await Fixture.CreateAsync("lang-" + language);
                     using (var host = new CenterHost(fixture))
                     {
@@ -791,14 +796,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private sealed class Fixture
         {
+            private static string _pristinePath;
+            private static string _pristineHash;
             internal SqliteConnectionFactory Factory;
             internal SupplierImportEditableRow[] Rows;
             internal CatalogImportOutboxEntry Original;
             internal long OriginalId;
             internal static async Task<Fixture> CreateAsync(string name, int rowCount = 3)
             {
+                var setupWatch = Stopwatch.StartNew();
+                RecordPhase("fixture_setup:" + name + ":begin");
                 var fixture = new Fixture { Factory = new SqliteConnectionFactory(PosDbOptions.ForPath(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + name + ".db"))) };
-                DbInitializer.EnsureCreated(PosDbOptions.ForPath(fixture.Factory.DbPath));
+                CreatePristineSchemaCopy(fixture.Factory, name);
                 using (var connection = fixture.Factory.Open())
                     connection.Execute("INSERT OR REPLACE INTO app_settings(key,value) VALUES(@id,@shop),(@code,@shopCode)", new { id = OutboxShopBinding.OfficialShopIdKey, shop = _session.ShopId, code = OutboxShopBinding.OfficialShopCodeKey, shopCode = _session.ShopCode });
                 await new OnlineSyncGenerationRepository(fixture.Factory).ActivateAndRecoverAsync(_generation, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -817,8 +826,66 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var blocked = await new CatalogImportSyncService(fixture.Factory).SyncPendingAsync(_options, _session, _generation, CancellationToken.None);
                 Require(blocked.Blocked == 1 && blocked.FailureKind == SyncFailureKind.LocalValidation, "legacy import was not locally blocked");
                 fixture.CheckOriginal();
+                RecordPhase("fixture_setup:" + name + ":complete; elapsed_ms=" + setupWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant));
                 return fixture;
             }
+            private static void CreatePristineSchemaCopy(SqliteConnectionFactory target, string name)
+            {
+                // Initialize and validate once inside the same bounded scenario.
+                // Each case still owns a distinct database and runs the real
+                // generation, import, local blocking, backup and recovery paths.
+                if (_pristinePath == null)
+                {
+                    var initializeWatch = Stopwatch.StartNew();
+                    _pristinePath = Path.Combine(AppPaths.DataDirectory, "recovery-ui-pristine-" + Guid.NewGuid().ToString("N") + ".db");
+                    DbInitializer.EnsureCreated(PosDbOptions.ForPath(_pristinePath));
+                    VerifyPristine(new SqliteConnectionFactory(PosDbOptions.ForPath(_pristinePath)));
+                    RequireNoSidecars(_pristinePath);
+                    _pristineHash = HashFile(_pristinePath);
+                    RecordPhase("fixture_pristine_initialized; elapsed_ms=" + initializeWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; sha256=" + _pristineHash);
+                }
+                var copyWatch = Stopwatch.StartNew();
+                var expectedParent = Path.GetFullPath(AppPaths.DataDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                Require(string.Equals(Path.GetDirectoryName(target.DbPath), expectedParent, StringComparison.OrdinalIgnoreCase) &&
+                    Path.GetFileName(target.DbPath) == "recovery-ui-" + name + ".db" && !File.Exists(target.DbPath),
+                    "fixture copy target is not a new owned QA database");
+                RequireNoSidecars(_pristinePath);
+                Require(HashFile(_pristinePath) == _pristineHash, "pristine schema changed between fixtures");
+                File.Copy(_pristinePath, target.DbPath, false);
+                Require(HashFile(target.DbPath) == _pristineHash, "fixture is not an exact pristine schema copy");
+                VerifyPristine(target);
+                RecordPhase("fixture_pristine_copy:" + name + "; elapsed_ms=" + copyWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; sha256=" + _pristineHash + "; independent_database=True");
+            }
+            private static void VerifyPristine(SqliteConnectionFactory factory)
+            {
+                using (var connection = factory.Open())
+                {
+                    Require(connection.ExecuteScalar<string>("PRAGMA journal_mode") == "delete", "pristine fixture requires the existing DELETE journal policy");
+                    Require(connection.ExecuteScalar<string>("PRAGMA integrity_check") == "ok" && !connection.Query("PRAGMA foreign_key_check").Any(),
+                        "pristine fixture integrity failed");
+                    var ledger = connection.Query<MigrationPin>("SELECT migration_id AS Id,checksum AS Checksum FROM schema_migrations ORDER BY migration_id")
+                        .Select(pin => pin.Id + ":" + pin.Checksum);
+                    Require(ledger.SequenceEqual(SchemaMigrationRegistry.All.Select(migration => migration.MigrationId + ":" + migration.Checksum)),
+                        "pristine fixture migration ledger differs from the full current registry");
+                    Require(connection.ExecuteScalar<long>(@"SELECT
+                        (SELECT count(*) FROM products)+(SELECT count(*) FROM sales)+(SELECT count(*) FROM product_price_history)+
+                        (SELECT count(*) FROM catalog_import_outbox)+(SELECT count(*) FROM catalog_import_plan)+
+                        (SELECT count(*) FROM catalog_import_recovery_draft)+(SELECT count(*) FROM catalog_import_prepared_plan)") == 0,
+                        "pristine fixture contains economic, outbox, plan or draft state");
+                }
+            }
+            private static void RequireNoSidecars(string path)
+            {
+                Require(!File.Exists(path + "-wal") && !File.Exists(path + "-shm") && !File.Exists(path + "-journal"),
+                    "pristine fixture has an active SQLite sidecar");
+            }
+            private static string HashFile(string path)
+            {
+                using (var stream = File.OpenRead(path))
+                using (var sha = SHA256.Create())
+                    return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+            }
+            private sealed class MigrationPin { public string Id { get; set; } public string Checksum { get; set; } }
             internal string Counts()
             {
                 using (var connection = Factory.Open()) return connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_outbox") + "/" + connection.ExecuteScalar<long>("SELECT count(*) FROM product_price_history") + "/" + connection.ExecuteScalar<long>("SELECT sum(unitPrice) FROM products");
@@ -1037,6 +1104,7 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
         private static string Digits(string value) => new string(value.Where(char.IsDigit).ToArray());
         private static void Capture(Window visual, string name, params FrameworkElement[] actions)
         {
+            RecordPhase("capture:" + name + ":begin");
             visual.UpdateLayout();
             var geometry = RecordGeometry(visual, "live_" + name);
             var workArea = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(visual.Owner ?? visual);
@@ -1094,6 +1162,7 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
                         "exact viewport capture changed the live layout, parent or bindings: " + restored);
                 }
             }
+            RecordPhase("capture:" + name + ":complete");
         }
         private static void CheckPresentation(ImportRecoveryPresentation item, Fixture fixture)
         {
@@ -1168,14 +1237,23 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
             RecordPhase(name + "=BEGIN");
             try { await action(); Evidence.Add(name + "=PASS"); }
             catch (Exception ex) { Evidence.Add(name + "=FAIL " + ex); failures.Add(name + ": " + ex.Message); }
-            File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt"), Evidence);
+            FlushEvidence();
             Console.WriteLine("IMPORT_RECOVERY_PHASE=" + Evidence[Evidence.Count - 1]);
         }
         private static void RecordPhase(string phase)
         {
             Evidence.Add("phase=" + phase + "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
-            File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt"), Evidence);
+            FlushEvidence();
             Console.WriteLine("IMPORT_RECOVERY_PHASE=" + phase);
+        }
+        private static void FlushEvidence()
+        {
+            var pending = Evidence.Skip(_flushedEvidenceCount).ToArray();
+            if (pending.Length == 0) return;
+            var path = Path.Combine(AppPaths.DataDirectory, "import-recovery-completion.txt");
+            if (_flushedEvidenceCount == 0) File.WriteAllLines(path, pending);
+            else File.AppendAllLines(path, pending);
+            _flushedEvidenceCount = Evidence.Count;
         }
         private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException("import_recovery_ui: " + message); }
         private static string Serialize<T>(T value) { using (var stream = new MemoryStream()) { new DataContractJsonSerializer(typeof(T), new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true }).WriteObject(stream, value); return Encoding.UTF8.GetString(stream.ToArray()); } }
