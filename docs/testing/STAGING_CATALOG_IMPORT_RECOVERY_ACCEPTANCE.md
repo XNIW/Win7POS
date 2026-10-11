@@ -42,6 +42,22 @@ The executable U2 cases are:
   old identity is submitted live. An explicit retirement rejection is required;
   an unrelated HTTP/authentication error cannot pass this check. Its replacement
   is subsequently reconciled so this case does not leave an artificial barrier.
+- A separate compact 1,001-row seeded uncertain original creates a two-part
+  predecessor. Its first 1,000 rows receive a real live ACK. Explicit committed
+  plan retirement preserves those rows as `accepted_plan_part` and fences the
+  remaining one-row identity; its late `/apply` must receive an explicit fence
+  rejection. A new independent ordinary import on that owned row, using the same
+  authenticated shop/device, changes retail/purchase from 1,200/900 to 1,300/1,000.
+  Its real ACK and authoritative lookup become `accepted_contributor`, a distinct
+  coverage kind. Quantity stays 1.25 in the importer, frozen intent and cloud;
+  no quantity edit, stock-set assumption or additional stock delta is introduced.
+  The successor carries exactly 1,000 + 1 rows, has zero children, and closes only
+  after actual complete Admin registration. The persisted preparation is observed
+  read-only before normal closure clears it; its exact captured bytes/IDs are
+  idempotently registered again and its coverage digest is preserved. A real
+  replay of the accepted predecessor part must return the same immutable receipt
+  IDs. Stock, prices and SQLite/history fingerprints remain unchanged across
+  both replays. No second device or fabricated server acceptance is used.
 - Terminal-cursor cloud readback compares every owned product ID, barcode,
   Unicode name, stock and price with SQLite, and every mapped price ID/type/value
   with cloud history. SQLite integrity, unique maps, unchanged economic/history
@@ -64,7 +80,10 @@ cleared to make the run pass.
 The receipt `catalog-import-recovery-live-result.json` explicitly lists these
 remaining qualifications as not covered by this minimum extension:
 
-- A successor/correction carrying already accepted independent contributors.
+- Linked `/import-correction` of a deferred edit on an already accepted row:
+  the case above corrects both prices through a new ordinary contributor and
+  proves succession; it does not edit the carried accepted predecessor rows.
+- General concurrency between independent devices and mobile sessions.
 - Product dialog focus, keyboard/scanner, Enter/Esc and four-language visuals:
   these remain the existing WPF U2 suite and physical observation, separate from
   this service-level live path.
@@ -73,9 +92,18 @@ remaining qualifications as not covered by this minimum extension:
 - A complete uniform 59,999-data-row run and workload-specific resource peaks.
 - Mobile propagation/latency and physical Windows 7/peripherals/installer.
 
-The harness creates 10,001 synthetic QA products. `U2-CLEANUP-MANIFEST.json`
+The harness creates 11,002 synthetic QA products and verifies their 22,004
+effective server price IDs. The contributor inserts exactly two additional local
+history entries once. The two old local price-history IDs for its seeded legacy
+row (1,200/900) were never sent or accepted remotely and stay unmapped. They must
+be the only unmapped IDs in the complete owned dataset and keep their exact
+original identity, values and null old prices. They are explicitly preserved in
+the report/manifest, including explicit unchanged before/after contributor-ACK
+identity snapshots; every other local history ID is compared with the cloud.
+`U2-CLEANUP-MANIFEST.json`
 contains their exact server product/price IDs and operation identities, shop,
-device, run ID and prefix. No cloud cleanup is performed automatically. Preserve
+device, run ID, prefix, relevant recovery plan IDs and those two local-only
+unaccepted history IDs. No cloud cleanup is performed automatically. Preserve
 this manifest and audit; use the authorized Admin cleanup procedure with these
 exact identities. A service-level U2 PASS never substitutes for the qualifications
 above, physical Win7, production approval or cleanup completion.

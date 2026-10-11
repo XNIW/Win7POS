@@ -26,20 +26,28 @@ function global:Invoke-Win7PosWaitedProcess {
         passed = ($phase -eq 'continue'); code = $(switch ($phase) { prepare {'u2_draft_restart_required'} resume {'u2_response_loss_restart_required'} continue {'success'} })
         runId = $script:runId; Profile = 'asus-staging'; Phase = $phase; Scope = 'qa-articles-zero-sales'; SalesAllowed = $false
         SeededLegacyUncertainty = $true; LegacyOriginalHttpDispatchObserved = $false
+        SuccessionLegacyOriginalHttpDispatchObserved = $false
+        SuccessionAcceptedPlanPartRows = 1000; SuccessionAcceptedContributorRows = 1
+        SuccessionLocalOnlyLegacyHistoryIds = @(1001,1002); SuccessionMembershipSha256 = ('b'*64); SuccessionPlanCanonicalHash = ('sha256:' + ('c'*64))
+        SuccessionLocalOnlyLegacyHistoryIdsBeforeAck = @(1001,1002); SuccessionLocalOnlyLegacyHistoryIdsAfterAck = @(1001,1002)
         Wire = @(@{BodyUtf8Bytes=319;Items=0;BodySha256=('a'*64);ServerResponseObserved=$true;AcceptedResponseDropped=$true})
     }
     foreach ($field in @('OrdinaryPassed','DraftPersistRestartDiscardPassed','LocalCommitRevalidationPassed','RetirementPassed',
-        'BackupVerified','Recovery5000Passed','LostResponseRetryRestartPassed','LateOriginalFencePassed','CloudCanonicalReadbackPassed','LocalSqliteIntegrityPassed')) { $report[$field] = $true }
+        'BackupVerified','Recovery5000Passed','LostResponseRetryRestartPassed','LateOriginalFencePassed','CloudCanonicalReadbackPassed','LocalSqliteIntegrityPassed',
+        'AcceptedPlanPartSuccessionPassed','IndependentAcceptedContributorPassed','SuccessionEconomicOncePassed','SuccessionLateFencePassed','SuccessionCoverageOnlyPassed','SuccessionBackupVerified')) { $report[$field] = $true }
     if ($script:scenario -eq 'scope') { $report.Scope = 'wrong-scope' }
     if ($script:scenario -eq 'oversize') { $report.Wire[0].BodyUtf8Bytes = 524289 }
     if ($script:scenario -eq 'incomplete') { $report.CloudCanonicalReadbackPassed = $false }
+    if ($script:scenario -eq 'contributor_incomplete') { $report.IndependentAcceptedContributorPassed = $false }
+    if ($script:scenario -eq 'wrong_membership') { $report.SuccessionAcceptedContributorRows = 2 }
+    if ($script:scenario -eq 'local_history_identity_changed') { $report.SuccessionLocalOnlyLegacyHistoryIdsAfterAck = @(1001,1003) }
     $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory ('catalog-import-recovery-live-' + $phase + '-result.json'))
     '{}' | Set-Content -LiteralPath (Join-Path $EvidenceDirectory 'U2-CLEANUP-MANIFEST.json')
     return [pscustomobject]@{Started=$true;TimedOut=$false;OrphanRemaining=$false;ExitCode=$(if ($phase -eq 'continue') {0} else {75})}
 }
 try {
     $previous = [Environment]::GetEnvironmentVariable('WIN7POS_U2_ACCEPTANCE_RUNNER_TOKEN', 'Process')
-    foreach ($case in @('pass', 'scope', 'oversize', 'incomplete')) {
+    foreach ($case in @('pass', 'scope', 'oversize', 'incomplete', 'contributor_incomplete', 'wrong_membership', 'local_history_identity_changed')) {
         $script:scenario = $case; $script:phases.Clear(); $script:callbackCount = 0
         $result = Invoke-Win7PosCatalogImportRecoveryPhases -HarnessPath 'unused.exe' -Profile asus-staging -RunId $script:runId `
             -DataDirectory 'unused' -EvidenceDirectory $testRoot -StartedAt ([DateTimeOffset]::UtcNow) -TimeoutMinutes 15 `

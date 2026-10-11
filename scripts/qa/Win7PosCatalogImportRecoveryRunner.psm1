@@ -46,11 +46,22 @@ function Invoke-Win7PosCatalogImportRecoveryPhases {
         }
         foreach ($field in @('OrdinaryPassed', 'DraftPersistRestartDiscardPassed', 'LocalCommitRevalidationPassed',
             'RetirementPassed', 'BackupVerified', 'Recovery5000Passed', 'LostResponseRetryRestartPassed',
-            'LateOriginalFencePassed', 'CloudCanonicalReadbackPassed', 'LocalSqliteIntegrityPassed')) {
+            'LateOriginalFencePassed', 'CloudCanonicalReadbackPassed', 'LocalSqliteIntegrityPassed',
+            'AcceptedPlanPartSuccessionPassed', 'IndependentAcceptedContributorPassed', 'SuccessionEconomicOncePassed',
+            'SuccessionLateFencePassed', 'SuccessionCoverageOnlyPassed', 'SuccessionBackupVerified')) {
             if ($report.$field -ne $true) { return [pscustomobject]$result }
         }
         if ($report.passed -ne $true -or $report.SeededLegacyUncertainty -ne $true -or
             $report.LegacyOriginalHttpDispatchObserved -ne $false -or @($report.Wire).Count -eq 0) { return [pscustomobject]$result }
+        if ($report.SuccessionLegacyOriginalHttpDispatchObserved -ne $false -or
+            $report.SuccessionAcceptedPlanPartRows -ne 1000 -or $report.SuccessionAcceptedContributorRows -ne 1 -or
+            @($report.SuccessionLocalOnlyLegacyHistoryIds).Count -ne 2 -or
+            @($report.SuccessionLocalOnlyLegacyHistoryIdsBeforeAck).Count -ne 2 -or
+            @($report.SuccessionLocalOnlyLegacyHistoryIdsAfterAck).Count -ne 2 -or
+            (@($report.SuccessionLocalOnlyLegacyHistoryIds) -join ',') -cne (@($report.SuccessionLocalOnlyLegacyHistoryIdsBeforeAck) -join ',') -or
+            (@($report.SuccessionLocalOnlyLegacyHistoryIdsBeforeAck) -join ',') -cne (@($report.SuccessionLocalOnlyLegacyHistoryIdsAfterAck) -join ',') -or
+            $report.SuccessionMembershipSha256 -cnotmatch '^[0-9a-f]{64}$' -or
+            $report.SuccessionPlanCanonicalHash -cnotmatch '^sha256:[0-9a-f]{64}$') { return [pscustomobject]$result }
         foreach ($request in $report.Wire) {
             if ($request.BodyUtf8Bytes -le 0 -or $request.BodyUtf8Bytes -gt 524288 -or $request.Items -gt 1000 -or
                 $request.BodySha256 -cnotmatch '^[0-9a-f]{64}$') { return [pscustomobject]$result }

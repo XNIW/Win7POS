@@ -23,7 +23,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
     // runner. It reuses its actual authenticated trust and release-pack DLLs.
     // Local uncertain legacy input is explicitly seeded; every server response
     // is fetched live, including retirement, lost ACK, retry and readback.
-    internal static class StagingCatalogImportRecoveryAcceptance
+    internal static partial class StagingCatalogImportRecoveryAcceptance
     {
         internal const string RunnerTokenVariable = "WIN7POS_U2_ACCEPTANCE_RUNNER_TOKEN";
         internal const int RestartRequiredExitCode = 75;
@@ -191,10 +191,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     report.Recovery5000Passed = true;
                     report.LostResponseRetryRestartPassed = true;
                     await CheckSmallLateFenceAsync(factory, options, FreshSession, generation, Authorize, service, report, token);
+                    await CheckAcceptedContributorSuccessionAsync(factory, options, FreshSession, generation, Authorize, report, records, token);
                     await CheckCloudReadbackAsync(factory, options, FreshSession, report, token);
                     Require(Scalar(factory, "SELECT COUNT(*) FROM sales") == 0 && !(await new CatalogImportOutboxRepository(factory).HasUnresolvedAsync()),
                         "u2_final_scope_or_queue_not_clean");
-                    AssertFacts(factory, report.OrdinaryParts.Concat(report.RecoveryParts).Concat(report.FenceParts).Concat(new[] { report.Original, report.FenceOriginal }));
+                    AssertFacts(factory, AllOperationFacts(report));
                     report.LocalSqliteIntegrityPassed = ScalarText(factory, "PRAGMA integrity_check") == "ok";
                     Require(report.LocalSqliteIntegrityPassed, "u2_final_sqlite_integrity_failed");
                     WriteCleanupManifest(factory, output, report);
@@ -223,15 +224,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
         }
 
-        private static SupplierImportEditableRow[] Rows(string prefix, int count) => Enumerable.Range(0, count).Select(index =>
+        private static SupplierImportEditableRow[] Rows(string prefix, int count, bool dense = true) => Enumerable.Range(0, count).Select(index =>
             new SupplierImportEditableRow { RowNumber = index + 2, Barcode = prefix + index.ToString("D5", CultureInfo.InvariantCulture),
-                ProductName = "U2界😀" + new string('漢', 232), SecondProductName = "U2é" + new string('界', 230),
+                ProductName = dense ? "U2界😀" + new string('漢', 232) : "U2 successor " + index,
+                SecondProductName = dense ? "U2é" + new string('界', 230) : "U2 succession " + index,
                 ItemNumber = prefix + index, PurchasePrice = "900", RetailPrice = "1200", Quantity = "1.25" }).ToArray();
 
-        private static async Task<long> SeedUncertainLegacyAsync(SqliteConnectionFactory factory, string prefix, int count, CancellationToken token)
+        private static async Task<long> SeedUncertainLegacyAsync(SqliteConnectionFactory factory, string prefix, int count, CancellationToken token, bool dense = true)
         {
             var applier = new SupplierExcelImportApplier(factory);
-            var preview = await applier.BuildPreviewAsync(Rows(prefix, count), token);
+            var preview = await applier.BuildPreviewAsync(Rows(prefix, count, dense), token);
             Require(preview.CanApply, "u2_legacy_input_invalid");
             var entry = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview, prefix + "legacy.xlsx", "qa-live");
             var applied = await applier.ApplyAsync(preview, new SupplierExcelImportApplyOptions { InsertNew = true, CatalogImportOutboxEntry = entry }, token);
@@ -338,7 +340,7 @@ FROM products p JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE 
                 Require(!string.IsNullOrWhiteSpace(reply.Value.SyncCursor) && cursors.Add(reply.Value.SyncCursor), "u2_cloud_cursor_not_advancing");
                 cursor = reply.Value.SyncCursor;
             } while (true);
-            Require(expected.Count == RowsPerWorkload * 2 + 1 && products.Count == expected.Count && prices.Count == expected.Count * 2,
+            Require(expected.Count == RowsPerWorkload * 2 + 1 + SuccessionRows && products.Count == expected.Count && prices.Count == expected.Count * 2,
                 "u2_cloud_exact_identity_or_history_count_mismatch");
             foreach (var item in expected.Values)
             {
@@ -348,13 +350,18 @@ FROM products p JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE 
                     "u2_cloud_product_price_stock_value_mismatch");
             }
             using (var connection = factory.Open())
+            {
+                AssertLocalOnlyLegacyHistory(factory, report);
                 foreach (var price in connection.Query<PriceFact>(@"SELECT h.remote_price_id AS RemoteId,h.type AS Kind,h.new_price AS Amount,p.remote_product_id AS ProductId
-FROM product_price_history h JOIN products p ON p.barcode=h.barcode WHERE p.barcode LIKE @prefix", new { prefix = report.Prefix + "%" }))
+FROM product_price_history h JOIN products p ON p.barcode=h.barcode WHERE p.barcode LIKE @prefix AND COALESCE(h.remote_price_id,'')<>''", new { prefix = report.Prefix + "%" }))
                 {
                     Require(prices.TryGetValue(price.RemoteId, out var cloud) && cloud.ProductId == price.ProductId &&
                         string.Equals(cloud.Type, price.Kind, StringComparison.OrdinalIgnoreCase) && cloud.Price == (double)price.Amount,
                         "u2_cloud_price_identity_kind_or_value_mismatch");
                 }
+                Require(Scalar(factory, "SELECT COUNT(*) FROM product_price_history WHERE barcode LIKE @prefix AND COALESCE(remote_price_id,'')<>''",
+                    new { prefix = report.Prefix + "%" }) == prices.Count, "u2_cloud_history_membership_not_exact");
+            }
             report.CloudCanonicalReadbackPassed = true;
         }
 
@@ -420,7 +427,7 @@ FROM products p JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE 
             {
                 var products = connection.Query<string>(@"SELECT p.barcode||'|'||p.unitPrice||'|'||m.purchase_price||'|'||m.stock_qty FROM products p
 JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE @prefix ORDER BY p.barcode", new { prefix = prefix + "%" });
-                var history = connection.Query<string>("SELECT barcode||'|'||type||'|'||COALESCE(old_price,'')||'|'||new_price||'|'||id FROM product_price_history WHERE barcode LIKE @prefix ORDER BY id", new { prefix = prefix + "%" });
+                var history = connection.Query<string>("SELECT barcode||'|'||LOWER(type)||'|'||COALESCE(old_price,'')||'|'||new_price||'|'||id FROM product_price_history WHERE barcode LIKE @prefix ORDER BY id", new { prefix = prefix + "%" });
                 return CatalogImportOutboxPayloadBuilder.Sha256Hex(string.Join("\n", products.Concat(history)));
             }
         }
@@ -430,8 +437,10 @@ JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE @prefix ORDER BY
                 Write(Path.Combine(output, "U2-CLEANUP-MANIFEST.json"), new CleanupManifest { RunId = report.RunId, ShopId = report.ShopId,
                     ShopDeviceId = report.ShopDeviceId, Prefix = report.Prefix,
                     ProductIds = connection.Query<string>("SELECT remote_product_id FROM products WHERE barcode LIKE @prefix ORDER BY barcode", new { prefix = report.Prefix + "%" }).ToArray(),
-                    PriceIds = connection.Query<string>("SELECT remote_price_id FROM product_price_history WHERE barcode LIKE @prefix ORDER BY id", new { prefix = report.Prefix + "%" }).ToArray(),
-                    Operations = report.OrdinaryParts.Concat(report.RecoveryParts).Concat(report.FenceParts).Concat(new[] { report.Original, report.FenceOriginal }).ToArray() });
+                    PriceIds = connection.Query<string>("SELECT remote_price_id FROM product_price_history WHERE barcode LIKE @prefix AND COALESCE(remote_price_id,'')<>'' ORDER BY id", new { prefix = report.Prefix + "%" }).ToArray(),
+                    LocalOnlyUnacceptedLegacyHistoryIds = report.SuccessionLocalOnlyLegacyHistoryIds,
+                    RecoveryPlanIds = new[] { report.RemotePlanId, report.SuccessionPredecessorPlanId, report.SuccessionSuccessorPlanId },
+                    Operations = AllOperationFacts(report).ToArray() });
         }
         private static long Scalar(SqliteConnectionFactory factory, string sql, object args = null) { using (var connection = factory.Open()) return connection.ExecuteScalar<long>(sql, args); }
         private static string ScalarText(SqliteConnectionFactory factory, string sql, object args = null) { using (var connection = factory.Open()) return connection.ExecuteScalar<string>(sql, args); }
@@ -445,7 +454,7 @@ JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE @prefix ORDER BY
         private sealed class PriceFact { public string RemoteId { get; set; } public string ProductId { get; set; } public string Kind { get; set; } public long Amount { get; set; } }
         [DataContract] private sealed class ArticleReceipt { [DataMember(Name = "passed")] public bool Passed { get; set; } [DataMember(Name = "runId")] public string RunId { get; set; } [DataMember(Name = "profile")] public string Profile { get; set; } [DataMember(Name = "logicalRuns")] public int LogicalRuns { get; set; } }
         [DataContract] internal sealed class IdentityFact { [DataMember] public long Id { get; set; } [DataMember] public string ClientImportId { get; set; } [DataMember] public string IdempotencyKey { get; set; } [DataMember] public string PayloadHash { get; set; } [DataMember] public int Items { get; set; } }
-        [DataContract] private sealed class CleanupManifest { [DataMember] public string RunId { get; set; } [DataMember] public string ShopId { get; set; } [DataMember] public string ShopDeviceId { get; set; } [DataMember] public string Prefix { get; set; } [DataMember] public string[] ProductIds { get; set; } [DataMember] public string[] PriceIds { get; set; } [DataMember] public IdentityFact[] Operations { get; set; } [DataMember] public bool CleanupExecuted { get; set; } }
+        [DataContract] private sealed class CleanupManifest { [DataMember] public string RunId { get; set; } [DataMember] public string ShopId { get; set; } [DataMember] public string ShopDeviceId { get; set; } [DataMember] public string Prefix { get; set; } [DataMember] public string[] ProductIds { get; set; } [DataMember] public string[] PriceIds { get; set; } [DataMember] public long[] LocalOnlyUnacceptedLegacyHistoryIds { get; set; } [DataMember] public string[] RecoveryPlanIds { get; set; } [DataMember] public IdentityFact[] Operations { get; set; } [DataMember] public bool CleanupExecuted { get; set; } }
         [DataContract] private sealed class LiveReport
         {
             [DataMember(Name = "passed")] public bool Passed { get; set; }
@@ -469,8 +478,22 @@ JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE @prefix ORDER BY
             [DataMember] public bool LateOriginalFencePassed { get; set; } [DataMember] public string LateOriginalFenceCode { get; set; }
             [DataMember] public bool CloudCanonicalReadbackPassed { get; set; } [DataMember] public int CloudReadbackPages { get; set; }
             [DataMember] public bool LocalSqliteIntegrityPassed { get; set; }
+            [DataMember] public IdentityFact SuccessionOriginal { get; set; } [DataMember] public IdentityFact[] SuccessionPredecessorParts { get; set; }
+            [DataMember] public IdentityFact SuccessionContributor { get; set; }
+            [DataMember] public string SuccessionPredecessorPlanId { get; set; } [DataMember] public string SuccessionSuccessorPlanId { get; set; }
+            [DataMember] public string SuccessionMembershipSha256 { get; set; } [DataMember] public string SuccessionPlanCanonicalHash { get; set; }
+            [DataMember] public string SuccessionVerifiedContributorId { get; set; } [DataMember] public string SuccessionContributorClientItemId { get; set; }
+            [DataMember] public string SuccessionRetiredPartCanonicalHash { get; set; } [DataMember] public string SuccessionLateFenceCode { get; set; }
+            [DataMember] public long[] SuccessionLocalOnlyLegacyHistoryIds { get; set; }
+            [DataMember] public long[] SuccessionLocalOnlyLegacyHistoryIdsBeforeAck { get; set; }
+            [DataMember] public long[] SuccessionLocalOnlyLegacyHistoryIdsAfterAck { get; set; }
+            [DataMember] public int SuccessionAcceptedPlanPartRows { get; set; } [DataMember] public int SuccessionAcceptedContributorRows { get; set; }
+            [DataMember] public bool AcceptedPlanPartSuccessionPassed { get; set; } [DataMember] public bool IndependentAcceptedContributorPassed { get; set; }
+            [DataMember] public bool SuccessionEconomicOncePassed { get; set; } [DataMember] public bool SuccessionLateFencePassed { get; set; }
+            [DataMember] public bool SuccessionCoverageOnlyPassed { get; set; }
+            [DataMember] public bool SuccessionBackupVerified { get; set; } [DataMember] public bool SuccessionLegacyOriginalHttpDispatchObserved { get; set; }
             [DataMember] public List<PosAdminWebClient.CatalogImportQaWireRecord> Wire { get; set; } = new List<PosAdminWebClient.CatalogImportQaWireRecord>();
-            [DataMember] public string[] NotCovered { get; set; } = new[] { "accepted_contributor_succession_requires_separate_live_case", "operator_dialog_keyboard_focus_languages_use_existing_WPF_U2_suite", "sqlite_process_crash_uses_separate_owned_isolated_regression", "full_59999_rows_and_resource_performance_requires_separate_qualification", "physical_Win7_mobile_and_hardware_not_covered", "QA_cleanup_requires_authorized_Admin_procedure" };
+            [DataMember] public string[] NotCovered { get; set; } = new[] { "linked_correction_of_deferred_accepted_row_requires_separate_live_case", "concurrent_independent_devices_and_mobile_not_covered", "operator_dialog_keyboard_focus_languages_use_existing_WPF_U2_suite", "sqlite_process_crash_uses_separate_owned_isolated_regression", "full_59999_rows_and_resource_performance_requires_separate_qualification", "physical_Win7_mobile_and_hardware_not_covered", "QA_cleanup_requires_authorized_Admin_procedure" };
         }
     }
 }
