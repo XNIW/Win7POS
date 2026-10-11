@@ -26,7 +26,9 @@ public sealed class CatalogImportPlanTests
         }
         var rows=Enumerable.Range(0,2001).Select(CatalogImportInteropEvidenceTests.Row).ToArray();
         if(editLeaf) foreach(var row in rows) row.RetailPrice="300";
-        if(zeroChild) foreach(var row in rows) { row.ProductName=new string('\u754c',240);row.ItemNumber="i"; }
+        // Escaped ASCII puts the complete HTTP envelope near its boundary
+        // while its normalized SQL item storage remains independently valid.
+        if(zeroChild) foreach(var row in rows) { row.ProductName=new string('"',240);row.ItemNumber="i"; }
         var preview=await applier.BuildPreviewAsync(rows);var plan=CatalogImportOutboxPayloadBuilder.BuildSupplierExcelPlan(preview,"outer.xlsx","test");
         if(zeroChild)
         {
@@ -234,7 +236,9 @@ UPDATE catalog_import_recovery SET delivery_known=0,dispatch_count=1 WHERE origi
         session.DeviceToken=new string('\u0001',256);session.SessionToken=new string('\u0001',256);session.ShopCode=new string('\u0001',80);
         using(var conn=fixture.Factory.Open()) conn.Execute("UPDATE app_settings SET value=@code WHERE key=@key",new { code=session.ShopCode,key=OutboxShopBinding.OfficialShopCodeKey });
         var rows=Enumerable.Range(0,2001).Select(CatalogImportInteropEvidenceTests.Row).ToArray();
-        foreach(var row in rows) { row.ProductName=new string('\u754c',240);row.ItemNumber="i"; }
+        // JSON-escaped ASCII fills the HTTP envelope without consuming the
+        // non-ASCII normalized reserve that would split this member earlier.
+        foreach(var row in rows) { row.ProductName=new string('"',240);row.ItemNumber="i"; }
         var applier=new SupplierExcelImportApplier(fixture.Factory);
         var preview=await applier.BuildPreviewAsync(rows);
         var outer=CatalogImportOutboxPayloadBuilder.BuildSupplierExcelPlan(preview,"nested-dense.xlsx","test");
@@ -246,6 +250,7 @@ UPDATE catalog_import_recovery SET delivery_known=0,dispatch_count=1 WHERE origi
         var rootRequest=CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(outer.Entries[0].PayloadJson);
         Assert.IsTrue(CatalogImportRecoveryService.RequiresMultipartProof(rootRequest));
         Assert.IsTrue(rootRequest.Items.Length<=1000);Assert.IsTrue(CatalogImportPlanBuilder.Measure(outer.Entries[0])<=524288);
+        Assert.IsTrue(CatalogImportPlanBuilder.MeasureSqlItems(outer.Entries[0])<=524288);
         var applied=await applier.ApplyAsync(preview,new SupplierExcelImportApplyOptions { CatalogImportOutboxPlan=outer });
         Assert.AreEqual(0,applied.Errors);var rootId=applied.CatalogImportOutboxIds[0];var memberId=rootId;
         using(var conn=fixture.Factory.Open()) conn.Execute(@"UPDATE catalog_import_outbox SET status='failed_blocked',attempt_count=1 WHERE id=@rootId;
@@ -321,24 +326,34 @@ UPDATE catalog_import_recovery SET delivery_known=0,dispatch_count=1 WHERE origi
     {
         using var db=new PlanFixture();
         var preview=new SupplierImportSyncPreview { Fingerprint=new string('f',64) };
-        preview.NewProducts.AddRange(Enumerable.Range(0,999).Select(n=>new SupplierImportProductRow
-        { RowNumber=n+2,Barcode="BOUNDARY-"+n,ProductName="界",SecondProductName="界",RetailPrice="200",PurchasePrice="100",Quantity="1" }));
-        preview.Summary.NewProducts=999;
+        // Escaped display text isolates the exact HTTP boundary while leaving
+        // independent SQL space for 800 rows. The 999/1000/1001 row boundaries
+        // are covered separately; 999 null/numeric reserves dominate this case.
+        const int boundaryRows=800;
+        preview.NewProducts.AddRange(Enumerable.Range(0,boundaryRows).Select(n=>new SupplierImportProductRow
+        { RowNumber=n+2,Barcode="BOUNDARY-"+n,ProductName="\"",SecondProductName="\"",RetailPrice="200",PurchasePrice="100",Quantity="1" }));
+        // Keep actual multibyte HTTP serialization in this isolated boundary.
+        preview.NewProducts[0].ProductName="界\"";
+        preview.NewProducts[0].SecondProductName="界\"";
+        preview.Summary.NewProducts=boundaryRows;
         CatalogImportOutboxEntry Build()=>CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview,"boundary.xlsx","test");
         var entry=Build();var remaining=targetBytes-CatalogImportPlanBuilder.Measure(entry);
         Assert.IsTrue(remaining>=0);
         foreach(var row in preview.NewProducts)
         {
-            var count=Math.Min(239,remaining);row.ProductName+=new string('x',count);remaining-=count;
-            count=Math.Min(239,remaining);row.SecondProductName+=new string('x',count);remaining-=count;
+            var count=Math.Min(240-row.ProductName.Length,remaining/2);row.ProductName+=new string('"',count);remaining-=2*count;
+            if(remaining==1 && row.ProductName.Length<240) { row.ProductName+="x";remaining--; }
+            count=Math.Min(240-row.SecondProductName.Length,remaining/2);row.SecondProductName+=new string('"',count);remaining-=2*count;
+            if(remaining==1 && row.SecondProductName.Length<240) { row.SecondProductName+="x";remaining--; }
         }
         Assert.AreEqual(0,remaining);entry=Build();
         Assert.AreEqual(targetBytes,CatalogImportPlanBuilder.Measure(entry));
+        Assert.IsTrue(CatalogImportPlanBuilder.MeasureSqlItems(entry)<=524288,"This fixture isolates HTTP admission; SQL admission is independently valid.");
         var plan=CatalogImportOutboxPayloadBuilder.BuildSupplierExcelPlan(preview,"boundary.xlsx","test");
         if(targetBytes<=524288) Assert.AreEqual(1,plan.Entries.Count);
         else Assert.AreNotEqual(entry.PayloadJson,plan.Entries[0].PayloadJson,"Oversized input must be replanned; a shorter part identity may fit the full row set.");
-        Assert.AreEqual(999,plan.TotalRows);
-        Assert.IsTrue(plan.Entries.All(part=>CatalogImportPlanBuilder.Measure(part)<=524288));
+        Assert.AreEqual(boundaryRows,plan.TotalRows);
+        Assert.IsTrue(plan.Entries.All(part=>CatalogImportPlanBuilder.Measure(part)<=524288 && CatalogImportPlanBuilder.MeasureSqlItems(part)<=524288));
         var request=CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(entry.PayloadJson);
         var auth=CatalogImportPlanBuilder.MaximumSession();
         request.DeviceToken=auth.DeviceToken;request.SessionToken=auth.SessionToken;request.PosSessionId=auth.PosSessionId;
@@ -358,7 +373,10 @@ UPDATE catalog_import_recovery SET delivery_known=0,dispatch_count=1 WHERE origi
             Assert.IsNotNull(handler.Body);Assert.AreEqual(targetBytes,handler.Body.Length);
             var actual=CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(Encoding.UTF8.GetString(handler.Body));
             Assert.AreEqual(256,actual.DeviceToken.Length);Assert.AreEqual(256,actual.SessionToken.Length);
-            Assert.AreEqual(80,actual.ShopCode.Length);Assert.IsTrue(actual.Items.All(item=>item.ProductName.StartsWith("界")));
+            Assert.AreEqual(80,actual.ShopCode.Length);
+            Assert.IsTrue(actual.Items[0].ProductName.StartsWith("界"));
+            CollectionAssert.AreEqual(request.Items.Select(item=>item.ProductName).ToArray(),actual.Items.Select(item=>item.ProductName).ToArray());
+            CollectionAssert.AreEqual(request.Items.Select(item=>item.SecondProductName).ToArray(),actual.Items.Select(item=>item.SecondProductName).ToArray());
         }
         using var conn=db.Factory.Open();
         Assert.AreEqual(0L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM products"));

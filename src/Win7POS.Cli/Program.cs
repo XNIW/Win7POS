@@ -203,6 +203,12 @@ internal static class Program
     {
         try
         {
+            if (CatalogImportProcessCrashSelfTest.TryParse(args, out var crashRequest))
+            {
+                await CatalogImportProcessCrashSelfTest.RunAsync(crashRequest).ConfigureAwait(false);
+                return;
+            }
+
             if (TryParseDailyArgs(args, out var dailyDateArg, out var dailyDbPath))
             {
                 await RunDailyAsync(dailyDateArg, dailyDbPath);
@@ -373,6 +379,7 @@ internal static class Program
     {
         Console.WriteLine("Unknown args.");
         Console.WriteLine("Usage:");
+        Console.WriteLine("  --catalog-import-process-crash-selftest --output-dir <new evidence directory>");
         Console.WriteLine("  --selftest [--keepdb]");
         Console.WriteLine("  --task081-sales-sync-harness [--keepdb]");
         Console.WriteLine("  --task081-shop-cache-harness [--keepdb]");

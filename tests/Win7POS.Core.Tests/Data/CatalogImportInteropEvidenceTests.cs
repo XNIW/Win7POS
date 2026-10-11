@@ -55,12 +55,14 @@ public sealed class CatalogImportInteropEvidenceTests
         using var fixture=new Fixture();
         var replayRoot=journalFailure==null ? Environment.GetEnvironmentVariable("WIN7POS_INTEROP_MULTIPART_REPLAY") : null;
         var actualReplay=archive!=null || !string.IsNullOrWhiteSpace(replayRoot);
+        var archivePreparedJournal=archive!=null;
         var scenarioJson=archive?.Source("scenario.json") ?? (string.IsNullOrWhiteSpace(replayRoot) ? null : File.ReadAllText(Path.Combine(replayRoot,"scenario.json")));
         using var recordedScenario=scenarioJson==null ? null : JsonDocument.Parse(scenarioJson);
         var operationTime=recordedScenario==null ? DateTimeOffset.UtcNow.ToString("O",System.Globalization.CultureInfo.InvariantCulture)
             : recordedScenario.RootElement.GetProperty("operationTime").GetString()!;
         var applier=new SupplierExcelImportApplier(fixture.Factory);
-        var preview=await applier.BuildPreviewAsync(Enumerable.Range(0,5000).Select(Row).ToArray());
+        var preview=await applier.BuildPreviewAsync(Enumerable.Range(0,5000)
+            .Select(index=>archivePreparedJournal ? Row(index) : RowForCompactPlan(index)).ToArray());
         preview.OperationCreatedAtUtc=operationTime;
         var entry=CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview,"uncertain-legacy-5000.xlsx","interop-fixture");
         var initial=await applier.ApplyAsync(preview,new SupplierExcelImportApplyOptions { CatalogImportOutboxEntry=entry });
@@ -94,6 +96,16 @@ public sealed class CatalogImportInteropEvidenceTests
         Assert.IsTrue(draft.HasSavedDraft);Assert.AreEqual("1300",draft.Rows[0].RetailPrice);
         Assert.AreEqual(operationTime,draft.OperationCreatedAtUtc);
         Assert.IsTrue(draft.CanCommit,"Retirement is durable after closing and reopening the recovery draft.");
+        CatalogImportOutboxEntry[]? archivedEntries=null;
+        if(archivePreparedJournal)
+        {
+            var historicalDocument=archive!.HistoricalPlanJson();
+            archivedEntries=await CatalogImportArchivedPreparedJournalFixture.StageAsync(fixture.Factory,service,draft,Trusted(),
+                RecordedMultipartArchive.SourceArchiveHash,original,historicalDocument);
+            fixture.Capture("archive-prepared-journal.json",JsonSerializer.Serialize(new { archivePreparedJournal=true,
+                archiveReplay=true,qualifiesCurrentPlanning=false,sourceArchiveSha256=RecordedMultipartArchive.SourceArchiveHash,
+                originalSha256=Hash(original),documentSha256=Hash(historicalDocument),remoteReceiptSeeded=false,remoteAcksSeeded=0 }));
+        }
         string? preparedPlan=null,preparedDocument=null;
         if(journalFailure!=null)
         {
@@ -148,6 +160,15 @@ public sealed class CatalogImportInteropEvidenceTests
         }
         var committed=await service.CommitAsync(draft,draft.Rows,()=>true,null!,CancellationToken.None);
         Assert.AreEqual(0,committed.Errors);Assert.AreEqual(5,committed.CatalogImportOutboxIds.Count);
+        if(archivedEntries!=null)
+            for(var index=0;index<archivedEntries.Length;index++) Assert.AreEqual(archivedEntries[index].PayloadJson,fixture.Saved(committed.CatalogImportOutboxIds[index]),"Commit must reuse the historical saved operation bytes.");
+        else
+            foreach(var id in committed.CatalogImportOutboxIds)
+            {
+                var saved=fixture.Saved(id);
+                Assert.IsTrue(CatalogImportSqlItemBudget.MeasureOrdinary(Read<PosCatalogImportRequest>(saved).Items)<=524288,"Synthetic current planning must respect the normalized SQL budget.");
+            }
+        var economicsBeforeAcks=CatalogImportArchivedPreparedJournalFixture.EconomicFingerprint(fixture.Factory,true);
         peer.LocalCommitCompleted=true;
         if(journalFailure!=null)
         {
@@ -200,6 +221,7 @@ public sealed class CatalogImportInteropEvidenceTests
             Assert.AreEqual(5000L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM product_meta WHERE stock_qty=1.25 AND purchase_price=900"));
         }
         Assert.AreEqual(original,fixture.Saved(rootId));
+        Assert.AreEqual(economicsBeforeAcks,CatalogImportArchivedPreparedJournalFixture.EconomicFingerprint(fixture.Factory,true),"ACK/retry must preserve every local product, metadata and history ID/value.");
         Assert.IsFalse(await new CatalogImportOutboxRepository(fixture.Factory).HasUnresolvedAsync());
         using(var conn=fixture.Factory.Open())
         {
@@ -213,13 +235,17 @@ public sealed class CatalogImportInteropEvidenceTests
             foreach(var row in conn.Query("SELECT barcode,type,remote_price_id FROM product_price_history WHERE remote_price_id IS NOT NULL"))
                 Assert.AreEqual(peer.ExpectedPrices[(string)row.barcode+"|"+(string)row.type],(string)row.remote_price_id);
             fixture.Capture("local-state.json",JsonSerializer.Serialize(new { rows=5000,completedParts=5,completedRows=5000,stockEach=1.25,loseThirdResponse,journalFailure,
+                archivePreparedJournal,archiveReplay=archivePreparedJournal,qualifiesCurrentPlanning=!archivePreparedJournal,economicFingerprintUnchangedAfterAck=true,
                 historyCount=10001,mappedHistoryCount=10000,originalUnchanged=true,
-                scope=actualReplay ? "exact actual Admin handler/database recorded replies; synthetic outer authentication/dependency schema; no deployed acceptance" : "synthetic serialization peer only; actual Admin DB acceptance still required",
+                scope=archivePreparedJournal ? "exact historical Admin handler/database recorded replies and prepared journal; synthetic outer authentication/dependency schema; no current planning or deployed acceptance"
+                    : actualReplay ? "external response schedule with current planning; archive origin and fresh Admin/database acceptance not qualified"
+                    : "synthetic serialization peer only; actual Admin DB acceptance still required",
                 actualResponseArchiveSha256=archive==null ? null : RecordedMultipartArchive.AdminArchiveHash,
                 outbox=conn.Query("SELECT id,status,attempt_count,payload_hash FROM catalog_import_outbox ORDER BY id").ToArray() }));
         }
         Assert.IsTrue(freshReads>10,"Every proof/plan stage must ask the live credential provider.");
         fixture.Capture("scenario.json",JsonSerializer.Serialize(new { operationTime,syntheticLegacyDeliveryState=true,loseThirdResponse,journalFailure,
+            archivePreparedJournal,archiveReplay=archivePreparedJournal,qualifiesCurrentPlanning=!archivePreparedJournal,
             freshCredentialProviderReads=freshReads,rootRows=5000,expectedParts=5,localOriginalHash=Hash(original),
             expectedShopId=Shop,expectedDeviceId=Device,expectedSessionId=Session,expectedShopCode="FIXTURE" }));
         peer.CaptureTranscript();
@@ -544,6 +570,14 @@ public sealed class CatalogImportInteropEvidenceTests
         PurchasePrice="900", RetailPrice="1200", Quantity="1.25", HasProductNameSource=true,
         HasPurchasePriceSource=true, HasRetailPriceSource=true, HasQuantitySource=true
     };
+    // Synthetic fixed-part fixtures keep a real Unicode row without changing
+    // Row(), whose immutable original bytes are pinned by historical archives.
+    internal static SupplierImportEditableRow RowForCompactPlan(int index)
+    {
+        var row=Row(index);
+        if(index!=0) row.ProductName="Interop product "+index;
+        return row;
+    }
     private static PosTrustedDeviceSession Trusted() => new()
     {
         ShopId=Shop,ShopCode="FIXTURE",ShopDeviceId=Device,PosSessionId=Session,
@@ -656,7 +690,7 @@ public sealed class CatalogImportInteropEvidenceTests
     private sealed class RecordedMultipartArchive : IDisposable
     {
         internal const string AdminArchiveHash="f813a28b28a6eabf10d651b4ac569d5a4fd1dc78e7a42086b3eb2226461afbbf";
-        private const string SourceArchiveHash="2d348b460ca98ac957e1afdbd4c148d2cac54128fb72aea5da24446b950c5f7e";
+        internal const string SourceArchiveHash="2d348b460ca98ac957e1afdbd4c148d2cac54128fb72aea5da24446b950c5f7e";
         private readonly ZipArchive source;
         private readonly ZipArchive admin;
         private readonly JsonDocument manifest;
@@ -705,6 +739,36 @@ public sealed class CatalogImportInteropEvidenceTests
                     Assert.AreEqual(file.GetProperty("sha256").GetString(),RawHash(Bytes(admin,file.GetProperty("bundleFile").GetString()!)));
         }
         internal string Source(string name) => Text(source,name);
+        internal string HistoricalPlanJson()
+        {
+            // The source archive has no standalone plan file. Reassemble the
+            // exact raw document from its verified upload frames, never rebuild
+            // or reserialize a replacement around the new planner's partitions.
+            var uploads=SourceExchanges.Where(record=>record.GetProperty("path").GetString()!.EndsWith("/upload",StringComparison.Ordinal))
+                .Select(record=>Read<PosCatalogImportRecoveryUploadRequest>(Source(record.GetProperty("requestFile").GetString()!)))
+                .Where(request=>request.Mode=="plan").OrderBy(request=>request.PartIndex).ToArray();
+            Assert.AreEqual(10,uploads.Length);
+            var first=uploads[0];Assert.AreEqual(10,first.Parts.Length);using var bytes=new MemoryStream();
+            for(var index=0;index<uploads.Length;index++)
+            {
+                var upload=uploads[index];Assert.AreEqual(index,upload.PartIndex);
+                Assert.AreEqual(first.UploadId,upload.UploadId);Assert.AreEqual(first.RawSha256,upload.RawSha256);
+                Assert.AreEqual(first.TotalByteLength,upload.TotalByteLength);Assert.AreEqual(Write(first.Parts),Write(upload.Parts));
+                var chunk=Convert.FromBase64String(upload.ContentBase64);
+                Assert.AreEqual(index,first.Parts[index].Index);
+                Assert.AreEqual(first.Parts[index].ByteLength,chunk.Length);
+                Assert.AreEqual(first.Parts[index].Sha256,CatalogImportRecoveryProofTransport.Hash(chunk));
+                bytes.Write(chunk,0,chunk.Length);
+            }
+            var raw=bytes.ToArray();Assert.AreEqual(first.TotalByteLength,raw.Length);
+            Assert.AreEqual(first.RawSha256,CatalogImportRecoveryProofTransport.Hash(raw));
+            Assert.AreEqual("sha256:11e9af9d7d7486177ec4d9df893e798c08ee1c2680456ead3a999bb75b4f22e7",first.RawSha256);
+            var json=new UTF8Encoding(false,true).GetString(raw);
+            var document=Read<PosCatalogImportRecoveryPlanDocument>(json);Assert.AreEqual(5,document.Parts.Length);
+            foreach(var part in document.Parts)
+                Assert.AreEqual(Hash(Source("part-"+part.Index+".persisted.json")),part.Request.PayloadHash);
+            return json;
+        }
         private string Admin(string name) => Text(admin,name);
         internal string Response(int index,string route,string body,bool retry)
         {

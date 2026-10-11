@@ -25,6 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\fixtures\catalog-import-sql-budget-v1\*">
+      <Link>fixtures\catalog-import-sql-budget-v1\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\fixtures\pos-product-image-v1\*.json">
       <Link>fixtures\pos-product-image-v1\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

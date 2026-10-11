@@ -258,7 +258,7 @@ public sealed class CatalogImportSupersessionTests
         using var fixture = new Fixture();
         using var peer = new SyntheticPeer();
         var (rootId, draft) = await SeedRetiredLegacyAsync(fixture, peer);
-        var rows = new[] { CatalogImportInteropEvidenceTests.Row(0), CatalogImportInteropEvidenceTests.Row(1) };
+        var rows = new[] { CatalogImportInteropEvidenceTests.RowForCompactPlan(0), CatalogImportInteropEvidenceTests.RowForCompactPlan(1) };
         foreach (var row in rows)
         {
             row.RetailPrice = "1300";
@@ -389,7 +389,7 @@ VALUES(@owner,@hash,@json,@rowsHash,@shop,'FIXTURE',0,'synthetic-existing-draft'
         await Assert.ThrowsAsync<CatalogImportRecoveryException>(() => service.CommitAsync(draft, draft.Rows, () => true, null!, CancellationToken.None));
         var predecessor = peer.Plans.Values.Single(); peer.AcceptExternally(predecessor.PlanId, 0);
         draft = await service.RetirePreparedPlanAsync(draft, peer.Options, Trusted(), null!, () => true, CancellationToken.None);
-        var row = CatalogImportInteropEvidenceTests.Row(1000); row.RetailPrice = "1500"; row.PurchasePrice = "1100";
+        var row = CatalogImportInteropEvidenceTests.RowForCompactPlan(1000); row.RetailPrice = "1500"; row.PurchasePrice = "1100";
         var applier = new SupplierExcelImportApplier(fixture.Factory);
         var preview = await applier.BuildPreviewAsync(new[] { row });
         var external = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview, "external-contributor.xlsx", "test");
@@ -418,7 +418,7 @@ VALUES(@owner,@hash,@json,@rowsHash,@shop,'FIXTURE',0,'synthetic-existing-draft'
     internal static async Task<(long Root, CatalogImportRecoveryDraft Draft)> SeedRetiredLegacyAsync(Fixture fixture, SyntheticPeer peer, int count = Count)
     {
         var applier = new SupplierExcelImportApplier(fixture.Factory);
-        var preview = await applier.BuildPreviewAsync(Enumerable.Range(0, count).Select(CatalogImportInteropEvidenceTests.Row).ToArray());
+        var preview = await applier.BuildPreviewAsync(Enumerable.Range(0, count).Select(CatalogImportInteropEvidenceTests.RowForCompactPlan).ToArray());
         var entry = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview, "supersession-legacy.xlsx", "test");
         var initial = await applier.ApplyAsync(preview, new SupplierExcelImportApplyOptions { CatalogImportOutboxEntry = entry });
         Assert.AreEqual(0, initial.Errors);

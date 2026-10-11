@@ -129,3 +129,14 @@ passati, mappe di tutti i 1001 prodotti e 2002 prezzi per caso confrontate,
 bozze preservate e chiusura soltanto dopo le conferme necessarie. I README
 dei due archivi separano i fallimenti storici, le correzioni al test e le
 prove positive; nessun byte HTTP viene aggiustato per ottenere il risultato.
+
+Il corpus `dense5000-csharp-169` / `dense5000-admin-e88-169` conserva le identità,
+il piano e tutte le risposte originarie. Dopo il nuovo budget conservativo degli
+items SQL, la regressione ricrea esplicitamente il journal di quel piano storico
+tramite i writer production, dopo l'autorità di retirement registrata e prima del
+commit. Il seed test-only è limitato agli hash esatti del documento e
+dell'originale; non inserisce receipt o ACK. Il commit corrente deve riusare gli
+stessi payload byte per byte e preservare ID e valori economici locali anche dopo
+gli ACK. Questa prova attesta il replay di lavoro già preparato, non la nuova
+partizione o una nuova accettazione Admin. Gli input generati dal planner corrente
+devono acquisire nuove risposte e corrispondere al nuovo piano senza quel seed.

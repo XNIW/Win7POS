@@ -51,7 +51,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _draftVersion++;
             _draftSaveTimer.Stop();
             _draftSaveTimer.Start();
-            DraftStateText.Text = PosLocalization.T("importRecovery.draftSaving");
+            SetLocalizedText(DraftStateText, "importRecovery.draftSaving");
             DiscardDraftButton.Visibility = Visibility.Visible;
         }
 
@@ -89,7 +89,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception)
             {
-                if (!_closed) DraftStateText.Text = PosLocalization.T("importRecovery.draftSaveFailed");
+                if (!_closed) SetLocalizedText(DraftStateText, "importRecovery.draftSaveFailed");
                 return false;
             }
         }
@@ -114,7 +114,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (_closed) return;
             var hasDraft = !_draftApplied && (_draft?.HasSavedDraft == true || _draftVersion > 0);
             DiscardDraftButton.Visibility = hasDraft ? Visibility.Visible : Visibility.Collapsed;
-            DraftStateText.Text = PosLocalization.T(_draftApplied && _draft?.HasDeferredEdits == true ? "importRecovery.deferredDraftSaved" :
+            SetLocalizedText(DraftStateText, _draftApplied && _draft?.HasDeferredEdits == true ? "importRecovery.deferredDraftSaved" :
                 _draftApplied ? "importRecovery.localSaved" :
                 _draft?.HasPreparedPlan == true ? "importRecovery.preparedPlan" :
                 _draft?.IsSavedDraftStale == true ? "importRecovery.draftStale" :
@@ -165,7 +165,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _draftVersion = _savedDraftVersion = 0;
                 discarded = true;
             }
-            catch (Exception) { DraftStateText.Text = PosLocalization.T("importRecovery.draftSaveFailed"); }
+            catch (Exception) { SetLocalizedText(DraftStateText, "importRecovery.draftSaveFailed"); }
             finally { SetBusy(false); }
             if (discarded && !_closed) await PrepareAsync().ConfigureAwait(true);
         }
@@ -184,11 +184,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var progress = await _service.GetPlanProgressAsync(_originalId, _lifetime.Token).ConfigureAwait(true);
                 if (_closed || progress == null || progress.TotalParts == 0) return;
                 _planTotalRows = progress.TotalRows;
-                PlanProgressText.Text = PosLocalization.F("importRecovery.planProgress", progress.CompletedRows,
-                    progress.TotalRows, progress.CompletedParts, progress.TotalParts);
-                if (progress.FailedParts > 0)
-                    PlanProgressText.Text += " " + PosLocalization.F("importRecovery.planFailed", progress.FailedParts) +
-                        " " + ImportRecoveryPresentation.FriendlyCause(progress.LastErrorCode);
+                SetLocalizedText(PlanProgressText, () =>
+                    PosLocalization.F("importRecovery.planProgress", progress.CompletedRows,
+                        progress.TotalRows, progress.CompletedParts, progress.TotalParts) +
+                    (progress.FailedParts > 0 ? " " + PosLocalization.F("importRecovery.planFailed", progress.FailedParts) +
+                        " " + ImportRecoveryPresentation.FriendlyCause(progress.LastErrorCode) : string.Empty));
                 if (!_busy)
                 {
                     RecoveryProgress.IsIndeterminate = false;
@@ -200,7 +200,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             catch (OperationCanceledException) { }
             catch (Exception)
             {
-                if (!_closed) PlanProgressText.Text = PosLocalization.T("importRecovery.progressUnavailable");
+                if (!_closed) SetLocalizedText(PlanProgressText, "importRecovery.progressUnavailable");
             }
             finally { _progressReading = false; }
         }

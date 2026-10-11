@@ -64,6 +64,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _getGeneration = getGeneration ?? (() => null);
             InitializeComponent();
             InitializeDraftPersistence();
+            InitializeLocalization();
         }
 
         protected override async void OnContentRendered(EventArgs e)
@@ -84,7 +85,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (_busy || _closed) return;
             BeginOperation("prepare");
-            RecoveryStatus.Text = PosLocalization.T("importRecovery.verifying");
+            SetLocalizedText(RecoveryStatus, "importRecovery.verifying");
             try
             {
                 DemandPermission();
@@ -147,7 +148,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (!PosAdminWebOptions.TryLoad(out var options, out _) ||
                     !new PosTrustedDeviceStore().TryReadGeneration(_generation, out var session, out _))
                     throw new CatalogImportRecoveryException("authentication_required");
-                RecoveryStatus.Text = PosLocalization.T("importRecovery.verifying");
+                SetLocalizedText(RecoveryStatus, "importRecovery.verifying");
                 var settled = _draft.HasPreparedPlan
                     ? await _service.RetirePreparedPlanAsync(_draft, options, session, _generation,
                         _authorizeCommit, _lifetime.Token).ConfigureAwait(true)
@@ -192,9 +193,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _validated = _draft.CanCommit && preview.CanApply;
             if (!_validated) _operationCode = "validation_failed";
             _invalidRow = null;
-            RecoveryStatus.Text = _validated
-                ? PosLocalization.F("importRecovery.previewReady", _draft.Rows.Count)
-                : FormatErrors(preview.Errors);
+            if (_validated) SetLocalizedText(RecoveryStatus, "importRecovery.previewReady", _draft.Rows.Count);
+            else
+            {
+                var errors = preview.Errors.Take(20).Select(error =>
+                    new SupplierImportError(error.Message, error.RowIndex, error.Barcode)).ToArray();
+                SetLocalizedText(RecoveryStatus, () => FormatErrors(errors));
+            }
             if (!_validated && preview.Errors.Count > 0)
             {
                 var first = _draft.Rows.FirstOrDefault(row => row.RowNumber == preview.Errors[0].RowIndex);
@@ -230,7 +235,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (!await FlushDraftAsync().ConfigureAwait(true)) return;
                 if (!reconcileAccepted && !await ValidateCoreAsync().ConfigureAwait(true)) return;
                 DemandPermission();
-                RecoveryStatus.Text = PosLocalization.T("importRecovery.saving");
+                SetLocalizedText(RecoveryStatus, "importRecovery.saving");
                 var result = reconcileAccepted
                     ? await _service.ReconcileAcceptedReplacementAsync(_draft, _authorizeCommit,
                         _generation, _lifetime.Token).ConfigureAwait(true)
@@ -247,10 +252,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     PosOnlineSyncSignalBus.Signal(OnlineSyncLane.CatalogImportOutbox, OnlineSyncLaneTrigger.LocalCommit);
                 _validated = false;
                 _operationCode = reconcileAccepted ? "accepted_receipt_reconciled" : result.RecoveryAlreadyConverged ? "already_converged" : "replacement_queued";
-                RecoveryStatus.Text = PosLocalization.T(_draft.HasDeferredEdits ? "importRecovery.deferredDraftSaved" :
+                SetLocalizedText(RecoveryStatus, _draft.HasDeferredEdits ? "importRecovery.deferredDraftSaved" :
                     reconcileAccepted ? "importRecovery.acceptedReconciled" : result.RecoveryAlreadyConverged
                     ? "importRecovery.converged" : "importRecovery.queued");
-                ReceiptText.Text = PosLocalization.T(result.RecoveryAlreadyConverged
+                SetLocalizedText(ReceiptText, result.RecoveryAlreadyConverged
                     ? "importRecovery.resolved" : "importRecovery.awaitingAck");
                 RecoveryRows.IsReadOnly = true;
                 PrepareButton.Visibility = Visibility.Collapsed;
@@ -285,7 +290,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _validated = false;
             CommitButton.IsEnabled = false;
             MarkDraftChanged();
-            if (!_busy) RecoveryStatus.Text = PosLocalization.T("importRecovery.editThenVerify");
+            if (!_busy) SetLocalizedText(RecoveryStatus, "importRecovery.editThenVerify");
         }
 
         private void SetBusy(bool busy)
@@ -342,14 +347,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void ShowCancelled()
         {
             _operationCode = "cancelled";
-            if (!_closed) RecoveryStatus.Text = PosLocalization.T("sync.center.operationCancelled");
+            if (!_closed) SetLocalizedText(RecoveryStatus, "sync.center.operationCancelled");
         }
 
         private void ShowError(string code)
         {
             _operationCode = code;
             _validated = false;
-            if (!_closed) RecoveryStatus.Text = ImportRecoveryPresentation.FriendlyCause(code);
+            if (!_closed) SetLocalizedText(RecoveryStatus, () => ImportRecoveryPresentation.FriendlyCause(code));
         }
 
         private void ShowPreparedState()
@@ -361,9 +366,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 ? "importRecovery.retirePreparedPlan" : "importRecovery.retire");
             PrepareButton.Visibility = reconcileAccepted ? Visibility.Collapsed : Visibility.Visible;
             BindActionLabel(CommitButton, reconcileAccepted ? "importRecovery.reconcileAccepted" : "importRecovery.commit");
-            ReceiptText.Text = PosLocalization.T(reconcileAccepted ? "importRecovery.acceptedPendingReconciliation" :
+            SetLocalizedText(ReceiptText, reconcileAccepted ? "importRecovery.acceptedPendingReconciliation" :
                 "importRecovery.receipt." + (_draft.CanCommit ? (_draft.ReceiptStatus == "accepted" ? "accepted" : "safe") : "unknown"));
-            RecoveryStatus.Text = PosLocalization.T(reconcileAccepted ? "importRecovery.acceptedDraftRetained" :
+            SetLocalizedText(RecoveryStatus, reconcileAccepted ? "importRecovery.acceptedDraftRetained" :
                 _draft.CanCommit ? "importRecovery.editThenVerify" : "importRecovery.unknownBlocked");
             ShowDraftState();
         }
@@ -393,7 +398,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _closeRequested = true;
                 _lifetime.Cancel();
                 e.Cancel = true;
-                RecoveryStatus.Text = PosLocalization.T("importRecovery.cancelling");
+                SetLocalizedText(RecoveryStatus, "importRecovery.cancelling");
                 return;
             }
             if (!_allowClose && (_draftSaveTask != null || _draftVersion != _savedDraftVersion))
@@ -408,6 +413,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         protected override void OnClosed(EventArgs e)
         {
             _closed = true;
+            StopLocalization();
             StopDraftPersistence();
             if (_operatorSession != null) _operatorSession.SessionChanged -= OnOperatorChanged;
             DetachRows();

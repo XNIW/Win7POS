@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -95,9 +96,14 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
                 Assert.AreEqual(record.GetProperty("responseSha256").GetString(), "sha256:" + HashBytes(response));
                 await File.WriteAllBytesAsync(Path.Combine(actualResponses, name), response);
             }
-            // No selected pilot subset and no synthetic fallback: every actual
-            // fresh-DB response is consumed once, after its exact request hash.
-            await CaptureRecordedDenseRecoveryAsync(inputs, actualResponses, Path.Combine(temporary, "readback"), 5000);
+            // Every archived fresh-DB response is consumed once, after its exact
+            // request hash. The changed planner does not regenerate that plan:
+            // this regression explicitly seeds its historical prepared journal.
+            var readback = Path.Combine(temporary, "readback");
+            await CaptureRecordedDenseRecoveryAsync(inputs, actualResponses, readback, 5000);
+            using var result = JsonDocument.Parse(File.ReadAllText(Path.Combine(readback, "sqlite-readback.json"), Utf8));
+            Assert.IsTrue(result.RootElement.GetProperty("testSeededHistoricalPreparedPlan").GetBoolean());
+            Assert.IsFalse(result.RootElement.GetProperty("qualifiesCurrentPlanning").GetBoolean());
             passed = true;
         }
         finally
@@ -167,7 +173,8 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
         var planRaw = CatalogImportRecoveryService.Serialize(document);
         Assert.AreEqual(count, document.Coverage.Length);
         Assert.AreEqual(count, document.Coverage.Select(row => row.ClientItemId).Distinct(StringComparer.Ordinal).Count());
-        Assert.IsTrue(plan.Entries.All(child => CatalogImportPlanBuilder.CountRows(child) <= 1000 && CatalogImportPlanBuilder.Measure(child) <= 512 * 1024));
+        Assert.IsTrue(plan.Entries.All(child => CatalogImportPlanBuilder.CountRows(child) <= 1000 &&
+            CatalogImportPlanBuilder.Measure(child) <= 512 * 1024 && CatalogImportPlanBuilder.MeasureSqlItems(child) <= 512 * 1024));
         Assert.AreEqual(raw, fixture.Saved(initial.CatalogImportOutboxId));
         Assert.AreEqual(1L, fixture.Number("SELECT COUNT(*) FROM catalog_import_outbox"));
         Assert.AreEqual(2L * count, fixture.Number("SELECT COUNT(*) FROM product_price_history"));
@@ -278,13 +285,42 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
         await service.SaveDraftAsync(draft, draft.Rows, CancellationToken.None);
         await service.RetireAsync(draft, peer.Options, session, null!, () => true, CancellationToken.None);
         Assert.AreEqual("retired", draft.ReceiptStatus); Assert.IsTrue(draft.CanCommit);
+        var economicBefore = EconomicFingerprint(fixture);
+        var expectedEntries = RestoreOrdinaryArchivedEntries(expectedPlan);
+        var currentPreview = await service.BuildPreviewAsync(draft, draft.Rows, CancellationToken.None);
+        var newlyPlanned = CatalogImportOutboxPayloadBuilder.BuildRecoveryPlan(currentPreview, draft.OriginalRequest,
+            draft.Original.PayloadHash, false, draft.Contributions, null!);
+        Assert.IsTrue(newlyPlanned.Entries.All(entry => CatalogImportPlanBuilder.Measure(entry) <= 524288 && CatalogImportPlanBuilder.MeasureSqlItems(entry) <= 524288));
+        // Only this exact pinned archive is a preexisting-plan replay. Fresh
+        // maximum/capture inputs must match current planning without seeding.
+        var testSeededHistoricalPreparedPlan = count == 5000 &&
+            Hash(expectedPlanJson) == "f5200da9c5aece8f0b2b35f44e891f14c12cb1a411c17806653bcec5f374bba5" &&
+            Hash(originalJson) == "9f5f164646d70b5376a90a257bcfd5984811eabe21a8e665bbca909251c46e10";
+        if (testSeededHistoricalPreparedPlan)
+        {
+            Assert.IsFalse(expectedEntries.Select(entry => entry.PayloadHash).SequenceEqual(newlyPlanned.Entries.Select(entry => entry.PayloadHash)),
+                "The persisted historical journal, rather than fresh partitioning, must drive this archived replay.");
+            await StageHistoricalPreparedPlanAsync(service, draft, expectedEntries, expectedPlanJson, expectedPlan, session);
+            Assert.AreEqual(expectedPlanJson, fixture.Text("SELECT plan_document_json FROM catalog_import_prepared_plan WHERE original_id=@id", new { id = rootId }));
+            Assert.IsNull(fixture.NullableText("SELECT remote_plan_json FROM catalog_import_prepared_plan"), "Seeding a journal cannot manufacture remote acceptance.");
+            Assert.AreEqual(1L, fixture.Number("SELECT COUNT(*) FROM catalog_import_outbox"), "No child or remote ACK is published before real Commit.");
+        }
+        else
+            CollectionAssert.AreEqual(expectedEntries.Select(entry => entry.PayloadHash).ToArray(), newlyPlanned.Entries.Select(entry => entry.PayloadHash).ToArray(),
+                "Fresh qualification must use the current dual-budget planner, not a seeded historical plan.");
         var committed = await service.CommitAsync(draft, draft.Rows, () => true, null!, CancellationToken.None);
         Assert.AreEqual(0, committed.Errors, string.Join(";", committed.ErrorMessages));
         Assert.IsTrue(File.Exists(committed.BackupPath));
         Assert.AreEqual(expectedPlan.Parts.Length, committed.CatalogImportOutboxIds.Count);
         var repository = new CatalogImportOutboxRepository(fixture.Factory);
         var savedPlan = await repository.GetRemotePlanAsync(committed.CatalogImportOutboxIds[0]);
-        Assert.AreEqual(expectedPlanJson, CatalogImportRecoveryService.Serialize(savedPlan.Document), "The real service must emit the exact precommit document published for Admin.");
+        Assert.AreEqual(expectedPlanJson, CatalogImportRecoveryService.Serialize(savedPlan.Document), "Current Commit must preserve the pinned document; historical prepared work cannot be replanned.");
+        foreach (var entry in expectedEntries)
+        {
+            Assert.AreEqual(entry.PayloadJson, fixture.Text("SELECT payload_json FROM catalog_import_outbox WHERE client_import_id=@id", new { id = entry.ClientImportId }));
+            Assert.AreEqual(entry.PayloadHash, fixture.Text("SELECT payload_hash FROM catalog_import_outbox WHERE client_import_id=@id", new { id = entry.ClientImportId }));
+        }
+        Assert.AreEqual(economicBefore, EconomicFingerprint(fixture), "Recovery commit cannot apply seeded local economics a second time.");
         Write(outputDirectory, "plan.persisted.json", CatalogImportRecoveryService.Serialize(savedPlan));
         Assert.AreEqual(count * 2L, fixture.Number("SELECT COUNT(*) FROM product_price_history"));
         for (var index = 0; index < expectedPlan.Parts.Length; index++)
@@ -296,6 +332,7 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
                 Assert.AreEqual("failed_blocked", fixture.Text("SELECT status FROM catalog_import_outbox WHERE id=@id", new { id = rootId }), "Partial ACK cannot close the parent.");
         }
         handler.AssertConsumed();
+        Assert.AreEqual(economicBefore, EconomicFingerprint(fixture), "Historical ACK/replay cannot duplicate stock, prices or price history.");
         Assert.AreEqual("recovered", fixture.Text("SELECT status FROM catalog_import_outbox WHERE id=@id", new { id = rootId }));
         Assert.IsFalse(await repository.HasUnresolvedAsync());
         Assert.AreEqual(expectedPlan.Parts.Length, fixture.Number("SELECT COUNT(*) FROM catalog_import_outbox WHERE status='acked'"));
@@ -315,12 +352,74 @@ public sealed class CatalogImportRecoveryPhasedInteropEvidenceTests
         Write(outputDirectory, "sqlite-readback.json", JsonSerializer.Serialize(new
         {
             schemaVersion = "win7pos-phased-csharp-readback-v1", scope = "Official archived Admin responses through C# services/SQLite; fresh server replay remains separately evidenced",
+            testSeededHistoricalPreparedPlan, qualifiesCurrentPlanning = !testSeededHistoricalPreparedPlan,
+            economicFingerprintUnchanged = true,
             logicalRows = count, sourceInputsSha256 = FileHash(Path.Combine(inputsDirectory, "inputs.manifest.json")), seedSource,
             planId = savedPlan.Document.PlanId, originalOutboxId = rootId, originalRawSha256 = Hash(originalJson), immutableOriginal = true,
             outboxCount = expectedPlan.Parts.Length + 1, ackedParts = expectedPlan.Parts.Length, parentStatus = "recovered", unresolved = false,
             products = count, history = count * 2, mappedPrices = count * 2, stockEach = "1.25", retailEach = "1200", idMap,
             sqliteSha256 = FileHash(Path.Combine(outputDirectory, "recovered.sqlite"))
         }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static CatalogImportOutboxEntry[] RestoreOrdinaryArchivedEntries(PosCatalogImportRecoveryPlanDocument document)
+    {
+        return document.Parts.OrderBy(part => part.Index).Select(part =>
+        {
+            Assert.IsNull(part.Request.Correction, "This historical seed supports only the pinned ordinary replacement plan.");
+            var request = CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(CatalogImportRecoveryService.Serialize(part.Request));
+            request.PayloadHash = null; request.Batch.AttemptCount = 0;
+            var json = CatalogImportRecoveryService.Serialize(request);
+            Assert.AreEqual(part.Request.PayloadHash, Hash(json), "Restore the exact saved bytes, removing only transient transport metadata.");
+            return new CatalogImportOutboxEntry { ClientImportId = request.Batch.ClientImportId, IdempotencyKey = request.Batch.IdempotencyKey,
+                CreatedAt = DateTimeOffset.Parse(request.Batch.CreatedAt, System.Globalization.CultureInfo.InvariantCulture).ToUnixTimeMilliseconds(),
+                SchemaVersion = request.SchemaVersion, Source = request.Source, PayloadJson = json, PayloadHash = Hash(json) };
+        }).ToArray();
+    }
+
+    // Test-state setup only: invoke the existing validated journal writers after
+    // the recorded retirement authority and before Commit. No reply, receipt or
+    // ACK is constructed, and no product hook or hand-written journal SQL exists.
+    private static async Task StageHistoricalPreparedPlanAsync(CatalogImportRecoveryService service, CatalogImportRecoveryDraft draft,
+        CatalogImportOutboxEntry[] entries, string documentJson, PosCatalogImportRecoveryPlanDocument document, PosTrustedDeviceSession session)
+    {
+        var plan = CatalogImportPlanBuilder.Plan(entries);
+        Assert.AreEqual(document.PlanId, CatalogImportRecoveryProofTransport.CreateUploadId(session.ShopId, session.ShopDeviceId,
+            "sha256:" + Hash(plan.PlanId), "plan"));
+        var flags = BindingFlags.NonPublic | BindingFlags.Static;
+        var snapshot = typeof(CatalogImportRecoveryService).GetMethod("SnapshotRows", flags);
+        Assert.IsNotNull(snapshot);
+        var rows = (SupplierImportEditableRow[])snapshot.Invoke(null, new object[] { draft.Rows })!;
+        async Task InvokeWriter(string method, params object[] arguments)
+        {
+            var writer = typeof(CatalogImportRecoveryService).GetMethod(method, BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.IsNotNull(writer, method);
+            await (Task)writer.Invoke(service, arguments)!;
+        }
+        await InvokeWriter("SavePreparedPlanAsync", draft, rows, plan, (Func<bool>)(() => true), CancellationToken.None);
+        await InvokeWriter("SavePreparedDocumentAsync", draft, documentJson, (Func<bool>)(() => true), CancellationToken.None);
+    }
+
+    private static string EconomicFingerprint(Fixture fixture)
+    {
+        using var connection = fixture.Factory.Open();
+        var products = connection.Query<EconomicProduct>(@"SELECT p.id AS Id,p.barcode AS Barcode,p.unitPrice AS RetailPrice,
+m.purchase_price AS PurchasePrice,CAST(m.stock_qty AS TEXT) AS Quantity FROM products p JOIN product_meta m ON m.barcode=p.barcode ORDER BY p.id").ToArray();
+        var history = connection.Query<EconomicPrice>(@"SELECT id AS Id,barcode AS Barcode,LOWER(TRIM(type)) AS Kind,
+old_price AS OldPrice,new_price AS NewPrice FROM product_price_history ORDER BY id").ToArray();
+        // ACK deliberately adds remote mappings and normalizes type case; all
+        // local IDs and economic values must remain exactly the same.
+        return Hash(JsonSerializer.Serialize(new { products, history }));
+    }
+    private sealed class EconomicProduct
+    {
+        public long Id { get; set; } public string Barcode { get; set; } = ""; public long RetailPrice { get; set; }
+        public long PurchasePrice { get; set; } public string Quantity { get; set; } = "";
+    }
+    private sealed class EconomicPrice
+    {
+        public long Id { get; set; } public string Barcode { get; set; } = ""; public string Kind { get; set; } = "";
+        public long? OldPrice { get; set; } public long NewPrice { get; set; }
     }
 
     private static object AssertRecordedMappings(Fixture fixture, IReadOnlyList<PosCatalogImportRecoveryMultipartResponse> replies, PosCatalogImportRecoveryPlanDocument plan)
