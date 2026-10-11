@@ -68,8 +68,10 @@ public sealed class CatalogImportSupersessionInteropEvidenceTests
         }
         else if (evidence.HasAdminParser) peer.ChildCanonicalHash = evidence.CanonicalHash;
         var zeroChild = scenario.StartsWith("zerochild", StringComparison.Ordinal);
+        var archivePreparedJournal = recorded != null;
         var applier = new SupplierExcelImportApplier(fixture.Factory);
-        var preview = await applier.BuildPreviewAsync(Enumerable.Range(0, Count).Select(CatalogImportInteropEvidenceTests.Row).ToArray());
+        var preview = await applier.BuildPreviewAsync(Enumerable.Range(0, Count).Select(index => archivePreparedJournal
+            ? CatalogImportInteropEvidenceTests.Row(index) : CatalogImportInteropEvidenceTests.RowForCompactPlan(index)).ToArray());
         var createdAt = recorded?.CreatedAt ?? DateTimeOffset.UtcNow.ToString("O");
         preview.OperationCreatedAtUtc = createdAt;
         var original = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview, "supersession-interop.xlsx", "test");
@@ -93,6 +95,15 @@ public sealed class CatalogImportSupersessionInteropEvidenceTests
         draft.OperationCreatedAtUtc = createdAt;
         draft.Rows[0].RetailPrice = "1300";
         await service.SaveDraftAsync(draft, draft.Rows, CancellationToken.None);
+        if (archivePreparedJournal)
+        {
+            await CatalogImportArchivedPreparedJournalFixture.StageAsync(fixture.Factory,service,draft,Trusted(),
+                RecordedResponses.SourceZipHash,original.PayloadJson,recorded!.PredecessorJson);
+            evidence.Write("archive-prepared-journal.json", JsonSerializer.Serialize(new { scenario,archivePreparedJournal=true,
+                archiveReplay=true,qualifiesCurrentPlanning=false,sourceArchiveSha256=RecordedResponses.SourceZipHash,
+                originalSha256=Hash(original.PayloadJson),documentSha256=Hash(recorded.PredecessorJson),
+                remoteReceiptSeeded=false,remoteAcksSeeded=0,historicalMissingItemCount=recorded.HistoricalMissingItemCount }));
+        }
         evidence.Phase = "predecessor-registration-response-lost";
         peer.DropNextPlanResponse = true;
         var error = await Assert.ThrowsAsync<CatalogImportRecoveryException>(() => service.CommitAsync(draft, draft.Rows, () => true, null!, CancellationToken.None));
@@ -100,6 +111,8 @@ public sealed class CatalogImportSupersessionInteropEvidenceTests
         var frozen = fixture.Text("SELECT plan_document_json FROM catalog_import_prepared_plan");
         var predecessor = Read<PosCatalogImportRecoveryPlanDocument>(frozen);
         Assert.AreEqual(2, predecessor.Parts.Length);
+        if (archivePreparedJournal) Assert.AreEqual(recorded!.PredecessorJson,frozen,"Commit must reuse the exact historical prepared document.");
+        else Assert.IsTrue(predecessor.Parts.All(part=>CatalogImportSqlItemBudget.MeasureOrdinary(part.Request.Items)<=524288));
         AssertBeforeCommit(fixture, rootId, original.PayloadJson);
         evidence.Write("predecessor.document.json", frozen);
         evidence.State("predecessor-registered-reply-lost", rootId);
@@ -192,9 +205,12 @@ public sealed class CatalogImportSupersessionInteropEvidenceTests
             Assert.AreEqual(0, fixture.Number("SELECT COUNT(*) FROM catalog_import_plan"));
         }
         evidence.Write("successor.document.json", peer.PlanDocuments.Last());
+        var economicsBeforeAcks=CatalogImportArchivedPreparedJournalFixture.EconomicFingerprint(fixture.Factory,true);
         evidence.State("local-commit-complete", rootId);
         evidence.Phase = "successor-local-sync";
         await CatalogImportSupersessionTests.DrainAsync(fixture, peer, zeroChild ? 0 : 1);
+        Assert.AreEqual(economicsBeforeAcks,CatalogImportArchivedPreparedJournalFixture.EconomicFingerprint(fixture.Factory,true),
+            "Successor ACKs cannot duplicate or alter local product, metadata or price-history IDs/values.");
         if (!zeroChild)
         {
             var complete = await service.GetPlanProgressAsync(rootId, CancellationToken.None);
@@ -222,6 +238,7 @@ public sealed class CatalogImportSupersessionInteropEvidenceTests
         {
             recorded.VerifyFinal(fixture);
             evidence.Write("actual-database-reingest.json", JsonSerializer.Serialize(new { scenario,
+                archivePreparedJournal,archiveReplay=archivePreparedJournal,qualifiesCurrentPlanning=false,economicFingerprintUnchangedAfterAck=true,
                 responseArchiveSha256 = RecordedResponses.AdminZipHash, requestArchiveSha256 = RecordedResponses.SourceZipHash,
                 requestsVerified = recorded.RequestCount, productsVerified = Count, priceIdentitiesVerified = 2 * Count,
                 parentClosed = true, originalUnchanged = true, deferredDraftPreserved = true,
@@ -229,6 +246,7 @@ public sealed class CatalogImportSupersessionInteropEvidenceTests
         }
         evidence.State("closed-with-deferred-operator-draft", rootId);
         evidence.Complete(new { scenario, rowCount = Count, operationCreatedAtUtc = createdAt, rootId, originalPayloadHash = original.PayloadHash,
+            archivePreparedJournal,archiveReplay=archivePreparedJournal,qualifiesCurrentPlanning=!archivePreparedJournal,economicFingerprintUnchangedAfterAck=true,
             originalClientImportId = original.ClientImportId, originalIdempotencyKey = original.IdempotencyKey,
             predecessorPlanId = predecessor.PlanId, successorPlanId = successor.PlanId, deferredDraftOwnerId = owner,
             actualExternalApplyCount = zeroChild ? 2 : 1, finalLocalHistoryCount = 2 * Count + (zeroChild ? 1 : 2) });
@@ -264,6 +282,7 @@ public sealed class CatalogImportSupersessionInteropEvidenceTests
         private int nextIndex;
         internal string CreatedAt => sourceScenario.GetProperty("operationCreatedAtUtc").GetString()!;
         internal string OriginalJson => Text(source, sourcePrefix + "original.persisted.json");
+        internal string PredecessorJson => Text(source, sourcePrefix + "predecessor.document.json");
         internal int RequestCount => responses.Length;
         internal bool HistoricalMissingItemCount { get; }
 

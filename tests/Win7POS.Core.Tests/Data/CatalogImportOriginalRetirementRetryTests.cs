@@ -217,7 +217,7 @@ public sealed class CatalogImportOriginalRetirementRetryTests
     private static async Task<Original> SeedUncertainAsync(Fixture fixture, int count)
     {
         var applier = new SupplierExcelImportApplier(fixture.Factory);
-        var preview = await applier.BuildPreviewAsync(Enumerable.Range(0, count).Select(CatalogImportInteropEvidenceTests.Row).ToArray());
+        var preview = await applier.BuildPreviewAsync(Enumerable.Range(0, count).Select(CatalogImportInteropEvidenceTests.RowForCompactPlan).ToArray());
         var entry = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(preview, "retirement-retry.xlsx", "synthetic-client-test");
         var result = await applier.ApplyAsync(preview, new SupplierExcelImportApplyOptions { CatalogImportOutboxEntry = entry });
         Assert.AreEqual(0, result.Errors, string.Join(";", result.ErrorMessages));

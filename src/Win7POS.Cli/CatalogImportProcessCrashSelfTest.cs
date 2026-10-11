@@ -401,7 +401,9 @@ internal static class CatalogImportProcessCrashSelfTest
         PayloadJson = part.PayloadJson, PayloadHash = part.PayloadHash, SchemaVersion = PosOnlineContract.CatalogImportSchemaVersion, Source = "supplier_excel" };
     private static SupplierImportEditableRow[] Rows(int count, bool edited) => Enumerable.Range(0, count).Select(index => new SupplierImportEditableRow
     {
-        RowNumber = index + 2, Barcode = "TX-CRASH-" + index, ProductName = "QA 漢字 " + index,
+        // Keep actual Unicode in the interrupted payload/SQLite write, while
+        // compact ASCII rows preserve this fixture's exact 1000+1 partition.
+        RowNumber = index + 2, Barcode = "TX-CRASH-" + index, ProductName = (index == 0 ? "QA 漢字 " : "QA product ") + index,
         PurchasePrice = edited ? "125" : "100", RetailPrice = edited ? "250" : "200", Quantity = edited ? "2.5" : "1.25",
         HasProductNameSource = true, HasPurchasePriceSource = true, HasRetailPriceSource = true, HasQuantitySource = true
     }).ToArray();
