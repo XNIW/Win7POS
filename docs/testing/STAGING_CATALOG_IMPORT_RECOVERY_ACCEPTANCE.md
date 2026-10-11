@@ -77,6 +77,19 @@ Existing foreign import obligations cause a
 failure before seeding or draining. No pending row, retry deadline or lease is
 cleared to make the run pass.
 
+New plans also reserve the current Admin RPC's separate 524,288-byte JSONB item
+storage budget. This conservative bound includes the 13 normalized ordinary
+keys, explicit absent/null fields, object/array entries and alignment, rounded
+numeric storage, and product-name fallback duplication. Correction nested maps
+and masks have their own bound. Non-ASCII display values reserve at most three
+UTF-8 bytes per accepted UTF-16 code unit at the field's Admin limit, covering NFC
+expansion across OS/runtime Unicode versions; short non-ASCII names can therefore
+produce more parts than an HTTP-only planner. No payload text is normalized or
+changed by sizing. Facts report `SqlNormalizedItemsUpperBoundBytes`, not a measured
+database byte count. The live receipt requires this bound for every dispatched
+ordinary/recovery/contributor operation; seeded legacy originals remain explicit
+inputs. Already persisted plans retain their exact identities and bytes.
+
 The receipt `catalog-import-recovery-live-result.json` explicitly lists these
 remaining qualifications as not covered by this minimum extension:
 

@@ -196,6 +196,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Require(Scalar(factory, "SELECT COUNT(*) FROM sales") == 0 && !(await new CatalogImportOutboxRepository(factory).HasUnresolvedAsync()),
                         "u2_final_scope_or_queue_not_clean");
                     AssertFacts(factory, AllOperationFacts(report));
+                    var dispatchedFacts = report.OrdinaryParts.Concat(report.RecoveryParts).Concat(report.FenceParts)
+                        .Concat(report.SuccessionPredecessorParts).Concat(new[] { report.FenceOriginal, report.SuccessionContributor }).ToArray();
+                    Require(dispatchedFacts.All(fact => fact.Items >= 1 && fact.Items <= 1000 && fact.SqlNormalizedItemsUpperBoundBytes <= 524288),
+                        "u2_dispatched_sql_item_budget_invalid");
+                    report.SqlNormalizedItemBudgetsPassed = true;
                     report.LocalSqliteIntegrityPassed = ScalarText(factory, "PRAGMA integrity_check") == "ok";
                     Require(report.LocalSqliteIntegrityPassed, "u2_final_sqlite_integrity_failed");
                     WriteCleanupManifest(factory, output, report);
@@ -381,7 +386,9 @@ FROM product_price_history h JOIN products p ON p.barcode=h.barcode WHERE p.barc
                 var fact = connection.QuerySingle<IdentityFact>("SELECT id AS Id,client_import_id AS ClientImportId,idempotency_key AS IdempotencyKey,payload_hash AS PayloadHash FROM catalog_import_outbox WHERE id=@id", new { id });
                 var raw = connection.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox WHERE id=@id", new { id });
                 Require(CatalogImportOutboxPayloadBuilder.Sha256Hex(raw) == fact.PayloadHash, "u2_persisted_payload_hash_mismatch");
-                fact.Items = CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(raw).Items.Length;
+                var request = CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(raw);
+                fact.Items = request.Items.Length;
+                fact.SqlNormalizedItemsUpperBoundBytes = CatalogImportSqlItemBudget.MeasureOrdinary(request.Items);
                 return fact;
             }).ToArray();
         }
@@ -453,7 +460,7 @@ JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE @prefix ORDER BY
         private sealed class ProductFact { public string Barcode { get; set; } public string RemoteId { get; set; } public string Name { get; set; } public string Name2 { get; set; } public long Retail { get; set; } public long Purchase { get; set; } public decimal Stock { get; set; } }
         private sealed class PriceFact { public string RemoteId { get; set; } public string ProductId { get; set; } public string Kind { get; set; } public long Amount { get; set; } }
         [DataContract] private sealed class ArticleReceipt { [DataMember(Name = "passed")] public bool Passed { get; set; } [DataMember(Name = "runId")] public string RunId { get; set; } [DataMember(Name = "profile")] public string Profile { get; set; } [DataMember(Name = "logicalRuns")] public int LogicalRuns { get; set; } }
-        [DataContract] internal sealed class IdentityFact { [DataMember] public long Id { get; set; } [DataMember] public string ClientImportId { get; set; } [DataMember] public string IdempotencyKey { get; set; } [DataMember] public string PayloadHash { get; set; } [DataMember] public int Items { get; set; } }
+        [DataContract] internal sealed class IdentityFact { [DataMember] public long Id { get; set; } [DataMember] public string ClientImportId { get; set; } [DataMember] public string IdempotencyKey { get; set; } [DataMember] public string PayloadHash { get; set; } [DataMember] public int Items { get; set; } [DataMember] public long SqlNormalizedItemsUpperBoundBytes { get; set; } }
         [DataContract] private sealed class CleanupManifest { [DataMember] public string RunId { get; set; } [DataMember] public string ShopId { get; set; } [DataMember] public string ShopDeviceId { get; set; } [DataMember] public string Prefix { get; set; } [DataMember] public string[] ProductIds { get; set; } [DataMember] public string[] PriceIds { get; set; } [DataMember] public long[] LocalOnlyUnacceptedLegacyHistoryIds { get; set; } [DataMember] public string[] RecoveryPlanIds { get; set; } [DataMember] public IdentityFact[] Operations { get; set; } [DataMember] public bool CleanupExecuted { get; set; } }
         [DataContract] private sealed class LiveReport
         {
@@ -492,6 +499,7 @@ JOIN product_meta m ON m.barcode=p.barcode WHERE p.barcode LIKE @prefix ORDER BY
             [DataMember] public bool SuccessionEconomicOncePassed { get; set; } [DataMember] public bool SuccessionLateFencePassed { get; set; }
             [DataMember] public bool SuccessionCoverageOnlyPassed { get; set; }
             [DataMember] public bool SuccessionBackupVerified { get; set; } [DataMember] public bool SuccessionLegacyOriginalHttpDispatchObserved { get; set; }
+            [DataMember] public bool SqlNormalizedItemBudgetsPassed { get; set; }
             [DataMember] public List<PosAdminWebClient.CatalogImportQaWireRecord> Wire { get; set; } = new List<PosAdminWebClient.CatalogImportQaWireRecord>();
             [DataMember] public string[] NotCovered { get; set; } = new[] { "linked_correction_of_deferred_accepted_row_requires_separate_live_case", "concurrent_independent_devices_and_mobile_not_covered", "operator_dialog_keyboard_focus_languages_use_existing_WPF_U2_suite", "sqlite_process_crash_uses_separate_owned_isolated_regression", "full_59999_rows_and_resource_performance_requires_separate_qualification", "physical_Win7_mobile_and_hardware_not_covered", "QA_cleanup_requires_authorized_Admin_procedure" };
         }

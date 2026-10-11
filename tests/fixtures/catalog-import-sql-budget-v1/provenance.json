@@ -1,0 +1,16 @@
+{
+  "classification": "isolated_real_handler_sql_failure_regression_input",
+  "posCommit": "9c19bbe0e09af44e08948da7bf8b159b4011dabb",
+  "adminCommit": "15ee18863bfac545d53ff5784eea46d96f8af82c",
+  "originalRunNonce": "fbf7d6681eaf49f59e8a1d6e0ceafc53",
+  "items": 523,
+  "originalPersistedPayloadSha256": "bcc3a3774ec2c52a00557590dbd341240911e3ddea9fa3dd8f7a499f3b8429f2",
+  "projectionUtf8Bytes": 520146,
+  "projectionSha256": "ca2080cf288a7570eeadae7db4b8df6fd0be0607f5e619d8a4649877562d1dc7",
+  "sqlItemsPgColumnSize": 572424,
+  "sqlItemsJsonbTextBytes": 554058,
+  "observedCode": "validation_failed",
+  "observedProducts": 0,
+  "observedPrices": 0,
+  "observedBatches": 0
+}

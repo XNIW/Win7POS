@@ -35,7 +35,8 @@ namespace Win7POS.Data.Online
             if (entry == null) return null;
             if (entry.OperationType == "catalog_import_correction") return SplitCorrection(entry);
             var source = CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(entry.PayloadJson);
-            if (source.Items.Length <= MaximumRowsPerRequest && Measure(entry) <= MaximumTransportBytes)
+            if (source.Items.Length <= MaximumRowsPerRequest && Measure(entry) <= MaximumTransportBytes &&
+                CatalogImportSqlItemBudget.MeasureOrdinary(source.Items) <= CatalogImportSqlItemBudget.MaximumBytes)
                 return Plan(new[] { entry });
             var entries = new List<CatalogImportOutboxEntry>();
             // Item IDs have a fixed-width operation prefix. Measure each row
@@ -44,18 +45,20 @@ namespace Win7POS.Data.Online
             var envelopeBytes = Measure(Part(entry, source, 0, 0)) + 8;
             for (var offset = 0; offset < source.Items.Length;)
             {
-                var bytes = envelopeBytes; var length = 0;
+                var bytes = envelopeBytes; var sqlBytes = 8L; var length = 0;
                 while (length < MaximumRowsPerRequest && offset + length < source.Items.Length)
                 {
                     var item = CloneItem(source.Items[offset + length]);
                     item.ClientItemId = "win7pos-part-" + new string('a', 32) + "-row-" + item.RowNumber;
                     var rowBytes = Encoding.UTF8.GetByteCount(CatalogImportRecoveryService.Serialize(item)) + (length == 0 ? 0 : 1);
-                    if (bytes + rowBytes > MaximumTransportBytes) break;
-                    bytes += rowBytes; length++;
+                    var sqlRowBytes = CatalogImportSqlItemBudget.OrdinaryArrayItemBytes(item);
+                    if (bytes + rowBytes > MaximumTransportBytes || sqlBytes + sqlRowBytes > CatalogImportSqlItemBudget.MaximumBytes) break;
+                    bytes += rowBytes; sqlBytes += sqlRowBytes; length++;
                 }
                 if (length == 0) throw new CatalogImportRecoveryException("recovery_row_too_large|"+source.Items[offset].RowNumber+"|"+source.Items[offset].Barcode);
                 var candidate = Part(entry, source, offset, length);
-                if (Measure(candidate) > MaximumTransportBytes) throw new CatalogImportRecoveryException("recovery_row_too_large");
+                if (Measure(candidate) > MaximumTransportBytes || MeasureSqlItems(candidate) > CatalogImportSqlItemBudget.MaximumBytes)
+                    throw new CatalogImportRecoveryException("recovery_row_too_large");
                 entries.Add(candidate); offset += length;
             }
             return Plan(entries);
@@ -89,7 +92,8 @@ namespace Win7POS.Data.Online
         private static CatalogImportOutboxPlan SplitCorrection(CatalogImportOutboxEntry entry)
         {
             var source = CatalogImportCorrectionTransport.ReadSavedRequest(entry.PayloadJson, entry.SharedProof);
-            if (source.Correction.Items.Length <= MaximumRowsPerRequest && Measure(entry) <= MaximumTransportBytes)
+            if (source.Correction.Items.Length <= MaximumRowsPerRequest && Measure(entry) <= MaximumTransportBytes &&
+                CatalogImportSqlItemBudget.MeasureCorrection(source.Correction.Items) <= CatalogImportSqlItemBudget.MaximumBytes)
                 return Plan(new[] { entry });
             // A large original makes an embedded correction unrepresentable even
             // when every changed row is small. Use the verified server plan and
@@ -116,7 +120,8 @@ namespace Win7POS.Data.Online
                     var candidate=Entry(entry,request.Correction.ClientImportId,request.Correction.IdempotencyKey,
                         CatalogImportCorrectionTransport.SerializeSaved(request,receipt,proof));
                     candidate.SharedProof=proof;
-                    if(Measure(candidate)<=MaximumTransportBytes) { best=candidate;length=count;low=count+1; } else high=count-1;
+                    if(Measure(candidate)<=MaximumTransportBytes && MeasureSqlItems(candidate)<=CatalogImportSqlItemBudget.MaximumBytes)
+                    { best=candidate;length=count;low=count+1; } else high=count-1;
                 }
                 if(best==null) throw new CatalogImportRecoveryException("recovery_row_too_large|"+source.Correction.Items[offset].ClientItemId);
                 entries.Add(best);offset+=length;
@@ -137,6 +142,10 @@ namespace Win7POS.Data.Online
         internal static int CountRows(CatalogImportOutboxEntry entry) => entry.OperationType == "catalog_import_correction"
             ? CatalogImportCorrectionTransport.ReadSavedRequest(entry.PayloadJson, entry.SharedProof).Correction.Items.Length
             : CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(entry.PayloadJson).Items.Length;
+
+        internal static long MeasureSqlItems(CatalogImportOutboxEntry entry) => entry.OperationType == "catalog_import_correction"
+            ? CatalogImportSqlItemBudget.MeasureCorrection(CatalogImportCorrectionTransport.ReadSavedRequest(entry.PayloadJson, entry.SharedProof).Correction.Items)
+            : CatalogImportSqlItemBudget.MeasureOrdinary(CatalogImportRecoveryService.Deserialize<PosCatalogImportRequest>(entry.PayloadJson).Items);
 
         internal static int Measure(CatalogImportOutboxEntry entry)
         {

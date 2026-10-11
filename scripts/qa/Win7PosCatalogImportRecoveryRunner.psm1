@@ -48,7 +48,7 @@ function Invoke-Win7PosCatalogImportRecoveryPhases {
             'RetirementPassed', 'BackupVerified', 'Recovery5000Passed', 'LostResponseRetryRestartPassed',
             'LateOriginalFencePassed', 'CloudCanonicalReadbackPassed', 'LocalSqliteIntegrityPassed',
             'AcceptedPlanPartSuccessionPassed', 'IndependentAcceptedContributorPassed', 'SuccessionEconomicOncePassed',
-            'SuccessionLateFencePassed', 'SuccessionCoverageOnlyPassed', 'SuccessionBackupVerified')) {
+            'SuccessionLateFencePassed', 'SuccessionCoverageOnlyPassed', 'SuccessionBackupVerified', 'SqlNormalizedItemBudgetsPassed')) {
             if ($report.$field -ne $true) { return [pscustomobject]$result }
         }
         if ($report.passed -ne $true -or $report.SeededLegacyUncertainty -ne $true -or
