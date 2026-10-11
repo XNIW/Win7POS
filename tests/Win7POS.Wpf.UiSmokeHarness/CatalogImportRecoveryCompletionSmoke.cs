@@ -106,6 +106,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Require(Keyboard.FocusedElement is TextBox focused && focused.GetBindingExpression(TextBox.TextProperty)?.ParentBinding.Path.Path == "RetailPrice", "verification did not focus the invalid price editor");
                     await EditRetailAsync(dialog, "200");
                     await VerifyAsync(dialog);
+                    CheckFourRecoveryLanguages(dialog, () => PosLocalization.F("importRecovery.previewReady", rows.Length),
+                        "importRecovery.receipt.safe", "importRecovery.draftSaved");
                     var servicePreview = await new CatalogImportRecoveryService(fixture.Factory).BuildPreviewAsync(Draft(dialog), rows, CancellationToken.None);
                     Require(servicePreview.NoChangeRows.Count == 2, "fixture did not cover two unchanged rows");
                     await CheckQueryShapeAsync(fixture, servicePreview, 1);
@@ -332,6 +334,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             Click(dialog, "PrepareButton"); await IdleAsync(dialog);
                             var error = Named<TextBlock>(dialog, "RecoveryStatus").Text;
                             Require(error.Contains(PosLocalization.T("importRecovery.retail")) && error.Contains(fixture.Rows[0].Barcode), "recovery field error not localized");
+                            if (language == "en")
+                                CheckFourRecoveryLanguages(dialog, () => PosLocalization.F("importRecovery.rowError",
+                                    fixture.Rows[0].RowNumber, fixture.Rows[0].Barcode,
+                                    PosLocalization.T("importRecovery.retail") + ": " + PosLocalization.T("importRecovery.invalidData")),
+                                    "importRecovery.receipt.safe", "importRecovery.draftExplanation");
                             foreach (var name in new[] { "PrepareButton", "CommitButton", "CancelRecoveryButton" }) CheckBounds(Named<Button>(dialog, name), dialog, language);
                             Require(Named<DataGrid>(dialog, "RecoveryRows").Items.Count == 3, "translated recovery lost rows");
                             Capture(dialog, "recovery-invalid-" + language,
@@ -494,7 +501,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 foreach (var language in new[] { "en", "es", "it", "zh-CN" })
                 {
-                    PosLocalization.Current.SetLanguage(language);
+                    var draftKey = PrivateField<long>(dialog, "_draftVersion") != PrivateField<long>(dialog, "_savedDraftVersion")
+                        ? "importRecovery.draftSaving" : Draft(dialog).HasPreparedPlan
+                            ? "importRecovery.preparedPlan" : "importRecovery.draftSaved";
+                    CheckRecoveryLanguageSwitch(dialog, language, () => PosLocalization.T("importRecovery.editThenVerify"),
+                        "importRecovery.receipt.unknown", draftKey);
                     await Dispatcher.CurrentDispatcher.InvokeAsync(() => dialog.UpdateLayout(), DispatcherPriority.Render);
                     var buttons = new[] { "DiscardDraftButton", "RetireButton", "PrepareButton", "CommitButton", "CancelRecoveryButton" }
                         .Select(name => Named<Button>(dialog, name)).ToArray();
@@ -513,6 +524,64 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             finally { PosLocalization.Current.SetLanguage(originalLanguage); }
         }
+
+        private static void CheckFourRecoveryLanguages(CatalogImportRecoveryDialog dialog,
+            Func<string> expectedStatus, string receiptKey, string draftKey, Func<string> expectedProgress = null)
+        {
+            var originalLanguage = PosLocalization.Current.CurrentLanguage;
+            try
+            {
+                foreach (var language in new[] { "en", "es", "it", "zh-CN" })
+                    CheckRecoveryLanguageSwitch(dialog, language, expectedStatus, receiptKey, draftKey, expectedProgress);
+            }
+            finally { PosLocalization.Current.SetLanguage(originalLanguage); }
+        }
+
+        private static void CheckRecoveryLanguageSwitch(CatalogImportRecoveryDialog dialog, string language,
+            Func<string> expectedStatus, string receiptKey, string draftKey, Func<string> expectedProgress = null)
+        {
+            var draft = Draft(dialog);
+            var grid = Named<DataGrid>(dialog, "RecoveryRows");
+            var source = grid.ItemsSource;
+            var rows = Rows(dialog);
+            var values = rows.Select(row => Tuple.Create(row.PurchasePrice, row.RetailPrice, row.Quantity)).ToArray();
+            var selected = grid.SelectedItem;
+            var currentCell = grid.CurrentCell;
+            var focus = Keyboard.FocusedElement;
+            var buttons = new[] { "DiscardDraftButton", "RetireButton", "PrepareButton", "CommitButton", "CancelRecoveryButton" }
+                .Select(name => Named<Button>(dialog, name)).ToArray();
+            var enabled = buttons.Select(button => button.IsEnabled).ToArray();
+            var visibility = buttons.Select(button => button.Visibility).ToArray();
+            var editable = Tuple.Create(grid.IsEnabled, grid.IsReadOnly);
+            var fields = new[] { "_validated", "_busy", "_draftApplied", "_draftVersion", "_savedDraftVersion", "_draftSaveTask",
+                "_operationCode", "_operationPhase", "_generation", "_replacementId", "_operatorChanged", "_authorizeCommit" };
+            var state = fields.Select(name => PrivateField<object>(dialog, name)).ToArray();
+            using (var sql = SqliteWorkMetrics.Begin())
+            {
+                PosLocalization.Current.SetLanguage(language);
+                Require(Named<TextBlock>(dialog, "RecoveryStatus").Text == expectedStatus() &&
+                    Named<TextBlock>(dialog, "ReceiptText").Text == PosLocalization.T(receiptKey) &&
+                    Named<TextBlock>(dialog, "DraftStateText").Text == PosLocalization.T(draftKey),
+                    "in-place recovery language switch retained stale status, receipt or draft text: " + language);
+                Require(expectedProgress == null || Named<TextBlock>(dialog, "PlanProgressText").Text == expectedProgress(),
+                    "in-place recovery language switch lost or failed to translate plan progress: " + language);
+                Require(ReferenceEquals(Draft(dialog), draft) && ReferenceEquals(grid.ItemsSource, source) &&
+                    Rows(dialog).SequenceEqual(rows) &&
+                    rows.Select(row => Tuple.Create(row.PurchasePrice, row.RetailPrice, row.Quantity)).SequenceEqual(values) &&
+                    fields.Select(name => PrivateField<object>(dialog, name)).SequenceEqual(state) &&
+                    buttons.Select(button => button.IsEnabled).SequenceEqual(enabled) &&
+                    buttons.Select(button => button.Visibility).SequenceEqual(visibility) &&
+                    Tuple.Create(grid.IsEnabled, grid.IsReadOnly).Equals(editable) && ReferenceEquals(grid.SelectedItem, selected) &&
+                    grid.CurrentCell.Equals(currentCell) && ReferenceEquals(Keyboard.FocusedElement, focus),
+                    "in-place recovery language switch changed edits, validation, authorization, busy state or focus: " + language);
+                Require(sql.Connections == 0 && sql.ProductCommands == 0,
+                    "in-place recovery language switch queried SQLite: " + language);
+                Evidence.Add("recovery_hot_switch language=" + language + "; status_receipt_draft_refreshed=True; operation_state_preserved=True; observed_connections=" + sql.Connections + "; observed_product_commands=" + sql.ProductCommands);
+            }
+        }
+
+        private static T PrivateField<T>(CatalogImportRecoveryDialog dialog, string name) =>
+            (T)typeof(CatalogImportRecoveryDialog).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(dialog);
 
         private static async Task CheckMeasurementsAsync()
         {
@@ -679,6 +748,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var progress = await new CatalogImportRecoveryService(fixture.Factory).GetPlanProgressAsync(fixture.OriginalId, CancellationToken.None);
                     Require(progress.TotalRows == rowCount && progress.CompletedRows == 0 && progress.TotalParts >= (rowCount + 999) / 1000,
                         "persisted plan progress lost rows or claimed a partial ACK");
+                    CheckFourRecoveryLanguages(dialog, () => PosLocalization.T("importRecovery.queued"),
+                        "importRecovery.awaitingAck", "importRecovery.localSaved",
+                        () => PosLocalization.F("importRecovery.planProgress", progress.CompletedRows,
+                            progress.TotalRows, progress.CompletedParts, progress.TotalParts));
                     Evidence.Add("large_commit rows=" + rowCount + "; elapsed_ms=" + commitWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; verified_backup_bytes=" + new FileInfo(backups[0]).Length + "; observed_connections=" + sql.Connections + "; product_commands_on_dispatcher=" + sql.ProductCommandsOnCallingThread + "; apply_batch_queries=" + observedBatches + "; apply_product_writes=" + observedProductWrites + "; apply_history_writes=" + observedHistoryWrites + "; apply_operations_on_dispatcher=" + applyOperationsOnDispatcher + "; replacement_parts=" + progress.TotalParts + "; replacement_rows=" + rowCount + "; completed_parts=0; original_resolved=False");
                     Require(observedBatches == expectedBatches && observedProductWrites == 1 && observedHistoryWrites == 1 && applyOperationsOnDispatcher == 0, "large commit SQL batching or worker-thread execution regressed");
                     Require(sql.ProductCommandsOnCallingThread == 0, "large recovery product query ran on Dispatcher");

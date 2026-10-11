@@ -4,7 +4,8 @@ param(
     [string]$DataDirectory = 'C:\POSData\Win7POSFinalArticleSyncAcceptance',
     [ValidatePattern('^ASUSART_POST_PR68_[0-9]{8}T[0-9]{9}Z_[A-F0-9]{8}$')][string]$ReadinessRunId = '',
     [ValidatePattern('^[0-9]+$')][string]$ReleasePackRunId = '',
-    [ValidateRange(15, 60)][int]$TimeoutMinutes = 15
+    [ValidateRange(15, 60)][int]$TimeoutMinutes = 15,
+    [switch]$CatalogImportRecovery
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +13,7 @@ Import-Module (Join-Path $PSScriptRoot 'Win7PosQaCredentialVault.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Win7PosAcceptanceProcessRunner.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Win7PosArticleReadiness.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Win7PosQaPayload.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Win7PosCatalogImportRecoveryRunner.psm1') -Force
 
 $runnerExit = @{
     ProfileMissingOrInvalid = 2
@@ -60,6 +62,8 @@ function Complete-Win7PosAcceptanceRunner {
             $false
         }
         passed = $Passed
+        catalogImportRecoveryRequested = [bool]$CatalogImportRecovery
+        catalogImportRecoveryResult = if ($CatalogImportRecovery) { 'catalog-import-recovery-live-result.json' } else { $null }
         processId = if ($null -ne $ProcessResult) {
             $ProcessResult.ProcessId
         } else {
@@ -511,6 +515,7 @@ try {
     }
 
     # Build/test time must not turn an expired readiness into a new live run.
+    function Confirm-AcceptanceReadiness {
     try {
         $recheckedAdminSha = (& gh api repos/XNIW/merchandise-control-admin-web/commits/main --jq '.sha').Trim()
         if ($LASTEXITCODE -ne 0 -or $recheckedAdminSha -cnotmatch '^[0-9a-f]{40}$') { throw 'readiness_recheck_failed' }
@@ -529,6 +534,9 @@ try {
         Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.LaunchFailure `
             -Code 'acceptance_admin_readiness_changed_or_expired_before_launch' -Passed $false
     }
+
+    }
+    Confirm-AcceptanceReadiness
 
     if (Test-Path -LiteralPath $fullDataDirectory) {
         $backup = $fullDataDirectory + '.backup-' +
@@ -786,6 +794,20 @@ try {
             -Code $completeFailureCode `
             -Passed $false `
             -ProcessResult $processResult
+    }
+
+    if ($CatalogImportRecovery) {
+        # Same canonical lease, READY, payload and total timeout budget.
+        $u2Result = Invoke-Win7PosCatalogImportRecoveryPhases `
+            -HarnessPath $fullHarnessPath -Profile $Profile -RunId $runId `
+            -DataDirectory $fullDataDirectory -EvidenceDirectory $evidenceDirectory `
+            -StartedAt $acceptanceStartedAt -TimeoutMinutes $TimeoutMinutes `
+            -ConfirmPayload { Confirm-AcceptancePayload } `
+            -ConfirmReadiness { Confirm-AcceptanceReadiness }
+        if (-not $u2Result.Passed) {
+            Complete-Win7PosAcceptanceRunner -ExitCode $runnerExit.CompleteFailure `
+                -Code $u2Result.Code -Passed $false -ProcessResult $u2Result.ProcessResult
+        }
     }
 
     Complete-Win7PosAcceptanceRunner `

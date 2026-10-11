@@ -493,5 +493,7 @@ if ($failed) {
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & pwsh -NoProfile -File (Join-Path $repoRoot 'tests/qa/Test-Win7PosQaPayload.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& pwsh -NoProfile -File (Join-Path $repoRoot 'tests/qa/Test-Win7PosCatalogImportRecoveryRunner.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "FINAL_ARTICLE_SYNC_ACCEPTANCE_GATE=PASS"

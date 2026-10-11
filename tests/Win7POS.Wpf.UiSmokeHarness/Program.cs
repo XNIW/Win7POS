@@ -182,6 +182,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var authoritativeDrainLoopback =
                 HasArg(args, "--authoritative-drain-loopback");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
+            var stagingImportRecovery = HasArg(args, "--staging-catalog-import-recovery");
             var productImageProfileSmoke =
                 HasArg(args, "--product-image-profile-smoke");
             var productImageUiSmoke =
@@ -193,6 +194,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
             var stagingAcceptancePhase =
                 ValueAfter(args, "--acceptance-phase");
+            if (stagingImportRecovery && (stagingAcceptance || string.IsNullOrWhiteSpace(stagingProfile) ||
+                string.IsNullOrWhiteSpace(stagingRunId) || string.IsNullOrWhiteSpace(acceptanceOutput) ||
+                (stagingAcceptancePhase != "prepare" && stagingAcceptancePhase != "resume" && stagingAcceptancePhase != "continue")))
+                throw new InvalidOperationException("--staging-catalog-import-recovery requires --profile, --run-id, --acceptance-output and --acceptance-phase prepare|resume|continue.");
             if (stagingAcceptance &&
                 (string.IsNullOrWhiteSpace(stagingProfile) ||
                  string.IsNullOrWhiteSpace(stagingRunId) ||
@@ -272,6 +277,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                productImageUiSmoke ||
                                productImageStagingAcceptance ||
                                stagingAcceptance ||
+                               stagingImportRecovery ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
 
@@ -389,6 +395,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             result.StartsWith("PASS", StringComparison.Ordinal)
                                 ? 0
                                 : 1);
+                        return;
+                    }
+
+                    if (stagingImportRecovery)
+                    {
+                        var exitCode = await StagingCatalogImportRecoveryAcceptance.RunAsync(
+                            stagingProfile, stagingRunId, acceptanceOutput, stagingAcceptancePhase).ConfigureAwait(true);
+                        app.Shutdown(exitCode);
                         return;
                     }
 

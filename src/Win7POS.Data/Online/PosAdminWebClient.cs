@@ -12,7 +12,7 @@ using Win7POS.Core.Online;
 
 namespace Win7POS.Data.Online
 {
-    public sealed class PosAdminWebClient : IDisposable
+    public sealed partial class PosAdminWebClient : IDisposable
     {
         private const string FirstLoginPath = "/api/pos/auth/first-login";
         private const string HeartbeatPath = "/api/pos/session/heartbeat";
@@ -380,6 +380,9 @@ namespace Win7POS.Data.Online
                     HttpMethod.Post,
                     relativePath.TrimStart('/')))
                 {
+                    var qaScope = GetCatalogImportQaScope(_httpClient.BaseAddress, relativePath, request);
+                    var qaObservation = qaScope == null ? null : qaScope.BeginRequest(
+                        relativePath, request, await content.ReadAsByteArrayAsync().ConfigureAwait(false));
                     requestMessage.Content = content;
                     requestMessage.Headers.TryAddWithoutValidation("X-Client-Request-Id", clientRequestId);
                     requestMessage.Headers.TryAddWithoutValidation("User-Agent", "Win7POS/online-client");
@@ -400,6 +403,7 @@ namespace Win7POS.Data.Online
                             requestToken)
                         .ConfigureAwait(false))
                     {
+                        if (qaObservation != null) qaScope.RecordHttpResponse(qaObservation, response);
                         var serverRequestId = FirstHeaderValue(response, "X-Request-Id");
                         var cfRay = FirstHeaderValue(response, "CF-Ray");
                         var httpStatus = (int)response.StatusCode;
@@ -465,6 +469,7 @@ namespace Win7POS.Data.Online
                             response.Content,
                             MaxResponseBodyBytes,
                             requestToken).ConfigureAwait(false);
+                        if (qaObservation != null) qaScope.RecordParsedResponse(qaObservation, responseRead.Value);
                         if (responseRead.Truncated)
                         {
                             return PosOnlineResult<TResponse>.Failure(
