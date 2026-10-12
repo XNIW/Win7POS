@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { extractSourceIndexFixture, assertSavedCatalogBaseline, assertSourceIndexInstallation,
   assertFullIndexCatalogUnchanged, SOURCE_INDEXES } from './catalog-source-index-fixture.mjs';
 
-const source = readFileSync(new URL('./fixtures/catalog-source-indexes/source-indexes.synthetic.sql', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./fixtures/catalog-source-indexes/source-indexes.synthetic.sql', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
 const toy = JSON.parse(readFileSync(new URL('./fixtures/catalog-source-indexes/catalog.synthetic.json', import.meta.url), 'utf8'));
 const fixture = extractSourceIndexFixture(source);
 function state() {
