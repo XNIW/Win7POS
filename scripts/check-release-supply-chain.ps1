@@ -86,20 +86,42 @@ try {
 catch { Fail "Signing toolchain pin configuration is invalid JSON" }
 
 try {
+    $lockFiles = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "src"),(Join-Path $repoRoot "tests") -Filter packages.lock.json -Recurse | Sort-Object FullName)
+    if ($lockFiles.Count -eq 0) { throw "No packages.lock.json files were found." }
+    $locked = @{}
+    foreach ($lock in $lockFiles) {
+        $json = Get-Content -LiteralPath $lock.FullName -Raw | ConvertFrom-Json
+        if ([int]$json.version -ne 1) { throw "Unsupported lock file version in $($lock.FullName)." }
+        foreach ($framework in $json.dependencies.PSObject.Properties) {
+            foreach ($package in $framework.Value.PSObject.Properties) {
+                if ([string]$package.Value.type -ceq "Project") { continue }
+                $id = [string]$package.Name
+                $version = [string]$package.Value.resolved
+                if ([string]::IsNullOrWhiteSpace($version)) {
+                    throw "Lock entry has no resolved version: $id in $($lock.FullName)."
+                }
+                $locked[($id + "@" + $version).ToLowerInvariant()] = $true
+            }
+        }
+    }
+    if ($locked.Count -eq 0) { throw "No resolved package versions were found in lock files." }
     $licensePolicy = Get-Content -LiteralPath (Join-Path $repoRoot "eng\supply-chain\license-policy.json") -Raw | ConvertFrom-Json
     $allowed = @($licensePolicy.allowedExpressions | Sort-Object)
     $expectedAllowed = @("Apache-2.0", "LicenseRef-SQLite-Public-Domain", "MIT", "MPL-2.0")
     $packages = @($licensePolicy.licenseGroups | ForEach-Object { @($_.packages) })
-    $uniquePackages = @($packages | Sort-Object -Unique)
+    $uniquePackages = @($packages | ForEach-Object { ([string]$_).ToLowerInvariant() } | Sort-Object -Unique)
+    $unknown = @($locked.Keys | Where-Object { $_ -notin $uniquePackages } | Sort-Object)
+    $stale = @($uniquePackages | Where-Object { -not $locked.ContainsKey($_) } | Sort-Object)
     if ($licensePolicy.schemaVersion -ne 1 -or
         ($allowed -join "|") -ne ($expectedAllowed -join "|") -or
-        $packages.Count -ne 51 -or $uniquePackages.Count -ne 51 -or
+        $packages.Count -ne $locked.Count -or $uniquePackages.Count -ne $locked.Count -or
+        $unknown.Count -ne 0 -or $stale.Count -ne 0 -or
         @($packages | Where-Object { $_ -notmatch '^[^@]+@\d+\.\d+\.' }).Count -ne 0) {
-        Fail "License policy must contain 51 unique exact package/version mappings and only reviewed expressions"
+        Fail "License policy must match all $($locked.Count) unique exact locked package/version mappings and only reviewed expressions (unmapped: $($unknown -join ', '); stale: $($stale -join ', '))"
     }
-    else { Pass "License policy contains 51 exact mappings with a closed reviewed allowlist" }
+    else { Pass "License policy matches all $($locked.Count) exact locked mappings with a closed reviewed allowlist" }
 }
-catch { Fail "License policy is invalid JSON" }
+catch { Fail "License policy or locked inventory is invalid: $($_.Exception.Message)" }
 
 $ignoreText = Read-RequiredText ".gitleaksignore"
 $ignoreLines = @($ignoreText -split '\r?\n' | Where-Object {
