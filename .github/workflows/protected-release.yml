@@ -200,7 +200,7 @@ jobs:
           Copy-Item -Path "dist/*" -Destination $stage -Recurse -Force
 
       - name: Upload immutable unsigned input
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Win7POS-Protected-Unsigned-${{ github.run_id }}
           path: artifacts/protected-release-input
@@ -209,7 +209,7 @@ jobs:
 
       - name: Upload unsigned security evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Win7POS-Protected-Security-${{ github.run_id }}
           path: artifacts/protected-release
@@ -705,7 +705,7 @@ jobs:
           Copy-Item -Path "dist/*" -Destination $stage -Recurse -Force
 
       - name: Upload signed candidate for attestation
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Win7POS-Protected-Signed-${{ github.run_id }}
           path: artifacts/protected-release-signed
@@ -881,7 +881,7 @@ jobs:
 
       - name: Attest signed installer and release pack provenance
         id: provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/Win7POS-*-Setup.exe
@@ -889,7 +889,7 @@ jobs:
 
       - name: Attest signed installer and release pack SBOM
         id: sbom
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/Win7POS-*-Setup.exe
@@ -943,7 +943,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Attested protected-release closed-world validation failed." }
 
       - name: Upload attested protected release
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Win7POS-${{ github.ref_name }}-Protected-Release
           path: dist
