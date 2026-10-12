@@ -30,6 +30,7 @@ $sourceGates = @(
     "check-security-hardening.ps1",
     "check-public-staging-config.ps1",
     "check-final-article-sync-acceptance.ps1",
+    "check-owned-catalog-qa.ps1",
     "check-supplier-excel-wizard.ps1",
     "check-product-dialog-free-text.ps1",
     "check-product-keyset-paging.ps1",

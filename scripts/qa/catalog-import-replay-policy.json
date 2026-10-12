@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "win7pos-owned-catalog-replay-protocol-v1",
+  "qaReplayPolicy": "apply-single-first-response-terminal-idempotence-v1",
+  "worker": "catalog-import-qa-worker.mjs",
+  "terminal": "catalog-import-terminal-replay.mjs",
+  "sharedValidation": "catalog-import-replay-protocol.mjs",
+  "collector": "Collect-Win7PosOwnedResources.ps1",
+  "scheduleSchemaVersion": "win7pos-phased-admin-schedule-v2",
+  "applyInbandReplay": false,
+  "otherAcceptedPostActionsInbandReplay": true,
+  "terminalReplayRequired": true,
+  "noConcurrentOrBackgroundReplay": true,
+  "clientDeadlineChanged": false,
+  "requestCapBytes": 524288,
+  "partItemCap": 1000,
+  "countContract": "K nonapply blocking pairs; N FIRST apply; N terminal apply; 2N external apply frames",
+  "economicBarrier": "complete owned-fixture postcheck before -> awaited terminal -> complete postcheck after; all counts, membership, pages and content digests equal",
+  "configuration": "Controller supplies current source/tree/nonce, input and fixture hashes, absolute owned paths, dependencyRoot and computed QA script SHA256 bindings. No host, SID, commit or run is built into this policy.",
+  "scope": "Versioned QA source only. Does not issue a host lease, qualify a maximum workload, deploy a provider, launch WPF or change product SQL/timeouts."
+}

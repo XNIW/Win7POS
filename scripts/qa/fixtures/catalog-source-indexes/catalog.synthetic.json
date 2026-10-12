@@ -1,0 +1,16 @@
+{
+  "purpose": "Synthetic saved catalog templates; no customer data or actual runtime receipt",
+  "groups": [
+    { "count": 51, "oidStart": 1000, "row": { "schemaname": "public", "indexname": "toy_public_{n}_idx", "indexdef": "CREATE INDEX toy_public_{n}_idx ON public.qa_products USING btree (id)", "schemaOid": 2200, "tableOid": 4000, "tableName": "qa_products", "ownerOid": 10, "ownerName": "qa_owner", "valid": true, "ready": true, "live": true, "unique": false, "primary": false, "method": "btree", "expression": null, "predicate": null } },
+    { "count": 22, "oidStart": 2000, "row": { "schemaname": "app_private", "indexname": "toy_private_{n}_idx", "indexdef": "CREATE INDEX toy_private_{n}_idx ON app_private.qa_uploads USING btree (id)", "schemaOid": 3000, "tableOid": 4100, "tableName": "qa_uploads", "ownerOid": 10, "ownerName": "qa_owner", "valid": true, "ready": true, "live": true, "unique": false, "primary": false, "method": "btree", "expression": null, "predicate": null } },
+    { "count": 1, "oidStart": 3000, "row": { "schemaname": "auth", "indexname": "toy_auth_{n}_idx", "indexdef": "CREATE INDEX toy_auth_{n}_idx ON auth.qa_users USING btree (id)", "schemaOid": 3100, "tableOid": 4200, "tableName": "qa_users", "ownerOid": 11, "ownerName": "qa_auth_owner", "valid": true, "ready": true, "live": true, "unique": true, "primary": true, "method": "btree", "expression": null, "predicate": null } }
+  ],
+  "targetTables": [
+    { "schemaname": "public", "schemaOid": 2200, "tableOid": 5000, "tableName": "inventory_products", "ownerOid": 10, "ownerName": "qa_owner" },
+    { "schemaname": "public", "schemaOid": 2200, "tableOid": 5001, "tableName": "inventory_product_prices", "ownerOid": 10, "ownerName": "qa_owner" }
+  ],
+  "added": [
+    { "schemaname": "public", "indexname": "inventory_products_sync_event_id_text_idx", "indexdef": "CREATE INDEX inventory_products_sync_event_id_text_idx ON public.inventory_products USING btree (lower((id)::text))", "indexOid": 8000, "schemaOid": 2200, "tableOid": 5000, "tableName": "inventory_products", "ownerOid": 10, "ownerName": "qa_owner", "valid": true, "ready": true, "live": true, "unique": false, "primary": false, "method": "btree", "expression": "lower((id)::text)", "predicate": null },
+    { "schemaname": "public", "indexname": "inventory_product_prices_sync_event_id_text_idx", "indexdef": "CREATE INDEX inventory_product_prices_sync_event_id_text_idx ON public.inventory_product_prices USING btree (lower((id)::text))", "indexOid": 8001, "schemaOid": 2200, "tableOid": 5001, "tableName": "inventory_product_prices", "ownerOid": 10, "ownerName": "qa_owner", "valid": true, "ready": true, "live": true, "unique": false, "primary": false, "method": "btree", "expression": "lower((id)::text)", "predicate": null }
+  ]
+}
