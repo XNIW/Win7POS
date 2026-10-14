@@ -504,6 +504,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         var result = await FunctionalCompletionSmoke.RunAsync(dataDir, HasArg(args, "--cart-performance"),
                             ValueAfter(args, "--products"), ValueAfter(args, "--scenario")).ConfigureAwait(true);
                         File.WriteAllText(Path.Combine(dataDir, "functional-completion.txt"), result, Encoding.UTF8);
+                        if (string.Equals(ValueAfter(args, "--scenario"), "PERF_visual_lifetime_and_public_commands", StringComparison.Ordinal))
+                            PerfPhaseDrainObservation.TryWriteArtifact(dataDir, result);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
                         return;
                     }
