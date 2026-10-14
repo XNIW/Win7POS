@@ -3,11 +3,6 @@ name: wpf-build
 on:
   workflow_dispatch:
     inputs:
-      recovery_comparison:
-        description: Fixed diagnostic A-B-B-A comparison of main5cbd and candidate06d on one hosted VM (not canonical CI)
-        required: false
-        default: false
-        type: boolean
       functional_completion_smoke:
         description: Run the canonical functional wrapper with unchanged scenario budgets
         required: false
@@ -19,7 +14,6 @@ permissions:
 
 jobs:
   build-wpf:
-    if: ${{ inputs.recovery_comparison != true }}
     runs-on: windows-latest
     env:
       DOTNET_NOLOGO: "true"
@@ -79,47 +73,3 @@ jobs:
         with:
           name: Win7POS.Wpf-Release-x86
           path: src/Win7POS.Wpf/bin/**/Release/**
-
-  recovery-comparison:
-    name: Diagnostic recovery comparison (never canonical acceptance)
-    if: ${{ inputs.recovery_comparison == true }}
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout diagnostic orchestration
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-          path: controller
-      - name: Checkout immutable baseline main
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: 5cbd6e5da8f3841b29beec11bcf661deff53ce0b
-          path: baseline
-      - name: Checkout immutable candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: 06d52681084b80196e40d640e669a927a159c7e8
-          path: candidate
-      - name: Setup exact .NET SDK
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: candidate/global.json
-      - name: Run four predeclared recovery trials
-        shell: pwsh
-        run: >-
-          pwsh -NoProfile -File controller/scripts/diagnostics/compare-import-recovery.ps1
-          -BaselineRoot "${{ github.workspace }}/baseline"
-          -CandidateRoot "${{ github.workspace }}/candidate"
-          -OutputRoot "${{ runner.temp }}/recovery-comparison"
-      - name: Preserve every diagnostic outcome
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: Win7POS-Recovery-Comparison-${{ github.run_id }}
-          path: ${{ runner.temp }}/recovery-comparison/**
-          if-no-files-found: error
-          retention-days: 14
