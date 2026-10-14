@@ -179,7 +179,7 @@ foreach ($required in @(
         @{ Label = "Security workflow records development checksums/provenance"; Pattern = 'StageName\s+development-unsigned[\s\S]*test-protected-release-artifacts\.ps1' },
         @{ Label = "Security workflow executes signing negative fixtures"; Pattern = 'test-release-signing-negative\.ps1' },
         @{ Label = "Security workflow uses one exact PR-head or event ref for version, repro and provenance"; Pattern = 'WIN7POS_EXACT_REF:\s*\$\{\{[\s\S]*refs/heads/\{0\}[\s\S]*resolve-release-version\.ps1[^\r\n]*-Ref\s+\$env:WIN7POS_EXACT_REF[\s\S]*test-unsigned-payload-reproducibility\.ps1[^\r\n]*-Ref\s+\$env:WIN7POS_EXACT_REF[\s\S]*-RepositoryRef\s+\$env:WIN7POS_EXACT_REF' },
-        @{ Label = "CodeQL uses the reviewed full-SHA v4.37.2 action"; Pattern = 'github/codeql-action/(?:init|analyze)@e0647621c2984b5ed2f768cb892365bf2a616ad1\s+#\s+v4\.37\.2' },
+        @{ Label = "CodeQL uses the reviewed full-SHA v4.38.3 action"; Pattern = 'github/codeql-action/(?:init|analyze)@24c54180a607b1449ed407dd24f251e4e9147c8d\s+#\s+v4\.38\.3' },
         @{ Label = "CodeQL evidence is attributed to the exact PR head"; Pattern = 'refs/pull/\{0\}/head[\s\S]*sha:\s*\$\{\{\s*github\.event\.pull_request\.head\.sha\s*\|\|' },
         @{ Label = "CodeQL output is checked fail closed"; Pattern = 'check-codeql-sarif\.ps1' }
     )) {
@@ -258,7 +258,7 @@ foreach ($required in @(
         @{ Label = "Protected release proves the candidate payload matches canonical"; Pattern = 'write-reproducibility-payload-manifest\.ps1[\s\S]*compare-reproducibility-payload-manifests\.ps1[\s\S]*candidate differs' },
         @{ Label = "Application is signed before Inno installer compilation"; Pattern = 'Mode\s+Application[\s\S]*ISCC_EXE[\s\S]*Mode\s+Installer' },
         @{ Label = "Production signatures are verified fail closed"; Pattern = 'RequireProductionSignatures' },
-        @{ Label = "GitHub provenance and SBOM attestations use pinned actions/attest v4.2.0"; Pattern = 'actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6\s+#\s+v4\.2\.0' },
+        @{ Label = "GitHub provenance and SBOM attestations use pinned actions/attest v4.2.2"; Pattern = 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6\s+#\s+v4\.2\.2' },
         @{ Label = "Platform attestations are verified against signer/source"; Pattern = 'gh\s+attestation\s+verify[\s\S]*--signer-workflow[\s\S]*--source-digest[\s\S]*--source-ref' },
         @{ Label = "Expected signer identity crosses from the protected job without secrets"; Pattern = 'expected-signer-thumbprint:\s*\$\{\{\s*steps\.import-signing-material\.outputs\.expected-signer-thumbprint\s*\}\}[\s\S]*EXPECTED_SIGNER_THUMBPRINT:\s*\$\{\{\s*needs\.sign-protected-release\.outputs\.expected-signer-thumbprint\s*\}\}' },
         @{ Label = "Attestation job reruns signed closed-world validation with exact GitHub bundles"; Pattern = 'github-provenance\.sigstore\.json[\s\S]*github-sbom\.sigstore\.json[\s\S]*test-protected-release-artifacts\.ps1[\s\S]*SigningRecordPath\s+@\(\(Join-Path\s+\$signingRoot\s+"application-signing-record\.json"\),\s*\(Join-Path\s+\$signingRoot\s+"installer-signing-record\.json"\)\)[\s\S]*ExpectedSignerThumbprint\s+\$env:EXPECTED_SIGNER_THUMBPRINT[\s\S]*RequireProductionSignatures[\s\S]*PostMetadataArtifactPath\s+@\(\$githubProvenanceBundle,\s*\$githubSbomBundle\)' },
