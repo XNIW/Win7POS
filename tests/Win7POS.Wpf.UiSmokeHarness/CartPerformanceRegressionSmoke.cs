@@ -60,9 +60,32 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal static async Task DrainAsync()
         {
-            var operation = Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
-            await Task.WhenAny(operation.Task, Task.Delay(3000));
-            if (operation.Status != DispatcherOperationStatus.Completed) { operation.Abort(); throw new InvalidOperationException("Background did not progress"); }
+            var observation = PerfPhaseDrainObservation.Claim();
+            if (observation == null)
+            {
+                var operation = Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                await Task.WhenAny(operation.Task, Task.Delay(3000));
+                if (operation.Status != DispatcherOperationStatus.Completed) { operation.Abort(); throw new InvalidOperationException("Background did not progress"); }
+                return;
+            }
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            observation.Enter(dispatcher);
+            var observedOperation = dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+            var probe = observedOperation.Task;
+            var beforeDelay = Stopwatch.GetTimestamp();
+            var delay = Task.Delay(3000);
+            var afterDelay = Stopwatch.GetTimestamp();
+            var winner = await Task.WhenAny(probe, delay);
+            var beforeDecision = Stopwatch.GetTimestamp();
+            var decision = observedOperation.Status;
+            var afterDecision = Stopwatch.GetTimestamp();
+            observation.Resumed(winner, probe, delay, decision, beforeDelay, afterDelay, beforeDecision, afterDecision);
+            if (decision != DispatcherOperationStatus.Completed)
+            {
+                var aborted = observedOperation.Abort();
+                observation.AbortReturned(aborted, Stopwatch.GetTimestamp());
+                throw new InvalidOperationException("Background did not progress");
+            }
         }
 
         internal static System.Collections.Generic.IEnumerable<DependencyObject> Descendants(DependencyObject root)
@@ -363,7 +386,8 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                     var parent = (FrameworkElement)editorProgress.Parent;
                     parent.Visibility = Visibility.Collapsed; await DrainAsync();
                     Require(!editorProgress.IsIndeterminate, "hidden image editor ancestor keeps animating");
-                    parent.Visibility = Visibility.Visible; editorHost.UpdateLayout(); await DrainAsync();
+                    parent.Visibility = Visibility.Visible; editorHost.UpdateLayout();
+                    using (PerfPhaseDrainObservation.Arm(editorHost)) { await DrainAsync(); }
                     Require(editorProgress.IsIndeterminate, "image progress did not restart");
                     editorProgress.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Collapsed); await DrainAsync();
                     Require(!editorProgress.IsIndeterminate, "completed image progress keeps animating");
