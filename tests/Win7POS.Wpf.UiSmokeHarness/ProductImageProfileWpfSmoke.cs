@@ -25,6 +25,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
     {
         internal static string Run()
         {
+            VerifyCode128Rendering();
             VerifyMutationRequestSerialization();
             VerifyStagingDiagnosticArtifact();
             Task.Run(VerifyJsonStringifyStyleResponseParsingAsync)
@@ -121,12 +122,53 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "staging_diagnostic_redacted=true " +
                     "net48_request_serialization=true " +
                     "net48_json_stringify_response=true " +
-                    "net48_storage_error_mapping=true";
+                    "net48_storage_error_mapping=true " +
+                    "net48_code128_roundtrip=true";
             }
             finally
             {
                 try { isolated?.Clear(); } catch { }
                 try { shared.Clear(); } catch { }
+            }
+        }
+
+        private static void VerifyCode128Rendering()
+        {
+            var reader = new ZXing.Windows.Compatibility.BarcodeReader
+            {
+                Options = new ZXing.Common.DecodingOptions
+                {
+                    PossibleFormats = new List<ZXing.BarcodeFormat>
+                    {
+                        ZXing.BarcodeFormat.CODE_128
+                    },
+                    TryHarder = true,
+                    PureBarcode = true
+                }
+            };
+            foreach (var content in new[]
+            {
+                "VMV8I9J8VXT7",
+                "0000001234567890",
+                "SALE-20261014-001"
+            })
+            {
+                using (var bitmap = Win7POS.Wpf.Printing.Code128Renderer.Render(content))
+                {
+                    if (bitmap == null || bitmap.Width < 340 || bitmap.Height != 72)
+                        throw new InvalidOperationException("code128_bitmap_missing_or_invalid");
+                    var decoded = reader.Decode(bitmap);
+                    if (decoded == null || decoded.BarcodeFormat != ZXing.BarcodeFormat.CODE_128 ||
+                        !string.Equals(decoded.Text, content, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException("code128_dependency_roundtrip_failed");
+                    }
+                }
+            }
+            if (Win7POS.Wpf.Printing.Code128Renderer.Render(null) != null ||
+                Win7POS.Wpf.Printing.Code128Renderer.Render(string.Empty) != null)
+            {
+                throw new InvalidOperationException("code128_empty_content_contract_changed");
             }
         }
 

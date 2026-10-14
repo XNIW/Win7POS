@@ -1281,3 +1281,11 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   Windows7/Asus e dagli ambienti autenticati, non attraversati nel closeout Git.
 - Comandi reali, relativi esiti, review e CI dell'esatto candidato sono
   registrati nel report esterno `MAIN_INTEGRATION_CLOSEOUT_RESULT`.
+
+- La re-review ha rilevato che il callsite ZXing `Code128Renderer` non era
+  attraversato dai gate esistenti. Aggiunta allo smoke immagini canonico una
+  regressione `net48/x86` senza stampa: tre barcode generati dal renderer
+  applicativo e decodificati con il binding aggiornato, controllo CODE_128 e
+  roundtrip esatto, contratto null/empty. Il runner richiede il nuovo marker
+  oltre a tutti quelli precedenti. Il candidato precedente viene sostituito e
+  rivalidato; nessun risultato viene trasferito automaticamente al nuovo SHA.
