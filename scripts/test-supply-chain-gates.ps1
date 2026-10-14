@@ -85,7 +85,7 @@ $requiredNewMappings = @(
     "ClosedXML.Parser@2.0.0",
     "DocumentFormat.OpenXml.Framework@3.1.1",
     "Microsoft.Bcl.HashCode@1.1.1",
-    "Microsoft.TestPlatform.ObjectModel@18.8.1"
+    "Microsoft.TestPlatform.ObjectModel@18.10.1"
 )
 $incorrectNewMappings = @($requiredNewMappings | Where-Object {
     -not $licenseExpressionByPackage.ContainsKey($_) -or
