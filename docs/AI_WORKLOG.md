@@ -1245,3 +1245,18 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Nuovo installer e integrazione finale nella ricevuta privata post-merge,
   evitando commit documentali per il proprio SHA futuro. Report:
   reports/2026-10-08_WIN7POS_POST_PR121_FUNCTIONAL_OPERATIONAL_CLOSEOUT.md.
+
+
+## 2026-10-14 - Consolidamento aggiornamenti GitHub Actions
+
+- Riprese le PR esistenti #125 e #101, con integrazione del main corrente
+  `5cbd6e5d` nel candidato di #125. Nessun nuovo branch creato.
+- Aggiornati i pin esatti delle assertion CodeQL e attest allo stesso SHA
+  ufficiale gia proposto dai workflow: la verifica resta fail-closed e non
+  accetta versioni arbitrarie. Il download artifact v8 conserva il runtime
+  Node 24 e rende fail-closed il digest mismatch per impostazione predefinita.
+- Il merge main attiva soltanto CI, supply-chain e artifact development-unsigned;
+  Protected Release richiede un tag esplicito, non creato in questa attivita.
+- Verifiche, review indipendente, CI sull'esatto candidato e destinazione della
+  PR duplicata sono registrate nel report esterno di chiusura integrazione.
+  Nessuna attestazione aggiuntiva di hardware Win7, Asus o staging autenticato.
