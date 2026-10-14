@@ -1260,3 +1260,24 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Verifiche, review indipendente, CI sull'esatto candidato e destinazione della
   PR duplicata sono registrate nel report esterno di chiusura integrazione.
   Nessuna attestazione aggiuntiva di hardware Win7, Asus o staging autenticato.
+
+
+## 2026-10-14 - Consolidamento dipendenze NuGet e grafi locked
+
+- Ripresa la PR #127 esistente come candidato combinato delle PR #106,
+  #107 e #108; i loro package finali sono valutati insieme agli aggiornamenti
+  Actions di #125/#101. Il confronto indipendente degli otto blob package
+  finali dimostra l'equivalenza di #106 e #127 sul main corrente.
+- Rigenerati tutti i lock consumer con SDK esatto `10.0.301`, contesto restore
+  Windows e `AutomaticallyUseReferenceAssemblyPackages=false` sul Mac:
+  preservati RID `win-x86`, target `net48`/`netstandard2.0` e restore locked
+  obbligatorio nei workflow. Nessun cambio al pin SDK o al target Win7/x86.
+- Le undici versioni nuove conservano le stesse espressioni Apache-2.0/MIT
+  attestate dai nuspec del feed ufficiale; la policy mantiene il confronto
+  chiuso con il grafo completo (49 package/versioni), senza nuove eccezioni.
+- L'analisi indipendente dei sorgenti System.Drawing.Common conferma che
+  l'asset net462 inoltra i tipi al framework sia nella vecchia sia nella nuova
+  versione. Build e regressioni restano distinte dall'accettazione hardware
+  Windows7/Asus e dagli ambienti autenticati, non attraversati nel closeout Git.
+- Comandi reali, relativi esiti, review e CI dell'esatto candidato sono
+  registrati nel report esterno `MAIN_INTEGRATION_CLOSEOUT_RESULT`.

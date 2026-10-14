@@ -11,15 +11,6 @@
           "Microsoft.CodeCoverage": "18.10.1"
         }
       },
-      "Microsoft.NETFramework.ReferenceAssemblies": {
-        "type": "Direct",
-        "requested": "[1.0.3, )",
-        "resolved": "1.0.3",
-        "contentHash": "vUc9Npcs14QsyOD01tnv/m8sQUnGTGOw1BCmKcv77LBJY7OxhJ+zJF7UD/sCL3lYNFuqmQEVlkfS4Quif6FyYg==",
-        "dependencies": {
-          "Microsoft.NETFramework.ReferenceAssemblies.net48": "1.0.3"
-        }
-      },
       "MSTest.TestAdapter": {
         "type": "Direct",
         "requested": "[4.5.1, )",
@@ -155,11 +146,6 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
-      "Microsoft.NETFramework.ReferenceAssemblies.net48": {
-        "type": "Transitive",
-        "resolved": "1.0.3",
-        "contentHash": "zMk4D+9zyiEWByyQ7oPImPN/Jhpj166Ky0Nlla4eXlNL8hI/BtSJsgR8Inldd4NNpIAH3oh8yym0W2DrhXdSLQ=="
-      },
       "Microsoft.Testing.Extensions.Telemetry": {
         "type": "Transitive",
         "resolved": "2.5.1",
@@ -290,8 +276,8 @@
       },
       "System.IO.Packaging": {
         "type": "Transitive",
-        "resolved": "8.0.1",
-        "contentHash": "KYkIOAvPexQOLDxPO2g0BVoWInnQhPpkFzRqvNrNrMhVT6kqhVr0zEb6KCHlptLFukxnZrjuMVAnxK7pOGUYrw=="
+        "resolved": "10.0.12",
+        "contentHash": "Bsop0fosps100BOj1s9uIM3XaUpoLok5s0LTuEeKXvKse1XvpYvnzeC/7AZXCs3MkFurRkLe9k9XwKNZz2retw=="
       },
       "System.Memory": {
         "type": "Transitive",
@@ -324,11 +310,12 @@
       },
       "System.Text.Encoding.CodePages": {
         "type": "Transitive",
-        "resolved": "8.0.0",
-        "contentHash": "OZIsVplFGaVY90G2SbpgU7EnCoOO5pw1t4ic21dBF3/1omrJFpAGoNAVpPyMVOC90/hvgkGG3VFqR13YgZMQfg==",
+        "resolved": "10.0.12",
+        "contentHash": "rt1G/LdKC6oc3xPyQhMn5vRTp9iTTt1BS9Dx/67TpW9KWgFJ39lyEz0y4CbDksx7iTZEfgG61UsQMoGEXEpF4A==",
         "dependencies": {
-          "System.Memory": "4.5.5",
-          "System.Runtime.CompilerServices.Unsafe": "6.0.0"
+          "System.Memory": "4.6.3",
+          "System.Runtime.CompilerServices.Unsafe": "6.1.2",
+          "System.ValueTuple": "4.6.2"
         }
       },
       "System.Threading.Tasks.Extensions": {
@@ -341,8 +328,8 @@
       },
       "System.ValueTuple": {
         "type": "Transitive",
-        "resolved": "4.5.0",
-        "contentHash": "okurQJO6NRE/apDIP23ajJ0hpiNmJ+f0BwOlB/cSqTLQlw5upkf+5+96+iG2Jw40G1fCVCyPz/FhIABUjMR+RQ=="
+        "resolved": "4.6.2",
+        "contentHash": "yQgmjfFximrNm9LIV3mL6T5MzjeC+epeE5rl4hXxAlYmxby7RM1dPSkIKXk9HNkl6G54h2JHOmLD46+Pey+IRg=="
       },
       "ZXing.Net": {
         "type": "Transitive",
@@ -370,8 +357,8 @@
           "ExcelDataReader.DataSet": "[3.9.0, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )",
-          "System.IO.Packaging": "[8.0.1, )",
-          "System.Text.Encoding.CodePages": "[8.0.0, )",
+          "System.IO.Packaging": "[10.0.12, )",
+          "System.Text.Encoding.CodePages": "[10.0.12, )",
           "Win7POS.Core": "[1.0.0-dev.local, )"
         }
       },
@@ -382,6 +369,13 @@
           "Win7POS.Data": "[1.0.0-dev.local, )",
           "ZXing.Net.Bindings.Windows.Compatibility": "[0.16.16, )"
         }
+      }
+    },
+    ".NETFramework,Version=v4.8/win-x86": {
+      "SQLite": {
+        "type": "Transitive",
+        "resolved": "3.53.4",
+        "contentHash": "KN7jeWqgUPeBRe1FlcpZURzxomuKKEKHmBBQfg+Nx7NkY1LjKhzHvH+3ASkNvhayESE34nMBinL9CV21JfPRJw=="
       }
     }
   }
