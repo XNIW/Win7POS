@@ -44,6 +44,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static PosAdminWebOptions _options;
         private static readonly List<string> Evidence = new List<string>();
         private static int _flushedEvidenceCount;
+        private static readonly Stopwatch Timeline = Stopwatch.StartNew();
 
         internal static async Task RunAsync()
         {
@@ -60,7 +61,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 store.SaveFirstLogin(AuthorizationLeaseWpfSmoke.BuildResponse(true), "qa-recovery-ui-" + Guid.NewGuid().ToString("N"));
                 Require(store.TryRead(out _session) && PosOnlineSyncSupervisorHost.TryCreateGeneration(_session, out _generation), "trusted generation fixture unavailable");
                 Evidence.Add("scope=local_net48_x86_real_sync_center_recovery_dialog; base_products_per_batch=3; invalid_rows=1; nochange_rows=2; supported_local_plan_rows=5000; authoritative_large_admin_test=separate_interop_corpus; accepted_child=loopback_receipt_retirement_race; live_admin=False; physical_hardware=False");
-                Evidence.Add("machine=" + Environment.MachineName + "; clr_reported_os_compatibility=" + Environment.OSVersion + "; clr=" + Environment.Version + "; pointer_bytes=" + IntPtr.Size);
+                using (var process = Process.GetCurrentProcess())
+                    Evidence.Add("machine=" + Environment.MachineName + "; clr_reported_os_compatibility=" + Environment.OSVersion + "; clr=" + Environment.Version + "; pointer_bytes=" + IntPtr.Size +
+                        "; pid=" + process.Id + "; creation_utc=" + process.StartTime.ToUniversalTime().ToString("O", Invariant));
                 await CheckAsync(failures, "sync_center_correct_verify_double_commit_backup", CheckFlowAsync);
                 await CheckAsync(failures, "failure_draft_rollback_retry", CheckFailureAsync);
                 await CheckAsync(failures, "draft_close_reopen_verify_apply_once", CheckDraftReopenAsync);
@@ -734,11 +737,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Click(dialog, "PrepareButton");
                     await IdleAsync(dialog);
                     Require(Named<TextBlock>(dialog, "RecoveryStatus").Text == PosLocalization.T("importRecovery.queued"), "large recovery did not queue a replacement");
+                    RecordPhase("large_postcommit:" + rowCount + ":begin");
                     var backups = Directory.GetFiles(AppPaths.BackupsDirectory, "before-catalog-recovery-*.db").Except(backupsBefore).ToArray();
                     Require(backups.Length == 1, "single large recovery made no verified backup or multiple backups");
                     var backupFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(backups[0]));
                     var backupValidation = await Task.Run(() => new DbMaintenanceRepository(backupFactory).ValidateAsync());
                     Require(backupValidation.IsValid, "large recovery backup was not SQLite-verified");
+                    RecordPhase("large_backup_validation:" + rowCount + ":complete");
                     await Task.Run(() =>
                     {
                         using (var connection = backupFactory.Open())
@@ -746,6 +751,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_outbox") == 1, "large backup was captured after recovery effects");
                     });
                     var progress = await new CatalogImportRecoveryService(fixture.Factory).GetPlanProgressAsync(fixture.OriginalId, CancellationToken.None);
+                    RecordPhase("large_plan_progress:" + rowCount + ":complete");
                     Require(progress.TotalRows == rowCount && progress.CompletedRows == 0 && progress.TotalParts >= (rowCount + 999) / 1000,
                         "persisted plan progress lost rows or claimed a partial ACK");
                     CheckFourRecoveryLanguages(dialog, () => PosLocalization.T("importRecovery.queued"),
@@ -756,6 +762,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Require(observedBatches == expectedBatches && observedProductWrites == 1 && observedHistoryWrites == 1 && applyOperationsOnDispatcher == 0, "large commit SQL batching or worker-thread execution regressed");
                     Require(sql.ProductCommandsOnCallingThread == 0, "large recovery product query ran on Dispatcher");
                     fixture.CheckReplacement();
+                    RecordPhase("large_postcommit:" + rowCount + ":complete");
                 }
                 finally { dialog.Close(); }
                 await samples.StopAsync(); samples.Write();
@@ -1326,15 +1333,19 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
         }
         private static async Task CheckAsync(List<string> failures, string name, Func<Task> action)
         {
+            var watch = Stopwatch.StartNew();
             RecordPhase(name + "=BEGIN");
-            try { await action(); Evidence.Add(name + "=PASS"); }
+            try { await action(); Evidence.Add(name + "=PASS; elapsed_ms=" + watch.Elapsed.TotalMilliseconds.ToString("F3", Invariant)); }
             catch (Exception ex) { Evidence.Add(name + "=FAIL " + ex); failures.Add(name + ": " + ex.Message); }
             FlushEvidence();
             Console.WriteLine("IMPORT_RECOVERY_PHASE=" + Evidence[Evidence.Count - 1]);
         }
         private static void RecordPhase(string phase)
         {
-            Evidence.Add("phase=" + phase + "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            Evidence.Add("phase=" + phase + "; elapsed_ms=" + Timeline.Elapsed.TotalMilliseconds.ToString("F3", Invariant) +
+                "; thread=" + Thread.CurrentThread.ManagedThreadId + "; dispatcher_shutdown=" + dispatcher.HasShutdownStarted +
+                "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
             FlushEvidence();
             Console.WriteLine("IMPORT_RECOVERY_PHASE=" + phase);
         }

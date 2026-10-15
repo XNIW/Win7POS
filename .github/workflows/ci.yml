@@ -9,6 +9,15 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      recovery_diagnostic:
+        description: Bounded Recovery timeline or three fixed candidate repetitions on independent Windows
+        required: false
+        default: none
+        type: choice
+        options:
+          - none
+          - timeline
+          - candidate-three
       authorization_lease_smoke_only:
         description: Run only the WPF x86 authorization lease smoke path
         required: false
@@ -53,7 +62,7 @@ permissions:
 jobs:
   build-and-check:
     name: ${{ github.event_name == 'workflow_dispatch' && (inputs.cart_diagnostic_only == true || (inputs.cart_qualification != '' && inputs.cart_qualification != 'none')) && 'canonical-not-requested' || 'build-and-check' }}
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || ((inputs.recovery_diagnostic == '' || inputs.recovery_diagnostic == 'none') && inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -134,6 +143,8 @@ jobs:
             ${{ env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT }}/Win7POS.Functional.*/**/*.txt
             ${{ env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT }}/Win7POS.Functional.*/**/*.csv
             ${{ env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT }}/Win7POS.Functional.*/**/*.png
+            ${{ env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT }}/Win7POS.Functional.*/**/*.json
+            ${{ env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT }}/Win7POS.Functional.*/**/*.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -150,6 +161,48 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         shell: pwsh
         run: pwsh -NoProfile -File scripts/run-product-paging-dispatcher-smoke.ps1 -Configuration Release -Platform x86
+
+  recovery-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Build independent exact-source x86 harness
+        shell: pwsh
+        run: |
+          dotnet restore Win7POS.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Fixed supervised Recovery runs (60000 ms each)
+        shell: pwsh
+        env:
+          RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
+        run: |
+          $root = "$env:RUNNER_TEMP/recovery-diagnostic"
+          New-Item -ItemType Directory -Path $root | Out-Null
+          [ordered]@{sha=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;mode=$env:RECOVERY_MODE;qualifiesAsus=$false;qualifiesWin7=$false;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture)} | ConvertTo-Json -Depth 5 | Set-Content "$root/host.json"
+          $count = if ($env:RECOVERY_MODE -eq 'candidate-three') { 3 } else { 1 }
+          $failed = $false
+          foreach ($index in 1..$count) {
+            pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Scenario IMPORT_RECOVERY_completion -OutputDirectory "$root/run-$index"
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { throw 'One or more fixed Recovery runs failed; all results retained.' }
+      - name: Preserve all Recovery evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Win7POS-Recovery-Diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/recovery-diagnostic
+          if-no-files-found: error
+          retention-days: 14
 
   cart-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none') }}
