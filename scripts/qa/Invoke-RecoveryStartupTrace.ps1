@@ -46,7 +46,8 @@ if ($KernelWaits) {
     & $decoderCompiler /nologo /optimize+ /platform:x64 /target:exe "/out:$kernelDecoder" "/r:$traceLibrary" "/r:$traceSerializer" /r:System.Web.Extensions.dll (Join-Path $PSScriptRoot 'RecoveryKernelDecoder.cs') *> (Join-Path $raw 'kernel-decoder-build.txt')
     if ($LASTEXITCODE -ne 0) { throw "Kernel decoder compilation failed: $([IO.File]::ReadAllText((Join-Path $raw 'kernel-decoder-build.txt')))" }
 }
-[ordered]@{image=$env:ImageOS;imageVersion=$env:ImageVersion;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture);cpu=(Get-CimInstance Win32_ComputerSystem | Select-Object NumberOfLogicalProcessors,TotalPhysicalMemory);frameworkX86=@('clr.dll','mscordacwks.dll','sos.dll' | ForEach-Object { $path=Join-Path $framework $_; [ordered]@{name=$_;version=(Get-Item -LiteralPath $path).VersionInfo.FileVersion;sha256=(Get-FileHash -LiteralPath $path).Hash} })} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'host.json')
+$hostReceipt = [ordered]@{image=$env:ImageOS;imageVersion=$env:ImageVersion;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture);cpu=(Get-CimInstance Win32_ComputerSystem | Select-Object NumberOfLogicalProcessors,TotalPhysicalMemory);frameworkX86=$null;frameworkProvenanceTiming='after target exit and trace stop; no diagnostic read of target x86 runtime beforehand'}
+$hostReceipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'host.json')
 # Only query/stop the random session successfully created by this invocation.
 # ControlTrace STOP returns the final loss counters after buffers are flushed.
 Add-Type -TypeDefinition @'
@@ -309,6 +310,15 @@ finally {
         try { $null = Invoke-BoundedNative $wpr @('-cancel','-instancename',$trace.name) ($trace.label + '-kernel-cancel') 30 }
         catch { $result.kernelCleanupError=$_.Exception.Message }
     }
+    # Hashing CLR/DAC/SOS before launch would itself read x86 runtime pages
+    # into the file cache. Record target provenance only after timed work.
+    try {
+        $hostReceipt.frameworkX86 = @('clr.dll','mscordacwks.dll','sos.dll' | ForEach-Object {
+            $path=Join-Path $framework $_
+            [ordered]@{name=$_;version=(Get-Item -LiteralPath $path).VersionInfo.FileVersion;sha256=(Get-FileHash -LiteralPath $path).Hash}
+        })
+        $hostReceipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'host.json')
+    } catch { if ($null -eq $result.error) { $result.error=$_.Exception.Message }; $result.status='FAIL' }
     $result | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'trace-result.json')
 }
 if ($result.status -ne 'PASS') { Write-Error $result.error; exit 1 }
