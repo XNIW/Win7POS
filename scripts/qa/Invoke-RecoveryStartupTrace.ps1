@@ -109,6 +109,7 @@ function Export-TargetEvents($Trace, [int[]]$TargetProcessIds) {
     $reader = [Xml.XmlReader]::Create($xmlPath,$settings)
     $out = [IO.StreamWriter]::new((Join-Path $OutputDirectory ($Trace.label + '-target-events.jsonl')), $false, [Text.UTF8Encoding]::new($false))
     $total = 0; $starts = 0; $loads = 0; $fixtureMethods = 0
+    $schemaSamples = [Collections.Generic.List[string]]::new()
     try {
         while ($reader.Read()) {
             if ($reader.NodeType -ne [Xml.XmlNodeType]::Element -or $reader.LocalName -ne 'Event') { continue }
@@ -123,13 +124,20 @@ function Export-TargetEvents($Trace, [int[]]$TargetProcessIds) {
             $eventId = [int]$system.SelectSingleNode('*[local-name()="EventID"]').InnerText
             $payload = [ordered]@{}
             foreach ($data in $doc.SelectNodes('//*[local-name()="EventData"]/*[local-name()="Data"]')) { $payload[$data.GetAttribute('Name')] = $data.InnerText }
+            # tracerpt's manifested CLR provider emits named UserData fields on
+            # the hosted image; also retain the standard EventData representation.
+            foreach ($data in $doc.SelectNodes('//*[local-name()="UserData"]/*/*')) { $payload[$data.LocalName] = $data.InnerText }
+            if ($schemaSamples.Count -lt 3 -and $eventId -in 145,143,154) { $schemaSamples.Add($doc.OuterXml) }
             $total++; if ($eventId -eq 145) { $starts++ }; if ($eventId -in 136,143) { $loads++ }
             if ($payload.Contains('MethodName') -and [string]$payload.MethodName -like 'QA_RecoveryTrace_*') { $fixtureMethods++ }
             if ($total -gt 150000) { throw 'Target CLR event bound exceeded.' }
             $event = [ordered]@{id=$eventId;version=$system.SelectSingleNode('*[local-name()="Version"]').InnerText;utc=$system.SelectSingleNode('*[local-name()="TimeCreated"]').GetAttribute('SystemTime');pid=[int]$execution.GetAttribute('ProcessID');tid=[int]$execution.GetAttribute('ThreadID');data=$payload}
             $out.WriteLine(($event | ConvertTo-Json -Compress -Depth 5))
         }
-    } finally { $reader.Dispose(); $out.Dispose() }
+    } finally {
+        $reader.Dispose(); $out.Dispose()
+        ('<TargetSchemaSamples>' + ($schemaSamples -join '') + '</TargetSchemaSamples>') | Set-Content -LiteralPath (Join-Path $OutputDirectory ($Trace.label + '-schema-samples.xml'))
+    }
     [ordered]@{events=$total;jitStarts=$starts;methodLoads=$loads;fixtureMethodEvents=$fixtureMethods;targetPids=$TargetProcessIds;rawPublished=$false}
 }
 $trace = $null
@@ -174,6 +182,7 @@ public static class RecoveryTraceFixture {
                 Stop-OwnedTrace $trace
                 $decoded = Export-TargetEvents $trace @($process.identity.pid)
                 $decodeResults += $decoded
+                $result.decoding = $decodeResults
                 if ($decoded.jitStarts -lt 4000 -or $decoded.fixtureMethodEvents -lt 4000) { throw 'Target fixture JIT events did not round-trip through the decoder.' }
                 $trace = $null
             }
