@@ -21,6 +21,11 @@ $runId = 'Win7POS.Functional.' + [Guid]::NewGuid().ToString('N')
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path ([IO.Path]::GetTempPath()) $runId }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Functional output must be a new directory.' }
+$ancestor = [IO.DirectoryInfo]::new($OutputDirectory).Parent
+while ($null -ne $ancestor) {
+    if ($ancestor.Exists -and ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Functional output traverses a reparse point.' }
+    $ancestor = $ancestor.Parent
+}
 # Evidence is retained; this runner never recursively deletes a data directory.
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $results = [Collections.Generic.List[object]]::new()
@@ -87,7 +92,7 @@ try {
             }
             $record.elapsedMs = $watch.Elapsed.TotalMilliseconds
             $results.Add([pscustomobject]$record)
-            [ordered]@{schemaVersion=1;runId=$runId;sourceSha=$sourceSha;harnessSha256=$harnessHash;firstError=$firstError;results=@($results)} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'functional-results.json') -Encoding utf8
+            [ordered]@{schemaVersion=1;runId=$runId;sourceSha=$sourceSha;harnessSha256=$harnessHash;firstError=$firstError;results=$results.ToArray()} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'functional-results.json') -Encoding utf8
             Write-Host ("FUNCTIONAL_RESULT={0}; status={1}; elapsed_ms={2:F0}; evidence={3}" -f $name,$record.status,$record.elapsedMs,$dataDir)
         }
     }

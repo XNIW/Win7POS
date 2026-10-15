@@ -18,6 +18,7 @@ on:
           - none
           - timeline
           - candidate-three
+          - entry-comparison
       authorization_lease_smoke_only:
         description: Run only the WPF x86 authorization lease smoke path
         required: false
@@ -170,6 +171,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
@@ -188,12 +190,18 @@ jobs:
           $root = "$env:RUNNER_TEMP/recovery-diagnostic"
           New-Item -ItemType Directory -Path $root | Out-Null
           [ordered]@{sha=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;mode=$env:RECOVERY_MODE;qualifiesAsus=$false;qualifiesWin7=$false;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture)} | ConvertTo-Json -Depth 5 | Set-Content "$root/host.json"
-          $count = if ($env:RECOVERY_MODE -eq 'candidate-three') { 3 } else { 1 }
+          $count = if ($env:RECOVERY_MODE -in @('candidate-three','entry-comparison')) { 3 } else { 1 }
           $failed = $false
+          'H1: net48 JIT resolves unselected multipurpose launcher/callback dependencies before isolated Recovery. Compare a thin entry point with the retained launcher, same binary/eleven groups/fixtures/resources/asserts and 60000ms from process start. Three fixed pairs, alternating entry order; keep every outcome. Predict reduced startup dependency set and elapsed time. No warmup or work outside the process budget.' | Set-Content "$root/hypothesis.txt"
           foreach ($index in 1..$count) {
-            pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Scenario IMPORT_RECOVERY_completion -OutputDirectory "$root/run-$index"
-            if ($LASTEXITCODE -ne 0) { $failed = $true }
+            $arms = if ($env:RECOVERY_MODE -eq 'entry-comparison') { if ($index % 2) { @('isolated','legacy') } else { @('legacy','isolated') } } else { @('isolated') }
+            foreach ($arm in $arms) {
+              $env:WIN7POS_QA_RECOVERY_LEGACY_ENTRY = if ($arm -eq 'legacy') { '1' } else { $null }
+              pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Scenario IMPORT_RECOVERY_completion -OutputDirectory "$root/run-$index-$arm"
+              if ($LASTEXITCODE -ne 0 -and $arm -eq 'isolated') { $failed = $true }
+            }
           }
+          $env:WIN7POS_QA_RECOVERY_LEGACY_ENTRY = $null
           if ($failed) { throw 'One or more fixed Recovery runs failed; all results retained.' }
       - name: Preserve all Recovery evidence
         if: always()
