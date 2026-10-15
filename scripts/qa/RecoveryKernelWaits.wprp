@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WindowsPerformanceRecorder Version="1.0" Author="Win7POS QA">
+  <Profiles>
+    <SystemCollector Id="Kernel" Name="NT Kernel Logger">
+      <BufferSize Value="1024" />
+      <Buffers Value="256" />
+    </SystemCollector>
+    <SystemProvider Id="Waits">
+      <Keywords>
+        <Keyword Value="ProcessThread" />
+        <Keyword Value="Loader" />
+        <Keyword Value="CSwitch" />
+        <Keyword Value="ReadyThread" />
+        <Keyword Value="HardFaults" />
+        <Keyword Value="DiskIO" />
+        <Keyword Value="DiskIOInit" />
+        <Keyword Value="FileIO" />
+        <Keyword Value="FileIOInit" />
+      </Keywords>
+      <Stacks><Stack Value="CSwitch" /><Stack Value="ReadyThread" /></Stacks>
+    </SystemProvider>
+    <Profile Id="RecoveryWaits.Light.Memory" Name="RecoveryWaits" Description="Bounded read-only Recovery native wait diagnosis" LoggingMode="Memory" DetailLevel="Light">
+      <Collectors><SystemCollectorId Value="Kernel"><SystemProviderId Value="Waits" /></SystemCollectorId></Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>

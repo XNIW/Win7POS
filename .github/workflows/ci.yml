@@ -19,6 +19,7 @@ on:
           - timeline
           - candidate-three
           - native-startup
+          - native-waits
       authorization_lease_smoke_only:
         description: Run only the WPF x86 authorization lease smoke path
         required: false
@@ -125,7 +126,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   recovery-native-qualification:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic == 'native-startup' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.recovery_diagnostic == 'native-startup' || inputs.recovery_diagnostic == 'native-waits') }}
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -135,7 +136,13 @@ jobs:
           ref: ${{ github.sha }}
       - name: Qualify built-in CLR collector on synthetic x86 fixture
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Qualify -OutputDirectory "$env:RUNNER_TEMP/recovery-trace-qualification"
+        env:
+          RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
+        run: |
+          $extra = @()
+          if ($env:RECOVERY_MODE -eq 'native-waits') { $extra += '-KernelWaits' }
+          & pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Qualify -OutputDirectory "$env:RUNNER_TEMP/recovery-trace-qualification" @extra
+          exit $LASTEXITCODE
       - name: Preserve qualification receipts without raw ETL
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -147,7 +154,7 @@ jobs:
 
   recovery-native-diagnostic:
     needs: recovery-native-qualification
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic == 'native-startup' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.recovery_diagnostic == 'native-startup' || inputs.recovery_diagnostic == 'native-waits') }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -167,7 +174,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: One cold full Recovery with bounded native startup trace
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Recovery -OutputDirectory "$env:RUNNER_TEMP/recovery-native-diagnostic"
+        env:
+          RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
+        run: |
+          $extra = @()
+          if ($env:RECOVERY_MODE -eq 'native-waits') { $extra += '-KernelWaits' }
+          & pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Recovery -OutputDirectory "$env:RUNNER_TEMP/recovery-native-diagnostic" @extra
+          exit $LASTEXITCODE
       - name: Preserve target diagnostics without raw ETL
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -178,7 +191,7 @@ jobs:
           retention-days: 14
 
   recovery-diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' && inputs.recovery_diagnostic != 'native-startup' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' && inputs.recovery_diagnostic != 'native-startup' && inputs.recovery_diagnostic != 'native-waits' }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:

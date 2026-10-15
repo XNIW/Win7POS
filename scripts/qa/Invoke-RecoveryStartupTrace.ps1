@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('Qualify','Recovery')][string]$Mode,
-    [Parameter(Mandatory)][string]$OutputDirectory
+    [Parameter(Mandatory)][string]$OutputDirectory,
+    [switch]$KernelWaits
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -15,7 +16,10 @@ $null = New-Item -ItemType Directory -Path $raw
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $logman = Join-Path $env:WINDIR 'System32/logman.exe'
 $tracerpt = Join-Path $env:WINDIR 'System32/tracerpt.exe'
-$tools = @($logman,$tracerpt | ForEach-Object {
+$wpr = Join-Path $env:WINDIR 'System32/wpr.exe'
+$toolPaths = @($logman,$tracerpt)
+if ($KernelWaits) { $toolPaths += $wpr }
+$tools = @($toolPaths | ForEach-Object {
     $file = Get-Item -LiteralPath $_
     $signature = Get-AuthenticodeSignature -LiteralPath $_
     if ($signature.Status -ne 'Valid') { throw "Unverified built-in collector: $($file.Name)" }
@@ -66,7 +70,7 @@ function Invoke-BoundedNative([string]$Executable, [string[]]$Arguments, [string
     try {
         $null = $p.Handle
         $record.identity = [ordered]@{pid=$p.Id;creationUtc=$p.StartTime.ToUniversalTime().ToString('O');executable=$Executable;sha256=(Get-FileHash -LiteralPath $Executable).Hash}
-        if ($Mode -eq 'Qualify' -and $Label -like 'fixture-*' -and $Label -notlike '*-decode') {
+        if ($Mode -eq 'Qualify' -and $Label -match '^fixture-[1-6]$') {
             $observer = [RecoveryThreadObserver]::new($p, (Join-Path $OutputDirectory "$Label-threads.csv"))
         }
         if (-not $p.WaitForExit($Seconds * 1000)) { throw "$Label exceeded its finite diagnostic budget." }
@@ -98,7 +102,20 @@ function Start-OwnedTrace([string]$Label) {
     $etl = Join-Path $raw "$Label.etl"
     & $logman create trace $session -o $etl -p '{E13C0D23-CCBC-4E12-931B-D9CC2EEE27E4}' 0x18 5 -nb 16 64 -bs 64 -f bin -max 64 -ets *> (Join-Path $raw "$Label.start.txt")
     if ($LASTEXITCODE -ne 0) { throw "ETW start failed; no elevation or alternate collector: $LASTEXITCODE" }
-    [ordered]@{name=$session;etl=$etl;label=$Label;startedUtc=[DateTime]::UtcNow.ToString('O');stopped=$false}
+    $owned = [ordered]@{name=$session;etl=$etl;label=$Label;startedUtc=[DateTime]::UtcNow.ToString('O');stopped=$false;kernelStarted=$false;kernelStopped=$false;kernelEtl=(Join-Path $raw "$Label-kernel.etl")}
+    if ($KernelWaits) {
+        try {
+            $profile = (Join-Path $PSScriptRoot 'RecoveryKernelWaits.wprp') + '!RecoveryWaits.Light'
+            $null = Invoke-BoundedNative $wpr @('-start',('"'+$profile+'"'),'-instancename',$session) "$Label-kernel-start" 30
+            $owned.kernelStarted = $true
+        } catch {
+            $first = $_
+            try { $null = Invoke-BoundedNative $wpr @('-cancel','-instancename',$session) "$Label-kernel-start-cleanup" 30 } catch { Write-Warning $_.Exception.Message }
+            $null = [RecoveryEtwSession]::Stop($session)
+            throw $first
+        }
+    }
+    $owned
 }
 function Stop-OwnedTrace($Trace) {
     if ($Trace.stopped) { return }
@@ -107,6 +124,12 @@ function Stop-OwnedTrace($Trace) {
     [ordered]@{session=$Trace.name;eventsLost=$stats.EventsLost;logBuffersLost=$stats.LogBuffersLost;realTimeBuffersLost=$stats.RealTimeBuffersLost;buffersWritten=$stats.BuffersWritten;stopUtc=[DateTime]::UtcNow.ToString('O')} |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory ($Trace.label + '-loss.json'))
     if ($stats.EventsLost -ne 0 -or $stats.LogBuffersLost -ne 0 -or $stats.RealTimeBuffersLost -ne 0) { throw 'ETW events were lost; trace is not qualified.' }
+    if ($Trace.kernelStarted -and -not $Trace.kernelStopped) {
+        $null = Invoke-BoundedNative $wpr @('-status','collectors','-details','-instancename',$Trace.name) ($Trace.label + '-kernel-status') 30
+        Copy-Item -LiteralPath (Join-Path $raw ($Trace.label + '-kernel-status.stdout.txt')) -Destination (Join-Path $OutputDirectory ($Trace.label + '-kernel-status.txt'))
+        $null = Invoke-BoundedNative $wpr @('-stop',('"'+$Trace.kernelEtl+'"'),'-skipPdbGen','-instancename',$Trace.name) ($Trace.label + '-kernel-stop') 60
+        $Trace.kernelStopped = $true
+    }
 }
 function Export-TargetEvents($Trace, [int[]]$TargetProcessIds) {
     $xmlPath = Join-Path $raw ($Trace.label + '.xml')
@@ -152,6 +175,19 @@ function Export-TargetEvents($Trace, [int[]]$TargetProcessIds) {
     }
     [ordered]@{events=$total;jitStarts=$starts;methodLoads=$loads;fixtureMethodEvents=$fixtureMethods;targetPids=$TargetProcessIds;rawPublished=$false}
 }
+function Export-KernelTargetEvents($Trace, [int]$TargetProcessId, [string]$ThreadCsv) {
+    $xmlPath = Join-Path $raw ($Trace.label + '-kernel.xml')
+    $summary = Join-Path $OutputDirectory ($Trace.label + '-kernel-decoder-summary.txt')
+    $null = Invoke-BoundedNative $tracerpt @(('"'+$Trace.kernelEtl+'"'),'-o',('"'+$xmlPath+'"'),'-of','XML','-summary',('"'+$summary+'"'),'-y') ($Trace.label + '-kernel-decode') 90
+    if ((Get-Item -LiteralPath $xmlPath).Length -gt 1GB) { throw 'Kernel decoded XML exceeds bounded parse size.' }
+    if ((Get-Content -LiteralPath $summary -Raw) -notmatch 'Total Events\s+Lost\s+0\s') { throw 'Kernel trace loss is nonzero or unavailable.' }
+    $ids = [Collections.Generic.HashSet[uint32]]::new()
+    foreach ($r in (Import-Csv -LiteralPath $ThreadCsv | Where-Object kind -eq 'thread')) { $null=$ids.Add([uint32]$r.tid) }
+    Add-Type -Path (Join-Path $PSScriptRoot 'RecoveryKernelDecoder.cs')
+    $count = [RecoveryKernelDecoder]::Export($xmlPath, (Join-Path $OutputDirectory ($Trace.label + '-kernel-target.jsonl')), [uint32]$TargetProcessId, $ids)
+    if ($count -eq 0) { throw 'Kernel trace produced no target events.' }
+    [ordered]@{targetEvents=$count;targetPid=$TargetProcessId;targetThreads=$ids.Count;rawPublished=$false;memoryBoundMiB=256}
+}
 $trace = $null
 $result = [ordered]@{mode=$Mode;status='FAIL';sourceSha=(& git -C $repo rev-parse HEAD);scope='independent hosted synthetic QA';provider='CLR Runtime Loader|JIT 0x18 level5';rawTraceDirectory=$raw;rawPublished=$false;error=$null}
 try {
@@ -174,6 +210,9 @@ public static class RecoveryTraceFixture {
       sum += ((Func<int>)m.CreateDelegate(typeof(Func<int>)))();
     }
     watch.Stop();
+    string ioPath = System.Reflection.Assembly.GetExecutingAssembly().Location + ".io.bin";
+    File.WriteAllBytes(ioPath, new byte[131072]);
+    if (File.ReadAllBytes(ioPath).Length != 131072) return 4;
     System.Threading.Thread.Sleep(1200);
     File.WriteAllText(args[0], "{\"bits\":32,\"clr\":\"" + Environment.Version + "\",\"methods\":4000,\"sum\":" + sum + ",\"workMs\":" + watch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "}");
     return sum == 7998000 ? 0 : 3;
@@ -195,6 +234,13 @@ public static class RecoveryTraceFixture {
             if ($traced) {
                 Stop-OwnedTrace $trace
                 $decoded = Export-TargetEvents $trace @($process.identity.pid)
+                if ($KernelWaits) {
+                    $kernel = Export-KernelTargetEvents $trace $process.identity.pid (Join-Path $OutputDirectory "$label-threads.csv")
+                    $result.kernelQualification = $kernel
+                    $kernelEvents = @(Get-Content -LiteralPath (Join-Path $OutputDirectory "$label-kernel-target.jsonl") | ForEach-Object { $_ | ConvertFrom-Json })
+                    if (@($kernelEvents | Where-Object { $_.opcodeName -eq 'CSwitch' }).Count -eq 0 -or
+                        @($kernelEvents | Where-Object { @($_.data.PSObject.Properties | Where-Object { $_.Name -in 'FileName','OpenPath','ResolvedFileName' -and $_.Value -like '*.io.bin' }).Count -gt 0 }).Count -eq 0) { throw 'Synthetic target context switches/file names were not decoded.' }
+                }
                 $decodeResults += $decoded
                 $result.decoding = $decodeResults
                 if ($decoded.jitStarts -lt 4000 -or $decoded.fixtureMethodEvents -lt 4000) { throw 'Target fixture JIT events did not round-trip through the decoder.' }
@@ -215,6 +261,7 @@ public static class RecoveryTraceFixture {
         $result.status = 'PASS'
     } else {
         $result.hypothesis = 'Discriminate scheduler starvation (target thread Ready, busy host) from native waits (Wait and reason) during previously measured low-CPU Main JIT and Owner.Show gaps. Read-only target thread snapshots every 100ms, host CPU counters, named compiler/Defender CPU every second. One cold full Recovery, 60000ms, no warmup; stop after this single new observation.'
+        if ($KernelWaits) { $result.hypothesis = 'Previous target thread samples are predominantly Wait/Executive with only 3-8% host CPU. Discriminate hard page faults/file I/O from other native waits using bounded 256MiB kernel ETW memory trace, target context-switch stacks, file mappings and I/O events. One cold full Recovery, unchanged 60000ms and all groups/rows/assertions. Stop after this one new discriminating observation; no raw host trace is published.' }
         $env:WIN7POS_QA_TEMP_BASE = $env:RUNNER_TEMP
         $env:WIN7POS_QA_RECOVERY_OPERATIONS = '1'
         $env:WIN7POS_QA_RECOVERY_THREADS = '1'
@@ -225,6 +272,7 @@ public static class RecoveryTraceFixture {
         $functional = Get-Content -LiteralPath (Join-Path $OutputDirectory 'functional/functional-results.json') -Raw | ConvertFrom-Json
         $result.functional = $functional.results
         $result.decoding = Export-TargetEvents $trace @($functional.results | ForEach-Object pid)
+        if ($KernelWaits) { $result.kernelDecoding = Export-KernelTargetEvents $trace $functional.results[0].pid (Join-Path $OutputDirectory 'functional/IMPORT_RECOVERY_completion/recovery-thread-observer.csv') }
         $trace = $null
         if ($result.decoding.jitStarts -eq 0 -or $result.decoding.methodLoads -eq 0) { throw 'Recovery CLR trace has no decoded JIT starts/method loads.' }
         if ($functionalExit -ne 0) { throw "Recovery functional runner exit $functionalExit; diagnostic evidence retained." }
@@ -234,6 +282,10 @@ public static class RecoveryTraceFixture {
 finally {
     if ($null -ne $trace -and -not $trace.stopped) {
         try { Stop-OwnedTrace $trace } catch { if ($null -eq $result.error) { $result.error=$_.Exception.Message }; $result.cleanupError=$_.Exception.Message }
+    }
+    if ($null -ne $trace -and $trace.kernelStarted -and -not $trace.kernelStopped) {
+        try { $null = Invoke-BoundedNative $wpr @('-cancel','-instancename',$trace.name) ($trace.label + '-kernel-cancel') 30 }
+        catch { $result.kernelCleanupError=$_.Exception.Message }
     }
     $result | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'trace-result.json')
 }
