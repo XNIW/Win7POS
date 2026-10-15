@@ -38,7 +38,10 @@ if ($KernelWaits) {
     })
     $provenance | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'kernel-decoder-provenance.json')
     $kernelDecoder = Join-Path $raw 'RecoveryKernelDecoder.exe'
-    & (Join-Path $framework 'csc.exe') /nologo /optimize+ /platform:x64 /target:exe "/out:$kernelDecoder" "/r:$traceLibrary" "/r:$traceSerializer" /r:System.Web.Extensions.dll (Join-Path $PSScriptRoot 'RecoveryKernelDecoder.cs') *> (Join-Path $raw 'kernel-decoder-build.txt')
+    # Compile the x64 observer with x64 Framework: never initialize the target
+    # x86 CLR before the cold Recovery process on the diagnostic VM.
+    $decoderCompiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+    & $decoderCompiler /nologo /optimize+ /platform:x64 /target:exe "/out:$kernelDecoder" "/r:$traceLibrary" "/r:$traceSerializer" /r:System.Web.Extensions.dll (Join-Path $PSScriptRoot 'RecoveryKernelDecoder.cs') *> (Join-Path $raw 'kernel-decoder-build.txt')
     if ($LASTEXITCODE -ne 0) { throw "Kernel decoder compilation failed: $([IO.File]::ReadAllText((Join-Path $raw 'kernel-decoder-build.txt')))" }
 }
 [ordered]@{image=$env:ImageOS;imageVersion=$env:ImageVersion;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture);cpu=(Get-CimInstance Win32_ComputerSystem | Select-Object NumberOfLogicalProcessors,TotalPhysicalMemory);frameworkX86=@('clr.dll','mscordacwks.dll','sos.dll' | ForEach-Object { $path=Join-Path $framework $_; [ordered]@{name=$_;version=(Get-Item -LiteralPath $path).VersionInfo.FileVersion;sha256=(Get-FileHash -LiteralPath $path).Hash} })} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'host.json')

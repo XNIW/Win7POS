@@ -59,6 +59,15 @@ public static class RecoveryKernelDecoder
                 var readWrite = e as FileIOReadWriteTraceData;
                 if (readWrite != null) { data["FileName"] = readWrite.FileName; io++; }
                 if (cs != null) switches++;
+                var stack = e as StackWalkStackTraceData;
+                if (stack != null)
+                {
+                    var addresses = new List<string>();
+                    for (int i = 0; i < Math.Min(stack.FrameCount, 96); i++) addresses.Add(stack.InstructionPointer(i).ToString("X", CultureInfo.InvariantCulture));
+                    data["EventTimeStampRelativeMSec"] = stack.EventTimeStampRelativeMSec;
+                    data["Frames"] = addresses;
+                    data["FramesTruncated"] = stack.FrameCount > 96;
+                }
                 writer.WriteLine(json.Serialize(new { utc = e.TimeStamp.ToUniversalTime().ToString("O"), relativeMs = e.TimeStampRelativeMSec, pid = e.ProcessID, tid = e.ThreadID, provider = e.ProviderGuid, eventName = e.EventName, opcodeName = e.OpcodeName, version = e.Version, pointerSize = e.PointerSize, data = data }));
                 if (++count > 250000 || tids.Count > 128) throw new InvalidOperationException("Kernel target bound exceeded.");
             };
