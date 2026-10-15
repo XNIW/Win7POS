@@ -18,6 +18,9 @@ function Must-Fail([scriptblock]$Action, [string]$Pattern) {
     Assert-QaTest ($message -match $Pattern) "Expected $Pattern, received $message"
 }
 $root = Join-Path ([IO.Path]::GetTempPath()) ('Win7POS.QA.Test.' + [Guid]::NewGuid().ToString('N'))
+foreach ($folder in @([Environment]::GetFolderPath('CommonApplicationData'), [Environment]::GetFolderPath('LocalApplicationData'), [IO.Path]::GetTempPath())) {
+    if ($folder) { Must-Fail { Assert-QaOutputRoot (Join-Path $folder 'Win7POS/qa-must-be-refused') $repoRoot } 'qa_output_overlaps_checkout_or_store_data' }
+}
 New-Item -ItemType Directory -Path $root | Out-Null
 $unicode = Join-Path $root 'spazi e qualità'
 Assert-QaTest ((Assert-QaPath $unicode $root) -ceq $unicode) 'Unicode/spaces path changed'

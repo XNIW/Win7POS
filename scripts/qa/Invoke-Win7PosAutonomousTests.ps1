@@ -34,6 +34,22 @@ function Assert-QaPath([string]$Path, [string]$Root = '') {
     return $full
 }
 
+function Assert-QaOutputRoot([string]$OutputRoot, [string]$RepoRoot) {
+    $root = Assert-QaPath $OutputRoot
+    $forbidden = @($RepoRoot, 'C:\POSData', (Join-Path ([IO.Path]::GetTempPath()) 'Win7POS'))
+    # Match every fallback in Core PosPaths.GetDataRoot, even when no store
+    # process or WIN7POS_DATA_DIR override is currently present.
+    foreach ($folder in @([Environment]::GetFolderPath('CommonApplicationData'),
+        [Environment]::GetFolderPath('LocalApplicationData'), $env:APPDATA)) {
+        if ($folder) { $forbidden += Join-Path $folder 'Win7POS' }
+    }
+    if ($env:WIN7POS_DATA_DIR) { $forbidden += $env:WIN7POS_DATA_DIR }
+    foreach ($denied in $forbidden) {
+        if (Test-QaWithin $root $denied) { throw 'qa_output_overlaps_checkout_or_store_data' }
+    }
+    return $root
+}
+
 function Test-QaProcessIdentity($Process, $Identity) {
     try {
         $Process.Refresh()
@@ -365,12 +381,7 @@ $runId = 'Win7POS.QA.' + [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'
 $report = [ordered]@{ schemaVersion=1; runId=$runId; suite=$Suite; sourceSha=$null; sourceState=$null; sourceStateAfter=$null; host=[Environment]::MachineName; os=[Environment]::OSVersion.VersionString; powershell=$PSVersionTable.PSVersion.ToString(); profile=$Profile; packageSha256=$null; binaries=@(); status='FAIL'; firstError=$null; reportError=$null; results=@() }
 $mutex = $null; $locked = $false; $runDirectory = $null; $exitCode = 1
 try {
-    $root = Assert-QaPath $OutputRoot
-    $forbidden = @($repoRoot, 'C:\POSData')
-    foreach ($candidate in @($env:WIN7POS_DATA_DIR, $env:LOCALAPPDATA, $env:APPDATA)) {
-        if ($candidate) { $forbidden += $(if ($candidate -eq $env:WIN7POS_DATA_DIR) { $candidate } else { Join-Path $candidate 'Win7POS' }) }
-    }
-    foreach ($denied in $forbidden) { if (Test-QaWithin $root $denied) { throw 'qa_output_overlaps_checkout_or_store_data' } }
+    $root = Assert-QaOutputRoot $OutputRoot $repoRoot
     $runDirectory = Assert-QaPath (Join-Path $root $runId) $root
     if (Test-Path -LiteralPath $runDirectory) { throw 'qa_run_identity_reused' }
     New-Item -ItemType Directory -Path $runDirectory | Out-Null
