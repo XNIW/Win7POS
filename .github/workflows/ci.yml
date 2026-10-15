@@ -64,8 +64,6 @@ jobs:
     name: ${{ github.event_name == 'workflow_dispatch' && (inputs.cart_diagnostic_only == true || (inputs.cart_qualification != '' && inputs.cart_qualification != 'none')) && 'canonical-not-requested' || 'build-and-check' }}
     if: ${{ github.event_name != 'workflow_dispatch' || ((inputs.recovery_diagnostic == '' || inputs.recovery_diagnostic == 'none') && inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
     runs-on: windows-latest
-    env:
-      WIN7POS_QA_TEMP_BASE: ${{ runner.temp }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,7 +83,11 @@ jobs:
           global-json-file: global.json
 
       - name: Print .NET info
-        run: dotnet --info
+        shell: pwsh
+        run: |
+          dotnet --info
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "WIN7POS_QA_TEMP_BASE=$env:RUNNER_TEMP" | Add-Content -LiteralPath $env:GITHUB_ENV
 
       - name: Canonical autonomous Windows QA (net48 x86)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
@@ -124,8 +126,6 @@ jobs:
   recovery-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' }}
     runs-on: windows-latest
-    env:
-      WIN7POS_QA_TEMP_BASE: ${{ runner.temp }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -147,6 +147,7 @@ jobs:
         env:
           RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
         run: |
+          $env:WIN7POS_QA_TEMP_BASE = $env:RUNNER_TEMP
           $root = "$env:RUNNER_TEMP/recovery-diagnostic"
           New-Item -ItemType Directory -Path $root | Out-Null
           [ordered]@{sha=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;mode=$env:RECOVERY_MODE;qualifiesAsus=$false;qualifiesWin7=$false;image=$env:ImageOS;imageVersion=$env:ImageVersion;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture);system=(Get-CimInstance Win32_ComputerSystem | Select-Object NumberOfLogicalProcessors,TotalPhysicalMemory)} | ConvertTo-Json -Depth 5 | Set-Content "$root/host.json"

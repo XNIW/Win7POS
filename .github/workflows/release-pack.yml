@@ -15,7 +15,6 @@ jobs:
     env:
       DOTNET_NOLOGO: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "true"
-      WIN7POS_QA_TEMP_BASE: ${{ runner.temp }}
     steps:
       - name: Reject tag invocation outside protected release
         if: ${{ github.ref_type == 'tag' }}
@@ -41,7 +40,11 @@ jobs:
           global-json-file: global.json
 
       - name: Print .NET info
-        run: dotnet --info
+        shell: pwsh
+        run: |
+          dotnet --info
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "WIN7POS_QA_TEMP_BASE=$env:RUNNER_TEMP" | Add-Content -LiteralPath $env:GITHUB_ENV
 
       - name: Restore solution
         run: dotnet restore Win7POS.slnx --locked-mode
