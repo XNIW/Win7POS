@@ -73,6 +73,25 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [STAThread]
         private static void Main(string[] args)
         {
+            // This closure witness returns before WPF startup, login, data-dir or DB access.
+            if (HasArg(args, "--valuetuple-release-closure-smoke"))
+            {
+                try
+                {
+                    if (args.Length != 5 || args[0] != "--valuetuple-release-closure-smoke" ||
+                        args[1] != "--payload-dir" || args[3] != "--receipt")
+                        throw new ArgumentException("Exact payload and receipt arguments are required.");
+                    ValueTupleReleaseClosureSmoke.Run(args[2], args[4]);
+                    Environment.ExitCode = 0;
+                }
+                catch (Exception error)
+                {
+                    Console.Error.WriteLine("VALUETUPLE_RELEASE_CLOSURE FAIL: " + error.GetType().Name);
+                    Environment.ExitCode = 1;
+                }
+                return;
+            }
+
             var dataDir = ValueAfter(args, "--data-dir");
             if (string.IsNullOrWhiteSpace(dataDir))
             {

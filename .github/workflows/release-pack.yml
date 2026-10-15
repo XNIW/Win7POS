@@ -114,8 +114,17 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $env:WIN7POS_DOTNET_EXE = (Get-Command dotnet -ErrorAction Stop).Source
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Exact x86 release-closure harness build failed." }
           & pwsh -NoProfile -File scripts/win7pos/windows/build-release-x86.ps1 -Configuration Release -Platform x86 -SkipRestore -BuildInstaller
           if ($LASTEXITCODE -ne 0) { throw "Canonical x86 release build failed with exit $LASTEXITCODE." }
+
+          & pwsh -NoProfile -File scripts/run-valuetuple-release-closure-smoke.ps1 `
+            -PayloadDirectory (Resolve-Path "dist/Win7POS").Path `
+            -HarnessExe (Resolve-Path "tests/Win7POS.Wpf.UiSmokeHarness/bin/x86/Release/net48/Win7POS.Wpf.UiSmokeHarness.exe").Path `
+            -EvidenceDirectory (Join-Path $env:GITHUB_WORKSPACE "artifacts/release-security/valuetuple-closure") `
+            -ExpectedCommitSha $env:WIN7POS_EXACT_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Packed ValueTuple provider/consumer closure or negative vectors failed." }
 
           $zip = "dist/Win7POS-$env:WIN7POS_BUILD_VERSION-x86.zip"
           if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
@@ -244,4 +253,15 @@ jobs:
             dist/Win7POS-build-report.md
             dist/release-evidence
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Preserve ValueTuple closure witness receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Win7POS-ValueTuple-Closure-${{ github.run_id }}
+          path: |
+            artifacts/release-security/valuetuple-closure/*.json
+            artifacts/release-security/valuetuple-closure/*.log
+          if-no-files-found: warn
           retention-days: 14
