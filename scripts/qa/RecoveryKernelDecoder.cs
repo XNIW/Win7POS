@@ -32,6 +32,7 @@ public static class RecoveryKernelDecoder
     {
         var tids = new HashSet<int>();
         foreach (string id in threadIds.Split(',')) tids.Add(int.Parse(id, CultureInfo.InvariantCulture));
+        int primaryTid = 0, omittedWorkerSwitches = 0, omittedWorkerStacks = 0;
         var allowed = new HashSet<string>(("ProcessID ThreadID NewThreadID OldThreadID NewProcessID OldProcessID OldThreadState OldThreadWaitReason OldThreadWaitMode NewThreadPriority OldThreadPriority NewThreadWaitTime ElapsedTimeMSec ReadOffset VirtualAddress FileObject FileKey FileName OpenPath ByteCount IrpPtr NtStatus ExtraInfo IoSize TransferSize DiskNumber ByteOffset Offset IoFlags ImageBase ImageSize ImageChecksum DefaultBase DiskServiceTimeMSec IssuingThreadId").Split(' '), StringComparer.OrdinalIgnoreCase);
         var watch = Stopwatch.StartNew(); int count = 0, switches = 0, faults = 0, io = 0;
         var json = new JavaScriptSerializer();
@@ -41,10 +42,16 @@ public static class RecoveryKernelDecoder
             source.Kernel.All += delegate(TraceEvent e)
             {
                 if (watch.Elapsed.TotalSeconds > 120) throw new InvalidOperationException("Kernel decoder exceeded finite parse budget.");
+                // The first target Thread/Start is the process entry/UI thread.
+                // Keep all target paging/I/O, but avoid exporting render-worker
+                // scheduling stacks which exhausted the bound before 60 seconds.
+                if (primaryTid == 0 && e.ProcessID == pid && e.EventName == "Thread/Start") primaryTid = e.ThreadID;
                 if (e.ProcessID == pid && e.ThreadID > 0) tids.Add(e.ThreadID);
                 var cs = e as CSwitchTraceData;
                 bool selected = e.ProcessID == pid || tids.Contains(e.ThreadID) || (cs != null && (tids.Contains(cs.OldThreadID) || tids.Contains(cs.NewThreadID)));
                 if (!selected) return;
+                if (cs != null && cs.OldThreadID != primaryTid && cs.NewThreadID != primaryTid) { omittedWorkerSwitches++; return; }
+                if (e is StackWalkStackTraceData && e.ThreadID != primaryTid) { omittedWorkerStacks++; return; }
                 var data = new Dictionary<string, object>();
                 foreach (string name in e.PayloadNames)
                 {
@@ -89,8 +96,8 @@ public static class RecoveryKernelDecoder
                 if (++count > 250000 || tids.Count > 128) throw new InvalidOperationException("Kernel target bound exceeded.");
             };
             source.Process();
-            File.WriteAllText(output + ".receipt.json", json.Serialize(new { events = count, contextSwitches = switches, hardFaults = faults, fileReadsWrites = io, eventsLost = source.EventsLost, targetPid = pid, rawPublished = false, library = typeof(ETWTraceEventSource).Assembly.FullName }));
-            if (source.EventsLost != 0 || count == 0 || switches == 0) return 3;
+            File.WriteAllText(output + ".receipt.json", json.Serialize(new { events = count, contextSwitches = switches, hardFaults = faults, fileReadsWrites = io, eventsLost = source.EventsLost, targetPid = pid, primaryThreadId = primaryTid, omittedWorkerSwitches, omittedWorkerStacks, rawPublished = false, library = typeof(ETWTraceEventSource).Assembly.FullName }));
+            if (source.EventsLost != 0 || count == 0 || switches == 0 || primaryTid == 0) return 3;
         }
         return 0;
     }

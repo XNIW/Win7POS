@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory)][ValidateSet('Qualify','Recovery')][string]$Mode,
     [Parameter(Mandatory)][string]$OutputDirectory,
-    [switch]$KernelWaits
+    [switch]$KernelWaits,
+    [ValidateSet('Legacy','Isolated')][string]$EntryMode = 'Legacy',
+    [switch]$CompareEntry
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -200,7 +202,7 @@ function Export-KernelTargetEvents($Trace, [int]$TargetProcessId, [string]$Threa
     Get-Content -LiteralPath ($output + '.receipt.json') -Raw | ConvertFrom-Json
 }
 $trace = $null
-$result = [ordered]@{mode=$Mode;status='FAIL';sourceSha=(& git -C $repo rev-parse HEAD);scope='independent hosted synthetic QA';provider='CLR Runtime Loader|JIT 0x18 level5';rawTraceDirectory=$raw;rawPublished=$false;error=$null}
+$result = [ordered]@{mode=$Mode;entryMode=$EntryMode;status='FAIL';sourceSha=(& git -C $repo rev-parse HEAD);scope='independent hosted synthetic QA';provider='CLR Runtime Loader|JIT 0x18 level5';rawTraceDirectory=$raw;rawPublished=$false;error=$null}
 try {
     if ($Mode -eq 'Qualify') {
         Add-Type -Path (Join-Path $PSScriptRoot 'RecoveryThreadObserver.cs')
@@ -283,6 +285,8 @@ public static class RecoveryTraceFixture {
         $env:WIN7POS_QA_TEMP_BASE = $env:RUNNER_TEMP
         $env:WIN7POS_QA_RECOVERY_OPERATIONS = '1'
         $env:WIN7POS_QA_RECOVERY_THREADS = '1'
+        $env:WIN7POS_QA_RECOVERY_ISOLATED_ENTRY = if ($EntryMode -eq 'Isolated') { '1' } else { '0' }
+        if ($CompareEntry) { $result.hypothesis = 'One predefined Legacy/Isolated pair on separate fresh equivalent VMs. Same binary, .NET Framework x86 runtime, FunctionalCompletionSmoke entry, all eleven groups, rows and assertions, and 60000ms creation-to-exit budget. Test whether avoiding the multipurpose launcher reduces demand paging of unrelated dependencies, rather than merely postponing required loads. Compare full-span UI hard-fault union, loaded images/JIT and phase times. No warmup, repeat-until-pass, runtime switch or product change. Stop after the pair even if both fail. Kernel export keeps all own paging/I/O but only entry-thread scheduling stacks to preserve full coverage within the unchanged finite export bound.' }
         $trace = Start-OwnedTrace 'recovery'
         & pwsh -NoProfile -File (Join-Path $repo 'scripts/run-functional-completion-smoke.ps1') -Scenario IMPORT_RECOVERY_completion -OutputDirectory (Join-Path $OutputDirectory 'functional')
         $functionalExit = $LASTEXITCODE

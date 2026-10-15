@@ -74,6 +74,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static void Main(string[] args)
         {
             RecoveryStartupTimeline.Start(args);
+            if (RecoverySmokeEntryPoint.TryRun(args)) return;
+            RunLegacy(args);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void RunLegacy(string[] args)
+        {
+            RecoveryStartupTimeline.Record("legacy_launcher_entered");
             // This closure witness returns before WPF startup, login, data-dir or DB access.
             if (HasArg(args, "--valuetuple-release-closure-smoke"))
             {
@@ -987,7 +995,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 afterRestore);
         }
 
-        private static void AddApplicationResources(Application app)
+        internal static void AddApplicationResources(Application app)
         {
             var baseUri = "pack://application:,,,/Win7POS.Wpf;component/";
             app.Resources.MergedDictionaries.Add(new ResourceDictionary
