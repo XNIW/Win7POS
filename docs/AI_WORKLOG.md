@@ -6,6 +6,8 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ## 2026-10-15 – QA automatizzata e diagnosi Recovery residua
 
+- Ripresa da PR128 `cafe6f2`: riprodotto e corretto `TIMEOUT` sovrascritto da `FAIL` quando falliva `Copy-FunctionalEvidence`; nuovo `evidenceExportError` separato, primo errore ed exit code preservati. Otto combinazioni esito/export nel test esistente, senza eseguire WPF.
+- Rimossa la seconda `WaitForExit()` illimitata del runner functional: su Windows la redirection passa file handle al figlio, senza reader asincroni sul `Process` restituito. Gate locale 50/50 PASS, incluso test runtime sintetico con sentinelle finali stdout/stderr e cleanup. I 60.000 ms e tutti i gruppi/assert Recovery sono invariati; il timeout storico precede questa attesa e non è risolto dalla patch. Validazione hosted del nuovo HEAD e integrazione restano da verificare nelle ricevute esterne.
 - Baseline main `3892f37`, pulita; preservati stash, altri worktree e i tre WIP nominati. Nessuna modifica al prodotto Core/Data/WPF o alle dipendenze.
 - Conservati FAIL CI `38670961016` e TIMEOUT diagnostico `38775697755`. Tre coppie alternate `38776939297`: tutti PASS, entrypoint sperimentale senza beneficio, ipotesi JIT respinta e codice sperimentale rimosso. Causa Recovery UNKNOWN; timeout 60.000 ms e undici gruppi invariati.
 - Runner funzionale con selezione mirata, report per tutti i 19 scenari più visual, conservazione primo errore e prosecuzione degli scenari indipendenti. Diagnostica monotona/gruppo/fase e campioni memoria/working set/handle/finestre WPF; nessuna qualifica risorse Win7 dedotta.

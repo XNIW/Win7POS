@@ -136,7 +136,7 @@ try {
         $visual = $name -eq 'FUNCTIONAL_VISUAL'
         $timeoutMs = if ($visual) { 120000 } else { 60000 }
         $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
-        $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$evidenceDir; dataDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; cleanupSucceeded=$null; cleanupError=$null; error=$null }
+        $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$evidenceDir; dataDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; cleanupSucceeded=$null; cleanupError=$null; evidenceExportError=$null; error=$null }
         $process = $null
         $threadObserver = $null
         $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -158,7 +158,9 @@ try {
                 $record.status = 'TIMEOUT'
                 throw "Functional completion timed out ($name, $timeoutMs ms)."
             }
-            $process.WaitForExit()
+            # On Windows Start-Process redirects to inherited file handles, not
+            # asynchronous readers on this Process. The bounded wait is enough;
+            # do not introduce an unbounded second wait after the test deadline.
             $record.exitCode = $process.ExitCode
             if ($process.ExitCode -ne 0) { throw "Functional completion exit=$($process.ExitCode) ($name)." }
             if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf) -or
@@ -198,7 +200,8 @@ try {
             $record.elapsedMs = $watch.Elapsed.TotalMilliseconds
             try { if ($cleanupConfirmed) { Copy-FunctionalEvidence $dataDir $evidenceDir } }
             catch {
-                $record.status = 'FAIL'
+                $record.evidenceExportError = $_.Exception.Message
+                if ($record.status -eq 'PASS') { $record.status = 'FAIL' }
                 if ($null -eq $record.error) { $record.error = $_.Exception.Message }
                 if ($null -eq $firstError) { $firstError = $record.error }
             }

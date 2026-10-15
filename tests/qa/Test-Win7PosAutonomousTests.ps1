@@ -287,6 +287,40 @@ Assert-QaTest ($functionalData.Length -le 89 -and -not (Test-QaWithin $functiona
 foreach ($name in @('functional-completion.txt','measurements.csv','entry.json','synthetic.db')) { [IO.File]::WriteAllText((Join-Path $functionalData $name),'synthetic') }
 Copy-FunctionalEvidence $functionalData $functionalEvidence
 Assert-QaTest ((Test-Path -LiteralPath (Join-Path $functionalEvidence 'entry.json')) -and (Test-Path -LiteralPath (Join-Path $functionalEvidence 'measurements.csv')) -and -not (Test-Path -LiteralPath (Join-Path $functionalEvidence 'synthetic.db')) -and (Test-Path -LiteralPath (Join-Path $functionalData 'synthetic.db'))) 'Functional diagnostic export copied or removed SQLite data'
+# Execute only the real export try/catch with a failing copy. No runner entrypoint
+# or child process runs: this checks the persisted classification after cleanup.
+$functionalCopyDefinition = @($functionalAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Copy-FunctionalEvidence' }, $true))[0].Extent.Text
+$functionalExportCalls = @($functionalAst.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Copy-FunctionalEvidence' }, $true))
+Assert-QaTest ($functionalExportCalls.Count -eq 1) 'Expected one functional evidence export call'
+$functionalExportTry = $functionalExportCalls[0].Parent
+while ($null -ne $functionalExportTry -and $functionalExportTry -isnot [Management.Automation.Language.TryStatementAst]) { $functionalExportTry = $functionalExportTry.Parent }
+Assert-QaTest ($null -ne $functionalExportTry -and $functionalExportTry.CatchClauses.Count -eq 1) 'Missing functional export error handling'
+$functionalExportAction = [scriptblock]::Create($functionalExportTry.Extent.Text)
+function Copy-FunctionalEvidence {
+    param($DataDirectory,$EvidenceDirectory)
+    if ($script:functionalExportShouldFail) { throw 'synthetic_functional_export_failure' }
+}
+try {
+    foreach ($primaryStatus in @('TIMEOUT','FAIL','NOT_RUN','PASS')) {
+        foreach ($copyFails in @($true,$false)) {
+            $script:functionalExportShouldFail = $copyFails
+            $primaryError = if ($primaryStatus -eq 'PASS') { $null } else { 'original_' + $primaryStatus }
+            $primaryExitCode = if ($primaryStatus -eq 'PASS') { 0 } elseif ($primaryStatus -eq 'FAIL') { 7 } else { $null }
+            $record = [ordered]@{ status=$primaryStatus; exitCode=$primaryExitCode; error=$primaryError; evidenceExportError=$null }
+            $firstError = $primaryError
+            $cleanupConfirmed = $true; $dataDir = $functionalData; $evidenceDir = $functionalEvidence
+            . $functionalExportAction
+            $expectedStatus = if ($copyFails -and $primaryStatus -eq 'PASS') { 'FAIL' } else { $primaryStatus }
+            $expectedExportError = if ($copyFails) { 'synthetic_functional_export_failure' } else { $null }
+            $expectedError = if ($primaryError) { $primaryError } else { $expectedExportError }
+            Assert-QaTest ($record.status -ceq $expectedStatus) "Functional export erased primary $primaryStatus (copyFails=$copyFails)"
+            Assert-QaTest ($record.evidenceExportError -ceq $expectedExportError) 'Functional export did not retain its separate secondary error'
+            Assert-QaTest ($record.error -ceq $expectedError -and $firstError -ceq $expectedError -and $record.exitCode -eq $primaryExitCode) 'Functional export changed the original error or exit code'
+        }
+    }
+} finally { . ([scriptblock]::Create($functionalCopyDefinition)) }
+$unboundedFunctionalWaits = @($functionalAst.FindAll({ param($n) $n -is [Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Member.Value -eq 'WaitForExit' -and ($null -eq $n.Arguments -or $n.Arguments.Count -eq 0) }, $true))
+Assert-QaTest ($unboundedFunctionalWaits.Count -eq 0) 'Functional supervisor contains an unbounded process/output wait'
 Must-Fail { New-FunctionalDataRoot ('C:\' + ('long-temporary-base' * 8)) $repoRoot } 'too long'
 $functionalObserver = @($functionalAst.EndBlock.Statements | Where-Object { $_.Extent.Text -like '*Read-FunctionalChildImage $observer*' })
 Assert-QaTest ($functionalObserver.Count -eq 1 -and $functionalObserver[0].Extent.StartOffset -lt $functionalAst.Extent.Text.IndexOf('foreach ($name in $cases)')) 'Process observer initialization moved inside the timed WPF cases'
@@ -294,6 +328,30 @@ if ($Runtime -and $IsWindows) {
     $own = [Diagnostics.Process]::GetCurrentProcess()
     try { Assert-QaTest ((Read-FunctionalChildImage $own) -ceq $own.MainModule.FileName) 'Native process image differs from owned synthetic host' }
     finally { $own.Dispose() }
+    # Same Windows redirection as the functional runner, with a synthetic child
+    # only. Both final writes must already be visible after the bounded wait.
+    $outputProbe = Join-Path $unicode 'functional-output-probe.ps1'
+    @'
+for ($i = 0; $i -lt 512; $i++) {
+    [Console]::Out.WriteLine('stdout ' + $i)
+    [Console]::Error.WriteLine('stderr ' + $i)
+}
+[Console]::Out.WriteLine('FINAL_STDOUT_SENTINEL')
+[Console]::Error.WriteLine('FINAL_STDERR_SENTINEL')
+'@ | Set-Content -LiteralPath $outputProbe -Encoding utf8
+    $probeOut = Join-Path $unicode 'functional-stdout.log'
+    $probeErr = Join-Path $unicode 'functional-stderr.log'
+    $probeProcess = Start-Process -FilePath $shell -ArgumentList @('-NoProfile','-File',('"' + $outputProbe + '"')) -WindowStyle Hidden -PassThru -RedirectStandardOutput $probeOut -RedirectStandardError $probeErr
+    try {
+        $probeCreated = $probeProcess.StartTime.ToUniversalTime().ToString('O')
+        $null = $probeProcess.Handle
+        Assert-QaTest ($probeProcess.WaitForExit(15000)) 'Synthetic output probe exceeded its finite process budget'
+        Assert-QaTest ($probeProcess.ExitCode -eq 0) 'Synthetic output probe failed'
+        Assert-QaTest ([IO.File]::ReadAllText($probeOut).EndsWith('FINAL_STDOUT_SENTINEL' + [Environment]::NewLine) -and [IO.File]::ReadAllText($probeErr).EndsWith('FINAL_STDERR_SENTINEL' + [Environment]::NewLine)) 'Bounded Windows wait returned before redirected final output was available'
+    } finally {
+        try { Stop-FunctionalChild $probeProcess $probeCreated }
+        finally { $probeProcess.Dispose() }
+    }
 }
 $script:imageReads = 0
 function Read-FunctionalChildImage { param($Process) $script:imageReads++; if ($script:imageReads -eq 1) { return $null }; if ($script:imageReads -eq 2) { return 'wrong-loader-image' }; return 'C:\owned.exe' }

@@ -35,6 +35,17 @@ eseguibile mancante: non esegue WPF, build, Git o servizi esterni. Questi test
 devono essere eseguiti anche in CI; un blocco della piattaforma va riportato e
 non aggirato con un diverso launcher.
 
+Il runner functional conserva l'esito primario anche se la copia dei diagnostici
+fallisce: `TIMEOUT`, `FAIL` e `NOT_RUN` rimangono tali, mentre un precedente `PASS`
+diventa `FAIL`. Il campo `evidenceExportError` registra separatamente l'errore
+secondario; `error`, `firstError` ed exit code originali non vengono sovrascritti.
+La regressione esegue il vero blocco di esportazione con copy riuscita/fallita
+per i quattro esiti. Su Windows, `Start-Process` redirige stdout/stderr tramite
+handle di file ereditati: dopo l'attesa limitata non serve un'altra `WaitForExit()`
+illimitata. Il test `-Runtime` verifica entrambe le scritture finali con un figlio
+PowerShell sintetico e cleanup finito. Queste correzioni del supervisore non
+dimostrano la soluzione del timeout Recovery, che avviene nell'attesa precedente.
+
 Ogni avvio crea una directory nuova con timestamp e UUID sotto `OutputRoot`
 (default: directory temporanea), fuori dal checkout e dai percorsi dati POS.
 Rifiuta link/reparse point negli antenati e riuso dell'identità. Non elimina
