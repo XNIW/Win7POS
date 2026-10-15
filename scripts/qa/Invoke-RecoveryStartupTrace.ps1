@@ -61,10 +61,14 @@ function Invoke-BoundedNative([string]$Executable, [string[]]$Arguments, [string
     $start = [Diagnostics.Stopwatch]::StartNew()
     $p = Start-Process -FilePath $Executable -ArgumentList $Arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $raw "$Label.stdout.txt") -RedirectStandardError (Join-Path $raw "$Label.stderr.txt")
     $failure = $null
+    $observer = $null
     $record = [ordered]@{identity=$null;elapsedMs=0;exitCode=$null;cleanupConfirmed=$false;cleanupError=$null;firstError=$null}
     try {
         $null = $p.Handle
         $record.identity = [ordered]@{pid=$p.Id;creationUtc=$p.StartTime.ToUniversalTime().ToString('O');executable=$Executable;sha256=(Get-FileHash -LiteralPath $Executable).Hash}
+        if ($Mode -eq 'Qualify' -and $Label -like 'fixture-*' -and $Label -notlike '*-decode') {
+            $observer = [RecoveryThreadObserver]::new($p, (Join-Path $OutputDirectory "$Label-threads.csv"))
+        }
         if (-not $p.WaitForExit($Seconds * 1000)) { throw "$Label exceeded its finite diagnostic budget." }
         $p.WaitForExit()
         $record.exitCode = $p.ExitCode
@@ -76,7 +80,11 @@ function Invoke-BoundedNative([string]$Executable, [string[]]$Arguments, [string
             $record.cleanupConfirmed = $p.HasExited
             if (-not $record.cleanupConfirmed) { throw 'Owned diagnostic child cleanup is unconfirmed.' }
         } catch { $record.cleanupError=$_.Exception.Message }
-        finally { $p.Dispose() }
+        finally {
+            try { if ($null -ne $observer) { $observer.Dispose() } }
+            catch { if ($null -eq $failure) { $failure=$_ }; $record.observerError=$_.Exception.Message }
+            finally { $p.Dispose() }
+        }
         $record.elapsedMs = $start.Elapsed.TotalMilliseconds
         try { $record | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDirectory "$Label-process.json") }
         catch { if ($null -eq $failure) { $failure=$_ } }
@@ -131,7 +139,11 @@ function Export-TargetEvents($Trace, [int[]]$TargetProcessIds) {
             $total++; if ($eventId -eq 145) { $starts++ }; if ($eventId -in 136,143) { $loads++ }
             if ($payload.Contains('MethodName') -and [string]$payload.MethodName -like 'QA_RecoveryTrace_*') { $fixtureMethods++ }
             if ($total -gt 150000) { throw 'Target CLR event bound exceeded.' }
-            $event = [ordered]@{id=$eventId;version=$system.SelectSingleNode('*[local-name()="Version"]').InnerText;utc=$system.SelectSingleNode('*[local-name()="TimeCreated"]').GetAttribute('SystemTime');pid=[int]$execution.GetAttribute('ProcessID');tid=[int]$execution.GetAttribute('ThreadID');data=$payload}
+            # The hosted manifest misaligns ModuleLoad_V2 fields. Keep its event
+            # timing but never publish mislabeled paths as qualified evidence.
+            $payloadStatus = 'manifest-decoded'
+            if ($eventId -eq 152) { $payload = [ordered]@{}; $payloadStatus = 'omitted-unsupported-module-v2-layout' }
+            $event = [ordered]@{id=$eventId;version=$system.SelectSingleNode('*[local-name()="Version"]').InnerText;utc=$system.SelectSingleNode('*[local-name()="TimeCreated"]').GetAttribute('SystemTime');pid=[int]$execution.GetAttribute('ProcessID');tid=[int]$execution.GetAttribute('ThreadID');payloadStatus=$payloadStatus;data=$payload}
             $out.WriteLine(($event | ConvertTo-Json -Compress -Depth 5))
         }
     } finally {
@@ -144,6 +156,7 @@ $trace = $null
 $result = [ordered]@{mode=$Mode;status='FAIL';sourceSha=(& git -C $repo rev-parse HEAD);scope='independent hosted synthetic QA';provider='CLR Runtime Loader|JIT 0x18 level5';rawTraceDirectory=$raw;rawPublished=$false;error=$null}
 try {
     if ($Mode -eq 'Qualify') {
+        Add-Type -Path (Join-Path $PSScriptRoot 'RecoveryThreadObserver.cs')
         $fixtureSource = Join-Path $raw 'RecoveryTraceFixture.cs'
         @'
 using System;
@@ -161,6 +174,7 @@ public static class RecoveryTraceFixture {
       sum += ((Func<int>)m.CreateDelegate(typeof(Func<int>)))();
     }
     watch.Stop();
+    System.Threading.Thread.Sleep(1200);
     File.WriteAllText(args[0], "{\"bits\":32,\"clr\":\"" + Environment.Version + "\",\"methods\":4000,\"sum\":" + sum + ",\"workMs\":" + watch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "}");
     return sum == 7998000 ? 0 : 3;
   }
@@ -187,6 +201,9 @@ public static class RecoveryTraceFixture {
                 $trace = $null
             }
             $data = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+            $threadSamples = @(Import-Csv -LiteralPath (Join-Path $OutputDirectory "$label-threads.csv"))
+            if (@($threadSamples | Where-Object { $_.kind -eq 'thread' -and $_.state -eq 'Wait' -and $_.wait -eq 'ExecutionDelay' }).Count -eq 0 -or
+                @($threadSamples | Where-Object kind -eq 'system').Count -lt 5) { throw 'Synthetic sleep/system counters did not round-trip through thread observer.' }
             $arms += [ordered]@{index=$index;traced=$traced;workMs=$data.workMs;process=$process}
         }
         $baseline = @($arms | Where-Object { -not $_.traced } | ForEach-Object workMs | Sort-Object)[1]
@@ -197,9 +214,10 @@ public static class RecoveryTraceFixture {
         if ($overhead -gt 1500) { throw 'Collector synthetic overhead exceeds the preregistered 1500ms diagnostic bound.' }
         $result.status = 'PASS'
     } else {
-        $result.hypothesis = 'Locate the cold fixture-to-ContentRendered gap in own-process new Window/Owner.Show/SyncCenterDialog/Center.Show or diagnostic sink. CLR Loader/JIT events discriminate runtime compilation/loading from the measured boundaries; event gaps alone do not establish a native cause. One full cold process, 60000ms, no warmup, unchanged groups/rows/asserts.'
+        $result.hypothesis = 'Discriminate scheduler starvation (target thread Ready, busy host) from native waits (Wait and reason) during previously measured low-CPU Main JIT and Owner.Show gaps. Read-only target thread snapshots every 100ms, host CPU counters, named compiler/Defender CPU every second. One cold full Recovery, 60000ms, no warmup; stop after this single new observation.'
         $env:WIN7POS_QA_TEMP_BASE = $env:RUNNER_TEMP
         $env:WIN7POS_QA_RECOVERY_OPERATIONS = '1'
+        $env:WIN7POS_QA_RECOVERY_THREADS = '1'
         $trace = Start-OwnedTrace 'recovery'
         & pwsh -NoProfile -File (Join-Path $repo 'scripts/run-functional-completion-smoke.ps1') -Scenario IMPORT_RECOVERY_completion -OutputDirectory (Join-Path $OutputDirectory 'functional')
         $functionalExit = $LASTEXITCODE

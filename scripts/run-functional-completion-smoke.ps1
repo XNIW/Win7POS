@@ -114,6 +114,8 @@ $dataRoot = New-FunctionalDataRoot $temporaryBase $repoRoot
 # product initialization occurs here.
 $observer = [Diagnostics.Process]::GetCurrentProcess()
 try { $null = Read-FunctionalChildImage $observer } finally { $observer.Dispose() }
+$observeRecoveryThreads = $env:WIN7POS_QA_RECOVERY_THREADS -eq '1'
+if ($observeRecoveryThreads) { Add-Type -Path (Join-Path $PSScriptRoot 'qa/RecoveryThreadObserver.cs') }
 $results = [Collections.Generic.List[object]]::new()
 $firstError = $null
 $sourceSha = (& git -C $repoRoot rev-parse HEAD)
@@ -136,6 +138,7 @@ try {
         $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
         $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$evidenceDir; dataDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; cleanupSucceeded=$null; cleanupError=$null; error=$null }
         $process = $null
+        $threadObserver = $null
         $watch = [Diagnostics.Stopwatch]::StartNew()
         try {
             if (-not $cleanupConfirmed) { throw 'Previous functional child cleanup was not confirmed; subsequent case not launched.' }
@@ -148,6 +151,9 @@ try {
             $null = $process.Handle
             $record.creationTimeUtc = $process.StartTime.ToUniversalTime().ToString('O')
             $record.observedExecutable = Get-FunctionalChildImage $process $exe
+            if ($observeRecoveryThreads -and $name -eq 'IMPORT_RECOVERY_completion') {
+                $threadObserver = [RecoveryThreadObserver]::new($process, (Join-Path $evidenceDir 'recovery-thread-observer.csv'))
+            }
             if (-not $process.WaitForExit([Math]::Max(1, $timeoutMs - [int]$watch.ElapsedMilliseconds))) {
                 $record.status = 'TIMEOUT'
                 throw "Functional completion timed out ($name, $timeoutMs ms)."
@@ -179,7 +185,15 @@ try {
                     if ($null -eq $record.error) { $record.error = $_.Exception.Message }
                     if ($null -eq $firstError) { $firstError = $record.error }
                 }
-                finally { $process.Dispose() }
+                finally {
+                    try { if ($null -ne $threadObserver) { $threadObserver.Dispose() } }
+                    catch {
+                        if ($record.status -eq 'PASS') { $record.status = 'FAIL' }
+                        if ($null -eq $record.error) { $record.error = $_.Exception.Message }
+                        if ($null -eq $firstError) { $firstError = $_.Exception.Message }
+                    }
+                    finally { $process.Dispose() }
+                }
             }
             $record.elapsedMs = $watch.Elapsed.TotalMilliseconds
             try { if ($cleanupConfirmed) { Copy-FunctionalEvidence $dataDir $evidenceDir } }
