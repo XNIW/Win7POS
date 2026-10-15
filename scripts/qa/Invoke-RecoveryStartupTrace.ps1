@@ -27,6 +27,20 @@ $tools = @($toolPaths | ForEach-Object {
 })
 $tools | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'collector-provenance.json')
 $framework = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319'
+if ($KernelWaits) {
+    $traceLibraryDirectory = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/Feedback'
+    $traceLibrary = Join-Path $traceLibraryDirectory 'Microsoft.Diagnostics.Tracing.TraceEvent.dll'
+    $traceSerializer = Join-Path $traceLibraryDirectory 'Microsoft.Diagnostics.FastSerialization.dll'
+    $provenance = @($traceLibrary,$traceSerializer | ForEach-Object {
+        $signature = Get-AuthenticodeSignature -LiteralPath $_
+        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notlike '*O=Microsoft Corporation*') { throw 'Preinstalled Microsoft decoder signature unavailable; no download or license acceptance.' }
+        [ordered]@{path=$_;version=(Get-Item -LiteralPath $_).VersionInfo.FileVersion;sha256=(Get-FileHash -LiteralPath $_).Hash;signature=[string]$signature.Status;signer=$signature.SignerCertificate.Subject;installation='existing Visual Studio Installer Feedback'}
+    })
+    $provenance | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'kernel-decoder-provenance.json')
+    $kernelDecoder = Join-Path $raw 'RecoveryKernelDecoder.exe'
+    & (Join-Path $framework 'csc.exe') /nologo /optimize+ /platform:x64 /target:exe "/out:$kernelDecoder" "/r:$traceLibrary" "/r:$traceSerializer" /r:System.Web.Extensions.dll (Join-Path $PSScriptRoot 'RecoveryKernelDecoder.cs') *> (Join-Path $raw 'kernel-decoder-build.txt')
+    if ($LASTEXITCODE -ne 0) { throw "Kernel decoder compilation failed: $([IO.File]::ReadAllText((Join-Path $raw 'kernel-decoder-build.txt')))" }
+}
 [ordered]@{image=$env:ImageOS;imageVersion=$env:ImageVersion;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture);cpu=(Get-CimInstance Win32_ComputerSystem | Select-Object NumberOfLogicalProcessors,TotalPhysicalMemory);frameworkX86=@('clr.dll','mscordacwks.dll','sos.dll' | ForEach-Object { $path=Join-Path $framework $_; [ordered]@{name=$_;version=(Get-Item -LiteralPath $path).VersionInfo.FileVersion;sha256=(Get-FileHash -LiteralPath $path).Hash} })} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'host.json')
 # Only query/stop the random session successfully created by this invocation.
 # ControlTrace STOP returns the final loss counters after buffers are flushed.
@@ -176,17 +190,11 @@ function Export-TargetEvents($Trace, [int[]]$TargetProcessIds) {
     [ordered]@{events=$total;jitStarts=$starts;methodLoads=$loads;fixtureMethodEvents=$fixtureMethods;targetPids=$TargetProcessIds;rawPublished=$false}
 }
 function Export-KernelTargetEvents($Trace, [int]$TargetProcessId, [string]$ThreadCsv) {
-    $xmlPath = Join-Path $raw ($Trace.label + '-kernel.xml')
-    $summary = Join-Path $OutputDirectory ($Trace.label + '-kernel-decoder-summary.txt')
-    $null = Invoke-BoundedNative $tracerpt @(('"'+$Trace.kernelEtl+'"'),'-o',('"'+$xmlPath+'"'),'-of','XML','-summary',('"'+$summary+'"'),'-y') ($Trace.label + '-kernel-decode') 90
-    if ((Get-Item -LiteralPath $xmlPath).Length -gt 1GB) { throw 'Kernel decoded XML exceeds bounded parse size.' }
-    if ((Get-Content -LiteralPath $summary -Raw) -notmatch 'Total Events\s+Lost\s+0\s') { throw 'Kernel trace loss is nonzero or unavailable.' }
-    $ids = [Collections.Generic.HashSet[uint32]]::new()
-    foreach ($r in (Import-Csv -LiteralPath $ThreadCsv | Where-Object kind -eq 'thread')) { $null=$ids.Add([uint32]$r.tid) }
-    Add-Type -Path (Join-Path $PSScriptRoot 'RecoveryKernelDecoder.cs')
-    $count = [RecoveryKernelDecoder]::Export($xmlPath, (Join-Path $OutputDirectory ($Trace.label + '-kernel-target.jsonl')), [uint32]$TargetProcessId, $ids)
-    if ($count -eq 0) { throw 'Kernel trace produced no target events.' }
-    [ordered]@{targetEvents=$count;targetPid=$TargetProcessId;targetThreads=$ids.Count;rawPublished=$false;memoryBoundMiB=256}
+    $ids = @((Import-Csv -LiteralPath $ThreadCsv | Where-Object kind -eq 'thread' | ForEach-Object tid | Select-Object -Unique))
+    if ($ids.Count -eq 0) { throw 'Target native thread IDs unavailable.' }
+    $output = Join-Path $OutputDirectory ($Trace.label + '-kernel-target.jsonl')
+    $null = Invoke-BoundedNative $kernelDecoder @(('"'+$traceLibraryDirectory+'"'),('"'+$Trace.kernelEtl+'"'),('"'+$output+'"'),[string]$TargetProcessId,($ids -join ',')) ($Trace.label + '-kernel-decode') 150
+    Get-Content -LiteralPath ($output + '.receipt.json') -Raw | ConvertFrom-Json
 }
 $trace = $null
 $result = [ordered]@{mode=$Mode;status='FAIL';sourceSha=(& git -C $repo rev-parse HEAD);scope='independent hosted synthetic QA';provider='CLR Runtime Loader|JIT 0x18 level5';rawTraceDirectory=$raw;rawPublished=$false;error=$null}
