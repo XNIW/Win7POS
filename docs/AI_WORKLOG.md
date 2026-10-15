@@ -1245,3 +1245,47 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Nuovo installer e integrazione finale nella ricevuta privata post-merge,
   evitando commit documentali per il proprio SHA futuro. Report:
   reports/2026-10-08_WIN7POS_POST_PR121_FUNCTIONAL_OPERATIONAL_CLOSEOUT.md.
+
+
+## 2026-10-14 - Consolidamento aggiornamenti GitHub Actions
+
+- Riprese le PR esistenti #125 e #101, con integrazione del main corrente
+  `5cbd6e5d` nel candidato di #125. Nessun nuovo branch creato.
+- Aggiornati i pin esatti delle assertion CodeQL e attest allo stesso SHA
+  ufficiale gia proposto dai workflow: la verifica resta fail-closed e non
+  accetta versioni arbitrarie. Il download artifact v8 conserva il runtime
+  Node 24 e rende fail-closed il digest mismatch per impostazione predefinita.
+- Il merge main attiva soltanto CI, supply-chain e artifact development-unsigned;
+  Protected Release richiede un tag esplicito, non creato in questa attivita.
+- Verifiche, review indipendente, CI sull'esatto candidato e destinazione della
+  PR duplicata sono registrate nel report esterno di chiusura integrazione.
+  Nessuna attestazione aggiuntiva di hardware Win7, Asus o staging autenticato.
+
+
+## 2026-10-14 - Consolidamento dipendenze NuGet e grafi locked
+
+- Ripresa la PR #127 esistente come candidato combinato delle PR #106,
+  #107 e #108; i loro package finali sono valutati insieme agli aggiornamenti
+  Actions di #125/#101. Il confronto indipendente degli otto blob package
+  finali dimostra l'equivalenza di #106 e #127 sul main corrente.
+- Rigenerati tutti i lock consumer con SDK esatto `10.0.301`, contesto restore
+  Windows e `AutomaticallyUseReferenceAssemblyPackages=false` sul Mac:
+  preservati RID `win-x86`, target `net48`/`netstandard2.0` e restore locked
+  obbligatorio nei workflow. Nessun cambio al pin SDK o al target Win7/x86.
+- Le undici versioni nuove conservano le stesse espressioni Apache-2.0/MIT
+  attestate dai nuspec del feed ufficiale; la policy mantiene il confronto
+  chiuso con il grafo completo (49 package/versioni), senza nuove eccezioni.
+- L'analisi indipendente dei sorgenti System.Drawing.Common conferma che
+  l'asset net462 inoltra i tipi al framework sia nella vecchia sia nella nuova
+  versione. Build e regressioni restano distinte dall'accettazione hardware
+  Windows7/Asus e dagli ambienti autenticati, non attraversati nel closeout Git.
+- Comandi reali, relativi esiti, review e CI dell'esatto candidato sono
+  registrati nel report esterno `MAIN_INTEGRATION_CLOSEOUT_RESULT`.
+
+- La re-review ha rilevato che il callsite ZXing `Code128Renderer` non era
+  attraversato dai gate esistenti. Aggiunta allo smoke immagini canonico una
+  regressione `net48/x86` senza stampa: tre barcode generati dal renderer
+  applicativo e decodificati con il binding aggiornato, controllo CODE_128 e
+  roundtrip esatto, contratto null/empty. Il runner richiede il nuovo marker
+  oltre a tutti quelli precedenti. Il candidato precedente viene sostituito e
+  rivalidato; nessun risultato viene trasferito automaticamente al nuovo SHA.

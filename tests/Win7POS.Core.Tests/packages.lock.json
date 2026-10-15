@@ -213,8 +213,8 @@
       },
       "System.IO.Packaging": {
         "type": "Transitive",
-        "resolved": "8.0.1",
-        "contentHash": "KYkIOAvPexQOLDxPO2g0BVoWInnQhPpkFzRqvNrNrMhVT6kqhVr0zEb6KCHlptLFukxnZrjuMVAnxK7pOGUYrw=="
+        "resolved": "10.0.12",
+        "contentHash": "Bsop0fosps100BOj1s9uIM3XaUpoLok5s0LTuEeKXvKse1XvpYvnzeC/7AZXCs3MkFurRkLe9k9XwKNZz2retw=="
       },
       "win7pos.core": {
         "type": "Project"
@@ -228,7 +228,7 @@
           "ExcelDataReader.DataSet": "[3.9.0, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )",
-          "System.IO.Packaging": "[8.0.1, )",
+          "System.IO.Packaging": "[10.0.12, )",
           "Win7POS.Core": "[1.0.0-dev.local, )"
         }
       }
