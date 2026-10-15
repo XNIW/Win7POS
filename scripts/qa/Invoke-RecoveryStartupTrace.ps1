@@ -251,6 +251,13 @@ public static class RecoveryTraceFixture {
                     $kernelEvents = @(Get-Content -LiteralPath (Join-Path $OutputDirectory "$label-kernel-target.jsonl") | ForEach-Object { $_ | ConvertFrom-Json })
                     if (@($kernelEvents | Where-Object { $_.opcodeName -eq 'CSwitch' }).Count -eq 0 -or
                         @($kernelEvents | Where-Object { @($_.data.PSObject.Properties | Where-Object { $_.Name -in 'FileName','OpenPath','ResolvedFileName' -and $_.Value -like '*.io.bin' }).Count -gt 0 }).Count -eq 0) { throw 'Synthetic target context switches/file names were not decoded.' }
+                    $switches = @($kernelEvents | Where-Object opcodeName -eq 'CSwitch')
+                    $sleepObserved = $false
+                    foreach ($begin in @($switches | Where-Object { $_.data.OldThreadState -eq 5 -and $_.data.OldThreadWaitReason -in 4,11 })) {
+                        $end = $switches | Where-Object { $_.relativeMs -gt $begin.relativeMs -and $_.data.NewThreadID -eq $begin.data.OldThreadID } | Select-Object -First 1
+                        if ($null -ne $end -and ($end.relativeMs - $begin.relativeMs) -ge 1100 -and ($end.relativeMs - $begin.relativeMs) -lt 2500) { $sleepObserved = $true }
+                    }
+                    if (-not $sleepObserved) { throw 'Known 1200ms synthetic sleep did not round-trip through kernel wait fields.' }
                 }
                 $decodeResults += $decoded
                 $result.decoding = $decodeResults

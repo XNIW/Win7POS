@@ -58,7 +58,24 @@ public static class RecoveryKernelDecoder
                 if (fault != null) { data["ElapsedTimeMSec"] = fault.ElapsedTimeMSec; data["FileName"] = fault.FileName; faults++; }
                 var readWrite = e as FileIOReadWriteTraceData;
                 if (readWrite != null) { data["FileName"] = readWrite.FileName; io++; }
-                if (cs != null) switches++;
+                if (cs != null)
+                {
+                    // The installed reader recognizes v5 but its old getters
+                    // choose the v1 wait-field offsets. v2+ has a stable 24-byte
+                    // prefix, verified against Microsoft's current kernel parser.
+                    byte[] raw = e.EventData();
+                    if (e.Version < 2 || raw.Length < 24) throw new InvalidOperationException("Unsupported context-switch layout.");
+                    data["NewThreadID"] = BitConverter.ToInt32(raw, 0);
+                    data["OldThreadID"] = BitConverter.ToInt32(raw, 4);
+                    data["OldThreadWaitReason"] = raw[12];
+                    data["OldThreadWaitMode"] = raw[13];
+                    data["OldThreadState"] = raw[14];
+                    data["NewThreadWaitTime"] = BitConverter.ToInt32(raw, 16);
+                    data["RawMetadataBase64"] = Convert.ToBase64String(raw, 0, Math.Min(32, raw.Length));
+                    switches++;
+                }
+                if (fault != null && e.EventDataLength <= 64)
+                    data["RawMetadataBase64"] = Convert.ToBase64String(e.EventData());
                 var stack = e as StackWalkStackTraceData;
                 if (stack != null)
                 {
