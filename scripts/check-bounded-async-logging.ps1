@@ -41,6 +41,9 @@ $tests = Read-Required "tests/Win7POS.Core.Tests/Logging/BoundedAsyncLogWriterTe
 $smoke = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $runner = Read-Required "scripts/run-bounded-logging-smoke.ps1"
 $ci = Read-Required ".github/workflows/ci.yml"
+if ($ci -match 'Invoke-Win7PosAutonomousTests\.ps1 -Suite Windows') {
+    $ci += Read-Required 'scripts/qa/Invoke-Win7PosAutonomousTests.ps1'
+}
 
 Require-Match "one bounded in-process queue" $writer 'Queue<ImmutableLogEntry>'
 Require-Match "single background writer thread" $writer 'new Thread[\s\S]*IsBackground\s*=\s*true'

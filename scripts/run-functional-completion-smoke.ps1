@@ -7,11 +7,54 @@ param(
     [string]$OutputDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
+function Read-FunctionalChildImage($Process) {
+    if (-not ('Win7PosFunctionalProcessImage' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class Win7PosFunctionalProcessImage {
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder name, ref int length);
+    public static string Read(Process process) {
+        var name = new StringBuilder(32768); var length = name.Capacity;
+        if (!QueryFullProcessImageName(process.Handle, 0, name, ref length))
+            throw new System.ComponentModel.Win32Exception();
+        return name.ToString();
+    }
+}
+'@
+    }
+    return [Win7PosFunctionalProcessImage]::Read($Process)
+}
+function Get-FunctionalChildImage($Process, [string]$ExpectedPath) {
+    $identityClock = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $Process.HasExited -and $identityClock.ElapsedMilliseconds -lt 2000) {
+        try {
+            $Process.Refresh()
+            $path = Read-FunctionalChildImage $Process
+            if ($path -and [string]::Equals($path, $ExpectedPath, [StringComparison]::OrdinalIgnoreCase)) { return $path }
+        } catch { }
+        Start-Sleep -Milliseconds 10
+    }
+    if (-not $Process.HasExited) { throw 'Owned child image unavailable or unexpected.' }
+    return $null
+}
+function Stop-FunctionalChild($Process, [string]$CreationTimeUtc) {
+    if (-not $Process.HasExited) {
+        # The launch handle is retained until finally. Image-query failure must
+        # never strand this exact child or turn cleanup into a PID/name search.
+        if ($Process.StartTime.ToUniversalTime().ToString('O') -ne $CreationTimeUtc) { throw 'Child creation identity changed.' }
+        $Process.Kill()
+        if (-not $Process.WaitForExit(5000)) { throw 'Owned child did not terminate within cleanup budget.' }
+    }
+}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $HarnessDirectory) {
     $HarnessDirectory = Join-Path $repoRoot "tests\Win7POS.Wpf.UiSmokeHarness\bin\$Platform\$Configuration\net48"
 }
-$exe = Join-Path $HarnessDirectory 'Win7POS.Wpf.UiSmokeHarness.exe'
+$exe = [IO.Path]::GetFullPath((Join-Path $HarnessDirectory 'Win7POS.Wpf.UiSmokeHarness.exe'))
 $scenarios = @('IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
 foreach ($selected in $Scenario) {
     if ($selected -cnotin $scenarios) { throw "Unknown functional scenario: $selected" }
@@ -44,7 +87,7 @@ try {
         $visual = $name -eq 'FUNCTIONAL_VISUAL'
         $timeoutMs = if ($visual) { 120000 } else { 60000 }
         $resultPath = Join-Path $dataDir $(if ($visual) { 'ui-ux-final-closeout.txt' } else { 'functional-completion.txt' })
-        $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; error=$null }
+        $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; error=$null }
         $process = $null
         $watch = [Diagnostics.Stopwatch]::StartNew()
         try {
@@ -54,8 +97,9 @@ try {
             else { $arguments += @('--functional-completion-smoke','--scenario',$name) }
             $process = Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $dataDir 'stdout.log') -RedirectStandardError (Join-Path $dataDir 'stderr.log')
             $record.pid = $process.Id
+            $null = $process.Handle
             $record.creationTimeUtc = $process.StartTime.ToUniversalTime().ToString('O')
-            $record.executable = $process.MainModule.FileName
+            $record.observedExecutable = Get-FunctionalChildImage $process $exe
             if (-not $process.WaitForExit([Math]::Max(1, $timeoutMs - [int]$watch.ElapsedMilliseconds))) {
                 $record.status = 'TIMEOUT'
                 throw "Functional completion timed out ($name, $timeoutMs ms)."
@@ -75,13 +119,7 @@ try {
         finally {
             if ($null -ne $process) {
                 try {
-                    # The retained process handle owns this child; never kill by name/PID alone.
-                    if (-not $process.HasExited) {
-                        if ($process.StartTime.ToUniversalTime().ToString('O') -ne $record.creationTimeUtc -or
-                            $process.MainModule.FileName -ne $record.executable) { throw 'Child process identity changed.' }
-                        $process.Kill()
-                        if (-not $process.WaitForExit(5000)) { throw 'Owned child did not terminate within cleanup budget.' }
-                    }
+                    Stop-FunctionalChild $process $record.creationTimeUtc
                 }
                 catch {
                     $record.status = 'FAIL'

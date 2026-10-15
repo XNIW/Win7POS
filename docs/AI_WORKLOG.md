@@ -4,6 +4,15 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-10-15 – QA automatizzata e diagnosi Recovery residua
+
+- Baseline main `3892f37`, pulita; preservati stash, altri worktree e i tre WIP nominati. Nessuna modifica al prodotto Core/Data/WPF o alle dipendenze.
+- Conservati FAIL CI `38670961016` e TIMEOUT diagnostico `38775697755`. Tre coppie alternate `38776939297`: tutti PASS, entrypoint sperimentale senza beneficio, ipotesi JIT respinta e codice sperimentale rimosso. Causa Recovery UNKNOWN; timeout 60.000 ms e undici gruppi invariati.
+- Runner funzionale con selezione mirata, report per tutti i 19 scenari più visual, conservazione primo errore e prosecuzione degli scenari indipendenti. Diagnostica monotona/gruppo/fase e campioni memoria/working set/handle/finestre WPF; nessuna qualifica risorse Win7 dedotta.
+- Orchestratore Local/Windows invocabile senza credenziali e riusato dalla CI; staging delegato a vault/readiness canonici. Test sintetici coprono timeout, cancellazione, identità immagine, PID riusato, path, zero test, report e prosecuzione dopo errori. Review indipendente con tre difetti corretti e relative regressioni.
+- Asus: SDK 10.0.301 già presente fuori PATH, build net48/x86 PASS e 179 Core/Data Recovery PASS. Avvio WPF locale rifiutato dal controllo automatico (`blocked by policy`), senza riproporlo tramite wrapper. WPF misurato solo su build indipendente hosted.
+- Profilo QA esistente valido; readiness richiesta assente (404 sul main Admin corrente), nessun test live. Win7 differito dall'utente; mobile e hardware senza executor/dispositivi assegnati. Stato finale suite/PR/main/pacchetto nelle ricevute esterne della corsa, senza attribuire prove headless o hosted a Win7.
+
 ## 2026-10-01 – PR112 software closeout with owner-deferred external QA
 
 - Owner decision: close PR112 as software-qualified and merge normally after exact-final-HEAD CI/Security PASS; verify the exact post-merge Release Pack. ASUS-THIRD-SCAN is `OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA`, with root cause still unproven. Asus Integrated/Final remain `NOT_EXECUTED / OWNER_DEFERRED`; `productionCertified=false`.

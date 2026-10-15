@@ -60,7 +60,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var store = new PosTrustedDeviceStore();
                 store.SaveFirstLogin(AuthorizationLeaseWpfSmoke.BuildResponse(true), "qa-recovery-ui-" + Guid.NewGuid().ToString("N"));
                 Require(store.TryRead(out _session) && PosOnlineSyncSupervisorHost.TryCreateGeneration(_session, out _generation), "trusted generation fixture unavailable");
-                Evidence.Add("scope=local_net48_x86_real_sync_center_recovery_dialog; base_products_per_batch=3; invalid_rows=1; nochange_rows=2; supported_local_plan_rows=5000; authoritative_large_admin_test=separate_interop_corpus; accepted_child=loopback_receipt_retirement_race; live_admin=False; physical_hardware=False");
+                Evidence.Add("scope=local_net48_x86_real_sync_center_recovery_dialog; timeline_origin=type_initialization; base_products_per_batch=3; invalid_rows=1; nochange_rows=2; supported_local_plan_rows=5000; authoritative_large_admin_test=separate_interop_corpus; accepted_child=loopback_receipt_retirement_race; live_admin=False; physical_hardware=False");
                 using (var process = Process.GetCurrentProcess())
                     Evidence.Add("machine=" + Environment.MachineName + "; clr_reported_os_compatibility=" + Environment.OSVersion + "; clr=" + Environment.Version + "; pointer_bytes=" + IntPtr.Size +
                         "; pid=" + process.Id + "; creation_utc=" + process.StartTime.ToUniversalTime().ToString("O", Invariant));
@@ -1343,7 +1343,7 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
         private static void RecordPhase(string phase)
         {
             var dispatcher = Dispatcher.CurrentDispatcher;
-            Evidence.Add("phase=" + phase + "; elapsed_ms=" + Timeline.Elapsed.TotalMilliseconds.ToString("F3", Invariant) +
+            Evidence.Add("phase=" + phase + "; timeline_ms=" + Timeline.Elapsed.TotalMilliseconds.ToString("F3", Invariant) +
                 "; thread=" + Thread.CurrentThread.ManagedThreadId + "; dispatcher_shutdown=" + dispatcher.HasShutdownStarted +
                 "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
             FlushEvidence();
@@ -1369,7 +1369,9 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
             private readonly List<double> _probes = new List<double>();
             private readonly Task _memoryTask, _probeTask;
             private readonly string _prefix;
-            private long _privatePeak, _managedPeak;
+            private long _privatePeak, _managedPeak, _workingSetPeak;
+            private int _handlePeak, _lastHandles;
+            private readonly List<int> _windowCounts = new List<int>();
             internal Measurement(Dispatcher dispatcher, string prefix)
             {
                 _prefix = prefix;
@@ -1382,8 +1384,10 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
                         {
                             process.Refresh(); var privateBytes = process.PrivateMemorySize64; var managed = GC.GetTotalMemory(false);
                             _privatePeak = Math.Max(_privatePeak, privateBytes); _managedPeak = Math.Max(_managedPeak, managed);
+                            _workingSetPeak = Math.Max(_workingSetPeak, process.WorkingSet64);
+                            _lastHandles = process.HandleCount; _handlePeak = Math.Max(_handlePeak, _lastHandles);
                             Require(_memory.Count < 1200, "memory sampling exceeded its finite 60-second observation bound");
-                            _memory.Add(watch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "," + privateBytes + "," + managed);
+                            _memory.Add(watch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "," + privateBytes + "," + managed + "," + process.WorkingSet64 + "," + _lastHandles);
                         }
                         await Task.Delay(50, _stop.Token).ConfigureAwait(false);
                     } } catch (OperationCanceledException) { }
@@ -1393,7 +1397,10 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
                     try { while (!_stop.IsCancellationRequested)
                     {
                         var posted = Stopwatch.GetTimestamp();
-                        await dispatcher.InvokeAsync(() => _probes.Add((Stopwatch.GetTimestamp() - posted) * 1000d / Stopwatch.Frequency), DispatcherPriority.Input, _stop.Token).Task.ConfigureAwait(false);
+                        await dispatcher.InvokeAsync(() => {
+                            _probes.Add((Stopwatch.GetTimestamp() - posted) * 1000d / Stopwatch.Frequency);
+                            _windowCounts.Add(Application.Current.Windows.Count);
+                        }, DispatcherPriority.Input, _stop.Token).Task.ConfigureAwait(false);
                         Require(_probes.Count < 1200, "dispatcher sampling exceeded its finite observation bound");
                         await Task.Delay(50, _stop.Token).ConfigureAwait(false);
                     } } catch (OperationCanceledException) { }
@@ -1402,11 +1409,13 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
             internal async Task StopAsync() { _stop.Cancel(); await Task.WhenAll(_memoryTask, _probeTask); }
             internal void Write()
             {
-                File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + _prefix + "-memory-samples.csv"), new[] { "elapsed_ms,private_bytes,managed_bytes" }.Concat(_memory));
+                File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + _prefix + "-memory-samples.csv"), new[] { "elapsed_ms,private_bytes,managed_bytes,working_set_bytes,handles" }.Concat(_memory));
                 File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + _prefix + "-dispatcher-probes.csv"), new[] { "enqueue_to_input_ms" }.Concat(_probes.Select(value => value.ToString("F3", Invariant))));
                 var sorted = _probes.OrderBy(value => value).ToArray();
                 Evidence.Add("measurement scope=" + _prefix + "; memory_interval_ms=50; observed_memory_samples=" + _memory.Count + "; observed_private_peak_bytes=" + _privatePeak + "; observed_managed_peak_bytes=" + _managedPeak + "; dispatcher_samples=" + sorted.Length + "; dispatcher_p95_ms=" + (sorted.Length == 0 ? 0 : sorted[(int)Math.Ceiling(sorted.Length * .95) - 1]).ToString("F3", Invariant) + "; dispatcher_max_ms=" + (sorted.Length == 0 ? 0 : sorted.Last()).ToString("F3", Invariant));
                 Evidence.Add("budget_source=docs/reports/evidence/2026-09-26-post-pr111/preregistered-budget-v1.json; applied_managed_5_cycle_growth_bytes=8388608; compared_probe_max_ms=200; compared_private_peak_bytes=201326592; compared_managed_peak_bytes=33554432; workload_differs_from_cart_control=True; qualified_stability=False; peak_is_observed_50ms_samples_not_lifetime_peak=True");
+                Evidence.Add("resources scope=" + _prefix + "; sampled_working_set_max_bytes=" + _workingSetPeak + "; sampled_handles_max=" + _handlePeak + "; last_sample_handles=" + _lastHandles +
+                    "; sampled_wpf_windows_max=" + (_windowCounts.Count == 0 ? 0 : _windowCounts.Max()) + "; native_hwnd_attribution=NOT_MEASURED; sampling_interval_ms=50; absolute_release=NOT_QUALIFIED");
                 Require(_memory.Count > 1 && sorted.Length > 1, "bounded measurement did not acquire actual memory/probe samples");
             }
             public void Dispose()

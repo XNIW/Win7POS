@@ -34,7 +34,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Console.WriteLine("FUNCTIONAL_DB_SETUP=default_omitted; reason=isolated_recovery_private_schema");
                 using (var process = Process.GetCurrentProcess())
                     File.WriteAllLines(Path.Combine(dataDir, "recovery-entry.txt"), new[] {
-                        "entry=legacy; process_creation_to_startup_wall_ms=" + (DateTime.UtcNow - process.StartTime.ToUniversalTime()).TotalMilliseconds,
+                        "entry=canonical; process_creation_to_startup_wall_ms=" + (DateTime.UtcNow - process.StartTime.ToUniversalTime()).TotalMilliseconds,
                         "assemblies=" + string.Join(",", AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetName().Name).OrderBy(n => n)) });
             }
             else

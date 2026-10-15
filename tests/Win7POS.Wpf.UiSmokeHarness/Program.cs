@@ -73,14 +73,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [STAThread]
         private static void Main(string[] args)
         {
-            if (RecoverySmokeEntryPoint.TryRun(args)) return;
-            RunLegacy(args);
-        }
-
-        // Keep the large multipurpose launcher out of the isolated Recovery JIT path.
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        private static void RunLegacy(string[] args)
-        {
             // This closure witness returns before WPF startup, login, data-dir or DB access.
             if (HasArg(args, "--valuetuple-release-closure-smoke"))
             {
@@ -987,7 +979,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 afterRestore);
         }
 
-        internal static void AddApplicationResources(Application app)
+        private static void AddApplicationResources(Application app)
         {
             var baseUri = "pack://application:,,,/Win7POS.Wpf;component/";
             app.Resources.MergedDictionaries.Add(new ResourceDictionary
