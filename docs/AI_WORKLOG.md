@@ -1300,3 +1300,23 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   roundtrip esatto, contratto null/empty. Il runner richiede il nuovo marker
   oltre a tutti quelli precedenti. Il candidato precedente viene sostituito e
   rivalidato; nessun risultato viene trasferito automaticamente al nuovo SHA.
+
+## 2026-10-15 - PR #128, diagnosi del timeout Recovery
+
+- Conservata la correzione verificata dei percorsi SQLite dell'orchestratore;
+  nessuna modifica a prodotto, dipendenze, net48/x86 o budget Recovery 60000 ms.
+- Aggiunta osservazione limitata di startup, CPU/thread e hard fault, con
+  qualificazione separata, cleanup dei soli processi/sessioni posseduti e raw
+  ETL escluso dagli artifact. Spostata dopo il test la lettura degli hash del
+  runtime x86 per evitare di alterare la cache prima dell'osservazione.
+- Coppia finale prestabilita `38812472152` su SHA `1b06ff7`: Legacy e Isolated
+  entrambi TIMEOUT. Isolated ha una traccia completa senza perdita eventi e
+  37,315 s di paging UI nei primi 60 s; Legacy completa tutti gli 11 gruppi ma
+  non il processo entro il termine. Nessuna prova di correzione causale.
+- L'entry sperimentale è rimossa dal candidato, conservata nella storia Git.
+  Il report distingue il costo osservato dalle cause host ancora non provate;
+  nessun merge, ulteriore tentativo identico o modifica del runtime.
+- ASUS_WPF resta non eseguito per rifiuto automatico del comando di avvio;
+  HOSTED_WPF è evidenza separata. Readiness Admin ancora esterna; Win7 reale
+  differito dall'utente. Esiti, SHA e limiti nel report esterno
+  `WIN7POS_RECOVERY_CAUSE_RESULT.md` e relativo JSON.

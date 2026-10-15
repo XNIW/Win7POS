@@ -31,7 +31,9 @@ public static class RecoveryKernelDecoder
     static int Decode(string etl, string output, int pid, string threadIds)
     {
         var tids = new HashSet<int>();
-        foreach (string id in threadIds.Split(',')) tids.Add(int.Parse(id, CultureInfo.InvariantCulture));
+        var observedTids = new HashSet<int>();
+        foreach (string id in threadIds.Split(',')) observedTids.Add(int.Parse(id, CultureInfo.InvariantCulture));
+        bool targetActive = false, targetStarted = false, targetStopped = false;
         int primaryTid = 0, omittedWorkerSwitches = 0, omittedWorkerStacks = 0;
         var allowed = new HashSet<string>(("ProcessID ThreadID NewThreadID OldThreadID NewProcessID OldProcessID OldThreadState OldThreadWaitReason OldThreadWaitMode NewThreadPriority OldThreadPriority NewThreadWaitTime ElapsedTimeMSec ReadOffset VirtualAddress FileObject FileKey FileName OpenPath ByteCount IrpPtr NtStatus ExtraInfo IoSize TransferSize DiskNumber ByteOffset Offset IoFlags ImageBase ImageSize ImageChecksum DefaultBase DiskServiceTimeMSec IssuingThreadId").Split(' '), StringComparer.OrdinalIgnoreCase);
         var watch = Stopwatch.StartNew(); int count = 0, switches = 0, faults = 0, io = 0;
@@ -42,11 +44,13 @@ public static class RecoveryKernelDecoder
             source.Kernel.All += delegate(TraceEvent e)
             {
                 if (watch.Elapsed.TotalSeconds > 120) throw new InvalidOperationException("Kernel decoder exceeded finite parse budget.");
+                if (!targetStarted && e.ProcessID == pid && e.EventName == "Process/Start") { targetActive = true; targetStarted = true; }
+                if (!targetActive) return;
                 // The first target Thread/Start is the process entry/UI thread.
                 // Keep all target paging/I/O, but avoid exporting render-worker
                 // scheduling stacks which exhausted the bound before 60 seconds.
                 if (primaryTid == 0 && e.ProcessID == pid && e.EventName == "Thread/Start") primaryTid = e.ThreadID;
-                if (e.ProcessID == pid && e.ThreadID > 0) tids.Add(e.ThreadID);
+                if (e.ProcessID == pid && e.EventName == "Thread/Start" && e.ThreadID > 0) tids.Add(e.ThreadID);
                 var cs = e as CSwitchTraceData;
                 bool selected = e.ProcessID == pid || tids.Contains(e.ThreadID) || (cs != null && (tids.Contains(cs.OldThreadID) || tids.Contains(cs.NewThreadID)));
                 if (!selected) return;
@@ -94,10 +98,12 @@ public static class RecoveryKernelDecoder
                 }
                 writer.WriteLine(json.Serialize(new { utc = e.TimeStamp.ToUniversalTime().ToString("O"), relativeMs = e.TimeStampRelativeMSec, pid = e.ProcessID, tid = e.ThreadID, provider = e.ProviderGuid, eventName = e.EventName, opcodeName = e.OpcodeName, version = e.Version, pointerSize = e.PointerSize, data = data }));
                 if (++count > 250000 || tids.Count > 128) throw new InvalidOperationException("Kernel target bound exceeded.");
+                if (e.ProcessID == pid && e.EventName == "Thread/Stop") tids.Remove(e.ThreadID);
+                if (e.ProcessID == pid && e.EventName == "Process/Stop") { targetActive = false; targetStopped = true; }
             };
             source.Process();
-            File.WriteAllText(output + ".receipt.json", json.Serialize(new { events = count, contextSwitches = switches, hardFaults = faults, fileReadsWrites = io, eventsLost = source.EventsLost, targetPid = pid, primaryThreadId = primaryTid, omittedWorkerSwitches, omittedWorkerStacks, rawPublished = false, library = typeof(ETWTraceEventSource).Assembly.FullName }));
-            if (source.EventsLost != 0 || count == 0 || switches == 0 || primaryTid == 0) return 3;
+            File.WriteAllText(output + ".receipt.json", json.Serialize(new { events = count, contextSwitches = switches, hardFaults = faults, fileReadsWrites = io, eventsLost = source.EventsLost, targetPid = pid, primaryThreadId = primaryTid, targetStarted, targetStopped, omittedWorkerSwitches, omittedWorkerStacks, rawPublished = false, library = typeof(ETWTraceEventSource).Assembly.FullName }));
+            if (source.EventsLost != 0 || count == 0 || switches == 0 || primaryTid == 0 || !observedTids.Contains(primaryTid) || !targetStarted || !targetStopped) return 3;
         }
         return 0;
     }

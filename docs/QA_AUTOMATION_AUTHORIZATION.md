@@ -157,11 +157,10 @@ non qualifica Win7, stampante, scanner o cassetto fisici.
 
 Il timeout originale su main `3892f37` (CI `38670961016`) rimane un FAIL.
 La riproduzione diagnostica `38775697755` conserva un secondo TIMEOUT. Il
-confronto `38776939297` contiene tre coppie prestabilite con ordine alternato:
-entrambi i percorsi passano, e l'entrypoint sperimentale non migliora quello
-canonico. L'ipotesi JIT è quindi smentita come correzione; quel codice è rimosso.
-La causa dei timeout rimane UNKNOWN, senza attribuzione a ValueTuple, deadlock
-o prodotto. Un PASS successivo significa soltanto mancata riproduzione nelle
+confronto `38776939297` contiene tre coppie prestabilite con ordine alternato
+sulla stessa VM: solo il primo processo era freddo. Quei PASS non dimostrano
+un beneficio causale dell'entrypoint né escludono il costo di caricamento delle
+dipendenze. Un PASS successivo significa soltanto mancata riproduzione nelle
 condizioni registrate. I 60.000 ms, gli undici gruppi e tutte le assertion restano
 invariati. `elapsedMs` comprende la supervisione e il cleanup del processo,
 escludendo la successiva copia dei diagnostici; può superare il budget del solo
@@ -176,6 +175,44 @@ ritorno da Application.Run. Distingue questi intervalli senza attribuire il
 tempo prima di Main a JIT/antivirus/host. Tutta l'osservazione e il lavoro richiesto
 rimangono nel budget del processo. Il workflow conserva immagine host e snapshot
 limitati dei processi toolchain/harness pertinenti prima/dopo ogni prova.
+
+L'indagine nativa del 15 ottobre 2026 distingue intervalli JIT da tempo CPU:
+la traccia `38810033508` attribuisce 28,288 s dei primi 43,085 s a hard fault
+del thread UI, soprattutto su immagini native .NET/WPF. È un prefisso, perché
+l'export ha raggiunto il limite finito. Il collector precedente leggeva inoltre
+gli hash CLR/DAC/SOS prima del target: questo preleggeva pagine del runtime e
+limita la qualificazione di avvio freddo. Ora la provenienza x86 viene acquisita
+solo dopo l'uscita del target e lo stop della traccia.
+
+La coppia prefissata `38812472152`, sullo SHA
+`1b06ff7` e su due VM distinte della stessa immagine `20261007.264.1`, mantiene
+lo stesso binario, runtime net48/x86, ingresso funzionale, gruppi e budget:
+
+- Legacy: TIMEOUT, 11/11 gruppi PASS, risultato scritto a 59.910,884 ms e
+  ritorno da `Application.Run` a 59.962,363 ms. Questo non prova l'uscita del
+  processo entro il termine. Export kernel limitato ai primi 54,624 s;
+  CPU cumulativa del processo 151,3 s fra tutti i thread.
+- Isolated: TIMEOUT, 6/11 gruppi completati, export completo fino all'uscita
+  forzata, zero eventi persi. Nei primi 60 s dalla creazione del processo,
+  l'unione degli hard fault UI è 37,315 s. Esclusi dall'attribuzione gli eventi
+  precedenti alla creazione o appartenenti ad altri processi.
+
+L'ingresso isolato non è una correzione; l'esperimento resta nello storico e
+non viene adottato dal percorso canonico. Il paging spiega un costo concreto
+della corsa Isolated, ma non identifica l'origine delle latenze dell'host né
+spiega tutti i timeout. Non sono dimostrati difetti di WOF, storage, antivirus,
+ValueTuple o prodotto. La qualificazione su fixture sintetica non misura
+l'overhead della traccia kernel sul carico WPF. La coppia termina con questi
+due risultati; non va ripetuta senza una nuova domanda diagnostica.
+
+I modi diagnostici `native-startup` e `native-waits` usano strumenti Windows e
+un reader Microsoft firmato già installato. Qualificazione e target girano su
+VM distinte; nessun runtime switch, warmup o setup funzionale fuori budget.
+Il raw ETL rimane fuori dagli artifact. Il decoder conserva limiti finiti e
+fallisce su perdita eventi o export incompleto; un prefisso non qualifica una
+traccia completa. Le ricevute funzionali conservano TIMEOUT e cleanup anche
+quando l'export fallisce. La PR non è integrabile finché manca una correzione
+causale verificata e tutte le verifiche richieste sul candidato finale.
 
 La readiness mancante è un file GitHub Admin
 `docs/HANDOFFS/WIN7POS_ARTICLE_ACCEPTANCE_READY.json`, non un endpoint live in errore.

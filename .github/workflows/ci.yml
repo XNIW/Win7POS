@@ -20,7 +20,6 @@ on:
           - candidate-three
           - native-startup
           - native-waits
-          - native-entry
       authorization_lease_smoke_only:
         description: Run only the WPF x86 authorization lease smoke path
         required: false
@@ -127,7 +126,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   recovery-native-qualification:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.recovery_diagnostic == 'native-startup' || inputs.recovery_diagnostic == 'native-waits' || inputs.recovery_diagnostic == 'native-entry') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.recovery_diagnostic == 'native-startup' || inputs.recovery_diagnostic == 'native-waits') }}
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -141,7 +140,7 @@ jobs:
           RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
         run: |
           $extra = @()
-          if ($env:RECOVERY_MODE -in @('native-waits','native-entry')) { $extra += '-KernelWaits' }
+          if ($env:RECOVERY_MODE -eq 'native-waits') { $extra += '-KernelWaits' }
           & pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Qualify -OutputDirectory "$env:RUNNER_TEMP/recovery-trace-qualification" @extra
           exit $LASTEXITCODE
       - name: Preserve qualification receipts without raw ETL
@@ -155,13 +154,9 @@ jobs:
 
   recovery-native-diagnostic:
     needs: recovery-native-qualification
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.recovery_diagnostic == 'native-startup' || inputs.recovery_diagnostic == 'native-waits' || inputs.recovery_diagnostic == 'native-entry') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.recovery_diagnostic == 'native-startup' || inputs.recovery_diagnostic == 'native-waits') }}
     runs-on: windows-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        entry: ${{ fromJSON(inputs.recovery_diagnostic == 'native-entry' && '["Legacy","Isolated"]' || '["Legacy"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -181,24 +176,22 @@ jobs:
         shell: pwsh
         env:
           RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
-          RECOVERY_ENTRY: ${{ matrix.entry }}
         run: |
           $extra = @()
-          if ($env:RECOVERY_MODE -in @('native-waits','native-entry')) { $extra += '-KernelWaits' }
-          if ($env:RECOVERY_MODE -eq 'native-entry') { $extra += '-CompareEntry' }
-          & pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Recovery -EntryMode $env:RECOVERY_ENTRY -OutputDirectory "$env:RUNNER_TEMP/recovery-native-diagnostic" @extra
+          if ($env:RECOVERY_MODE -eq 'native-waits') { $extra += '-KernelWaits' }
+          & pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Recovery -OutputDirectory "$env:RUNNER_TEMP/recovery-native-diagnostic" @extra
           exit $LASTEXITCODE
       - name: Preserve target diagnostics without raw ETL
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Win7POS-Recovery-Native-Diagnostic-${{ matrix.entry }}-${{ github.run_id }}
+          name: Win7POS-Recovery-Native-Diagnostic-${{ github.run_id }}
           path: ${{ runner.temp }}/recovery-native-diagnostic
           if-no-files-found: error
           retention-days: 14
 
   recovery-diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' && inputs.recovery_diagnostic != 'native-startup' && inputs.recovery_diagnostic != 'native-waits' && inputs.recovery_diagnostic != 'native-entry' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' && inputs.recovery_diagnostic != 'native-startup' && inputs.recovery_diagnostic != 'native-waits' }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
