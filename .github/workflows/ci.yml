@@ -64,6 +64,8 @@ jobs:
     name: ${{ github.event_name == 'workflow_dispatch' && (inputs.cart_diagnostic_only == true || (inputs.cart_qualification != '' && inputs.cart_qualification != 'none')) && 'canonical-not-requested' || 'build-and-check' }}
     if: ${{ github.event_name != 'workflow_dispatch' || ((inputs.recovery_diagnostic == '' || inputs.recovery_diagnostic == 'none') && inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
     runs-on: windows-latest
+    env:
+      WIN7POS_QA_TEMP_BASE: ${{ runner.temp }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,6 +124,8 @@ jobs:
   recovery-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' }}
     runs-on: windows-latest
+    env:
+      WIN7POS_QA_TEMP_BASE: ${{ runner.temp }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -145,13 +149,15 @@ jobs:
         run: |
           $root = "$env:RUNNER_TEMP/recovery-diagnostic"
           New-Item -ItemType Directory -Path $root | Out-Null
-          [ordered]@{sha=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;mode=$env:RECOVERY_MODE;qualifiesAsus=$false;qualifiesWin7=$false;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture)} | ConvertTo-Json -Depth 5 | Set-Content "$root/host.json"
+          [ordered]@{sha=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;mode=$env:RECOVERY_MODE;qualifiesAsus=$false;qualifiesWin7=$false;image=$env:ImageOS;imageVersion=$env:ImageVersion;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture);system=(Get-CimInstance Win32_ComputerSystem | Select-Object NumberOfLogicalProcessors,TotalPhysicalMemory)} | ConvertTo-Json -Depth 5 | Set-Content "$root/host.json"
           $count = if ($env:RECOVERY_MODE -eq 'candidate-three') { 3 } else { 1 }
           $failed = $false
-          'Canonical Recovery only: all eleven groups and fixture initialization remain inside the 60000ms process budget. No retry or warmup. candidate-three records exactly three predetermined fresh processes; a PASS does not establish the cause of historical timeouts.' | Set-Content "$root/hypothesis.txt"
+          'Question: which interval accounts for the legacy creation-to-functional-body delay: pre-Main, Program/WPF initialization, or functional-call-to-async-body? At most twelve bounded marker snapshots discriminate these intervals; they do not identify JIT, antivirus or contention by themselves. All eleven groups and fixture initialization remain inside 60000ms. No retry or warmup. Stop after exactly three predetermined fresh processes for candidate-three, retaining every outcome.' | Set-Content "$root/hypothesis.txt"
           foreach ($index in 1..$count) {
+            @(Get-Process -Name dotnet,MSBuild,VBCSCompiler,Win7POS.Wpf.UiSmokeHarness -ErrorAction SilentlyContinue | Select-Object -First 24 Id,ProcessName,StartTime,CPU,WorkingSet64) | ConvertTo-Json -Depth 3 | Set-Content "$root/run-$index-processes-before.json"
             pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Scenario IMPORT_RECOVERY_completion -OutputDirectory "$root/run-$index"
             if ($LASTEXITCODE -ne 0) { $failed = $true }
+            @(Get-Process -Name dotnet,MSBuild,VBCSCompiler,Win7POS.Wpf.UiSmokeHarness -ErrorAction SilentlyContinue | Select-Object -First 24 Id,ProcessName,StartTime,CPU,WorkingSet64) | ConvertTo-Json -Depth 3 | Set-Content "$root/run-$index-processes-after.json"
           }
           if ($failed) { throw 'One or more fixed Recovery runs failed; all results retained.' }
       - name: Preserve all Recovery evidence

@@ -3,7 +3,8 @@ param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [ValidateSet("x86")]
-    [string]$Platform = "x86"
+    [string]$Platform = "x86",
+    [switch]$KeepData
 )
 
 Set-StrictMode -Version Latest
@@ -83,7 +84,7 @@ try {
     Write-Host $result
 }
 finally {
-    if (Test-Path -LiteralPath $dataDir -PathType Container) {
+    if (-not $KeepData -and (Test-Path -LiteralPath $dataDir -PathType Container)) {
         Remove-Item -LiteralPath $dataDir -Recurse -Force
     }
 }

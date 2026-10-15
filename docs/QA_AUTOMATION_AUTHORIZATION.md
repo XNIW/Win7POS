@@ -38,9 +38,33 @@ non aggirato con un diverso launcher.
 Ogni avvio crea una directory nuova con timestamp e UUID sotto `OutputRoot`
 (default: directory temporanea), fuori dal checkout e dai percorsi dati POS.
 Rifiuta link/reparse point negli antenati e riuso dell'identità. Non elimina
-directory: conserva dati e log sintetici per l'ispezione. Anche le fixture dei
-runner canonici che usano `GetTempPath()` sono confinate mediante TEMP/TMP/TMPDIR
-nell'ambiente figlio. Il processo chiamante non cambia directory o ambiente.
+directory: conserva dati e log sintetici per l'ispezione. I dati dei figli sono
+separati dall'output: ogni processo usa una root breve e nuova
+`<TEMP-base>/W7Q.<UUID-base64url>/`, verificata fuori da checkout/dati POS e senza
+link. Il nome breve conserva tutti i 128 bit dell'UUID. TEMP/TMP/TMPDIR del solo
+figlio puntano a questa root, WIN7POS_DATA_DIR alla sottodirectory `data`;
+il chiamante non cambia directory o ambiente. Su Windows il preflight rifiuta
+TEMP oltre 60 caratteri: il suffisso del logo display misurato richiede 194
+caratteri aggiuntivi, e le fixture backup devono anche rispettare il contratto
+esistente `destinazione.Length + 104 < 240`. I limiti prodotto non cambiano.
+Se la base temporanea è già troppo lunga,
+la suite fallisce prima di avviare il figlio: serve una base QA più breve nella
+sessione autorizzata. La profondità di OutputRoot non allunga più i dati SQLite.
+Un riferimento interno WIN7POS_QA_TEMP_BASE, rivalidato, conserva la stessa base
+breve nei gate annidati e non modifica l'ambiente del chiamante.
+Nei job CI e Release Pack la base è esplicitamente `runner.temp`, rivalidata
+dal runner: la TEMP del profilo hosted può essere troppo lunga per queste fixture.
+Ogni riga JSON registra workDirectory, temporaryDirectory e dataDirectory;
+`qa-work.json` nella root breve registra il percorso inverso evidenceDirectory.
+Il runner functional mantiene a sua volta dati WPF in una directory breve nuova,
+separata da OutputDirectory: riporta la mappatura e copia nell'evidenza soltanto
+diagnostici/screenshot, senza database. Tutti i dati brevi sono conservati;
+nessuna pulizia ricorsiva è aggiunta. Questa correzione riguarda i percorsi QA e
+non dimostra la causa del precedente timeout Recovery.
+Gli altri smoke esportano soltanto ricevute e diagnostici testuali con nomi
+esplicitamente consentiti. I runner immagini e authorization usano `-KeepData`
+per conservare la loro fixture fino all'esportazione; i database e i profili di
+trust non sono pubblicati negli artifact.
 Le variabili WIN7POS ereditate sono rimosse nel figlio; Local/Windows usano
 soltanto l'endpoint loopback chiuso `http://127.0.0.1:9`.
 
@@ -51,6 +75,10 @@ ha PID, creation time e percorso exe registrati. Su Windows un Job con chiusura
 dei discendenti è assegnato prima di sbloccare il comando, evitando figli
 incontrollati su timeout/cancellazione. La terminazione esplicita richiede
 identità corrispondente; non ricerca né termina processi per nome.
+Il cleanup interroga la Job posseduta, ne termina i soli membri e verifica zero
+processi attivi entro cinque secondi prima di chiuderla. Un cleanup non confermato
+blocca i passi successivi come NOT_RUN e conserva il primo errore. Le ricevute
+registrano conteggio iniziale/finale e risultato del cleanup.
 
 `-CancellationFile C:\percorso\stop.flag` permette la cancellazione finita:
 creare quel file interrompe il passo posseduto e impedisce i successivi. Ogni
@@ -135,5 +163,24 @@ canonico. L'ipotesi JIT è quindi smentita come correzione; quel codice è rimos
 La causa dei timeout rimane UNKNOWN, senza attribuzione a ValueTuple, deadlock
 o prodotto. Un PASS successivo significa soltanto mancata riproduzione nelle
 condizioni registrate. I 60.000 ms, gli undici gruppi e tutte le assertion restano
-invariati. Il report misura anche cleanup ed esportazione, quindi l'elapsed
-totale può superare il budget del solo processo; il timeout resta un TIMEOUT.
+invariati. `elapsedMs` comprende la supervisione e il cleanup del processo,
+escludendo la successiva copia dei diagnostici; può superare il budget del solo
+processo. Il timeout resta un TIMEOUT.
+
+Il vecchio campo `process_creation_to_startup_wall_ms` è acquisito nel corpo di
+`FunctionalCompletionSmoke.RunAsync`, dopo `Application.Startup` e
+`PosDbOptions.Default()`: non misura il solo startup WPF. La timeline aggiunta
+registra al massimo dodici punti: primo probe raggiungibile di Main, directory,
+costruzione WPF, callback Startup, chiamata/body async functional, risultato e
+ritorno da Application.Run. Distingue questi intervalli senza attribuire il
+tempo prima di Main a JIT/antivirus/host. Tutta l'osservazione e il lavoro richiesto
+rimangono nel budget del processo. Il workflow conserva immagine host e snapshot
+limitati dei processi toolchain/harness pertinenti prima/dopo ogni prova.
+
+La readiness mancante è un file GitHub Admin
+`docs/HANDOFFS/WIN7POS_ARTICLE_ACCEPTANCE_READY.json`, non un endpoint live in errore.
+Il consumer fu introdotto con l'attestazione ancora assente; non è stato trovato
+un successore canonico. L'Admin maintainer deve pubblicare una nuova attestazione
+revisionata dopo verifiche reali del deployment e dello scope, con il contratto
+di `Win7PosArticleReadiness.psm1`. Il suo scope `qa-articles-zero-sales` impone
+`salesAllowed=false`: non autorizza test economici remoti.

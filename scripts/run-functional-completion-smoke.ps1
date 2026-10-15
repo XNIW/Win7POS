@@ -50,6 +50,42 @@ function Stop-FunctionalChild($Process, [string]$CreationTimeUtc) {
         if (-not $Process.WaitForExit(5000)) { throw 'Owned child did not terminate within cleanup budget.' }
     }
 }
+function New-FunctionalDataRoot([string]$BaseDirectory, [string]$RepoRoot) {
+    if (-not [IO.Path]::IsPathFullyQualified($BaseDirectory)) { throw 'Functional temporary base must be absolute.' }
+    $path = [IO.Path]::GetFullPath((Join-Path $BaseDirectory ('W7F.' + [Guid]::NewGuid().ToString('N'))))
+    # Native SQLite backup paths append their own names and temporary suffixes.
+    # Reports may be deep; the data path must reserve room below MAX_PATH.
+    if ((Join-Path $path 'case-00').Length -gt 89) { throw 'Functional temporary base is too long for native SQLite paths.' }
+    $forbidden = @($RepoRoot, 'C:\POSData')
+    foreach ($base in @([Environment]::GetFolderPath('CommonApplicationData'), [Environment]::GetFolderPath('LocalApplicationData'), $env:APPDATA, [IO.Path]::GetTempPath())) {
+        if ($base) { $forbidden += Join-Path $base 'Win7POS' }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:WIN7POS_DATA_DIR)) { $forbidden += $env:WIN7POS_DATA_DIR.Trim() }
+    foreach ($store in $forbidden) {
+        $storePath = [IO.Path]::GetFullPath($store).TrimEnd('\','/')
+        if ($path.Equals($storePath, [StringComparison]::OrdinalIgnoreCase) -or $path.StartsWith($storePath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Functional data overlaps checkout or store data.'
+        }
+    }
+    $ancestor = [IO.DirectoryInfo]::new($path)
+    while ($null -ne $ancestor) {
+        if ($ancestor.Exists -and ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Functional data traverses a reparse point.' }
+        $ancestor = $ancestor.Parent
+    }
+    if (Test-Path -LiteralPath $path) { throw 'Functional data must be a new directory.' }
+    New-Item -ItemType Directory -Path $path | Out-Null
+    return $path
+}
+function Copy-FunctionalEvidence([string]$DataDirectory, [string]$EvidenceDirectory) {
+    # Only bounded, top-level diagnostics are exported. SQLite data stays in its
+    # unique owned directory, retained for inspection without recursive cleanup.
+    $files = @(Get-ChildItem -LiteralPath $DataDirectory -File | Where-Object Extension -in @('.txt','.log','.json','.csv','.png'))
+    if ($files.Count -gt 256) { throw 'Functional diagnostic file count exceeds export bound.' }
+    foreach ($file in $files) {
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $file.Length -gt 64MB) { throw 'Functional diagnostic is a link or exceeds export bound.' }
+        Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $EvidenceDirectory $file.Name) -ErrorAction Stop
+    }
+}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $HarnessDirectory) {
     $HarnessDirectory = Join-Path $repoRoot "tests\Win7POS.Wpf.UiSmokeHarness\bin\$Platform\$Configuration\net48"
@@ -71,6 +107,13 @@ while ($null -ne $ancestor) {
 }
 # Evidence is retained; this runner never recursively deletes a data directory.
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
+$temporaryBase = if ($env:WIN7POS_QA_TEMP_BASE) { $env:WIN7POS_QA_TEMP_BASE } else { [IO.Path]::GetTempPath() }
+$dataRoot = New-FunctionalDataRoot $temporaryBase $repoRoot
+[ordered]@{runId=$runId;evidenceDirectory=$OutputDirectory;dataDirectory=$dataRoot} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dataRoot 'qa-work.json') -Encoding utf8
+# Prepare the process observer before launching timed WPF work. No fixture or
+# product initialization occurs here.
+$observer = [Diagnostics.Process]::GetCurrentProcess()
+try { $null = Read-FunctionalChildImage $observer } finally { $observer.Dispose() }
 $results = [Collections.Generic.List[object]]::new()
 $firstError = $null
 $sourceSha = (& git -C $repoRoot rev-parse HEAD)
@@ -81,21 +124,26 @@ try {
     $cases = @()
     if ($Scenario.Count -eq 0) { $cases += 'FUNCTIONAL_VISUAL'; $cases += $scenarios }
     else { $cases += $Scenario }
+    $caseIndex = 0
+    $cleanupConfirmed = $true
     foreach ($name in $cases) {
-        $dataDir = Join-Path $OutputDirectory $name
+        $evidenceDir = Join-Path $OutputDirectory $name
+        New-Item -ItemType Directory -Path $evidenceDir | Out-Null
+        $dataDir = Join-Path $dataRoot ('case-{0:D2}' -f $caseIndex++)
         New-Item -ItemType Directory -Path $dataDir | Out-Null
         $visual = $name -eq 'FUNCTIONAL_VISUAL'
         $timeoutMs = if ($visual) { 120000 } else { 60000 }
-        $resultPath = Join-Path $dataDir $(if ($visual) { 'ui-ux-final-closeout.txt' } else { 'functional-completion.txt' })
-        $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; error=$null }
+        $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
+        $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$evidenceDir; dataDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; cleanupSucceeded=$null; cleanupError=$null; error=$null }
         $process = $null
         $watch = [Diagnostics.Stopwatch]::StartNew()
         try {
+            if (-not $cleanupConfirmed) { throw 'Previous functional child cleanup was not confirmed; subsequent case not launched.' }
             if (-not $harnessHash) { throw 'Build the x86 WPF harness first.' }
             $arguments = @('--data-dir', ('"' + $dataDir + '"'))
-            if ($visual) { $arguments += @('--ui-ux-final-closeout','--output-dir', ('"' + $dataDir + '"')) }
+            if ($visual) { $arguments += @('--ui-ux-final-closeout','--output-dir', ('"' + $evidenceDir + '"')) }
             else { $arguments += @('--functional-completion-smoke','--scenario',$name) }
-            $process = Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $dataDir 'stdout.log') -RedirectStandardError (Join-Path $dataDir 'stderr.log')
+            $process = Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $evidenceDir 'stdout.log') -RedirectStandardError (Join-Path $evidenceDir 'stderr.log')
             $record.pid = $process.Id
             $null = $process.Handle
             $record.creationTimeUtc = $process.StartTime.ToUniversalTime().ToString('O')
@@ -120,18 +168,32 @@ try {
             if ($null -ne $process) {
                 try {
                     Stop-FunctionalChild $process $record.creationTimeUtc
+                    $record.cleanupSucceeded = $process.HasExited
+                    if (-not $record.cleanupSucceeded) { throw 'Owned functional child still active after cleanup.' }
                 }
                 catch {
-                    $record.status = 'FAIL'
+                    $cleanupConfirmed = $false
+                    $record.cleanupSucceeded = $false
+                    $record.cleanupError = $_.Exception.Message
+                    if ($record.status -eq 'PASS') { $record.status = 'FAIL' }
                     if ($null -eq $record.error) { $record.error = $_.Exception.Message }
                     if ($null -eq $firstError) { $firstError = $record.error }
                 }
                 finally { $process.Dispose() }
             }
             $record.elapsedMs = $watch.Elapsed.TotalMilliseconds
+            try { if ($cleanupConfirmed) { Copy-FunctionalEvidence $dataDir $evidenceDir } }
+            catch {
+                $record.status = 'FAIL'
+                if ($null -eq $record.error) { $record.error = $_.Exception.Message }
+                if ($null -eq $firstError) { $firstError = $record.error }
+            }
             $results.Add([pscustomobject]$record)
-            [ordered]@{schemaVersion=1;runId=$runId;sourceSha=$sourceSha;harnessSha256=$harnessHash;firstError=$firstError;results=$results.ToArray()} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'functional-results.json') -Encoding utf8
-            Write-Host ("FUNCTIONAL_RESULT={0}; status={1}; elapsed_ms={2:F0}; evidence={3}" -f $name,$record.status,$record.elapsedMs,$dataDir)
+            try {
+                [ordered]@{schemaVersion=1;runId=$runId;sourceSha=$sourceSha;harnessSha256=$harnessHash;firstError=$firstError;results=$results.ToArray()} | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'functional-results.json') -Encoding utf8
+            }
+            catch { [Console]::Error.WriteLine("FUNCTIONAL_REPORT_WRITE_FAILED; firstError=$firstError"); throw }
+            Write-Host ("FUNCTIONAL_RESULT={0}; status={1}; elapsed_ms={2:F0}; evidence={3}" -f $name,$record.status,$record.elapsedMs,$evidenceDir)
         }
     }
 }

@@ -3,7 +3,8 @@ param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [ValidateSet("x86")]
-    [string]$Platform = "x86"
+    [string]$Platform = "x86",
+    [switch]$KeepData
 )
 
 Set-StrictMode -Version Latest
@@ -334,7 +335,7 @@ finally {
         $runRootName -notmatch '^AuthorizationLease\.[0-9a-f]{32}$') {
         throw "Refusing to clean an invalid authorization lease run root: $runRoot"
     }
-    if (Test-Path -LiteralPath $runRoot -PathType Container) {
+    if (-not $KeepData -and (Test-Path -LiteralPath $runRoot -PathType Container)) {
         Remove-Item -LiteralPath $runRoot -Recurse -Force
     }
 }

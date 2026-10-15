@@ -50,6 +50,30 @@ function Assert-QaOutputRoot([string]$OutputRoot, [string]$RepoRoot) {
     return $root
 }
 
+function New-QaWorkDirectories([string]$RepoRoot, [string]$EvidenceDirectory, [string]$TemporaryBase = '') {
+    # Keep the initial short base when a gate starts a nested synthetic runner.
+    # This reference exists only in child environments and is checked every time.
+    if (-not $TemporaryBase) {
+        $TemporaryBase = if ($env:WIN7POS_QA_TEMP_BASE) { $env:WIN7POS_QA_TEMP_BASE } else { [IO.Path]::GetTempPath() }
+    }
+    $baseDirectory = Assert-QaOutputRoot $TemporaryBase $RepoRoot
+    $workToken = [Convert]::ToBase64String([Guid]::NewGuid().ToByteArray()).TrimEnd('=').Replace('+','-').Replace('/','_')
+    $workDirectory = Assert-QaOutputRoot (Join-Path $baseDirectory ('W7Q.' + $workToken)) $RepoRoot
+    $temporaryDirectory = $workDirectory
+    $dataDirectory = Assert-QaPath (Join-Path $workDirectory 'data') $workDirectory
+    # The measured customer-display fixture adds 194 characters below TEMP.
+    # This also satisfies BackupAutomationTests' existing destination reserve.
+    if ($IsWindows -and $temporaryDirectory.Length -gt 60) { throw 'qa_temporary_base_too_long' }
+    if (Test-Path -LiteralPath $workDirectory) { throw 'qa_work_identity_reused' }
+    New-Item -ItemType Directory -Path $workDirectory | Out-Null
+    New-Item -ItemType Directory -Path $dataDirectory | Out-Null
+    $work = [pscustomobject]@{ baseDirectory=$baseDirectory; workDirectory=(Assert-QaPath $workDirectory $baseDirectory);
+        temporaryDirectory=(Assert-QaPath $temporaryDirectory $workDirectory); dataDirectory=(Assert-QaPath $dataDirectory $workDirectory);
+        evidenceDirectory=(Assert-QaPath $EvidenceDirectory); createdAtUtc=[DateTimeOffset]::UtcNow.ToString('O') }
+    $work | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $workDirectory 'qa-work.json') -Encoding utf8
+    return $work
+}
+
 function Test-QaProcessIdentity($Process, $Identity) {
     try {
         $Process.Refresh()
@@ -153,10 +177,21 @@ public static class Win7PosQaJob {
     [StructLayout(LayoutKind.Sequential)] struct Basic { public long a,b; public uint flags; public UIntPtr min,max; public uint active; public UIntPtr affinity; public uint priority,scheduling; }
     [StructLayout(LayoutKind.Sequential)] struct Io { public ulong a,b,c,d,e,f; }
     [StructLayout(LayoutKind.Sequential)] struct Extended { public Basic basic; public Io io; public UIntPtr process,job,peakProcess,peakJob; }
+    [StructLayout(LayoutKind.Sequential)] struct Accounting { public long user,kernel,periodUser,periodKernel; public uint faults,total,active,terminated; }
     [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr a, string name);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetInformationJobObject(IntPtr h,int kind,ref Extended value,uint size);
     [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AssignProcessToJobObject(IntPtr job,IntPtr process);
     [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateJobObject(IntPtr job, uint exitCode);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool QueryInformationJobObject(IntPtr job,int kind,out Accounting value,uint size,IntPtr returned);
+    public static uint ActiveProcesses(IntPtr job) {
+        Accounting value;
+        if(!QueryInformationJobObject(job,1,out value,(uint)Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero)) throw new System.ComponentModel.Win32Exception();
+        return value.active;
+    }
+    public static void Terminate(IntPtr job) {
+        if(!TerminateJobObject(job,1)) throw new System.ComponentModel.Win32Exception();
+    }
     [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr process, uint flags, System.Text.StringBuilder image, ref uint size);
     public static string ImagePath(IntPtr process) {
         uint size=32768; var image=new System.Text.StringBuilder((int)size);
@@ -174,10 +209,27 @@ public static class Win7PosQaJob {
 '@
 }
 
+function Stop-QaOwnedJob([IntPtr]$Job, [int]$TimeoutMilliseconds = 5000) {
+    $receipt = [ordered]@{ cleanupSucceeded=$false; processRemaining=$null; activeProcessesAtCleanup=$null; cleanupError=$null }
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $receipt.processRemaining = [Win7PosQaJob]::ActiveProcesses($Job)
+        $receipt.activeProcessesAtCleanup = $receipt.processRemaining
+        if ($receipt.processRemaining -gt 0) { [Win7PosQaJob]::Terminate($Job) }
+        do {
+            $receipt.processRemaining = [Win7PosQaJob]::ActiveProcesses($Job)
+            if ($receipt.processRemaining -eq 0) { $receipt.cleanupSucceeded=$true; break }
+            [Threading.Thread]::Sleep(20)
+        } while ($clock.ElapsedMilliseconds -lt $TimeoutMilliseconds)
+        if (-not $receipt.cleanupSucceeded) { $receipt.cleanupError='qa_owned_job_still_active' }
+    } catch { $receipt.cleanupError=$_.Exception.GetType().Name }
+    return [pscustomobject]$receipt
+}
+
 function Invoke-QaProcess {
     param([string]$Executable, [string[]]$Arguments, [string]$Directory,
         [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$CancellationFile = '', [bool]$Staging = $false)
-    $result = [ordered]@{ status='FAIL'; code='process_launch_failed'; exitCode=$null; identity=$null; elapsedMs=0; errorType=$null }
+    $result = [ordered]@{ status='FAIL'; code='process_launch_failed'; exitCode=$null; identity=$null; elapsedMs=0; errorType=$null; workDirectory=$null; temporaryDirectory=$null; dataDirectory=$null; cleanupSucceeded=$true; processRemaining=0; activeProcessesAtCleanup=0; cleanupError=$null }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $process = $null; $started = $false; $job = [IntPtr]::Zero; $outFile = $null; $errFile = $null; $outTask = $null; $errTask = $null
     try {
@@ -208,14 +260,16 @@ try {
         $start.UseShellExecute = $false; $start.CreateNoWindow = $true; $start.WorkingDirectory = $WorkingDirectory
         $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
         foreach ($arg in @('-NoProfile','-File',$bootstrap,$descriptor,$gate)) { $start.ArgumentList.Add($arg) }
-        # Never mutate the caller's environment. Every canonical temp fixture is below this run.
+        # Never mutate the caller's environment or lengthen native SQLite paths
+        # by nesting its temp/data beneath the potentially long evidence path.
         foreach ($key in @($start.Environment.Keys)) {
             if ($key -like 'WIN7POS_*') { [void]$start.Environment.Remove($key) }
         }
-        $temporary = Join-Path $Directory 'temp'; $data = Join-Path $Directory 'data'
-        New-Item -ItemType Directory -Path $temporary,$data | Out-Null
-        foreach ($key in @('TEMP','TMP','TMPDIR')) { $start.Environment[$key] = $temporary }
-        $start.Environment['WIN7POS_DATA_DIR'] = $data
+        $work = New-QaWorkDirectories $WorkingDirectory $Directory
+        foreach ($key in @('workDirectory','temporaryDirectory','dataDirectory')) { $result[$key]=$work.$key }
+        foreach ($key in @('TEMP','TMP','TMPDIR')) { $start.Environment[$key] = $work.temporaryDirectory }
+        $start.Environment['WIN7POS_DATA_DIR'] = $work.dataDirectory
+        $start.Environment['WIN7POS_QA_TEMP_BASE'] = $work.baseDirectory
         if (-not $Staging) { $start.Environment['WIN7POS_ADMIN_WEB_BASE_URL'] = 'http://127.0.0.1:9' }
         if ($IsWindows) { Initialize-QaJobApi; $job = [Win7PosQaJob]::Create() }
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
@@ -249,18 +303,43 @@ try {
         $result.errorType=$_.Exception.GetType().Name
     }
     finally {
-        if ($job -ne [IntPtr]::Zero) { [void][Win7PosQaJob]::CloseHandle($job) }
+        $cleanupClock = [Diagnostics.Stopwatch]::StartNew()
+        if ($job -ne [IntPtr]::Zero) {
+            $cleanup = Stop-QaOwnedJob $job
+            foreach ($key in @('cleanupSucceeded','processRemaining','activeProcessesAtCleanup','cleanupError')) { $result[$key]=$cleanup.$key }
+            if (-not [Win7PosQaJob]::CloseHandle($job)) { $result.cleanupSucceeded=$false; $result.cleanupError='qa_owned_job_close_failed' }
+        }
         if ($started) {
             if ($null -ne $result.identity -and (Test-QaProcessIdentity $process $result.identity)) {
-                try { $process.Kill($true) } catch { if ($result.status -eq 'PASS') { $result.status='FAIL'; $result.code='owned_process_cleanup_failed' } }
+                try { $process.Kill($true) } catch { $result.cleanupSucceeded=$false; $result.cleanupError='owned_process_cleanup_failed' }
             }
-            if (-not $process.HasExited -and -not $process.WaitForExit(5000) -and $result.status -eq 'PASS') { $result.status='FAIL'; $result.code='owned_process_remaining' }
+            $remainingWait = [Math]::Max(0,5000-[int]$cleanupClock.ElapsedMilliseconds)
+            if (-not $process.HasExited -and -not $process.WaitForExit($remainingWait)) {
+                $result.cleanupSucceeded=$false; $result.cleanupError='owned_process_remaining'
+                if ($null -eq $result.processRemaining -or $result.processRemaining -eq 0) { $result.processRemaining=1 }
+            }
             foreach ($task in @($outTask,$errTask)) {
-                if ($null -ne $task) { try { if (-not $task.Wait(5000)) { throw 'stream_timeout' } } catch { if ($result.status -eq 'PASS') { $result.status='FAIL'; $result.code='process_log_flush_failed' } } }
+                if ($null -ne $task) {
+                    try { if (-not $task.Wait(5000)) { throw 'stream_timeout' } }
+                    catch {
+                        $result.cleanupSucceeded=$false; $result.cleanupError='process_log_flush_failed'
+                        if ($result.status -eq 'PASS') { $result.status='FAIL'; $result.code='process_log_flush_failed' }
+                    }
+                }
             }
         }
-        if ($null -ne $process) { $process.Dispose() }
-        if ($null -ne $outFile) { $outFile.Dispose() }; if ($null -ne $errFile) { $errFile.Dispose() }
+        foreach ($resource in @($process,$outFile,$errFile)) {
+            if ($null -ne $resource) {
+                try { $resource.Dispose() }
+                catch { $result.cleanupSucceeded=$false; $result.cleanupError='process_resource_dispose_failed' }
+            }
+        }
+        if (-not $result.cleanupSucceeded -and $result.status -eq 'PASS') { $result.status='FAIL'; $result.code='owned_process_cleanup_failed' }
+        $result.elapsedMs = $watch.ElapsedMilliseconds
+        if ($Directory -and (Test-Path -LiteralPath $Directory -PathType Container)) {
+            try { [pscustomobject]$result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $Directory 'process-result.json') -Encoding utf8 }
+            catch { if ($result.status -eq 'PASS') { $result.status='FAIL'; $result.code='process_receipt_write_failed' } }
+        }
         $result.elapsedMs = $watch.ElapsedMilliseconds
     }
     return [pscustomobject]$result
@@ -300,10 +379,59 @@ function New-QaPlan([string]$Suite, [string]$RunDirectory, [string]$Shell) {
     foreach ($smokeRunner in $smokeRunners) {
         $smoke = $smokeRunner.name
         $arguments = @('-NoProfile','-File',$smokeRunner.path,'-Configuration','Release','-Platform','x86')
+        if ($smoke -in @('product-image-profile','authorization-lease')) { $arguments += '-KeepData' }
         $evidence = ''
         if ($smoke -eq 'functional-completion') { $arguments += @('-OutputDirectory',(Join-Path $RunDirectory 'functional')); $evidence = 'functional' }
         New-QaStep $smoke $Shell $arguments @('build-harness') 1800 $evidence
     }
+}
+
+function Export-QaSmokeEvidence([string]$WorkDirectory, [string]$DestinationDirectory) {
+    if (-not $WorkDirectory) { throw 'qa_smoke_work_directory_missing' }
+    $source = Assert-QaPath $WorkDirectory
+    $destination = Assert-QaPath $DestinationDirectory
+    if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw 'qa_smoke_work_directory_missing' }
+    if ((Test-QaWithin $destination $source) -or (Test-QaWithin $source $destination)) { throw 'qa_smoke_export_paths_overlap' }
+    $allowed = @('harness-error.txt','product-image-profile-smoke.txt','bounded-logging-smoke.txt','product-paging-dispatcher-smoke.txt')
+    foreach ($mode in @('smoke','restart-prepare','restart-verify','clock-capacity')) {
+        $artifact = 'authorization-lease-' + $mode + '.txt'
+        $allowed += @($artifact, ($artifact + '.stdout.txt'), ($artifact + '.stderr.txt'))
+    }
+    $queue = [Collections.Generic.Queue[object]]::new()
+    $queue.Enqueue(@{ path=$source; depth=0 })
+    $files = [Collections.Generic.List[object]]::new()
+    $entries = 0; $bytes = 0L
+    while ($queue.Count) {
+        $current = $queue.Dequeue()
+        foreach ($entry in [IO.Directory]::EnumerateFileSystemEntries($current.path)) {
+            $entries++
+            if ($entries -gt 512) { throw 'qa_smoke_export_traversal_limit' }
+            $full = Assert-QaPath $entry $source
+            $item = Get-Item -LiteralPath $full -Force
+            if ($item.PSIsContainer) {
+                if ($current.depth -ge 8) { throw 'qa_smoke_export_depth_limit' }
+                $queue.Enqueue(@{ path=$full; depth=$current.depth + 1 })
+            } elseif ($item.Name -cin $allowed) {
+                if ($item.Length -gt 2MB) { throw 'qa_smoke_export_file_size_limit' }
+                $bytes += $item.Length
+                if ($files.Count -ge 32 -or $bytes -gt 16MB) { throw 'qa_smoke_export_total_limit' }
+                $files.Add($item)
+            }
+        }
+    }
+    if ($files.Count -eq 0) { throw 'qa_smoke_evidence_missing' }
+    $exports = @()
+    foreach ($file in $files) {
+        # A numbered directory keeps exact allowlisted basenames without collisions
+        # or reproducing the fixture path length in the CI artifact directory.
+        $targetDirectory = Assert-QaPath (Join-Path $destination $exports.Count.ToString('D2')) $destination
+        New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+        $target = Assert-QaPath (Join-Path $targetDirectory $file.Name) $destination
+        [IO.File]::Copy($file.FullName, $target, $false)
+        $exports += [pscustomobject]@{ sourceRelativePath=[IO.Path]::GetRelativePath($source,$file.FullName);
+            path=$target; bytes=$file.Length; sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+    return $exports
 }
 
 function Assert-QaEvidence($Step, [string]$RunDirectory) {
@@ -324,21 +452,42 @@ function Assert-QaEvidence($Step, [string]$RunDirectory) {
 }
 
 function Invoke-QaPlan($Plan, [string]$RunDirectory, [string]$RepoRoot, [string]$CancellationFile = '', [Collections.IDictionary]$Report = $null) {
-    $rows = [Collections.Generic.List[object]]::new(); $states = @{}
+    $rows = [Collections.Generic.List[object]]::new(); $states = @{}; $cleanupBlocked=$false
     if (@($Plan).Count -eq 0) { throw 'zero_tests' }
     foreach ($step in $Plan) {
-        $row = [ordered]@{ name=$step.name; status='NOT_RUN'; code='dependency_failed'; exitCode=$null; identity=$null; elapsedMs=0; errorType=$null; evidenceDirectory=$null; tests=@() }
+        $processInvoked=$false
+        $row = [ordered]@{ name=$step.name; status='NOT_RUN'; code='dependency_failed'; exitCode=$null; identity=$null; elapsedMs=0; errorType=$null; evidenceDirectory=$null; workDirectory=$null; temporaryDirectory=$null; dataDirectory=$null; cleanupSucceeded=$null; processRemaining=$null; activeProcessesAtCleanup=$null; cleanupError=$null; processReceipt=$null; diagnostics=@(); evidenceExportError=$null; tests=@() }
         try {
-            if ($CancellationFile -and (Test-Path -LiteralPath $CancellationFile)) { $row.code='cancelled' }
+            if ($cleanupBlocked) { $row.code='qa_previous_process_cleanup_failed' }
+            elseif ($CancellationFile -and (Test-Path -LiteralPath $CancellationFile)) { $row.code='cancelled' }
             elseif (@($step.depends | Where-Object { -not $states.ContainsKey($_) -or $states[$_] -ne 'PASS' }).Count -eq 0) {
                 $directory = Assert-QaPath (Join-Path $RunDirectory $step.name) $RunDirectory
                 $row.evidenceDirectory = $directory
                 if (Test-Path -LiteralPath $directory) {
                     if (-not (Test-Path -LiteralPath $directory -PathType Container)) { throw 'qa_step_directory_invalid' }
                 } else { New-Item -ItemType Directory -Path $directory | Out-Null }
+                $row.processReceipt=Join-Path $directory 'process-result.json'
+                $processInvoked=$true
                 $processResult = Invoke-QaProcess -Executable $step.executable -Arguments $step.arguments -Directory $directory -WorkingDirectory $RepoRoot -TimeoutSeconds $step.timeout -CancellationFile $CancellationFile
                 foreach ($key in @('status','code','exitCode','identity','elapsedMs')) { $row[$key] = $processResult.$key }
                 if ($processResult.PSObject.Properties.Name -contains 'errorType') { $row.errorType=$processResult.errorType }
+                foreach ($key in @('workDirectory','temporaryDirectory','dataDirectory')) {
+                    if ($processResult.PSObject.Properties.Name -contains $key) { $row[$key]=$processResult.$key }
+                }
+                foreach ($key in @('cleanupSucceeded','processRemaining','activeProcessesAtCleanup','cleanupError')) {
+                    if ($processResult.PSObject.Properties.Name -contains $key) { $row[$key]=$processResult.$key }
+                }
+                if ($row.cleanupSucceeded -ne $true -or $null -eq $row.processRemaining -or $row.processRemaining -ne 0) {
+                    $cleanupBlocked=$true
+                    if ($row.status -eq 'PASS') { $row.status='FAIL'; $row.code='owned_process_cleanup_failed' }
+                }
+                if ($step.name -in @('product-image-profile','authorization-lease','bounded-logging','product-paging-dispatcher') -and -not $cleanupBlocked) {
+                    try { $row.diagnostics=@(Export-QaSmokeEvidence $processResult.workDirectory (Join-Path $directory 'diagnostics')) }
+                    catch {
+                        $row.evidenceExportError=@{ code=(Get-QaErrorCode $_); errorType=$_.Exception.GetType().Name }
+                        if ($row.status -eq 'PASS') { $row.status='FAIL'; $row.code='qa_smoke_evidence_export_failed' }
+                    }
+                }
                 # Preserve partial scenario results even when the canonical runner exits nonzero.
                 if ($step.evidence -eq 'functional') {
                     try {
@@ -352,6 +501,7 @@ function Invoke-QaPlan($Plan, [string]$RunDirectory, [string]$RepoRoot, [string]
             }
         } catch {
             $row.status='FAIL'; $row.code='qa_step_preparation_or_supervision_failed'; $row.errorType=$_.Exception.GetType().Name
+            if ($processInvoked -and $null -eq $row.cleanupSucceeded) { $cleanupBlocked=$true; $row.cleanupSucceeded=$false; $row.cleanupError='qa_supervision_returned_no_cleanup_receipt' }
         }
         $states[$step.name] = $row.status; $rows.Add([pscustomobject]$row)
         if ($null -ne $Report) {
@@ -418,7 +568,7 @@ try {
                     if ($receipt.runId -cne $ReadinessRunId -or $receipt.passed -ne $true -or $receipt.logicalRuns -ne 1 -or $receipt.orphanRemaining -ne $false) { throw 'staging_result_invalid' }
                 } catch { $result.status='FAIL'; $result.code='missing_or_invalid_staging_evidence' }
             }
-            $report.results = @([pscustomobject]@{ name='staging'; status=$result.status; code=$result.code; exitCode=$result.exitCode; identity=$result.identity })
+            $report.results = @([pscustomobject]@{ name='staging'; status=$result.status; code=$result.code; exitCode=$result.exitCode; identity=$result.identity; workDirectory=$result.workDirectory; temporaryDirectory=$result.temporaryDirectory; dataDirectory=$result.dataDirectory; cleanupSucceeded=$result.cleanupSucceeded; processRemaining=$result.processRemaining; cleanupError=$result.cleanupError; processReceipt=(Join-Path $directory 'process-result.json') })
         }
     } else {
         $plan = @(New-QaPlan $Suite $runDirectory (Get-Process -Id $PID).Path)

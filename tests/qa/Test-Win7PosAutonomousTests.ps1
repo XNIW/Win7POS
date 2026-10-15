@@ -33,6 +33,23 @@ Assert-QaTest ((Assert-QaPath $unicode $root) -ceq $unicode) 'Unicode/spaces pat
 Must-Fail { Assert-QaPath (Join-Path $root '../outside') $root } 'qa_path_outside_root'
 Assert-QaTest (-not (Test-QaWithin ($root + '-other') $root)) 'Sibling prefix accepted as owned data'
 Must-Fail { Assert-QaPath 'relative-path' } 'qa_path_must_be_absolute'
+$smokeWork = New-QaWorkDirectories $repoRoot $root
+$smokeFixture = Join-Path $smokeWork.temporaryDirectory 'synthetic/main-diagnostics'
+New-Item -ItemType Directory -Path $smokeFixture | Out-Null
+$safeSmokeFiles = @('harness-error.txt','bounded-logging-smoke.txt','authorization-lease-smoke.txt.stdout.txt','authorization-lease-smoke.txt.stderr.txt')
+foreach ($name in ($safeSmokeFiles + @('synthetic.db','trusted-device-profile.json','trust-store.dat'))) { [IO.File]::WriteAllText((Join-Path $smokeFixture $name),'synthetic') }
+$smokeDestination = Join-Path $unicode 'smoke diagnostics'
+$exportedSmoke = @(Export-QaSmokeEvidence $smokeWork.workDirectory $smokeDestination)
+$exportedFiles = @(Get-ChildItem -LiteralPath $smokeDestination -Recurse -File)
+Assert-QaTest ($exportedSmoke.Count -eq $safeSmokeFiles.Count -and $exportedFiles.Count -eq $safeSmokeFiles.Count -and @($exportedFiles | Where-Object Name -cnotin $safeSmokeFiles).Count -eq 0) 'Smoke export copied database, trust files or unknown names'
+Assert-QaTest ((Test-Path -LiteralPath (Join-Path $smokeFixture 'synthetic.db')) -and (Test-Path -LiteralPath (Join-Path $smokeFixture 'trusted-device-profile.json'))) 'Smoke export removed source data'
+[IO.File]::WriteAllBytes((Join-Path $smokeFixture 'product-image-profile-smoke.txt'), [byte[]]::new(2MB+1))
+Must-Fail { Export-QaSmokeEvidence $smokeWork.workDirectory (Join-Path $unicode 'oversize diagnostics') } 'qa_smoke_export_file_size_limit'
+if ($IsWindows) {
+    $longBase = Join-Path $root ('long-base-' + ('x' * 100))
+    Must-Fail { New-QaWorkDirectories $repoRoot $root $longBase } 'qa_temporary_base_too_long'
+    Assert-QaTest (-not (Test-Path -LiteralPath $longBase)) 'Overlong temporary base was mutated before preflight failure'
+}
 
 $creation = [DateTime]::UtcNow
 $process = [pscustomobject]@{ HasExited=$false; Id=42; StartTime=$creation; MainModule=[pscustomobject]@{ FileName=(Join-Path $root 'owned.exe') } }
@@ -96,11 +113,15 @@ if ($Runtime) {
     # Only fresh synthetic PowerShell children. No WPF, real credentials or external endpoints.
     $shell = (Get-Process -Id $PID).Path
     $environmentBefore = @{}
-    foreach ($key in @('WIN7POS_ADMIN_WEB_BASE_URL','WIN7POS_DATA_DIR','TEMP','TMP','TMPDIR')) { $environmentBefore[$key] = [Environment]::GetEnvironmentVariable($key) }
+    foreach ($key in @('WIN7POS_ADMIN_WEB_BASE_URL','WIN7POS_DATA_DIR','WIN7POS_QA_TEMP_BASE','TEMP','TMP','TMPDIR')) { $environmentBefore[$key] = [Environment]::GetEnvironmentVariable($key) }
     foreach ($case in @(@{ name='success'; command='exit 0'; expected='PASS'; timeout=15 }, @{ name='nonzero'; command='exit 7'; expected='FAIL'; timeout=15 }, @{ name='timeout'; command='Start-Sleep -Seconds 30'; expected='TIMEOUT'; timeout=2 })) {
         $directory = Join-Path $unicode $case.name; New-Item -ItemType Directory -Path $directory | Out-Null
         $result = Invoke-QaProcess -Executable $shell -Arguments @('-NoProfile','-Command',$case.command) -Directory $directory -WorkingDirectory $root -TimeoutSeconds $case.timeout
         Assert-QaTest ($result.status -ceq $case.expected) "Synthetic runtime case $($case.name): $($result.status) / $($result.code) / $($result.errorType)"
+        Assert-QaTest ($result.cleanupSucceeded -eq $true -and $result.processRemaining -eq 0) ('Owned process cleanup was not verified: ' + $case.name)
+        if ($IsWindows -and $case.name -eq 'timeout') { Assert-QaTest ($result.activeProcessesAtCleanup -ge 2) 'Timeout did not exercise an owned PowerShell descendant' }
+        $processReceipt = Get-Content -LiteralPath (Join-Path $directory 'process-result.json') -Raw | ConvertFrom-Json
+        Assert-QaTest ($processReceipt.cleanupSucceeded -eq $true -and $processReceipt.processRemaining -eq 0 -and $processReceipt.code -ceq $result.code) 'Process cleanup receipt lost the original outcome or active count'
         if ($null -ne $result.identity) {
             $remaining = Get-Process -Id $result.identity.pid -ErrorAction SilentlyContinue
             if ($null -ne $remaining) {
@@ -112,6 +133,29 @@ if ($Runtime) {
     $directory = Join-Path $root 'missing'; New-Item -ItemType Directory -Path $directory | Out-Null
     $result = Invoke-QaProcess -Executable (Join-Path $root 'missing.exe') -Arguments @() -Directory $directory -WorkingDirectory $root -TimeoutSeconds 1
     Assert-QaTest ($result.status -ceq 'FAIL' -and $null -eq $result.identity) 'Missing executable passed or acquired ownership'
+    $longOutput = Join-Path $unicode ('evidence-' + ('x' * [Math]::Max(20,180-$unicode.Length)))
+    New-Item -ItemType Directory -Path $longOutput | Out-Null
+    $environmentProbe = Join-Path $root 'environment-probe.ps1'
+    $environmentResult = Join-Path $longOutput 'child-environment.json'
+    @'
+param($OutputPath)
+[ordered]@{ temp=$env:TEMP; tmp=$env:TMP; tmpdir=$env:TMPDIR; runtimeTemp=[IO.Path]::GetTempPath();
+    data=$env:WIN7POS_DATA_DIR; baseDirectory=$env:WIN7POS_QA_TEMP_BASE } | ConvertTo-Json |
+    Set-Content -LiteralPath $OutputPath -Encoding utf8
+'@ | Set-Content -LiteralPath $environmentProbe
+    $longResult = Invoke-QaProcess -Executable $shell -Arguments @('-NoProfile','-File',$environmentProbe,$environmentResult) -Directory $longOutput -WorkingDirectory $root -TimeoutSeconds 15
+    Assert-QaTest ($longResult.status -ceq 'PASS') ('Long output runtime probe failed: ' + $longResult.code)
+    $childEnvironment = Get-Content -LiteralPath $environmentResult -Raw | ConvertFrom-Json
+    $workReceipt = Get-Content -LiteralPath (Join-Path $longResult.workDirectory 'qa-work.json') -Raw | ConvertFrom-Json
+    Assert-QaTest ($childEnvironment.temp -ceq $longResult.temporaryDirectory -and $childEnvironment.tmp -ceq $longResult.temporaryDirectory -and $childEnvironment.tmpdir -ceq $longResult.temporaryDirectory -and $childEnvironment.runtimeTemp.TrimEnd('\','/') -ceq $longResult.temporaryDirectory.TrimEnd('\','/') -and $childEnvironment.data -ceq $longResult.dataDirectory) 'Child temporary/data environment did not match report locations'
+    Assert-QaTest (-not (Test-QaWithin $longResult.temporaryDirectory $longOutput) -and (Test-QaWithin $longResult.temporaryDirectory $longResult.workDirectory) -and (Test-QaWithin $longResult.dataDirectory $longResult.workDirectory)) 'Work directories remain nested below long evidence output'
+    Assert-QaTest ($workReceipt.evidenceDirectory -ceq $longOutput -and $workReceipt.workDirectory -ceq $longResult.workDirectory -and $workReceipt.baseDirectory -ceq $childEnvironment.baseDirectory) 'Short work directory lost its run/evidence mapping'
+    Assert-QaTest ([IO.Path]::GetFileName($longResult.workDirectory) -cmatch '^W7Q\.[A-Za-z0-9_-]{22}$') 'Work identity must preserve a full 128-bit UUID in a short encoding'
+    if ($IsWindows) {
+        Assert-QaTest ($longResult.temporaryDirectory.Length -le 60 -and $longResult.temporaryDirectory -ceq $longResult.workDirectory) 'Child temporary directory exceeded the measured customer-display fixture reserve'
+        $automationDestination = [IO.Path]::Combine($longResult.temporaryDirectory,'Win7POS.AutoTests',('a' * 32),'new-destination')
+        Assert-QaTest ($automationDestination.Length + 104 -lt 240) 'Short TEMP still violates the existing BackupAutomationDestination contract'
+    }
     $cancelBefore = Join-Path $root 'cancel-before.flag'; [IO.File]::WriteAllText($cancelBefore,'stop')
     $directory = Join-Path $unicode 'cancel-before'; New-Item -ItemType Directory -Path $directory | Out-Null
     $result = Invoke-QaProcess -Executable $shell -Arguments @('-NoProfile','-Command','exit 0') -Directory $directory -WorkingDirectory $root -TimeoutSeconds 15 -CancellationFile $cancelBefore -Staging $true
@@ -128,6 +172,8 @@ Start-Sleep -Seconds 30
     $directory = Join-Path $unicode 'cancel-during'; New-Item -ItemType Directory -Path $directory | Out-Null
     $result = Invoke-QaProcess -Executable $shell -Arguments @('-NoProfile','-File',$cancelScript,$cancelDuring) -Directory $directory -WorkingDirectory $root -TimeoutSeconds 15 -CancellationFile $cancelDuring
     Assert-QaTest ($result.status -ceq 'NOT_RUN' -and $result.code -ceq 'cancelled' -and $null -ne $result.identity -and $result.elapsedMs -lt 15000) 'Cancellation during supervision was ignored'
+    Assert-QaTest ($result.cleanupSucceeded -eq $true -and $result.processRemaining -eq 0) 'Cancelled process Job did not reach zero active processes'
+    if ($IsWindows) { Assert-QaTest ($result.activeProcessesAtCleanup -ge 2) 'Cancellation did not exercise an owned PowerShell descendant' }
     $remaining = Get-Process -Id $result.identity.pid -ErrorAction SilentlyContinue
     if ($null -ne $remaining) {
         try { Assert-QaTest (-not (Test-QaProcessIdentity $remaining $result.identity)) 'Cancelled owned process remained' }
@@ -137,10 +183,14 @@ Start-Sleep -Seconds 30
 }
 
 $script:calls = [Collections.Generic.List[string]]::new()
+$mockWorkDirectory = Join-Path $root 'mock-work'
+New-Item -ItemType Directory -Path $mockWorkDirectory | Out-Null
+[IO.File]::WriteAllText((Join-Path $mockWorkDirectory 'harness-error.txt'),'synthetic')
 function Invoke-QaProcess {
     param($Executable,$Arguments,$Directory,$WorkingDirectory,$TimeoutSeconds,$CancellationFile,$Staging)
     $script:calls.Add($Executable)
-    [pscustomobject]@{ status=$(if ($Executable -eq 'functional-completion') { 'FAIL' } else { 'PASS' }); code='mock_exit'; exitCode=$(if ($Executable -eq 'functional-completion') { 7 } else { 0 }); identity=$null; elapsedMs=1 }
+    $fails=$Executable -in @('functional-completion','cleanup-failure')
+    [pscustomobject]@{ status=$(if ($fails) { 'FAIL' } else { 'PASS' }); code='mock_exit'; exitCode=$(if ($fails) { 7 } else { 0 }); identity=$null; elapsedMs=1; workDirectory=(Join-Path $root 'mock-work'); temporaryDirectory=(Join-Path $root 'mock-work/temp'); dataDirectory=(Join-Path $root 'mock-work/data'); cleanupSucceeded=($Executable -ne 'cleanup-failure'); processRemaining=$(if ($Executable -eq 'cleanup-failure') { 1 } else { 0 }); cleanupError=$(if ($Executable -eq 'cleanup-failure') { 'synthetic_job_still_active' } else { $null }) }
 }
 $windows = @(New-QaPlan 'Windows' $root 'synthetic-pwsh')
 Assert-QaTest (@($windows | Where-Object { $_.name -eq 'restore' -and $_.arguments -contains '--locked-mode' }).Count -eq 1) 'Locked restore absent'
@@ -155,6 +205,7 @@ $mapping = @{
     'product-paging-dispatcher'='scripts/run-product-paging-dispatcher-smoke.ps1'
 }
 foreach ($smoke in $smokes) { Assert-QaTest ($smoke.arguments[2] -ceq $mapping[$smoke.name]) ('Canonical runner mapping changed: ' + $smoke.name) }
+Assert-QaTest (@($smokes | Where-Object { ($_.arguments -contains '-KeepData') -ne ($_.name -in @('product-image-profile','authorization-lease')) }).Count -eq 0) 'KeepData was omitted or added to an unsupported runner'
 $plan = @((New-QaStep 'build-harness' 'build-harness' @()))
 foreach ($step in $smokes) { $step.executable=$step.name; $step.evidence=''; $plan += $step }
 $rows = @(Invoke-QaPlan $plan $root $root)
@@ -164,6 +215,12 @@ Must-Fail { Invoke-QaPlan @() $root $root } 'zero_tests'
 $dependentPlan = @((New-QaStep 'functional-completion' 'functional-completion' @()), (New-QaStep 'dependent' 'must-not-launch' @() @('functional-completion')), (New-QaStep 'independent' 'independent' @()))
 $dependentRows = @(Invoke-QaPlan $dependentPlan $root $root)
 Assert-QaTest ($dependentRows[1].status -ceq 'NOT_RUN' -and $dependentRows[2].status -ceq 'PASS') 'Dependencies or independent collection broken'
+$cleanupReport = @{ status='FAIL'; runId='cleanup-stop'; sourceSha=('a' * 40); suite='Local'; results=@(); firstError=$null; reportError=$null }
+$cleanupPlan = @((New-QaStep 'original-failure' 'functional-completion' @()), (New-QaStep 'cleanup-failure' 'cleanup-failure' @()), (New-QaStep 'independent-after-cleanup-failure' 'must-not-launch' @()))
+$callsBeforeCleanup = $script:calls.Count
+$cleanupRows = @(Invoke-QaPlan $cleanupPlan $root $root '' $cleanupReport)
+Assert-QaTest ($script:calls.Count -eq $callsBeforeCleanup + 2 -and $cleanupRows[2].status -ceq 'NOT_RUN' -and $cleanupRows[2].code -ceq 'qa_previous_process_cleanup_failed') 'Cleanup failure launched an independent next test'
+Assert-QaTest ($cleanupRows[1].cleanupSucceeded -eq $false -and $cleanupRows[1].processRemaining -eq 1 -and $cleanupReport.firstError.name -ceq 'original-failure' -and $cleanupReport.firstError.exitCode -eq 7) 'Cleanup failure erased first error or its remaining-process receipt'
 $stepBlocked = 'blocked-step-directory'
 [IO.File]::WriteAllText((Join-Path $root $stepBlocked),'file prevents directory creation')
 $checkpointReport = @{ status='FAIL'; runId='checkpoint'; sourceSha=('a' * 40); suite='Local'; results=@(); firstError=$null; reportError=$null }
@@ -172,9 +229,18 @@ $checkpointRows = @(Invoke-QaPlan $checkpointPlan $root $root '' $checkpointRepo
 Assert-QaTest ($checkpointRows.Count -eq 3 -and $checkpointRows[1].status -ceq 'FAIL' -and $checkpointRows[2].status -ceq 'PASS') 'Step directory failure lost completed rows or blocked independent collection'
 $checkpointDisk = Get-Content -LiteralPath (Join-Path $root 'qa-results.json') -Raw | ConvertFrom-Json
 Assert-QaTest ($checkpointDisk.status -ceq 'FAIL' -and @($checkpointDisk.results).Count -eq 3 -and $checkpointDisk.firstError.name -ceq 'functional-completion' -and $checkpointDisk.firstError.exitCode -eq 7) 'Progress checkpoint lost original failure'
+Assert-QaTest ($checkpointDisk.results[0].workDirectory -ceq (Join-Path $root 'mock-work') -and $checkpointDisk.results[0].temporaryDirectory -ceq (Join-Path $root 'mock-work/temp') -and $checkpointDisk.results[0].dataDirectory -ceq (Join-Path $root 'mock-work/data')) 'Progress report lost short work locations'
 $cancel = Join-Path $root 'cancel'; [IO.File]::WriteAllText($cancel,'stop')
 $cancelled = @(Invoke-QaPlan @((New-QaStep 'cancelled' 'must-not-launch' @())) $root $root $cancel)
 Assert-QaTest ($cancelled[0].status -ceq 'NOT_RUN' -and $cancelled[0].code -ceq 'cancelled') 'Cancellation launched work'
+$exportDefinition = @($definitions | Where-Object Name -eq 'Export-QaSmokeEvidence')[0].Extent.Text
+function Export-QaSmokeEvidence { param($WorkDirectory,$DestinationDirectory) throw 'qa_synthetic_export_failed' }
+$exportFailureReport = @{ status='FAIL'; runId='smoke-export'; sourceSha=('a' * 40); suite='Windows'; results=@(); firstError=$null; reportError=$null }
+$exportFailurePlan = @((New-QaStep 'bounded-logging' 'functional-completion' @()), (New-QaStep 'product-paging-dispatcher' 'independent' @()))
+$exportFailureRows = @(Invoke-QaPlan $exportFailurePlan $root $root '' $exportFailureReport)
+Assert-QaTest ($exportFailureRows[0].status -ceq 'FAIL' -and $exportFailureRows[0].code -ceq 'mock_exit' -and $exportFailureRows[0].exitCode -eq 7 -and $exportFailureRows[0].evidenceExportError.code -ceq 'qa_synthetic_export_failed') 'Smoke export erased the child failure'
+Assert-QaTest ($exportFailureRows[1].status -ceq 'FAIL' -and $exportFailureRows[1].code -ceq 'qa_smoke_evidence_export_failed' -and $exportFailureReport.firstError.name -ceq 'bounded-logging' -and $exportFailureReport.firstError.exitCode -eq 7) 'Smoke export failure passed or erased the first failure'
+. ([scriptblock]::Create($exportDefinition))
 
 $report = @{ status='FAIL'; runId='synthetic'; sourceSha=('a' * 40); suite='Local'; results=$dependentRows; firstError=@{ code='original_failure' } }
 function Set-Content { param($LiteralPath,$Encoding,[Parameter(ValueFromPipeline)]$Value) process { throw 'synthetic_unwritable_report' } }
@@ -206,11 +272,24 @@ Remove-Item Function:/Invoke-QaGit
 $functionalSource = Join-Path $repoRoot 'scripts/run-functional-completion-smoke.ps1'
 $functionalAst = [Management.Automation.Language.Parser]::ParseFile($functionalSource, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw 'Functional runner syntax errors' }
-foreach ($name in @('Read-FunctionalChildImage','Get-FunctionalChildImage','Stop-FunctionalChild')) {
+foreach ($name in @('Read-FunctionalChildImage','Get-FunctionalChildImage','Stop-FunctionalChild','New-FunctionalDataRoot','Copy-FunctionalEvidence')) {
     $definition = @($functionalAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true))
     Assert-QaTest ($definition.Count -eq 1) "Missing functional identity helper: $name"
     . ([scriptblock]::Create($definition[0].Extent.Text))
 }
+$functionalBase = if ($env:WIN7POS_QA_TEMP_BASE) { $env:WIN7POS_QA_TEMP_BASE } else { [IO.Path]::GetTempPath() }
+$functionalDataRoot = New-FunctionalDataRoot $functionalBase $repoRoot
+$functionalData = Join-Path $functionalDataRoot 'case-00'
+New-Item -ItemType Directory -Path $functionalData | Out-Null
+$functionalEvidence = Join-Path $unicode 'functional evidence'
+New-Item -ItemType Directory -Path $functionalEvidence | Out-Null
+Assert-QaTest ($functionalData.Length -le 89 -and -not (Test-QaWithin $functionalData $functionalEvidence)) 'Functional SQLite data inherited the report path length'
+foreach ($name in @('functional-completion.txt','measurements.csv','entry.json','synthetic.db')) { [IO.File]::WriteAllText((Join-Path $functionalData $name),'synthetic') }
+Copy-FunctionalEvidence $functionalData $functionalEvidence
+Assert-QaTest ((Test-Path -LiteralPath (Join-Path $functionalEvidence 'entry.json')) -and (Test-Path -LiteralPath (Join-Path $functionalEvidence 'measurements.csv')) -and -not (Test-Path -LiteralPath (Join-Path $functionalEvidence 'synthetic.db')) -and (Test-Path -LiteralPath (Join-Path $functionalData 'synthetic.db'))) 'Functional diagnostic export copied or removed SQLite data'
+Must-Fail { New-FunctionalDataRoot ('C:\' + ('long-temporary-base' * 8)) $repoRoot } 'too long'
+$functionalObserver = @($functionalAst.EndBlock.Statements | Where-Object { $_.Extent.Text -like '*Read-FunctionalChildImage $observer*' })
+Assert-QaTest ($functionalObserver.Count -eq 1 -and $functionalObserver[0].Extent.StartOffset -lt $functionalAst.Extent.Text.IndexOf('foreach ($name in $cases)')) 'Process observer initialization moved inside the timed WPF cases'
 if ($Runtime -and $IsWindows) {
     $own = [Diagnostics.Process]::GetCurrentProcess()
     try { Assert-QaTest ((Read-FunctionalChildImage $own) -ceq $own.MainModule.FileName) 'Native process image differs from owned synthetic host' }
