@@ -21,6 +21,12 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ('Win7POS.QA.Test.' + [Guid]::NewGu
 foreach ($folder in @([Environment]::GetFolderPath('CommonApplicationData'), [Environment]::GetFolderPath('LocalApplicationData'), [IO.Path]::GetTempPath())) {
     if ($folder) { Must-Fail { Assert-QaOutputRoot (Join-Path $folder 'Win7POS/qa-must-be-refused') $repoRoot } 'qa_output_overlaps_checkout_or_store_data' }
 }
+$previousDataOverride = $env:WIN7POS_DATA_DIR
+try {
+    $storeOverride = Join-Path $root 'separate store'
+    $env:WIN7POS_DATA_DIR = '  ' + $storeOverride + '  '
+    Must-Fail { Assert-QaOutputRoot (Join-Path $storeOverride 'qa-must-be-refused') $repoRoot } 'qa_output_overlaps_checkout_or_store_data'
+} finally { $env:WIN7POS_DATA_DIR = $previousDataOverride }
 New-Item -ItemType Directory -Path $root | Out-Null
 $unicode = Join-Path $root 'spazi e qualità'
 Assert-QaTest ((Assert-QaPath $unicode $root) -ceq $unicode) 'Unicode/spaces path changed'

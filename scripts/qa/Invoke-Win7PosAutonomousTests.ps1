@@ -43,7 +43,7 @@ function Assert-QaOutputRoot([string]$OutputRoot, [string]$RepoRoot) {
         [Environment]::GetFolderPath('LocalApplicationData'), $env:APPDATA)) {
         if ($folder) { $forbidden += Join-Path $folder 'Win7POS' }
     }
-    if ($env:WIN7POS_DATA_DIR) { $forbidden += $env:WIN7POS_DATA_DIR }
+    if (-not [string]::IsNullOrWhiteSpace($env:WIN7POS_DATA_DIR)) { $forbidden += $env:WIN7POS_DATA_DIR.Trim() }
     foreach ($denied in $forbidden) {
         if (Test-QaWithin $root $denied) { throw 'qa_output_overlaps_checkout_or_store_data' }
     }
