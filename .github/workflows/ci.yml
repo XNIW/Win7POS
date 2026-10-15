@@ -18,6 +18,7 @@ on:
           - none
           - timeline
           - candidate-three
+          - native-startup
       authorization_lease_smoke_only:
         description: Run only the WPF x86 authorization lease smoke path
         required: false
@@ -123,8 +124,61 @@ jobs:
           pwsh -NoProfile -File scripts/run-authorization-lease-smoke.ps1 -Configuration Release -Platform x86
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+  recovery-native-qualification:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic == 'native-startup' }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Qualify built-in CLR collector on synthetic x86 fixture
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Qualify -OutputDirectory "$env:RUNNER_TEMP/recovery-trace-qualification"
+      - name: Preserve qualification receipts without raw ETL
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Win7POS-Recovery-Trace-Qualification-${{ github.run_id }}
+          path: ${{ runner.temp }}/recovery-trace-qualification
+          if-no-files-found: error
+          retention-days: 14
+
+  recovery-native-diagnostic:
+    needs: recovery-native-qualification
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic == 'native-startup' }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Build exact-source x86 harness on fresh diagnostic VM
+        shell: pwsh
+        run: |
+          dotnet restore Win7POS.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: One cold full Recovery with bounded native startup trace
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Recovery -OutputDirectory "$env:RUNNER_TEMP/recovery-native-diagnostic"
+      - name: Preserve target diagnostics without raw ETL
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Win7POS-Recovery-Native-Diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/recovery-native-diagnostic
+          if-no-files-found: error
+          retention-days: 14
+
   recovery-diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' && inputs.recovery_diagnostic != 'native-startup' }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:

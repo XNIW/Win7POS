@@ -83,6 +83,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 admin.Stop();
                 Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, previousUrl);
                 FlushEvidence();
+                RecoveryOperationTimeline.Flush();
             }
         }
 
@@ -825,8 +826,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal CenterHost(Fixture fixture, Func<bool> allow = null, bool forceOwnerOutsideWorkArea = false)
             {
                 allow = allow ?? (() => true);
+                var operation = RecoveryOperationTimeline.Begin();
                 Owner = new Window { Width = 1024, Height = 768, WindowStartupLocation = WindowStartupLocation.CenterScreen, ShowInTaskbar = false };
+                RecoveryOperationTimeline.End("center_owner_new", operation);
+                operation = RecoveryOperationTimeline.Begin();
                 Owner.Show();
+                RecoveryOperationTimeline.End("center_owner_show", operation);
                 if (forceOwnerOutsideWorkArea)
                 {
                     // Only the plain QA caller is positioned outside its monitor.
@@ -835,15 +840,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Owner.Left = workArea.Left - 32;
                     Owner.Top = workArea.Top;
                 }
+                operation = RecoveryOperationTimeline.Begin();
                 Center = new SyncCenterDialog(fixture.Factory, (trigger, repair, token) => Task.FromResult(new CatalogSyncRunResult(true)),
                     _ => Task.FromResult(false), _ => Task.FromResult(allow()), allow, () => _generation) { Owner = Owner };
+                RecoveryOperationTimeline.End("center_dialog_new", operation);
                 _renderedHandler = (_, __) =>
                 {
                     Center.ContentRendered -= _renderedHandler;
                     _rendered.TrySetResult(true);
                 };
                 Center.ContentRendered += _renderedHandler;
+                operation = RecoveryOperationTimeline.Begin();
                 Center.Show();
+                RecoveryOperationTimeline.End("center_dialog_show", operation);
+                RecoveryOperationTimeline.Flush();
             }
             internal async Task ReadyAsync()
             {
@@ -1339,6 +1349,7 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
             catch (Exception ex) { Evidence.Add(name + "=FAIL " + ex); failures.Add(name + ": " + ex.Message); }
             FlushEvidence();
             Console.WriteLine("IMPORT_RECOVERY_PHASE=" + Evidence[Evidence.Count - 1]);
+            RecoveryOperationTimeline.Flush();
         }
         private static void RecordPhase(string phase)
         {
@@ -1346,8 +1357,10 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
             Evidence.Add("phase=" + phase + "; timeline_ms=" + Timeline.Elapsed.TotalMilliseconds.ToString("F3", Invariant) +
                 "; thread=" + Thread.CurrentThread.ManagedThreadId + "; dispatcher_shutdown=" + dispatcher.HasShutdownStarted +
                 "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
+            var sink = RecoveryOperationTimeline.Begin();
             FlushEvidence();
             Console.WriteLine("IMPORT_RECOVERY_PHASE=" + phase);
+            RecoveryOperationTimeline.End("phase_sink:" + phase, sink);
         }
         private static void FlushEvidence()
         {
