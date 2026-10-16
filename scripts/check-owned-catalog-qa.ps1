@@ -23,4 +23,6 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # The autonomous supervisor contract uses only synthetic PowerShell children.
 & $pwsh -NoProfile -File (Join-Path $repoRoot 'tests/qa/Test-Win7PosAutonomousTests.ps1') -Runtime
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $pwsh -NoProfile -File (Join-Path $repoRoot 'tests/qa/Test-RequiredGateFailureOutput.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host 'OWNED_CATALOG_QA_GATE=PASS'

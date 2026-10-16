@@ -4,6 +4,12 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-10-16 – Evidenza completa per i gate falliti dopo PR128
+
+- PR128 integrata normalmente in `1f7327f` dopo regressione causale, review e CI/Security sul candidato `0e9580a`: 1.599 Core/Data, 50 gate, visual e 19 scenari, Recovery 11/11 in 30,152 s con 60.000 ms invariati. Checkout allineato senza toccare lo stash preesistente.
+- Release Pack postmerge `38978013394` FAIL 49/50 sul gate sintetico `check-owned-catalog-qa`. Nessun artifact: il wrapper conserva solo una tabella troncata, selezionando anche nomi TAP passati con `missing`. La causa del test figlio storico non è recuperabile e resta UNKNOWN; una prova locale sintetica PASS non la spiega.
+- Corretto esclusivamente l'output dei gate falliti: trascrizione completa con nome e exit code, prima del riepilogo. Regressione per errore lungo seguito da TAP passati, FAIL con exit 0 e successo; classificazione e suite conservate. Nessun nuovo avvio Asus, modifica del timeout Recovery o retry del workflow invariato. Pacchetto e CI postmerge restano da qualificare sul nuovo SHA.
+
 ## 2026-10-16 – Recovery: input dell'ombra separato dai controlli dinamici
 
 - Ripresa da `3026ce5`; riusato il prefisso nativo `32ddfbd` con stack di tutti i worker, senza nuove tracce. Mappatura `Image/Load`: thread 6216 con 9.846 stack WPF, 8.580 Direct3D e 8.365 WARP; altri sette worker con WARP e CPU osservata. Stack di scheduling e traccia parziale, non un profilo CPU completo. Il `DialogShellWindow` è invariato fra i due SHA.
