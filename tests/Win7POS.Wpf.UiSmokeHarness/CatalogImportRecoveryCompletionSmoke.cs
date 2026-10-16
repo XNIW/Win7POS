@@ -17,6 +17,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Dapper;
@@ -94,6 +95,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var syncCalls = 0;
             var parentProgressWhileRecovery = false;
             var parentCommandsLocked = false;
+            var shadowIsolated = true;
             using (var host = new CenterHost(fixture, runSync: (trigger, repair, token) =>
             {
                 syncCalls++;
@@ -101,6 +103,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }))
             {
                 await host.ReadyAsync();
+                shadowIsolated &= ObserveShadowIsolation(host.Center, "center_idle", "OperationProgress");
                 var progress = Named<ProgressBar>(host.Center, "OperationProgress");
                 var syncButton = Named<Button>(host.Center, "SyncNowButton");
                 foreach (var outcome in new[] { "success", "failure", "cancel" })
@@ -110,6 +113,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     syncButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Require(progress.IsVisible && progress.IsIndeterminate && !syncButton.IsEnabled,
                         "real sync did not show progress or lock commands: " + outcome);
+                    shadowIsolated &= ObserveShadowIsolation(host.Center, "center_sync_" + outcome, "OperationProgress");
                     syncButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Require(syncCalls == callsBefore + 1, "busy Sync Center started duplicate sync");
                     if (outcome == "success") syncCompletion.SetResult(new CatalogSyncRunResult(true));
@@ -124,6 +128,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 try
                 {
                     await ReadyAsync(dialog);
+                    shadowIsolated &= ObserveShadowIsolation(dialog, "recovery_idle", "RecoveryRows", "RecoveryProgress");
                     parentProgressWhileRecovery = progress.IsVisible || progress.IsIndeterminate;
                     parentCommandsLocked = !Named<ItemsControl>(host.Center, "ImportRecoveryList").IsEnabled &&
                         !syncButton.IsEnabled && !Named<Button>(host.Center, "RetryButton").IsEnabled &&
@@ -153,6 +158,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Click(dialog, "CommitButton");
                         Require(Busy(dialog) && !grid.IsEnabled && !Named<Button>(dialog, "PrepareButton").IsEnabled && !Named<Button>(dialog, "CommitButton").IsEnabled && Named<Button>(dialog, "CancelRecoveryButton").IsEnabled,
                             "recovery did not own loading state before its await");
+                        shadowIsolated &= ObserveShadowIsolation(dialog, "recovery_commit", "RecoveryRows", "RecoveryProgress");
                         Click(dialog, "CommitButton");
                         Click(dialog, "PrepareButton");
                         await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.Input);
@@ -160,6 +166,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                     await IdleAsync(dialog);
                     Require(Named<TextBlock>(dialog, "RecoveryStatus").Text == PosLocalization.T("importRecovery.queued") && grid.IsReadOnly, "recovery did not report queued pending ACK");
+                    shadowIsolated &= ObserveShadowIsolation(dialog, "recovery_queued", "RecoveryRows", "RecoveryProgress");
                     fixture.CheckReplacement();
                     var backups = Directory.GetFiles(AppPaths.BackupsDirectory, "before-catalog-recovery-*.db").Except(backupsBefore).ToArray();
                     Require(backups.Length == 1, "double confirm made multiple backups or no verified backup");
@@ -183,6 +190,33 @@ namespace Win7POS.Wpf.UiSmokeHarness
             // still exercises every existing assertion and all eleven groups.
             Require(parentCommandsLocked && !parentProgressWhileRecovery,
                 "idle Sync Center animated progress behind modal Recovery or unlocked parent commands");
+            Require(shadowIsolated, "dialog shadow includes changing controls in its effect input or changed the card silhouette");
+        }
+
+        private static bool ObserveShadowIsolation(Window window, string stage, params string[] changingControls)
+        {
+            var card = (window.Content as Panel)?.Children.OfType<Border>().SingleOrDefault();
+            Require(card != null, "missing real overlay card for shadow observation");
+            var shadows = Descendants(card).OfType<Border>().Where(border => border.Effect is DropShadowEffect).ToArray();
+            var shadow = shadows.SingleOrDefault();
+            var effect = shadow?.Effect as DropShadowEffect;
+            var bounds = shadow == null ? Rect.Empty : shadow.TransformToAncestor(card).TransformBounds(new Rect(shadow.RenderSize));
+            var silhouette = effect != null && effect.BlurRadius == 16 && effect.ShadowDepth == 0 && effect.Opacity == 0.10 &&
+                shadow.CornerRadius == card.CornerRadius && shadow.BorderThickness == card.BorderThickness &&
+                SameBounds(bounds, new Rect(card.RenderSize));
+            var affectedPixels = 0d;
+            foreach (var name in changingControls)
+            {
+                for (DependencyObject parent = Named<FrameworkElement>(window, name); parent != null; parent = VisualTreeHelper.GetParent(parent))
+                    if (parent is FrameworkElement element && element.Effect != null)
+                        affectedPixels += element.ActualWidth * element.ActualHeight;
+            }
+            var isolated = silhouette && shadow.Child == null && !shadow.IsHitTestVisible && !shadow.Focusable && affectedPixels == 0;
+            Evidence.Add("shadow_input stage=" + stage + "; isolated=" + isolated + "; silhouette_preserved=" + silhouette +
+                "; dynamic_ancestor_effect_dip2=" + affectedPixels.ToString("F0", Invariant) +
+                "; card=" + RectText(new Rect(card.RenderSize)) + "; shadow=" + RectText(bounds) +
+                "; render_tier=" + (RenderCapability.Tier >> 16));
+            return isolated;
         }
 
         private static async Task CheckDraftReopenAsync()
