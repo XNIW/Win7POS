@@ -166,6 +166,40 @@ non qualifica Win7, stampante, scanner o cassetto fisici.
 
 ## Interpretazione delle evidenze Recovery
 
+La ripresa da `3026ce5` riusa anche il prefisso `native-kernel` dello SHA
+`32ddfbd` (43,085 s del processo): a differenza dell'export Legacy successivo,
+contiene stack dei worker. La mappatura degli indirizzi agli intervalli
+`Image/Load` trova nel thread di rendering 6216 9.846 stack con `wpfgfx`,
+8.580 con `d3d9` e 8.365 con `d3d10warp`; altri sette thread con CPU osservata
+contengono chiamate WARP. Sono stack di scheduling, non campioni CPU pesati;
+non assegnare a una funzione i secondi CPU del thread. Il prefisso rimane
+incompleto e il relativo TIMEOUT rimane tale.
+
+Il `DialogShellWindow` di quel sorgente e di `3026ce5` è identico: applica
+`DropShadowEffect` al bordo che contiene tutti i controlli. Le modifiche della
+griglia e del progress animato invalidano quindi l'input dell'effetto esteso
+all'intera card. Il meccanismo è descritto anche nella
+[guida Microsoft WPF](https://devblogs.microsoft.com/visualstudio/wpf-in-visual-studio-2010-part-2-performance-tuning/).
+La correzione separa un bordo decorativo vuoto nel medesimo `mainGrid`, con
+gli stessi colori, raggi, spessore, blur, opacità e bounds. Il bordo esterno
+continua a governare sizing, ownership e hit-test; nessun cambio di renderer,
+cache, runtime o monitor. La regressione osserva sette stati reali di Sync
+Center/Recovery: l'ombra deve conservare la sagoma e nessun controllo dinamico
+deve avere un effetto nei propri antenati. Il verdetto viene emesso dopo gli
+assert originali del primo gruppo; gli altri dieci gruppi restano eseguiti.
+Questa separazione non promette che WPF non rasterizzi mai più l'ombra:
+elimina i controlli dinamici dal suo input. La qualifica del timeout richiede
+ancora i risultati del candidato esatto, oltre alla regressione causale.
+
+Baseline test-only `b81f5ab`, run `38975083907`: TIMEOUT a 60.085,986 ms
+(budget processo 60.000), cleanup confermato. I sette punti osservati hanno
+`isolated=False`, sagoma conservata e input dell'effetto esteso ai controlli.
+Il primo gruppo conclude tutti gli assert originali e fallisce soltanto la
+nuova regressione; i successivi sei gruppi passano, l'ottavo resta incompleto.
+Le quattordici catture sono conservate; gli ultimi gruppi non sono dichiarati
+PASS. L'ingresso nel corpo functional è a 18.331,295 ms dalla creazione:
+la baseline comprende anche un costo iniziale, che questa patch non elimina.
+
 La regressione aggiunta dopo `5a9d66c` distingue il blocco dei comandi dal
 sync effettivo: il Sync Center non deve animare il proprio progress mentre
 attende il dialogo Recovery modale. Il test controlla anche progress attivo

@@ -201,7 +201,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var shadow = shadows.SingleOrDefault();
             var effect = shadow?.Effect as DropShadowEffect;
             var bounds = shadow == null ? Rect.Empty : shadow.TransformToAncestor(card).TransformBounds(new Rect(shadow.RenderSize));
-            var silhouette = effect != null && effect.BlurRadius == 16 && effect.ShadowDepth == 0 && effect.Opacity == 0.10 &&
+            var silhouette = effect != null && effect.BlurRadius == 16 && effect.ShadowDepth == 0 && effect.Opacity == 0.10 && effect.Color == Colors.Black &&
+                shadow.Background is SolidColorBrush background && background.Color.A == 255 && background.Opacity == 1 && shadow.BorderBrush != null &&
                 shadow.CornerRadius == card.CornerRadius && shadow.BorderThickness == card.BorderThickness &&
                 SameBounds(bounds, new Rect(card.RenderSize));
             var affectedPixels = 0d;

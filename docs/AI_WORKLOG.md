@@ -4,6 +4,13 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-10-16 – Recovery: input dell'ombra separato dai controlli dinamici
+
+- Ripresa da `3026ce5`; riusato il prefisso nativo `32ddfbd` con stack di tutti i worker, senza nuove tracce. Mappatura `Image/Load`: thread 6216 con 9.846 stack WPF, 8.580 Direct3D e 8.365 WARP; altri sette worker con WARP e CPU osservata. Stack di scheduling e traccia parziale, non un profilo CPU completo. Il `DialogShellWindow` è invariato fra i due SHA.
+- Causa candidata: effetto dell'ombra sul contenitore di griglia e progress, che amplia il ridisegno quando cambiano i figli. Regressione in sette stati reali, valutata dopo tutti gli assert originali del primo gruppo. Patch limitata alla base: bordo decorativo vuoto dietro ai controlli, stessi parametri e bounds; root, sizing, owner e hit-test conservati. Undici gruppi, quattordici catture, carichi 5.000/1.000 e 60.000 ms invariati.
+- Baseline test-only `b81f5ab`, run `38975083907`: TIMEOUT 60.085,986 ms con cleanup; sette osservazioni `isolated=False` e sagoma invariata, primo gruppo FAIL sulla nuova regressione dopo tutti gli assert originali, successivi sei PASS, ottavo incompleto, quattordici catture conservate. Il corpo functional inizia a 18.331,295 ms: il costo iniziale resta distinto dall'effetto sui controlli.
+- Build WPF/harness Release x86 e standard dialog PASS; review statica senza rilievi bloccanti. Verifica hosted corretta, CI e Security dell'HEAD finale devono essere riscontrate nelle ricevute prima dell'integrazione. Nessun rilancio Asus o indagine sui permessi; Staging e Win7 restano separati.
+
 ## 2026-10-16 – Recovery: progress del parent durante il dialogo modale
 
 - Ripresa da `5a9d66c`, senza riaprire i permessi: baseline hosted test-only `ce76a62`, run `38949548176`, riproduce il progress Sync Center visibile/indeterminato mentre Recovery attende l'utente. Tutti gli assert originali e gli undici gruppi eseguiti; dieci gruppi PASS, primo gruppo FAIL soltanto sulla nuova regressione, processo 53.252,673 ms, cleanup confermato. Sync controllato success/fault/cancel e guard doppio click PASS.
