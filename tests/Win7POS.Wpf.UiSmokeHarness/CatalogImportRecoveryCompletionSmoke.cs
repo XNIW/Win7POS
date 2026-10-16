@@ -90,14 +90,46 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static async Task CheckFlowAsync()
         {
             var fixture = await Fixture.CreateAsync("flow");
-            using (var host = new CenterHost(fixture))
+            var syncCompletion = new TaskCompletionSource<CatalogSyncRunResult>();
+            var syncCalls = 0;
+            var parentProgressWhileRecovery = false;
+            var parentCommandsLocked = false;
+            using (var host = new CenterHost(fixture, runSync: (trigger, repair, token) =>
+            {
+                syncCalls++;
+                return syncCompletion.Task;
+            }))
             {
                 await host.ReadyAsync();
+                var progress = Named<ProgressBar>(host.Center, "OperationProgress");
+                var syncButton = Named<Button>(host.Center, "SyncNowButton");
+                foreach (var outcome in new[] { "success", "failure", "cancel" })
+                {
+                    syncCompletion = new TaskCompletionSource<CatalogSyncRunResult>();
+                    var callsBefore = syncCalls;
+                    syncButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Require(progress.IsVisible && progress.IsIndeterminate && !syncButton.IsEnabled,
+                        "real sync did not show progress or lock commands: " + outcome);
+                    syncButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Require(syncCalls == callsBefore + 1, "busy Sync Center started duplicate sync");
+                    if (outcome == "success") syncCompletion.SetResult(new CatalogSyncRunResult(true));
+                    else if (outcome == "failure") syncCompletion.SetException(new InvalidOperationException("synthetic sync failure"));
+                    else syncCompletion.SetCanceled();
+                    await WaitAsync(() => syncButton.IsEnabled, "Sync Center " + outcome + " completion");
+                    Require(!progress.IsVisible && !progress.IsIndeterminate, "completed sync retained animated progress: " + outcome);
+                    Evidence.Add("sync_progress outcome=" + outcome + "; active_during_work=True; inactive_after_work=True; duplicate_calls=0");
+                }
                 CheckPresentation(host.ViewModel.ImportRecoveries.Single(), fixture);
                 var dialog = await host.OpenRecoveryAsync();
                 try
                 {
                     await ReadyAsync(dialog);
+                    parentProgressWhileRecovery = progress.IsVisible || progress.IsIndeterminate;
+                    parentCommandsLocked = !Named<ItemsControl>(host.Center, "ImportRecoveryList").IsEnabled &&
+                        !syncButton.IsEnabled && !Named<Button>(host.Center, "RetryButton").IsEnabled &&
+                        !Named<Button>(host.Center, "FullRepairButton").IsEnabled;
+                    Evidence.Add("sync_parent_during_recovery progress_visible=" + progress.IsVisible +
+                        "; progress_indeterminate=" + progress.IsIndeterminate + "; commands_locked=" + parentCommandsLocked);
                     var grid = Named<DataGrid>(dialog, "RecoveryRows");
                     var rows = Rows(dialog);
                     Require(rows.Length == 3 && rows[0].RetailPrice == "2147483648", "recovery omitted original rows");
@@ -143,8 +175,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Require(!waiting.CanPrepare && waiting.State.StartsWith(PosLocalization.T("importRecovery.awaitingAck"), StringComparison.Ordinal) &&
                     waiting.Batch.PlanCompletedParts == 0 && waiting.Batch.PlanCompletedRows == 0,
                     "original was presented as resolved before ACK");
+                Require(syncButton.IsEnabled && !progress.IsVisible && !progress.IsIndeterminate,
+                    "closing Recovery did not restore idle Sync Center controls");
             }
             Require(!Application.Current.Windows.OfType<CatalogImportRecoveryDialog>().Any(), "orphan recovery window after flow");
+            // Evaluate after the complete original flow so the failing baseline
+            // still exercises every existing assertion and all eleven groups.
+            Require(parentCommandsLocked && !parentProgressWhileRecovery,
+                "idle Sync Center animated progress behind modal Recovery or unlocked parent commands");
         }
 
         private static async Task CheckDraftReopenAsync()
@@ -823,7 +861,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private readonly TaskCompletionSource<bool> _rendered = new TaskCompletionSource<bool>();
             private EventHandler _renderedHandler;
             internal SyncCenterViewModel ViewModel => (SyncCenterViewModel)Center.DataContext;
-            internal CenterHost(Fixture fixture, Func<bool> allow = null, bool forceOwnerOutsideWorkArea = false)
+            internal CenterHost(Fixture fixture, Func<bool> allow = null, bool forceOwnerOutsideWorkArea = false,
+                Func<CatalogSyncTrigger, bool, CancellationToken, Task<CatalogSyncRunResult>> runSync = null)
             {
                 allow = allow ?? (() => true);
                 var operation = RecoveryOperationTimeline.Begin();
@@ -841,7 +880,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Owner.Top = workArea.Top;
                 }
                 operation = RecoveryOperationTimeline.Begin();
-                Center = new SyncCenterDialog(fixture.Factory, (trigger, repair, token) => Task.FromResult(new CatalogSyncRunResult(true)),
+                Center = new SyncCenterDialog(fixture.Factory, runSync ?? ((trigger, repair, token) => Task.FromResult(new CatalogSyncRunResult(true))),
                     _ => Task.FromResult(false), _ => Task.FromResult(allow()), allow, () => _generation) { Owner = Owner };
                 RecoveryOperationTimeline.End("center_dialog_new", operation);
                 _renderedHandler = (_, __) =>
