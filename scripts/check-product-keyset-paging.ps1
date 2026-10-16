@@ -38,6 +38,9 @@ $wpfSmokeProgram = Read-RepoFile "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $wpfPagingSmoke = Read-RepoFile "tests/Win7POS.Wpf.UiSmokeHarness/ProductPagingWpfSmoke.cs"
 $wpfPagingSmokeRunner = Read-RepoFile "scripts/run-product-paging-dispatcher-smoke.ps1"
 $ciWorkflow = Read-RepoFile ".github/workflows/ci.yml"
+if ($ciWorkflow -match 'Invoke-Win7PosAutonomousTests\.ps1 -Suite Windows') {
+    $ciWorkflow += Read-RepoFile 'scripts/qa/Invoke-Win7PosAutonomousTests.ps1'
+}
 
 Check ($core -match 'class\s+ProductPageCursor' -and
        $core -match 'ExactRank' -and

@@ -39,3 +39,5 @@ Prima di toccare uno di questi file o pattern, leggere `docs/DIALOG_STANDARD.md`
 
 - `pwsh -File scripts/check-dialog-standards.ps1`
 - `dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86`
+- QA ripetibile: `pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Local` (oppure `Windows` per la suite WPF net48/x86 completa).
+- Scope e prerequisiti esterni: `docs/QA_AUTOMATION_AUTHORIZATION.md`. I report fuori dal repository conservano anche FAIL/TIMEOUT/NOT_RUN; nessun retry live automatico.

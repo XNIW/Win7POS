@@ -73,6 +73,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [STAThread]
         private static void Main(string[] args)
         {
+            RecoveryStartupTimeline.Start(args);
             // This closure witness returns before WPF startup, login, data-dir or DB access.
             if (HasArg(args, "--valuetuple-release-closure-smoke"))
             {
@@ -256,6 +257,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
 
             Directory.CreateDirectory(dataDir);
+            RecoveryStartupTimeline.Attach(dataDir);
             if (restrictedQaData)
             {
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
@@ -314,6 +316,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Application.ResourceAssembly =
                     typeof(ProductEditDialog).Assembly;
             }
+            RecoveryStartupTimeline.Record("before_wpf_application");
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             AddApplicationResources(app);
             app.DispatcherUnhandledException += (_, e) =>
@@ -328,6 +331,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             };
             app.Startup += async (_, __) =>
             {
+                RecoveryStartupTimeline.Record("wpf_startup_callback_entered");
                 try
                 {
                     if (productImageUiSmoke)
@@ -520,9 +524,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                     if (HasArg(args, "--functional-completion-smoke") || HasArg(args, "--cart-performance"))
                     {
+                        RecoveryStartupTimeline.Record("before_functional_call");
                         var result = await FunctionalCompletionSmoke.RunAsync(dataDir, HasArg(args, "--cart-performance"),
                             ValueAfter(args, "--products"), ValueAfter(args, "--scenario")).ConfigureAwait(true);
+                        RecoveryStartupTimeline.Record("functional_await_completed");
                         File.WriteAllText(Path.Combine(dataDir, "functional-completion.txt"), result, Encoding.UTF8);
+                        RecoveryStartupTimeline.Record("result_file_written");
                         if (string.Equals(ValueAfter(args, "--scenario"), "PERF_visual_lifetime_and_public_commands", StringComparison.Ordinal))
                             PerfPhaseDrainObservation.TryWriteArtifact(dataDir, result);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
@@ -783,6 +790,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
             };
             app.Run();
+            RecoveryStartupTimeline.Record("app_run_returned");
         }
 
         private static string EnsureSyntheticTrustedSessionSeedPath(

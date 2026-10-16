@@ -17,6 +17,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Dapper;
@@ -44,6 +45,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static PosAdminWebOptions _options;
         private static readonly List<string> Evidence = new List<string>();
         private static int _flushedEvidenceCount;
+        private static readonly Stopwatch Timeline = Stopwatch.StartNew();
 
         internal static async Task RunAsync()
         {
@@ -59,8 +61,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var store = new PosTrustedDeviceStore();
                 store.SaveFirstLogin(AuthorizationLeaseWpfSmoke.BuildResponse(true), "qa-recovery-ui-" + Guid.NewGuid().ToString("N"));
                 Require(store.TryRead(out _session) && PosOnlineSyncSupervisorHost.TryCreateGeneration(_session, out _generation), "trusted generation fixture unavailable");
-                Evidence.Add("scope=local_net48_x86_real_sync_center_recovery_dialog; base_products_per_batch=3; invalid_rows=1; nochange_rows=2; supported_local_plan_rows=5000; authoritative_large_admin_test=separate_interop_corpus; accepted_child=loopback_receipt_retirement_race; live_admin=False; physical_hardware=False");
-                Evidence.Add("machine=" + Environment.MachineName + "; clr_reported_os_compatibility=" + Environment.OSVersion + "; clr=" + Environment.Version + "; pointer_bytes=" + IntPtr.Size);
+                Evidence.Add("scope=local_net48_x86_real_sync_center_recovery_dialog; timeline_origin=type_initialization; base_products_per_batch=3; invalid_rows=1; nochange_rows=2; supported_local_plan_rows=5000; authoritative_large_admin_test=separate_interop_corpus; accepted_child=loopback_receipt_retirement_race; live_admin=False; physical_hardware=False");
+                using (var process = Process.GetCurrentProcess())
+                    Evidence.Add("machine=" + Environment.MachineName + "; clr_reported_os_compatibility=" + Environment.OSVersion + "; clr=" + Environment.Version + "; pointer_bytes=" + IntPtr.Size +
+                        "; pid=" + process.Id + "; creation_utc=" + process.StartTime.ToUniversalTime().ToString("O", Invariant));
                 await CheckAsync(failures, "sync_center_correct_verify_double_commit_backup", CheckFlowAsync);
                 await CheckAsync(failures, "failure_draft_rollback_retry", CheckFailureAsync);
                 await CheckAsync(failures, "draft_close_reopen_verify_apply_once", CheckDraftReopenAsync);
@@ -80,20 +84,57 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 admin.Stop();
                 Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, previousUrl);
                 FlushEvidence();
+                RecoveryOperationTimeline.Flush();
             }
         }
 
         private static async Task CheckFlowAsync()
         {
             var fixture = await Fixture.CreateAsync("flow");
-            using (var host = new CenterHost(fixture))
+            var syncCompletion = new TaskCompletionSource<CatalogSyncRunResult>();
+            var syncCalls = 0;
+            var parentProgressWhileRecovery = false;
+            var parentCommandsLocked = false;
+            var shadowIsolated = true;
+            using (var host = new CenterHost(fixture, runSync: (trigger, repair, token) =>
+            {
+                syncCalls++;
+                return syncCompletion.Task;
+            }))
             {
                 await host.ReadyAsync();
+                shadowIsolated &= ObserveShadowIsolation(host.Center, "center_idle", "OperationProgress");
+                var progress = Named<ProgressBar>(host.Center, "OperationProgress");
+                var syncButton = Named<Button>(host.Center, "SyncNowButton");
+                foreach (var outcome in new[] { "success", "failure", "cancel" })
+                {
+                    syncCompletion = new TaskCompletionSource<CatalogSyncRunResult>();
+                    var callsBefore = syncCalls;
+                    syncButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Require(progress.IsVisible && progress.IsIndeterminate && !syncButton.IsEnabled,
+                        "real sync did not show progress or lock commands: " + outcome);
+                    shadowIsolated &= ObserveShadowIsolation(host.Center, "center_sync_" + outcome, "OperationProgress");
+                    syncButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Require(syncCalls == callsBefore + 1, "busy Sync Center started duplicate sync");
+                    if (outcome == "success") syncCompletion.SetResult(new CatalogSyncRunResult(true));
+                    else if (outcome == "failure") syncCompletion.SetException(new InvalidOperationException("synthetic sync failure"));
+                    else syncCompletion.SetCanceled();
+                    await WaitAsync(() => syncButton.IsEnabled, "Sync Center " + outcome + " completion");
+                    Require(!progress.IsVisible && !progress.IsIndeterminate, "completed sync retained animated progress: " + outcome);
+                    Evidence.Add("sync_progress outcome=" + outcome + "; active_during_work=True; inactive_after_work=True; duplicate_calls=0");
+                }
                 CheckPresentation(host.ViewModel.ImportRecoveries.Single(), fixture);
                 var dialog = await host.OpenRecoveryAsync();
                 try
                 {
                     await ReadyAsync(dialog);
+                    shadowIsolated &= ObserveShadowIsolation(dialog, "recovery_idle", "RecoveryRows", "RecoveryProgress");
+                    parentProgressWhileRecovery = progress.IsVisible || progress.IsIndeterminate;
+                    parentCommandsLocked = !Named<ItemsControl>(host.Center, "ImportRecoveryList").IsEnabled &&
+                        !syncButton.IsEnabled && !Named<Button>(host.Center, "RetryButton").IsEnabled &&
+                        !Named<Button>(host.Center, "FullRepairButton").IsEnabled;
+                    Evidence.Add("sync_parent_during_recovery progress_visible=" + progress.IsVisible +
+                        "; progress_indeterminate=" + progress.IsIndeterminate + "; commands_locked=" + parentCommandsLocked);
                     var grid = Named<DataGrid>(dialog, "RecoveryRows");
                     var rows = Rows(dialog);
                     Require(rows.Length == 3 && rows[0].RetailPrice == "2147483648", "recovery omitted original rows");
@@ -117,6 +158,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Click(dialog, "CommitButton");
                         Require(Busy(dialog) && !grid.IsEnabled && !Named<Button>(dialog, "PrepareButton").IsEnabled && !Named<Button>(dialog, "CommitButton").IsEnabled && Named<Button>(dialog, "CancelRecoveryButton").IsEnabled,
                             "recovery did not own loading state before its await");
+                        shadowIsolated &= ObserveShadowIsolation(dialog, "recovery_commit", "RecoveryRows", "RecoveryProgress");
                         Click(dialog, "CommitButton");
                         Click(dialog, "PrepareButton");
                         await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.Input);
@@ -124,6 +166,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                     await IdleAsync(dialog);
                     Require(Named<TextBlock>(dialog, "RecoveryStatus").Text == PosLocalization.T("importRecovery.queued") && grid.IsReadOnly, "recovery did not report queued pending ACK");
+                    shadowIsolated &= ObserveShadowIsolation(dialog, "recovery_queued", "RecoveryRows", "RecoveryProgress");
                     fixture.CheckReplacement();
                     var backups = Directory.GetFiles(AppPaths.BackupsDirectory, "before-catalog-recovery-*.db").Except(backupsBefore).ToArray();
                     Require(backups.Length == 1, "double confirm made multiple backups or no verified backup");
@@ -139,8 +182,42 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Require(!waiting.CanPrepare && waiting.State.StartsWith(PosLocalization.T("importRecovery.awaitingAck"), StringComparison.Ordinal) &&
                     waiting.Batch.PlanCompletedParts == 0 && waiting.Batch.PlanCompletedRows == 0,
                     "original was presented as resolved before ACK");
+                Require(syncButton.IsEnabled && !progress.IsVisible && !progress.IsIndeterminate,
+                    "closing Recovery did not restore idle Sync Center controls");
             }
             Require(!Application.Current.Windows.OfType<CatalogImportRecoveryDialog>().Any(), "orphan recovery window after flow");
+            // Evaluate after the complete original flow so the failing baseline
+            // still exercises every existing assertion and all eleven groups.
+            Require(parentCommandsLocked && !parentProgressWhileRecovery,
+                "idle Sync Center animated progress behind modal Recovery or unlocked parent commands");
+            Require(shadowIsolated, "dialog shadow includes changing controls in its effect input or changed the card silhouette");
+        }
+
+        private static bool ObserveShadowIsolation(Window window, string stage, params string[] changingControls)
+        {
+            var card = (window.Content as Panel)?.Children.OfType<Border>().SingleOrDefault();
+            Require(card != null, "missing real overlay card for shadow observation");
+            var shadows = Descendants(card).OfType<Border>().Where(border => border.Effect is DropShadowEffect).ToArray();
+            var shadow = shadows.SingleOrDefault();
+            var effect = shadow?.Effect as DropShadowEffect;
+            var bounds = shadow == null ? Rect.Empty : shadow.TransformToAncestor(card).TransformBounds(new Rect(shadow.RenderSize));
+            var silhouette = effect != null && effect.BlurRadius == 16 && effect.ShadowDepth == 0 && effect.Opacity == 0.10 && effect.Color == Colors.Black &&
+                shadow.Background is SolidColorBrush background && background.Color.A == 255 && background.Opacity == 1 && shadow.BorderBrush != null &&
+                shadow.CornerRadius == card.CornerRadius && shadow.BorderThickness == card.BorderThickness &&
+                SameBounds(bounds, new Rect(card.RenderSize));
+            var affectedPixels = 0d;
+            foreach (var name in changingControls)
+            {
+                for (DependencyObject parent = Named<FrameworkElement>(window, name); parent != null; parent = VisualTreeHelper.GetParent(parent))
+                    if (parent is FrameworkElement element && element.Effect != null)
+                        affectedPixels += element.ActualWidth * element.ActualHeight;
+            }
+            var isolated = silhouette && shadow.Child == null && !shadow.IsHitTestVisible && !shadow.Focusable && affectedPixels == 0;
+            Evidence.Add("shadow_input stage=" + stage + "; isolated=" + isolated + "; silhouette_preserved=" + silhouette +
+                "; dynamic_ancestor_effect_dip2=" + affectedPixels.ToString("F0", Invariant) +
+                "; card=" + RectText(new Rect(card.RenderSize)) + "; shadow=" + RectText(bounds) +
+                "; render_tier=" + (RenderCapability.Tier >> 16));
+            return isolated;
         }
 
         private static async Task CheckDraftReopenAsync()
@@ -734,11 +811,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Click(dialog, "PrepareButton");
                     await IdleAsync(dialog);
                     Require(Named<TextBlock>(dialog, "RecoveryStatus").Text == PosLocalization.T("importRecovery.queued"), "large recovery did not queue a replacement");
+                    RecordPhase("large_postcommit:" + rowCount + ":begin");
                     var backups = Directory.GetFiles(AppPaths.BackupsDirectory, "before-catalog-recovery-*.db").Except(backupsBefore).ToArray();
                     Require(backups.Length == 1, "single large recovery made no verified backup or multiple backups");
                     var backupFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(backups[0]));
                     var backupValidation = await Task.Run(() => new DbMaintenanceRepository(backupFactory).ValidateAsync());
                     Require(backupValidation.IsValid, "large recovery backup was not SQLite-verified");
+                    RecordPhase("large_backup_validation:" + rowCount + ":complete");
                     await Task.Run(() =>
                     {
                         using (var connection = backupFactory.Open())
@@ -746,6 +825,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 connection.ExecuteScalar<long>("SELECT count(*) FROM catalog_import_outbox") == 1, "large backup was captured after recovery effects");
                     });
                     var progress = await new CatalogImportRecoveryService(fixture.Factory).GetPlanProgressAsync(fixture.OriginalId, CancellationToken.None);
+                    RecordPhase("large_plan_progress:" + rowCount + ":complete");
                     Require(progress.TotalRows == rowCount && progress.CompletedRows == 0 && progress.TotalParts >= (rowCount + 999) / 1000,
                         "persisted plan progress lost rows or claimed a partial ACK");
                     CheckFourRecoveryLanguages(dialog, () => PosLocalization.T("importRecovery.queued"),
@@ -756,6 +836,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Require(observedBatches == expectedBatches && observedProductWrites == 1 && observedHistoryWrites == 1 && applyOperationsOnDispatcher == 0, "large commit SQL batching or worker-thread execution regressed");
                     Require(sql.ProductCommandsOnCallingThread == 0, "large recovery product query ran on Dispatcher");
                     fixture.CheckReplacement();
+                    RecordPhase("large_postcommit:" + rowCount + ":complete");
                 }
                 finally { dialog.Close(); }
                 await samples.StopAsync(); samples.Write();
@@ -815,11 +896,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private readonly TaskCompletionSource<bool> _rendered = new TaskCompletionSource<bool>();
             private EventHandler _renderedHandler;
             internal SyncCenterViewModel ViewModel => (SyncCenterViewModel)Center.DataContext;
-            internal CenterHost(Fixture fixture, Func<bool> allow = null, bool forceOwnerOutsideWorkArea = false)
+            internal CenterHost(Fixture fixture, Func<bool> allow = null, bool forceOwnerOutsideWorkArea = false,
+                Func<CatalogSyncTrigger, bool, CancellationToken, Task<CatalogSyncRunResult>> runSync = null)
             {
                 allow = allow ?? (() => true);
+                var operation = RecoveryOperationTimeline.Begin();
                 Owner = new Window { Width = 1024, Height = 768, WindowStartupLocation = WindowStartupLocation.CenterScreen, ShowInTaskbar = false };
+                RecoveryOperationTimeline.End("center_owner_new", operation);
+                operation = RecoveryOperationTimeline.Begin();
                 Owner.Show();
+                RecoveryOperationTimeline.End("center_owner_show", operation);
                 if (forceOwnerOutsideWorkArea)
                 {
                     // Only the plain QA caller is positioned outside its monitor.
@@ -828,15 +914,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Owner.Left = workArea.Left - 32;
                     Owner.Top = workArea.Top;
                 }
-                Center = new SyncCenterDialog(fixture.Factory, (trigger, repair, token) => Task.FromResult(new CatalogSyncRunResult(true)),
+                operation = RecoveryOperationTimeline.Begin();
+                Center = new SyncCenterDialog(fixture.Factory, runSync ?? ((trigger, repair, token) => Task.FromResult(new CatalogSyncRunResult(true))),
                     _ => Task.FromResult(false), _ => Task.FromResult(allow()), allow, () => _generation) { Owner = Owner };
+                RecoveryOperationTimeline.End("center_dialog_new", operation);
                 _renderedHandler = (_, __) =>
                 {
                     Center.ContentRendered -= _renderedHandler;
                     _rendered.TrySetResult(true);
                 };
                 Center.ContentRendered += _renderedHandler;
+                operation = RecoveryOperationTimeline.Begin();
                 Center.Show();
+                RecoveryOperationTimeline.End("center_dialog_show", operation);
+                RecoveryOperationTimeline.Flush();
             }
             internal async Task ReadyAsync()
             {
@@ -1326,17 +1417,24 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
         }
         private static async Task CheckAsync(List<string> failures, string name, Func<Task> action)
         {
+            var watch = Stopwatch.StartNew();
             RecordPhase(name + "=BEGIN");
-            try { await action(); Evidence.Add(name + "=PASS"); }
+            try { await action(); Evidence.Add(name + "=PASS; elapsed_ms=" + watch.Elapsed.TotalMilliseconds.ToString("F3", Invariant)); }
             catch (Exception ex) { Evidence.Add(name + "=FAIL " + ex); failures.Add(name + ": " + ex.Message); }
             FlushEvidence();
             Console.WriteLine("IMPORT_RECOVERY_PHASE=" + Evidence[Evidence.Count - 1]);
+            RecoveryOperationTimeline.Flush();
         }
         private static void RecordPhase(string phase)
         {
-            Evidence.Add("phase=" + phase + "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            Evidence.Add("phase=" + phase + "; timeline_ms=" + Timeline.Elapsed.TotalMilliseconds.ToString("F3", Invariant) +
+                "; thread=" + Thread.CurrentThread.ManagedThreadId + "; dispatcher_shutdown=" + dispatcher.HasShutdownStarted +
+                "; utc=" + DateTimeOffset.UtcNow.ToString("O", Invariant));
+            var sink = RecoveryOperationTimeline.Begin();
             FlushEvidence();
             Console.WriteLine("IMPORT_RECOVERY_PHASE=" + phase);
+            RecoveryOperationTimeline.End("phase_sink:" + phase, sink);
         }
         private static void FlushEvidence()
         {
@@ -1358,7 +1456,9 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
             private readonly List<double> _probes = new List<double>();
             private readonly Task _memoryTask, _probeTask;
             private readonly string _prefix;
-            private long _privatePeak, _managedPeak;
+            private long _privatePeak, _managedPeak, _workingSetPeak;
+            private int _handlePeak, _lastHandles;
+            private readonly List<int> _windowCounts = new List<int>();
             internal Measurement(Dispatcher dispatcher, string prefix)
             {
                 _prefix = prefix;
@@ -1371,8 +1471,10 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
                         {
                             process.Refresh(); var privateBytes = process.PrivateMemorySize64; var managed = GC.GetTotalMemory(false);
                             _privatePeak = Math.Max(_privatePeak, privateBytes); _managedPeak = Math.Max(_managedPeak, managed);
+                            _workingSetPeak = Math.Max(_workingSetPeak, process.WorkingSet64);
+                            _lastHandles = process.HandleCount; _handlePeak = Math.Max(_handlePeak, _lastHandles);
                             Require(_memory.Count < 1200, "memory sampling exceeded its finite 60-second observation bound");
-                            _memory.Add(watch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "," + privateBytes + "," + managed);
+                            _memory.Add(watch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "," + privateBytes + "," + managed + "," + process.WorkingSet64 + "," + _lastHandles);
                         }
                         await Task.Delay(50, _stop.Token).ConfigureAwait(false);
                     } } catch (OperationCanceledException) { }
@@ -1382,7 +1484,10 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
                     try { while (!_stop.IsCancellationRequested)
                     {
                         var posted = Stopwatch.GetTimestamp();
-                        await dispatcher.InvokeAsync(() => _probes.Add((Stopwatch.GetTimestamp() - posted) * 1000d / Stopwatch.Frequency), DispatcherPriority.Input, _stop.Token).Task.ConfigureAwait(false);
+                        await dispatcher.InvokeAsync(() => {
+                            _probes.Add((Stopwatch.GetTimestamp() - posted) * 1000d / Stopwatch.Frequency);
+                            _windowCounts.Add(Application.Current.Windows.Count);
+                        }, DispatcherPriority.Input, _stop.Token).Task.ConfigureAwait(false);
                         Require(_probes.Count < 1200, "dispatcher sampling exceeded its finite observation bound");
                         await Task.Delay(50, _stop.Token).ConfigureAwait(false);
                     } } catch (OperationCanceledException) { }
@@ -1391,11 +1496,13 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
             internal async Task StopAsync() { _stop.Cancel(); await Task.WhenAll(_memoryTask, _probeTask); }
             internal void Write()
             {
-                File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + _prefix + "-memory-samples.csv"), new[] { "elapsed_ms,private_bytes,managed_bytes" }.Concat(_memory));
+                File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + _prefix + "-memory-samples.csv"), new[] { "elapsed_ms,private_bytes,managed_bytes,working_set_bytes,handles" }.Concat(_memory));
                 File.WriteAllLines(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + _prefix + "-dispatcher-probes.csv"), new[] { "enqueue_to_input_ms" }.Concat(_probes.Select(value => value.ToString("F3", Invariant))));
                 var sorted = _probes.OrderBy(value => value).ToArray();
                 Evidence.Add("measurement scope=" + _prefix + "; memory_interval_ms=50; observed_memory_samples=" + _memory.Count + "; observed_private_peak_bytes=" + _privatePeak + "; observed_managed_peak_bytes=" + _managedPeak + "; dispatcher_samples=" + sorted.Length + "; dispatcher_p95_ms=" + (sorted.Length == 0 ? 0 : sorted[(int)Math.Ceiling(sorted.Length * .95) - 1]).ToString("F3", Invariant) + "; dispatcher_max_ms=" + (sorted.Length == 0 ? 0 : sorted.Last()).ToString("F3", Invariant));
                 Evidence.Add("budget_source=docs/reports/evidence/2026-09-26-post-pr111/preregistered-budget-v1.json; applied_managed_5_cycle_growth_bytes=8388608; compared_probe_max_ms=200; compared_private_peak_bytes=201326592; compared_managed_peak_bytes=33554432; workload_differs_from_cart_control=True; qualified_stability=False; peak_is_observed_50ms_samples_not_lifetime_peak=True");
+                Evidence.Add("resources scope=" + _prefix + "; sampled_working_set_max_bytes=" + _workingSetPeak + "; sampled_handles_max=" + _handlePeak + "; last_sample_handles=" + _lastHandles +
+                    "; sampled_wpf_windows_max=" + (_windowCounts.Count == 0 ? 0 : _windowCounts.Max()) + "; native_hwnd_attribution=NOT_MEASURED; sampling_interval_ms=50; absolute_release=NOT_QUALIFIED");
                 Require(_memory.Count > 1 && sorted.Length > 1, "bounded measurement did not acquire actual memory/probe samples");
             }
             public void Dispose()

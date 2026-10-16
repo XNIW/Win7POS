@@ -9,6 +9,17 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      recovery_diagnostic:
+        description: Bounded Recovery timeline or three fixed candidate repetitions on independent Windows
+        required: false
+        default: none
+        type: choice
+        options:
+          - none
+          - timeline
+          - candidate-three
+          - native-startup
+          - native-waits
       authorization_lease_smoke_only:
         description: Run only the WPF x86 authorization lease smoke path
         required: false
@@ -53,7 +64,7 @@ permissions:
 jobs:
   build-and-check:
     name: ${{ github.event_name == 'workflow_dispatch' && (inputs.cart_diagnostic_only == true || (inputs.cart_qualification != '' && inputs.cart_qualification != 'none')) && 'canonical-not-requested' || 'build-and-check' }}
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || ((inputs.recovery_diagnostic == '' || inputs.recovery_diagnostic == 'none') && inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -74,82 +85,157 @@ jobs:
           global-json-file: global.json
 
       - name: Print .NET info
-        run: dotnet --info
-
-      - name: Restore solution
-        run: dotnet restore Win7POS.slnx --locked-mode
-
-      - name: Canonical required gates
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/check-required-gates.ps1
+        run: |
+          dotnet --info
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "WIN7POS_QA_TEMP_BASE=$env:RUNNER_TEMP" | Add-Content -LiteralPath $env:GITHUB_ENV
 
-      - name: Build solution (Release)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
-        run: dotnet build Win7POS.slnx -c Release --no-restore
-
-      - name: Test Core/Data
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
-        run: dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore --logger "trx;LogFileName=Win7POS.Core.Tests.trx"
-
-      - name: Upload test results
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true) }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: Win7POS-Core-TestResults-${{ github.run_id }}
-          path: tests/Win7POS.Core.Tests/TestResults/*.trx
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Selftest (fast)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
-        run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build --no-restore -- --selftest --keepdb
-
-      - name: Build WPF (Release x86)
-        run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
-
-      - name: Build WPF smoke harness (Release x86)
-        run: dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
-
-      - name: WPF product-image profile and net48 serialization smoke (x86)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/run-product-image-profile-smoke.ps1 -Configuration Release -Platform x86
-
-      - name: WPF functional completion regressions (x86)
+      - name: Canonical autonomous Windows QA (net48 x86)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         shell: pwsh
         run: |
-          $diagnosticRoot = [IO.Path]::GetTempPath().TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-          "WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT=$diagnosticRoot" | Add-Content -LiteralPath $env:GITHUB_ENV
-          pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Configuration Release -Platform x86
-          if ($LASTEXITCODE -ne 0) { throw 'Canonical functional smoke failed; diagnostics preserved.' }
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/qa" | Out-Null
+          pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -OutputRoot "$env:RUNNER_TEMP/qa"
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical QA incomplete; first failure and independent results preserved.' }
 
-      - name: Preserve functional diagnostics
-        if: ${{ always() && env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT != '' }}
+      - name: Preserve autonomous QA evidence
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Win7POS-Functional-Diagnostics-${{ github.run_id }}
+          name: Win7POS-Autonomous-QA-${{ github.run_id }}
           path: |
-            ${{ env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT }}/Win7POS.Functional.*/**/*.txt
-            ${{ env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT }}/Win7POS.Functional.*/**/*.csv
-            ${{ env.WIN7POS_FUNCTIONAL_DIAGNOSTIC_ROOT }}/Win7POS.Functional.*/**/*.png
+            ${{ runner.temp }}/qa/**/*.json
+            ${{ runner.temp }}/qa/**/*.txt
+            ${{ runner.temp }}/qa/**/*.log
+            ${{ runner.temp }}/qa/**/*.trx
+            ${{ runner.temp }}/qa/**/*.csv
+            ${{ runner.temp }}/qa/**/*.png
           if-no-files-found: warn
           retention-days: 14
 
-      - name: WPF authorization lease runtime smoke (x86)
+      - name: Authorization-only restore and harness build
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.authorization_lease_smoke_only == true }}
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/run-authorization-lease-smoke.ps1 -Configuration Release -Platform x86
+        run: |
+          dotnet restore Win7POS.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -File scripts/run-authorization-lease-smoke.ps1 -Configuration Release -Platform x86
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: WPF bounded asynchronous logging smoke (100k x86)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
+  recovery-native-qualification:
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.recovery_diagnostic == 'native-startup' || inputs.recovery_diagnostic == 'native-waits') }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Qualify built-in CLR collector on synthetic x86 fixture
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/run-bounded-logging-smoke.ps1 -Configuration Release -Platform x86
+        env:
+          RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
+        run: |
+          $extra = @()
+          if ($env:RECOVERY_MODE -eq 'native-waits') { $extra += '-KernelWaits' }
+          & pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Qualify -OutputDirectory "$env:RUNNER_TEMP/recovery-trace-qualification" @extra
+          exit $LASTEXITCODE
+      - name: Preserve qualification receipts without raw ETL
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Win7POS-Recovery-Trace-Qualification-${{ github.run_id }}
+          path: ${{ runner.temp }}/recovery-trace-qualification
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: WPF product paging dispatcher smoke (100k)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
+  recovery-native-diagnostic:
+    needs: recovery-native-qualification
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.recovery_diagnostic == 'native-startup' || inputs.recovery_diagnostic == 'native-waits') }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Build exact-source x86 harness on fresh diagnostic VM
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/run-product-paging-dispatcher-smoke.ps1 -Configuration Release -Platform x86
+        run: |
+          dotnet restore Win7POS.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: One cold full Recovery with bounded native startup trace
+        shell: pwsh
+        env:
+          RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
+        run: |
+          $extra = @()
+          if ($env:RECOVERY_MODE -eq 'native-waits') { $extra += '-KernelWaits' }
+          & pwsh -NoProfile -File scripts/qa/Invoke-RecoveryStartupTrace.ps1 -Mode Recovery -OutputDirectory "$env:RUNNER_TEMP/recovery-native-diagnostic" @extra
+          exit $LASTEXITCODE
+      - name: Preserve target diagnostics without raw ETL
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Win7POS-Recovery-Native-Diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/recovery-native-diagnostic
+          if-no-files-found: error
+          retention-days: 14
+
+  recovery-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_diagnostic != '' && inputs.recovery_diagnostic != 'none' && inputs.recovery_diagnostic != 'native-startup' && inputs.recovery_diagnostic != 'native-waits' }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Build independent exact-source x86 harness
+        shell: pwsh
+        run: |
+          dotnet restore Win7POS.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Fixed supervised Recovery runs (60000 ms each)
+        shell: pwsh
+        env:
+          RECOVERY_MODE: ${{ inputs.recovery_diagnostic }}
+        run: |
+          $env:WIN7POS_QA_TEMP_BASE = $env:RUNNER_TEMP
+          $root = "$env:RUNNER_TEMP/recovery-diagnostic"
+          New-Item -ItemType Directory -Path $root | Out-Null
+          [ordered]@{sha=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;mode=$env:RECOVERY_MODE;qualifiesAsus=$false;qualifiesWin7=$false;image=$env:ImageOS;imageVersion=$env:ImageVersion;os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture);system=(Get-CimInstance Win32_ComputerSystem | Select-Object NumberOfLogicalProcessors,TotalPhysicalMemory)} | ConvertTo-Json -Depth 5 | Set-Content "$root/host.json"
+          $count = if ($env:RECOVERY_MODE -eq 'candidate-three') { 3 } else { 1 }
+          $failed = $false
+          'Question: do changing Recovery/Sync Center controls invalidate the full-card DropShadowEffect input, and does isolating the unchanged shadow silhouette remove that rendering work? Existing native-kernel stacks contain wpfgfx/d3d9/WARP calls on the render thread and WARP calls on CPU-consuming workers. The first group observes effect ancestry during idle, real sync and Recovery commit, and evaluates the regression after all original flow assertions. All eleven groups, 5000/1000 rows, fourteen captures and fixture initialization remain inside 60000ms. No retry or warmup. Timeline mode runs once; candidate-three runs exactly three predetermined processes. Timings from different hosts alone do not prove causality; retain every outcome.' | Set-Content "$root/hypothesis.txt"
+          foreach ($index in 1..$count) {
+            @(Get-Process -Name dotnet,MSBuild,VBCSCompiler,Win7POS.Wpf.UiSmokeHarness -ErrorAction SilentlyContinue | Select-Object -First 24 Id,ProcessName,StartTime,CPU,WorkingSet64) | ConvertTo-Json -Depth 3 | Set-Content "$root/run-$index-processes-before.json"
+            pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Scenario IMPORT_RECOVERY_completion -OutputDirectory "$root/run-$index"
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+            @(Get-Process -Name dotnet,MSBuild,VBCSCompiler,Win7POS.Wpf.UiSmokeHarness -ErrorAction SilentlyContinue | Select-Object -First 24 Id,ProcessName,StartTime,CPU,WorkingSet64) | ConvertTo-Json -Depth 3 | Set-Content "$root/run-$index-processes-after.json"
+          }
+          if ($failed) { throw 'One or more fixed Recovery runs failed; all results retained.' }
+      - name: Preserve all Recovery evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Win7POS-Recovery-Diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/recovery-diagnostic
+          if-no-files-found: error
+          retention-days: 14
 
   cart-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none') }}

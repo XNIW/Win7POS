@@ -35,6 +35,9 @@ $stagingProgram = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $profileSmoke = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/ProductImageProfileWpfSmoke.cs"
 $profileSmokeRunner = Read-Required "scripts/run-product-image-profile-smoke.ps1"
 $ci = Read-Required ".github/workflows/ci.yml"
+if ($ci -match 'Invoke-Win7PosAutonomousTests\.ps1 -Suite Windows') {
+    $ci += Read-Required 'scripts/qa/Invoke-Win7PosAutonomousTests.ps1'
+}
 $stagingLockTest = Read-Required "scripts/qa/Test-Win7PosProductImageAcceptanceLocks.ps1"
 $shopTransition = Read-Required "src/Win7POS.Data/Online/PosShopTransitionGuard.cs"
 

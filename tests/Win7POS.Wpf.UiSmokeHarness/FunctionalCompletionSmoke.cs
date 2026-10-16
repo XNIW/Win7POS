@@ -25,12 +25,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static string _scenario;
         internal static async Task<string> RunAsync(string dataDir, bool performance, string productCount, string scenario)
         {
+            RecoveryStartupTimeline.Record("functional_body_entered");
             _scenario = scenario;
             var options = PosDbOptions.Default();
             // Isolated recovery owns its fully initialized, verified private fixture databases.
             // Other scenarios (including the aggregate run) still require the default database.
             if (!performance && string.Equals(scenario, "IMPORT_RECOVERY_completion", StringComparison.Ordinal))
+            {
                 Console.WriteLine("FUNCTIONAL_DB_SETUP=default_omitted; reason=isolated_recovery_private_schema");
+                using (var process = Process.GetCurrentProcess())
+                    File.WriteAllLines(Path.Combine(dataDir, "recovery-entry.txt"), new[] {
+                        "entry=canonical; process_creation_to_startup_wall_ms=" + (DateTime.UtcNow - process.StartTime.ToUniversalTime()).TotalMilliseconds,
+                        "marker=FunctionalCompletionSmoke.RunAsync_body_after_PosDbOptions_Default; startup_label_is_legacy_not_Application_Startup",
+                        "assemblies=" + string.Join(",", AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetName().Name).OrderBy(n => n)) });
+            }
             else
                 DbInitializer.EnsureCreated(options);
             if (performance) return await CartPerformanceSmoke.RunAsync(dataDir, int.TryParse(productCount, out var count) ? count : 20000);

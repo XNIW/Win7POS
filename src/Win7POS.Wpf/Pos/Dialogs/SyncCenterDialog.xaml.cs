@@ -30,6 +30,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private CancellationTokenSource _operationCts;
         private PosSyncStatusSnapshot _snapshot;
         private bool _operationRunning;
+        private bool _syncRunning;
         private bool _fullRepairRunning;
         private bool _refreshRunning;
         private bool _closed;
@@ -186,6 +187,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _operationCts?.Dispose();
             _operationCts = new CancellationTokenSource();
             _operationRunning = true;
+            _syncRunning = true;
             _fullRepairRunning = administratorRepairAuthorized;
             SetOperationState();
             OperationStatusText.Text = PosLocalization.T("sync.center.operationStarted");
@@ -216,6 +218,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             finally
             {
                 _operationRunning = false;
+                _syncRunning = false;
                 _fullRepairRunning = false;
                 SetOperationState();
                 await RefreshAsync().ConfigureAwait(true);
@@ -272,8 +275,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void SetOperationState()
         {
-            OperationProgress.Visibility = _operationRunning ? Visibility.Visible : Visibility.Collapsed;
-            OperationProgress.IsIndeterminate = _operationRunning;
+            // Opening a modal Recovery locks commands, but performs no sync.
+            // Keep its owner still instead of animating behind the modal window.
+            OperationProgress.Visibility = _syncRunning ? Visibility.Visible : Visibility.Collapsed;
+            OperationProgress.IsIndeterminate = _syncRunning;
             ImportRecoveryList.IsEnabled = !_operationRunning;
             SyncNowButton.IsEnabled = !_operationRunning;
             RetryButton.IsEnabled = !_operationRunning && (_snapshot?.CatalogHasMore == true);

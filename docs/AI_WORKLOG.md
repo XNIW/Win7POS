@@ -4,6 +4,32 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-10-16 – Recovery: input dell'ombra separato dai controlli dinamici
+
+- Ripresa da `3026ce5`; riusato il prefisso nativo `32ddfbd` con stack di tutti i worker, senza nuove tracce. Mappatura `Image/Load`: thread 6216 con 9.846 stack WPF, 8.580 Direct3D e 8.365 WARP; altri sette worker con WARP e CPU osservata. Stack di scheduling e traccia parziale, non un profilo CPU completo. Il `DialogShellWindow` è invariato fra i due SHA.
+- Causa candidata: effetto dell'ombra sul contenitore di griglia e progress, che amplia il ridisegno quando cambiano i figli. Regressione in sette stati reali, valutata dopo tutti gli assert originali del primo gruppo. Patch limitata alla base: bordo decorativo vuoto dietro ai controlli, stessi parametri e bounds; root, sizing, owner e hit-test conservati. Undici gruppi, quattordici catture, carichi 5.000/1.000 e 60.000 ms invariati.
+- Baseline test-only `b81f5ab`, run `38975083907`: TIMEOUT 60.085,986 ms con cleanup; sette osservazioni `isolated=False` e sagoma invariata, primo gruppo FAIL sulla nuova regressione dopo tutti gli assert originali, successivi sei PASS, ottavo incompleto, quattordici catture conservate. Il corpo functional inizia a 18.331,295 ms: il costo iniziale resta distinto dall'effetto sui controlli.
+- Build WPF/harness Release x86 e standard dialog PASS; review statica senza rilievi bloccanti. Verifica hosted corretta, CI e Security dell'HEAD finale devono essere riscontrate nelle ricevute prima dell'integrazione. Nessun rilancio Asus o indagine sui permessi; Staging e Win7 restano separati.
+
+## 2026-10-16 – Recovery: progress del parent durante il dialogo modale
+
+- Ripresa da `5a9d66c`, senza riaprire i permessi: baseline hosted test-only `ce76a62`, run `38949548176`, riproduce il progress Sync Center visibile/indeterminato mentre Recovery attende l'utente. Tutti gli assert originali e gli undici gruppi eseguiti; dieci gruppi PASS, primo gruppo FAIL soltanto sulla nuova regressione, processo 53.252,673 ms, cleanup confermato. Sync controllato success/fault/cancel e guard doppio click PASS.
+- Separato `_syncRunning`, usato solo per il progress, dal lock `_operationRunning` conservato durante autorizzazione e dialogo. Nessuna modifica a shadow, renderer, setup, dataset, assertion o limite 60.000 ms. Build WPF/harness Release x86 senza warning/errori e 50/50 gate locali PASS. Confronto hosted corretto, CI completa, review e integrazione richiedono le ricevute del candidato esatto; il difetto UI riprodotto non spiega automaticamente tutte le latenze di paging storiche.
+- `f03d877`, confronto hosted `38950121389`: 11/11 gruppi PASS in 45.940,996 ms; progress parent spento e comandi bloccati. CPU osservata 106,984 s contro 130,344 s baseline su VM diverse; review mantiene HOLD sulla causa del timeout storico. Nel controllo dei soli nomi delle ricevute, trovato export del profilo trust sintetico: filtro JSON limitato a `sync-backup-load.json`, regressione sintetica prima FAIL/dopo PASS, nessuna lettura del profilo e nessuna rimozione di dati storici.
+
+## 2026-10-15 – QA automatizzata e diagnosi Recovery residua
+
+- Ripresa da PR128 `cafe6f2`: riprodotto e corretto `TIMEOUT` sovrascritto da `FAIL` quando falliva `Copy-FunctionalEvidence`; nuovo `evidenceExportError` separato, primo errore ed exit code preservati. Otto combinazioni esito/export nel test esistente, senza eseguire WPF.
+- Rimossa la seconda `WaitForExit()` illimitata del runner functional: su Windows la redirection passa file handle al figlio, senza reader asincroni sul `Process` restituito. Gate locale 50/50 PASS, incluso test runtime sintetico con sentinelle finali stdout/stderr e cleanup. I 60.000 ms e tutti i gruppi/assert Recovery sono invariati; il timeout storico precede questa attesa e non è risolto dalla patch. Validazione hosted del nuovo HEAD e integrazione restano da verificare nelle ricevute esterne.
+- Baseline main `3892f37`, pulita; preservati stash, altri worktree e i tre WIP nominati. Nessuna modifica al prodotto Core/Data/WPF o alle dipendenze.
+- Conservati FAIL CI `38670961016` e TIMEOUT diagnostico `38775697755`. Tre coppie alternate `38776939297`: tutti PASS, entrypoint sperimentale senza beneficio, ipotesi JIT respinta e codice sperimentale rimosso. Causa Recovery UNKNOWN; timeout 60.000 ms e undici gruppi invariati.
+- Runner funzionale con selezione mirata, report per tutti i 19 scenari più visual, conservazione primo errore e prosecuzione degli scenari indipendenti. Diagnostica monotona/gruppo/fase e campioni memoria/working set/handle/finestre WPF; nessuna qualifica risorse Win7 dedotta.
+- Il candidato `eac24ed` conserva TIMEOUT/PASS/PASS nelle tre ripetizioni prestabilite; intervallo creazione→corpo functional osservato di 22,4 s, non il solo startup WPF, causa nativa UNKNOWN. Nuovi marker limitati distinguono Main, Startup, ingresso async, risultato e uscita. Suite precedente raccolta senza fermarsi al Recovery, compresi i FAIL.
+- Dimostrato separatamente un difetto del nuovo runner: TEMP annidata nel report supera i limiti nativi SQLite/Framework. Stesso test e binario: FAIL con TEMP di 125 caratteri, PASS con 77; il runner corretto passa anche con report lungo/Unicode. Dati temporanei brevi e univoci separati dai report; nessun cambiamento al timeout o ai carichi WPF.
+- Orchestratore Local/Windows invocabile senza credenziali e riusato dalla CI; staging delegato a vault/readiness canonici. Test sintetici coprono timeout, cancellazione, identità immagine, PID riusato, path, zero test, report e prosecuzione dopo errori. Review indipendente con tre difetti corretti e relative regressioni.
+- Asus: SDK 10.0.301 già presente fuori PATH, build net48/x86 PASS e 179 Core/Data Recovery PASS. Avvio WPF locale rifiutato dal controllo automatico (`blocked by policy`), senza riproporlo tramite wrapper. WPF misurato solo su build indipendente hosted.
+- Profilo QA esistente valido; readiness richiesta assente (404 sul main Admin corrente), nessun test live. Win7 differito dall'utente; mobile e hardware senza executor/dispositivi assegnati. Stato finale suite/PR/main/pacchetto nelle ricevute esterne della corsa, senza attribuire prove headless o hosted a Win7.
+
 ## 2026-10-01 – PR112 software closeout with owner-deferred external QA
 
 - Owner decision: close PR112 as software-qualified and merge normally after exact-final-HEAD CI/Security PASS; verify the exact post-merge Release Pack. ASUS-THIRD-SCAN is `OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA`, with root cause still unproven. Asus Integrated/Final remain `NOT_EXECUTED / OWNER_DEFERRED`; `productionCertified=false`.
@@ -1289,3 +1315,23 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   roundtrip esatto, contratto null/empty. Il runner richiede il nuovo marker
   oltre a tutti quelli precedenti. Il candidato precedente viene sostituito e
   rivalidato; nessun risultato viene trasferito automaticamente al nuovo SHA.
+
+## 2026-10-15 - PR #128, diagnosi del timeout Recovery
+
+- Conservata la correzione verificata dei percorsi SQLite dell'orchestratore;
+  nessuna modifica a prodotto, dipendenze, net48/x86 o budget Recovery 60000 ms.
+- Aggiunta osservazione limitata di startup, CPU/thread e hard fault, con
+  qualificazione separata, cleanup dei soli processi/sessioni posseduti e raw
+  ETL escluso dagli artifact. Spostata dopo il test la lettura degli hash del
+  runtime x86 per evitare di alterare la cache prima dell'osservazione.
+- Coppia finale prestabilita `38812472152` su SHA `1b06ff7`: Legacy e Isolated
+  entrambi TIMEOUT. Isolated ha una traccia completa senza perdita eventi e
+  37,315 s di paging UI nei primi 60 s; Legacy completa tutti gli 11 gruppi ma
+  non il processo entro il termine. Nessuna prova di correzione causale.
+- L'entry sperimentale è rimossa dal candidato, conservata nella storia Git.
+  Il report distingue il costo osservato dalle cause host ancora non provate;
+  nessun merge, ulteriore tentativo identico o modifica del runtime.
+- ASUS_WPF resta non eseguito per rifiuto automatico del comando di avvio;
+  HOSTED_WPF è evidenza separata. Readiness Admin ancora esterna; Win7 reale
+  differito dall'utente. Esiti, SHA e limiti nel report esterno
+  `WIN7POS_RECOVERY_CAUSE_RESULT.md` e relativo JSON.

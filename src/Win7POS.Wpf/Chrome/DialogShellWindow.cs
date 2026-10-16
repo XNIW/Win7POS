@@ -155,13 +155,7 @@ namespace Win7POS.Wpf.Chrome
                 Background = cardBrush,
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = radius,
-                Effect = new DropShadowEffect
-                {
-                    BlurRadius = 16,
-                    ShadowDepth = 0,
-                    Opacity = 0.10
-                }
+                CornerRadius = radius
             };
 
             var mainGrid = new Grid();
@@ -243,6 +237,31 @@ namespace Win7POS.Wpf.Chrome
 
             if (UseModalOverlay)
             {
+                // Keep changing controls outside the shadow's effect input.
+                // An effect on outerBorder invalidates/renders the entire card
+                // for every progress tick, caret blink or edited grid cell.
+                // mainGrid occupies the inside of the one-DIP layout border;
+                // the negative margin restores the original shadow silhouette.
+                var shadow = new Border
+                {
+                    Background = cardBrush,
+                    BorderBrush = borderBrush,
+                    BorderThickness = outerBorder.BorderThickness,
+                    CornerRadius = radius,
+                    Margin = new Thickness(-1),
+                    IsHitTestVisible = false,
+                    Focusable = false,
+                    Effect = new DropShadowEffect
+                    {
+                        BlurRadius = 16,
+                        ShadowDepth = 0,
+                        Opacity = 0.10
+                    }
+                };
+                Grid.SetRowSpan(shadow, 2);
+                mainGrid.Children.Insert(0, shadow);
+                outerBorder.Background = Brushes.Transparent;
+                outerBorder.BorderBrush = null;
                 outerBorder.HorizontalAlignment = HorizontalAlignment.Center;
                 outerBorder.VerticalAlignment = VerticalAlignment.Center;
 
@@ -254,7 +273,6 @@ namespace Win7POS.Wpf.Chrome
             }
             else
             {
-                outerBorder.Effect = null;
                 Background = cardBrush;
                 Content = outerBorder;
             }
