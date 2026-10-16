@@ -336,9 +336,11 @@ if ($Runtime -and $IsWindows) {
     # only. Both final writes must already be visible after the bounded wait.
     $outputProbe = Join-Path $unicode 'functional-output-probe.ps1'
     @'
+$probeClock = [Diagnostics.Stopwatch]::StartNew()
+[Console]::Out.WriteLine('PROBE_BEGIN utc=' + [DateTime]::UtcNow.ToString('O'))
 for ($i = 0; $i -lt 512; $i++) {
-    [Console]::Out.WriteLine('stdout ' + $i)
-    [Console]::Error.WriteLine('stderr ' + $i)
+    [Console]::Out.WriteLine('stdout ' + $i + ' before_write_ms=' + $probeClock.ElapsedMilliseconds)
+    [Console]::Error.WriteLine('stderr ' + $i + ' before_write_ms=' + $probeClock.ElapsedMilliseconds)
 }
 [Console]::Out.WriteLine('FINAL_STDOUT_SENTINEL')
 [Console]::Error.WriteLine('FINAL_STDERR_SENTINEL')
@@ -349,7 +351,25 @@ for ($i = 0; $i -lt 512; $i++) {
     try {
         $probeCreated = $probeProcess.StartTime.ToUniversalTime().ToString('O')
         $null = $probeProcess.Handle
-        Assert-QaTest ($probeProcess.WaitForExit(15000)) 'Synthetic output probe exceeded its finite process budget'
+        $probeExited = $probeProcess.WaitForExit(15000)
+        # Snapshot only this bounded synthetic output, before cleanup. A timeout
+        # must distinguish startup, partial writes and process exit, not infer
+        # a pipe deadlock or disk latency from WaitForExit(false) alone.
+        try {
+            $probeProcess.Refresh()
+            Write-Host ('FUNCTIONAL_OUTPUT_PROBE exited=' + $probeExited + '; pwsh=' + $PSVersionTable.PSVersion + '; elapsed_ms=' + ([DateTime]::UtcNow - $probeProcess.StartTime.ToUniversalTime()).TotalMilliseconds + '; cpu_ms=' + $probeProcess.TotalProcessorTime.TotalMilliseconds)
+            foreach ($probeLog in @($probeOut,$probeErr)) {
+                $probeStream = [IO.FileStream]::new($probeLog,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+                try {
+                    Assert-QaTest ($probeStream.Length -le 65536) 'Synthetic output exceeded diagnostic bound'
+                    $probeReader = [IO.StreamReader]::new($probeStream)
+                    try { $probeText = $probeReader.ReadToEnd() } finally { $probeReader.Dispose() }
+                } finally { $probeStream.Dispose() }
+                $probeLines = @($probeText -split '\r?\n' | Where-Object { $_.Length -gt 0 })
+                Write-Host ('FUNCTIONAL_OUTPUT_PROBE file=' + [IO.Path]::GetFileName($probeLog) + '; lines=' + $probeLines.Count + '; first=' + ($probeLines | Select-Object -First 1) + '; last=' + ($probeLines | Select-Object -Last 1))
+            }
+        } catch { Write-Host ('FUNCTIONAL_OUTPUT_PROBE diagnostic_error=' + $_.Exception.Message) }
+        Assert-QaTest $probeExited 'Synthetic output probe exceeded its finite process budget'
         Assert-QaTest ($probeProcess.ExitCode -eq 0) 'Synthetic output probe failed'
         Assert-QaTest ([IO.File]::ReadAllText($probeOut).EndsWith('FINAL_STDOUT_SENTINEL' + [Environment]::NewLine) -and [IO.File]::ReadAllText($probeErr).EndsWith('FINAL_STDERR_SENTINEL' + [Environment]::NewLine)) 'Bounded Windows wait returned before redirected final output was available'
     } finally {
