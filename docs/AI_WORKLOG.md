@@ -8,6 +8,7 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 - Ripresa da `5a9d66c`, senza riaprire i permessi: baseline hosted test-only `ce76a62`, run `38949548176`, riproduce il progress Sync Center visibile/indeterminato mentre Recovery attende l'utente. Tutti gli assert originali e gli undici gruppi eseguiti; dieci gruppi PASS, primo gruppo FAIL soltanto sulla nuova regressione, processo 53.252,673 ms, cleanup confermato. Sync controllato success/fault/cancel e guard doppio click PASS.
 - Separato `_syncRunning`, usato solo per il progress, dal lock `_operationRunning` conservato durante autorizzazione e dialogo. Nessuna modifica a shadow, renderer, setup, dataset, assertion o limite 60.000 ms. Build WPF/harness Release x86 senza warning/errori e 50/50 gate locali PASS. Confronto hosted corretto, CI completa, review e integrazione richiedono le ricevute del candidato esatto; il difetto UI riprodotto non spiega automaticamente tutte le latenze di paging storiche.
+- `f03d877`, confronto hosted `38950121389`: 11/11 gruppi PASS in 45.940,996 ms; progress parent spento e comandi bloccati. CPU osservata 106,984 s contro 130,344 s baseline su VM diverse; review mantiene HOLD sulla causa del timeout storico. Nel controllo dei soli nomi delle ricevute, trovato export del profilo trust sintetico: filtro JSON limitato a `sync-backup-load.json`, regressione sintetica prima FAIL/dopo PASS, nessuna lettura del profilo e nessuna rimozione di dati storici.
 
 ## 2026-10-15 – QA automatizzata e diagnosi Recovery residua
 

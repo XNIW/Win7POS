@@ -79,7 +79,11 @@ function New-FunctionalDataRoot([string]$BaseDirectory, [string]$RepoRoot) {
 function Copy-FunctionalEvidence([string]$DataDirectory, [string]$EvidenceDirectory) {
     # Only bounded, top-level diagnostics are exported. SQLite data stays in its
     # unique owned directory, retained for inspection without recursive cleanup.
-    $files = @(Get-ChildItem -LiteralPath $DataDirectory -File | Where-Object Extension -in @('.txt','.log','.json','.csv','.png'))
+    # JSON is also used for trust profiles. Export only the known functional
+    # measurement receipt; unknown JSON stays with the owned source data.
+    $files = @(Get-ChildItem -LiteralPath $DataDirectory -File | Where-Object {
+        $_.Extension -in @('.txt','.log','.csv','.png') -or $_.Name -ceq 'sync-backup-load.json'
+    })
     if ($files.Count -gt 256) { throw 'Functional diagnostic file count exceeds export bound.' }
     foreach ($file in $files) {
         if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $file.Length -gt 64MB) { throw 'Functional diagnostic is a link or exceeds export bound.' }

@@ -284,9 +284,13 @@ New-Item -ItemType Directory -Path $functionalData | Out-Null
 $functionalEvidence = Join-Path $unicode 'functional evidence'
 New-Item -ItemType Directory -Path $functionalEvidence | Out-Null
 Assert-QaTest ($functionalData.Length -le 89 -and -not (Test-QaWithin $functionalData $functionalEvidence)) 'Functional SQLite data inherited the report path length'
-foreach ($name in @('functional-completion.txt','measurements.csv','entry.json','synthetic.db')) { [IO.File]::WriteAllText((Join-Path $functionalData $name),'synthetic') }
+$functionalDiagnostics = @('functional-completion.txt','measurements.csv','sync-backup-load.json','capture.png')
+$functionalPrivateFiles = @('entry.json','pos-trusted-device.json','trusted-device-profile.json','synthetic.db','memory.dmp','token.dat')
+foreach ($name in ($functionalDiagnostics + $functionalPrivateFiles)) { [IO.File]::WriteAllText((Join-Path $functionalData $name),'synthetic') }
 Copy-FunctionalEvidence $functionalData $functionalEvidence
-Assert-QaTest ((Test-Path -LiteralPath (Join-Path $functionalEvidence 'entry.json')) -and (Test-Path -LiteralPath (Join-Path $functionalEvidence 'measurements.csv')) -and -not (Test-Path -LiteralPath (Join-Path $functionalEvidence 'synthetic.db')) -and (Test-Path -LiteralPath (Join-Path $functionalData 'synthetic.db'))) 'Functional diagnostic export copied or removed SQLite data'
+$functionalExported = @(Get-ChildItem -LiteralPath $functionalEvidence -File)
+Assert-QaTest ($functionalExported.Count -eq $functionalDiagnostics.Count -and @($functionalExported | Where-Object Name -cnotin $functionalDiagnostics).Count -eq 0) 'Functional diagnostic export copied trust profiles or unrecognized data'
+Assert-QaTest (@($functionalPrivateFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $functionalData $_)) }).Count -eq 0) 'Functional diagnostic export removed private source data'
 # Execute only the real export try/catch with a failing copy. No runner entrypoint
 # or child process runs: this checks the persisted classification after cleanup.
 $functionalCopyDefinition = @($functionalAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Copy-FunctionalEvidence' }, $true))[0].Extent.Text

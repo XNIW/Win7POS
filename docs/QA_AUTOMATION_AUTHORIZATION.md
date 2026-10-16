@@ -180,6 +180,14 @@ terminali sync passano. Il risultato finale deve verificare la correzione
 il fallimento conservato e un confronto di tempi fra VM diverse non bastano
 da soli a qualificare la chiusura di tutti i timeout storici.
 
+L'export funzionale ammette JSON soltanto per la ricevuta di misurazione
+`sync-backup-load.json`: i profili `pos-trusted-device.json` e tutti i JSON
+sconosciuti restano nella directory dati posseduta, insieme a DB e dump.
+La regressione usa esclusivamente file sintetici: riproduce l'export indebito
+prima della correzione e verifica dopo sia l'insieme esatto dei diagnostici
+copiati sia la conservazione dei dati originali. Il contenuto dei profili non
+viene letto. Le ricevute storiche non sono cancellate o riscritte.
+
 Il timeout originale su main `3892f37` (CI `38670961016`) rimane un FAIL.
 La riproduzione diagnostica `38775697755` conserva un secondo TIMEOUT. Il
 confronto `38776939297` contiene tre coppie prestabilite con ordine alternato
