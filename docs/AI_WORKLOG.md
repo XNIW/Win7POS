@@ -4,6 +4,11 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-10-16 – Recovery: progress del parent durante il dialogo modale
+
+- Ripresa da `5a9d66c`, senza riaprire i permessi: baseline hosted test-only `ce76a62`, run `38949548176`, riproduce il progress Sync Center visibile/indeterminato mentre Recovery attende l'utente. Tutti gli assert originali e gli undici gruppi eseguiti; dieci gruppi PASS, primo gruppo FAIL soltanto sulla nuova regressione, processo 53.252,673 ms, cleanup confermato. Sync controllato success/fault/cancel e guard doppio click PASS.
+- Separato `_syncRunning`, usato solo per il progress, dal lock `_operationRunning` conservato durante autorizzazione e dialogo. Nessuna modifica a shadow, renderer, setup, dataset, assertion o limite 60.000 ms. Build WPF/harness Release x86 senza warning/errori e 50/50 gate locali PASS. Confronto hosted corretto, CI completa, review e integrazione richiedono le ricevute del candidato esatto; il difetto UI riprodotto non spiega automaticamente tutte le latenze di paging storiche.
+
 ## 2026-10-15 – QA automatizzata e diagnosi Recovery residua
 
 - Ripresa da PR128 `cafe6f2`: riprodotto e corretto `TIMEOUT` sovrascritto da `FAIL` quando falliva `Copy-FunctionalEvidence`; nuovo `evidenceExportError` separato, primo errore ed exit code preservati. Otto combinazioni esito/export nel test esistente, senza eseguire WPF.

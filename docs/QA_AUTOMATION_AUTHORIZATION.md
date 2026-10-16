@@ -166,6 +166,20 @@ non qualifica Win7, stampante, scanner o cassetto fisici.
 
 ## Interpretazione delle evidenze Recovery
 
+La regressione aggiunta dopo `5a9d66c` distingue il blocco dei comandi dal
+sync effettivo: il Sync Center non deve animare il proprio progress mentre
+attende il dialogo Recovery modale. Il test controlla anche progress attivo
+durante un sync pendente, doppio click e ripristino dopo successo, errore e
+cancellazione. Tutti gli assert originali del primo gruppo precedono il nuovo
+verdetto, così la baseline rossa non abbrevia il flusso originale.
+La baseline test-only `ce76a62`, run `38949548176`, completa tutti gli undici
+gruppi in 53.252,673 ms: dieci PASS, un FAIL esclusivamente per il progress
+parent visibile e indeterminato senza sync. I comandi restano bloccati e i tre
+terminali sync passano. Il risultato finale deve verificare la correzione
+`_syncRunning` sullo SHA esatto, con il percorso hosted mirato e la CI completa;
+il fallimento conservato e un confronto di tempi fra VM diverse non bastano
+da soli a qualificare la chiusura di tutti i timeout storici.
+
 Il timeout originale su main `3892f37` (CI `38670961016`) rimane un FAIL.
 La riproduzione diagnostica `38775697755` conserva un secondo TIMEOUT. Il
 confronto `38776939297` contiene tre coppie prestabilite con ordine alternato
