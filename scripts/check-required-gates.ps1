@@ -111,6 +111,11 @@ function Invoke-RequiredGate {
         $results.Add([pscustomobject]@{ Gate = $Label; Result = "PASS"; Detail = "" }) | Out-Null
     }
     else {
+        # Keep the complete failing gate transcript in CI. The compact table
+        # below can truncate Detail and passing TAP names can match its filter.
+        Write-Host "=== FAILED GATE: $Label (exit $exitCode) ==="
+        foreach ($line in $outputLines) { Write-Host $line }
+        Write-Host "=== END FAILED GATE: $Label ==="
         $essential = @($outputLines | Where-Object {
             $_ -match '^\s*(FAIL|ERROR)(?:\s*:|\s|$)' -or
             $_ -match '^\s*(?:===\s*)?RESULT:\s*FAIL(?:\s*===)?\s*$' -or

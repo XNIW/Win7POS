@@ -4,6 +4,14 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-10-16 – Evidenza completa per i gate falliti dopo PR128
+
+- PR128 integrata normalmente in `1f7327f` dopo regressione causale, review e CI/Security sul candidato `0e9580a`: 1.599 Core/Data, 50 gate, visual e 19 scenari, Recovery 11/11 in 30,152 s con 60.000 ms invariati. Checkout allineato senza toccare lo stash preesistente.
+- Release Pack postmerge `38978013394` FAIL 49/50 sul gate sintetico `check-owned-catalog-qa`. Nessun artifact: il wrapper conserva solo una tabella troncata, selezionando anche nomi TAP passati con `missing`. La causa del test figlio storico non è recuperabile e resta UNKNOWN; una prova locale sintetica PASS non la spiega.
+- Corretto esclusivamente l'output dei gate falliti: trascrizione completa con nome e exit code, prima del riepilogo. Regressione per errore lungo seguito da TAP passati, FAIL con exit 0 e successo; classificazione e suite conservate. Nessun nuovo avvio Asus, modifica del timeout Recovery o retry del workflow invariato. Pacchetto e CI postmerge restano da qualificare sul nuovo SHA.
+- La CI postmerge `38978013368` conserva separatamente Recovery FAIL in 30,039 s, dieci gruppi PASS e il primo interrotto da `OpenButton().Single()` senza pulsante visuale, dopo tre refresh sync. Il modello contiene già la riga; gli altri diciannove scenari e gli altri undici step sono PASS, cleanup verificato. Il harness ora completa il layout pendente prima della stessa ricerca stretta del pulsante reale e verifica il binding al batch corrente. Il primo flusso forza un refresh della collection senza yield prima dell'apertura per esercitare la rigenerazione dei container; nessun assert preesistente, gruppo, carico o budget rimosso. Verifica hosted del nuovo candidato ancora necessaria.
+- Release Pack `38981128005` su `c33624a`: il transcript ora identifica il timeout del probe sintetico stdout/stderr a 15 s, dopo 73 test Node e collector identity PASS. Non sono conservati i suoi prefissi: causa ancora non dimostrata, distinta dal Recovery. Il probe mantiene 512 scritture alternate e sentinelle; aggiunge ingresso e tempi monotoni prima delle stesse scritture, snapshot limitato di primo/ultimo output, CPU e versione PowerShell prima del cleanup. Nessun buffer, nuovo launcher, aumento del budget o retry del workflow invariato. Test sintetico locale PASS; serve la nuova evidenza hosted per distinguere startup, avanzamento delle scritture e uscita.
+
 ## 2026-10-16 – Recovery: input dell'ombra separato dai controlli dinamici
 
 - Ripresa da `3026ce5`; riusato il prefisso nativo `32ddfbd` con stack di tutti i worker, senza nuove tracce. Mappatura `Image/Load`: thread 6216 con 9.846 stack WPF, 8.580 Direct3D e 8.365 WARP; altri sette worker con WARP e CPU osservata. Stack di scheduling e traccia parziale, non un profilo CPU completo. Il `DialogShellWindow` è invariato fra i due SHA.

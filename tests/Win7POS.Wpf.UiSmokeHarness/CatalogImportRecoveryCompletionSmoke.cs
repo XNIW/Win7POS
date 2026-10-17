@@ -124,6 +124,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Evidence.Add("sync_progress outcome=" + outcome + "; active_during_work=True; inactive_after_work=True; duplicate_calls=0");
                 }
                 CheckPresentation(host.ViewModel.ImportRecoveries.Single(), fixture);
+                // A collection refresh can complete before WPF realizes its
+                // replacement item containers. Exercise that boundary without
+                // yielding, so opening Recovery must realize the current row.
+                var recoveryList = Named<ItemsControl>(host.Center, "ImportRecoveryList");
+                recoveryList.Items.Refresh();
+                Require(host.ViewModel.ImportRecoveries.Count == 1 && recoveryList.Items.Count == 1,
+                    "refresh changed the recovery model instead of its containers");
+                Require(!Descendants(host.Center).OfType<Button>().Any(button => button.Tag is CatalogImportRecoveryBatch),
+                    "refresh fixture did not invalidate the recovery action container");
                 var dialog = await host.OpenRecoveryAsync();
                 try
                 {
@@ -934,7 +943,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 await WaitAsync(() => _rendered.Task.IsCompleted, "Sync Center ContentRendered");
                 await WaitAsync(() => ViewModel.ImportRecoveries.Count == 1, "Sync Center recovery list");
             }
-            internal Button OpenButton() => Descendants(Center).OfType<Button>().Single(button => button.Tag is CatalogImportRecoveryBatch);
+            internal Button OpenButton()
+            {
+                var before = Descendants(Center).OfType<Button>().Count(button => button.Tag is CatalogImportRecoveryBatch);
+                // Model readiness does not imply that the ItemsControl has
+                // generated its visual row after ApplyImportRecoveries/Refresh.
+                // Complete the pending layout synchronously inside the test
+                // budget, then retain the strict single real-button assertion.
+                Center.UpdateLayout();
+                var open = Descendants(Center).OfType<Button>().Single(button => button.Tag is CatalogImportRecoveryBatch);
+                Require(ReferenceEquals(open.Tag, ViewModel.ImportRecoveries.Single().Batch),
+                    "recovery action refers to a retired item container");
+                Evidence.Add("sync_center_action_layout before=" + before + "; after=1; current_batch=True");
+                return open;
+            }
             internal async Task<CatalogImportRecoveryDialog> OpenRecoveryAsync()
             {
                 var open = OpenButton();
