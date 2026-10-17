@@ -376,24 +376,31 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                 var editorProgress = (ProgressBar)editorHost.FindName("ImageUploadProgress");
                 try
                 {
-                    editorHost.Show(); editorHost.UpdateLayout(); await DrainAsync();
+                    editorHost.Show(); editorHost.UpdateLayout();
+                    using (PerfPhaseDrainObservation.Arm(editorHost, PerfPhaseDrainObservation.EditorDrain.Initial)) { await DrainAsync(); }
                     Require(!editorProgress.IsVisible && !editorProgress.IsIndeterminate, "idle image editor keeps animating");
                     // Exercise the actual control/template's public visibility
                     // lifecycle without starting an upload or changing VM internals.
                     editorProgress.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Visible);
-                    editorHost.UpdateLayout(); await DrainAsync();
+                    editorHost.UpdateLayout();
+                    using (PerfPhaseDrainObservation.Arm(editorHost, PerfPhaseDrainObservation.EditorDrain.ProgressVisible)) { await DrainAsync(); }
                     Require(editorProgress.IsVisible && editorProgress.IsIndeterminate, "visible image progress did not start");
                     var parent = (FrameworkElement)editorProgress.Parent;
-                    parent.Visibility = Visibility.Collapsed; await DrainAsync();
+                    parent.Visibility = Visibility.Collapsed;
+                    using (PerfPhaseDrainObservation.Arm(editorHost, PerfPhaseDrainObservation.EditorDrain.AncestorHidden)) { await DrainAsync(); }
                     Require(!editorProgress.IsIndeterminate, "hidden image editor ancestor keeps animating");
                     parent.Visibility = Visibility.Visible; editorHost.UpdateLayout();
-                    using (PerfPhaseDrainObservation.Arm(editorHost)) { await DrainAsync(); }
+                    using (PerfPhaseDrainObservation.Arm(editorHost, PerfPhaseDrainObservation.EditorDrain.AncestorVisible)) { await DrainAsync(); }
                     Require(editorProgress.IsIndeterminate, "image progress did not restart");
-                    editorProgress.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Collapsed); await DrainAsync();
+                    editorProgress.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Collapsed);
+                    using (PerfPhaseDrainObservation.Arm(editorHost, PerfPhaseDrainObservation.EditorDrain.ProgressHidden)) { await DrainAsync(); }
                     Require(!editorProgress.IsIndeterminate, "completed image progress keeps animating");
-                    editorProgress.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Visible); await DrainAsync();
-                    editorHost.Close(); await DrainAsync();
+                    editorProgress.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Visible);
+                    using (PerfPhaseDrainObservation.Arm(editorHost, PerfPhaseDrainObservation.EditorDrain.ProgressVisibleAgain)) { await DrainAsync(); }
+                    editorHost.Close();
+                    using (PerfPhaseDrainObservation.Arm(editorHost, PerfPhaseDrainObservation.EditorDrain.EditorClosed)) { await DrainAsync(); }
                     Require(!editorProgress.IsIndeterminate, "closed image editor keeps animating");
+                    PerfPhaseDrainObservation.CompleteEditorLifecycle();
                 }
                 finally { editorHost.Close(); }
                 host.Activate(); await DrainAsync();

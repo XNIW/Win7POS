@@ -12,7 +12,7 @@ using System.Windows.Threading;
 
 namespace Win7POS.Wpf.UiSmokeHarness
 {
-    // Diagnostic only: one observation of the existing editor ancestor-resume drain.
+    // Diagnostic only: the seven existing drains in the editor indicator lifecycle.
     internal static class PerfPhaseDrainObservation
     {
         [ThreadStatic] private static Capture _next;
@@ -20,21 +20,34 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static int _arms;
         private static int _claims;
         private static int _duplicates;
+        private static int _receipts, _errorFlags;
+        private static bool _lifecycleCompleted;
+        private static readonly object ReceiptGate = new object();
         private static readonly bool Enabled =
             string.Equals(Environment.GetEnvironmentVariable("GITHUB_WORKFLOW"), "wpf-build", StringComparison.Ordinal) &&
             string.Equals(Environment.GetEnvironmentVariable("GITHUB_EVENT_NAME"), "workflow_dispatch", StringComparison.Ordinal) &&
             string.Equals(Environment.GetEnvironmentVariable("GITHUB_RUN_ATTEMPT"), "1", StringComparison.Ordinal);
         private const int InvalidArm = 1, InvalidCapture = 2, InvalidClaim = 4, DuplicateReceipt = 8;
-        internal const string FileName = "perf-phase-drain-observation-v1.json.txt";
-        internal const string StatusFileName = "perf-phase-drain-observation-v1.status.txt";
+        internal const string FileName = "perf-phase-drain-observation-v2.json.txt";
+        internal const string StatusFileName = "perf-phase-drain-observation-v2.status.txt";
 
-        internal static Capture Arm(Window editor)
+        internal enum EditorDrain
+        {
+            Initial = 1, ProgressVisible, AncestorHidden, AncestorVisible,
+            ProgressHidden, ProgressVisibleAgain, EditorClosed
+        }
+
+        internal static Capture Arm(Window editor, EditorDrain phase)
         {
             if (!Enabled) return null;
             var started = Stopwatch.GetTimestamp();
             var capture = new Capture(editor.Dispatcher, Application.Current?.Dispatcher);
             capture.Data.ArmStartedTicks = started;
-            Interlocked.Increment(ref _arms);
+            capture.Data.ObservationIndex = Interlocked.Increment(ref _arms);
+            capture.Data.PhaseIndex = (int)phase;
+            capture.Data.Phase = phase.ToString();
+            if (capture.Data.ObservationIndex != (int)phase || (int)phase < 1 || (int)phase > 7)
+                capture.Data.ErrorFlags |= InvalidArm;
             if (_next != null)
             {
                 _next.Data.ErrorFlags |= InvalidArm;
@@ -43,6 +56,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             else _next = capture;
             capture.Data.ArmCompletedTicks = Stopwatch.GetTimestamp();
             return capture;
+        }
+
+        internal static void CompleteEditorLifecycle()
+        {
+            if (!Enabled) return;
+            lock (ReceiptGate) _lifecycleCompleted = true;
         }
 
         internal static Capture Claim()
@@ -66,6 +85,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal bool Claimed;
             private Dispatcher _selected, _editor, _application;
             private SynchronizationContext _entryContext;
+            private int _disposed;
 
             internal Capture(Dispatcher editor, Dispatcher application)
             {
@@ -155,11 +175,34 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             public void Dispose()
             {
+                if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                {
+                    Interlocked.Increment(ref _duplicates);
+                    return;
+                }
                 if (ReferenceEquals(_next, this)) _next = null;
                 if (!Claimed || !Data.EntryCaptured || !Data.ContinuationCaptured) Data.ErrorFlags |= InvalidClaim;
                 ReleaseReferences();
-                var existing = Interlocked.CompareExchange(ref _pending, Data, null);
-                if (existing != null) Interlocked.Increment(ref _duplicates);
+                lock (ReceiptGate)
+                {
+                    _receipts++;
+                    if (Data.ObservationIndex != _receipts || Data.PhaseIndex != _receipts)
+                        Data.ErrorFlags |= InvalidClaim;
+                    _errorFlags |= Data.ErrorFlags;
+                    // Retain the first original failing predicate, even when an earlier
+                    // capture was invalid. Otherwise retain the last reached drain.
+                    var discarded = Data;
+                    if (_pending == null || !_pending.ShouldFail)
+                    {
+                        discarded = _pending;
+                        _pending = Data;
+                    }
+                    if (discarded != null)
+                    {
+                        discarded.Entry.ContextType = null;
+                        discarded.Continuation.ContextType = null;
+                    }
+                }
             }
         }
 
@@ -195,10 +238,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [DataContract]
         internal sealed class Receipt
         {
-            [DataMember] public int SchemaVersion = 1;
-            [DataMember] public string Phase = "editor_ancestor_resume_drain";
+            [DataMember] public int SchemaVersion = 2;
+            [DataMember] public string Phase;
+            [DataMember] public int ObservationIndex, PhaseIndex, ReceiptCount, AggregateErrorFlags;
+            [DataMember] public string LifecycleStatus;
             [DataMember] public string Activation = "wpf-build/workflow_dispatch/attempt-1";
-            [DataMember] public string ProposalBaseRevision = "06d52681084b80196e40d640e669a927a159c7e8";
+            [DataMember] public string ProposalBaseRevision = "32618249fc01f29e86c6774d2b2c9262a90f226f";
             [DataMember] public string ExecutedSourceRevision = "REQUIRES_EXTERNAL_BUILD_MANIFEST";
             [DataMember] public string Mode = "--functional-completion-smoke";
             [DataMember] public string Scenario = "PERF_visual_lifetime_and_public_commands";
@@ -235,7 +280,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
         internal static void TryWriteArtifact(string dataDir, string result)
         {
             if (!Enabled) return;
-            var data = Interlocked.Exchange(ref _pending, null);
+            Receipt data;
+            lock (ReceiptGate)
+            {
+                data = _pending;
+                _pending = null;
+                if (data != null)
+                {
+                    data.ReceiptCount = _receipts;
+                    data.AggregateErrorFlags = _errorFlags;
+                    data.LifecycleStatus = _lifecycleCompleted ? "COMPLETED" : "INTERRUPTED";
+                }
+            }
             if (data == null)
             {
                 ReportStatus(dataDir, "NO_CAPTURE");
@@ -247,12 +303,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 data.ArmCount = Volatile.Read(ref _arms);
                 data.ClaimCount = Volatile.Read(ref _claims);
                 data.DuplicateReceiptCount = Volatile.Read(ref _duplicates);
-                if (data.DuplicateReceiptCount != 0) data.ErrorFlags |= DuplicateReceipt;
-                if (data.ArmCount != 1 || data.ClaimCount != 1) data.ErrorFlags |= InvalidClaim;
+                if (data.DuplicateReceiptCount != 0) data.AggregateErrorFlags |= DuplicateReceipt;
+                if (data.ArmCount < 1 || data.ArmCount > 7 || data.ClaimCount != data.ArmCount ||
+                    data.ReceiptCount != data.ArmCount ||
+                    (data.LifecycleStatus == "COMPLETED" && (data.ReceiptCount != 7 || data.ShouldFail)))
+                    data.AggregateErrorFlags |= InvalidClaim;
                 data.Entry.DescribeAndReleaseType();
                 data.Continuation.DescribeAndReleaseType();
                 data.FunctionalResult = result.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL";
-                data.DiagnosticResult = data.ErrorFlags != 0 ? "INVALID" : data.ShouldFail ? "REPRODUCED_PREDICATE" : "NOT_REPRODUCED";
+                data.DiagnosticResult = data.AggregateErrorFlags != 0 ? "INVALID" : data.ShouldFail ? "REPRODUCED_PREDICATE" :
+                    data.LifecycleStatus == "COMPLETED" ? "NOT_REPRODUCED" : "INCOMPLETE";
                 data.DeadlineLowerBoundProven = data.Winner == "delay" && data.DelayTaskStatus == (int)TaskStatus.RanToCompletion &&
                     data.Frequency > 0 && data.Frequency <= long.MaxValue / 3 && data.AfterDelayTicks > 0 &&
                     data.BeforeDecisionTicks - data.AfterDelayTicks >= data.Frequency * 3;

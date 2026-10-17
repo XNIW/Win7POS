@@ -4,6 +4,12 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-10-16 – PERF: conservare la drain effettivamente fallita
+
+- PR129 integrata normalmente in `3261824` dopo CI/Security/Release Pack verdi su `94411d2`. CI main `38985496618`: Core/Data 1.599 PASS, Recovery 11/11 in 22,460 s entro 60 s, ma PERF FAIL su Background drain a 3 s nel lifecycle immagini (riga 390); cleanup confermato. Verifica software main ancora aperta, distinta da Recovery, Asus e Staging.
+- Una sola acquisizione esistente `38987051539`, stesso main e hash harness `3840561543d967ab85b73df9eff946b2c21f59282300b0a2117bf33db88ae9fd`: PERF FAIL alla riattivazione successiva (riga 394), mentre la sola drain osservata prima termina in circa 2,17 ms sul dispatcher UI corretto. Il suo NOT_REPRODUCED non qualifica il risultato funzionale FAIL e non spiega la causa.
+- Riusato l'osservatore opt-in del workflow diagnostico sulle sette drain preesistenti del solo lifecycle editor. Unica ricevuta v2: primo predicato fallito, altrimenti ultima osservazione; errori aggregati, ordine e conteggi verificati, completamento dopo l'ultimo assert. Nessun nuovo collector, modifica del predicato/3 s/60 s, spostamento di assert o avvio WPF Asus. Una nuova acquisizione mirata deve distinguere dispatcher/contesto/scadenza nel punto realmente fallito; una mancata riproduzione conserva UNKNOWN, senza retry invariati.
+
 ## 2026-10-16 – Evidenza completa per i gate falliti dopo PR128
 
 - PR128 integrata normalmente in `1f7327f` dopo regressione causale, review e CI/Security sul candidato `0e9580a`: 1.599 Core/Data, 50 gate, visual e 19 scenari, Recovery 11/11 in 30,152 s con 60.000 ms invariati. Checkout allineato senza toccare lo stash preesistente.
