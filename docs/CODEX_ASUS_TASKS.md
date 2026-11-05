@@ -29,6 +29,9 @@ dated reports under `docs/reports/`.
 
 ## External Hardware — terminal owner decision
 
+Questa decisione è storica per le chiusure precedenti. ASUS-W7POS-019 mantiene
+i propri gate fisici e reali aperti; non eredita owner-defer o deroghe.
+
 The final closeout records unavailable Windows 7 and peripheral assets as
 `DONE_OWNER_ACCEPTED_DEFERRED`. This is not an open software task and does not
 constitute physical or production certification.

@@ -1,25 +1,36 @@
 # ASUS-W7POS-019 — qualifica esterna e scheda operatore Win7
 
-Data della review documentale: 2026-11-04. Questa scheda non attesta una corsa
-runtime, un deployment o un pacchetto consegnato. L'host di sviluppo corrente è
+Aggiornamento consegna: 2026-11-05 UTC. I risultati software e gli artifact
+osservati sono indicati sotto; questa scheda non attesta una corsa fisica Win7.
+Le identità sotto appartengono al primo candidato77427d1; la qualifica finale
+attende il nuovo commit con correzione alias hosted e apply preparato. La scheda
+operativa sarà aggiornata con il suo pacchetto prima della prova fisica.
+L'host di sviluppo corrente è
 Windows 11; non è il target fisico Windows 7 SP1. La nuova Shop/account non è
 ancora stata creata dall'operatore. Binding reale, inizio uso POS e semantica
 temporale Getnet restano prerequisiti esterni.
 
 | Identità del candidato da qualificare | Valore corrente |
 | --- | --- |
-| Source SHA definitivo della funzione | `NOT_ASSIGNED` |
-| Fingerprint SHA256 del candidato, se richiesto dalla ricevuta QA | `NOT_ASSIGNED` |
+| Primo Source SHA, sostituzione in preparazione | `77427d1f943c271e040dd5a67f58c34a3d2b83c1` |
+| Fingerprint SHA256 del checkout pulito del candidato | `3100112310734093d2e5137be1993171473e09342081fdd2c3c9a79054c7f1a4` |
 | Package Release x86 / installer SHA256 | `NOT_ASSIGNED` |
-| Package QA net48/x86 SHA256 | `NOT_ASSIGNED` |
-| `payload-manifest.json` SHA256 | `NOT_ASSIGNED` |
-| Fixture `manifest.json` SHA256 | `NOT_ASSIGNED` |
-| Run di consegna e run fisico Win7 del candidato | `NOT_ASSIGNED` |
+| Package QA net48/x86 SHA256 | `0f0234e6a76fe96cb46d02a049206c86902147402186de25c5a285d709eee04e` |
+| `payload-manifest.json` SHA256 | `e78e49ad2861d308b7e31e17a163c6410033b01473dd3bee841a65a414f24a8b` |
+| Fixture `manifest.json` SHA256 | `72cd6f0afc82e418d5676fc329f61761d224e8aade30da98ada4ad30ee64620e` |
+| QA `Win7POS.Wpf.UiSmokeHarness.exe` SHA256 | `596302101441ff12cc449a7be346b24a2600db3fd5fb00da4af5d583c6c81108` |
+| QA `Win7POS.Wpf.exe` SHA256 | `a1db7bd7d239f1cf48c124d623acfe2a1ca36e292b6ac97808714385df60b3f5` |
+| Run QA consegnata / run fisico Win7 | [WPF41955181554](https://github.com/XNIW/Win7POS/actions/runs/41955181554) PASS; fisico `NOT_RUN` |
 | Esito fisico Win7 / periferiche | `BLOCKED_EXTERNAL` |
 
 Non sostituire questi campi con HEAD di partenza, build intermedie, vecchi run o
 gli artifact citati nella checklist Win7 storica. I gate software sono tracciati
 separatamente nel [registro Execution](../plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md).
+
+La QA scaricata ha superato lo Smoke8/8,44 assert, da CWD esterna vuota su
+Windows11 nel run `Win7POS.QA.20261105T022928230Z.6d6b5892cd06491193d683655047681e`.
+SHA sorgente, fingerprint, binari e fixture corrispondono al bundle verificato;
+exit0, cleanup=true e zero processi residui. Questo PASS non qualifica Win7 fisico.
 
 ## Applicabilità V1 e confine server
 
@@ -68,11 +79,11 @@ pagamenti reali, invio fiscale, reset outbox o modifiche di produzione.
 | Macchina fisica | Identificativo privato host; Windows 7 SP1, edizione/build, CPU, RAM, storage libero/tipo, net48 e runtime VC++ x86 richiesti dal pacchetto |
 | Display e input | Risoluzione effettiva, DPI 100% e 125%, numero monitor, tastiera/layout, modello scanner e modalità input |
 | Stampante/periferiche | Modello/driver/porta; tipo prova ordinaria autorizzata; indicare `BLOCKED_EXTERNAL` per periferica mancante |
-| Candidato sorgente | `candidate_source_sha=NOT_ASSIGNED`; SHA esatto di 40 caratteri assegnato alla consegna verificata; fingerprint della stessa corsa se previsto |
+| Candidato sorgente | `candidate_source_sha=77427d1f943c271e040dd5a67f58c34a3d2b83c1`; fingerprint del checkout pulito nella tabella sopra |
 | Pacchetto prodotto | `candidate_package_run_id=NOT_ASSIGNED`; nome artifact e riferimento download; `candidate_package_sha256=NOT_ASSIGNED`; `candidate_installer_sha256=NOT_ASSIGNED` se distinto |
-| QA separata dello stesso SHA | Artifact previsto `Win7POS-QA-net48-x86-<candidate_source_sha>`; file `Win7POS.QA-net48-x86.zip`; `candidate_qa_zip_sha256=NOT_ASSIGNED` |
-| Manifest QA | `candidate_payload_manifest_sha256=NOT_ASSIGNED`; `schemaVersion=win7pos-net48-qa-payload-v1`; sourceSha uguale al candidato, architecture x86, targetFramework net48; zipBytes/zipSha256 e tutti i path/bytes/sha256 coerenti |
-| Manifest fixture | `candidate_fixture_manifest_sha256=NOT_ASSIGNED`; `fixtureVersion=historical-sales-getnet-v1`; hash di oracle e di entrambi i workbook sintetici uguali al manifest consegnato |
+| QA separata dello stesso SHA | Artifact `Win7POS-QA-net48-x86-77427d1f943c271e040dd5a67f58c34a3d2b83c1`; file `Win7POS.QA-net48-x86.zip`; SHA256 nella tabella sopra |
+| Manifest QA | SHA256 nella tabella sopra; `schemaVersion=win7pos-net48-qa-payload-v1`; sourceSha uguale al candidato, architecture x86, targetFramework net48;39 file verificati con path/bytes/sha256 coerenti |
+| Manifest fixture | SHA256 nella tabella sopra; `fixtureVersion=historical-sales-getnet-v1`; hash di oracle e di entrambi i workbook sintetici verificati nel bundle scaricato |
 | Ambiente prova | Directory QA nuova, breve e posseduta fuori da dati POS/checkout; dati di prova distinti da evidence; percorso privato e mappatura conservati dall'owner |
 | Shop e tempo reali, se applicabili | ShopId ufficiale e riferimenti privati merchant/inizio POS/policy, approvati e coerenti; oggi `BLOCKED_EXTERNAL`, non compilare con alias sintetici |
 

@@ -1385,3 +1385,14 @@ Main commit, exact-SHA workflows and downloaded artifacts are recorded separatel
 in the [result](reports/ASUS_W7POS_019_EXECUTION_RESULT.md) as they become observed.
 Private originals remain unmodified; real Shop/time and physical Win7 qualification
 are pending external evidence, without blocking software delivery.
+
+### 2026-11-05 UTC — ASUS-W7POS-019 first hosted feedback
+
+First main candidate77427d1: Security/WPF/foreign-CWD QA PASS, CI41955182242 FAIL
+on real short-alias availability and18.014s apply versus15s. Core, functional20/20
+and historicalSmoke8/8 passed independently; superseded Release was cancelled.
+Corrected the fixture with an owned real NTFS alias proof and reused typed SQLite
+commands within the transaction. Targeted113/113, clean net48/x86 build and
+canonical focused foundation5/5, Smoke8/8, measuredLoad PASS; local apply2.184s.
+Budgets/permissions unchanged. A new exact-SHA delivery qualification follows;
+first-candidate successes and failures retain their original attribution.

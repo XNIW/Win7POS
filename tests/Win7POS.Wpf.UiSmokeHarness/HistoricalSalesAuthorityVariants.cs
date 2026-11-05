@@ -30,24 +30,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 casing.SamePhysicalFile = ReadIdentity(casePath).Hash == original.Hash;
                 casing.DenialCode = ProbeAuthority(casePath);
 
-                var shortName = new StringBuilder(32768);
-                var length = GetShortPathNameW(database, shortName, (uint)shortName.Capacity);
-                var shortError = length == 0 ? Marshal.GetLastWin32Error() : 0;
-                var shortPath = shortName.ToString();
-                var alias = new Variant { Id = "shortpath", NativeSucceeded = length > 0 && length < shortName.Capacity, NativeError = shortError };
-                evidence.Variants.Add(alias);
-                if (alias.NativeSucceeded)
-                {
-                    // .NET Framework GetFullPath expands an existing 8.3 name.
-                    // Compare the absolute Win32 spelling before that expansion;
-                    // the handle identity below still proves the same real file.
-                    alias.DistinctAlias = Path.IsPathRooted(shortPath) && Path.IsPathRooted(database) &&
-                        !string.Equals(shortPath, database, StringComparison.OrdinalIgnoreCase);
-                    alias.SamePhysicalFile = ReadIdentity(shortPath).Hash == original.Hash;
-                    if (alias.DistinctAlias && alias.SamePhysicalFile) alias.DenialCode = ProbeAuthority(shortPath);
-                }
+                var preparedAlias = new Variant { Id = "shortpath" };
+                evidence.Variants.Add(preparedAlias);
+                ObserveShortAlias(database, original, preparedAlias);
+                // Hosted runner TEMP can live on a volume without on-disk8.3
+                // names. Provision and exercise an independently owned real
+                // SQLite copy in the user's local temp as well. Both attempts
+                // are real; an unchanged long spelling never qualifies either.
+                var ownedAlias = new Variant { Id = "shortpath_owned_temp" };
+                evidence.Variants.Add(ownedAlias);
+                ProbeOwnedTempAlias(database, context, ownedAlias);
+                var alias = IsShortAliasProof(preparedAlias) ? preparedAlias : ownedAlias;
+                evidence.EffectiveShortVariant = alias.Id;
+                test.PrivateDiagnostic("shortpath_variants;preparedDistinct=" + preparedAlias.DistinctAlias +
+                    ";preparedSameFile=" + preparedAlias.SamePhysicalFile + ";ownedDistinct=" + ownedAlias.DistinctAlias +
+                    ";ownedSameFile=" + ownedAlias.SamePhysicalFile + ";ownedConsistent=" + ownedAlias.CopyConsistent +
+                    ";ownedOwnerReleased=" + ownedAlias.OwnerReleased + ";selectedOwned=" + (alias == ownedAlias));
                 test.Check("case_shortpath_alias_collide", casing.DistinctAlias && casing.SamePhysicalFile && casing.DenialCode == "database_in_use" &&
-                    alias.NativeSucceeded && alias.DistinctAlias && alias.SamePhysicalFile && alias.DenialCode == "database_in_use");
+                    IsShortAliasProof(alias));
 
                 var hardCreated = CreateHardLinkW(hard, database, IntPtr.Zero);
                 var hardError = hardCreated ? 0 : Marshal.GetLastWin32Error();
@@ -85,6 +85,93 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (Directory.Exists(junction)) Directory.Delete(junction, false);
                 HistoricalSalesQaReceipt.WriteJson(Path.Combine(data, "process-authority-variants.private.json"), evidence);
             }
+        }
+
+        private static bool IsShortAliasProof(Variant alias) => alias.NativeSucceeded && alias.DistinctAlias &&
+            alias.SamePhysicalFile && alias.DenialCode == "database_in_use" &&
+            (alias.FixturePath == null || alias.CopyConsistent && alias.OwnerReleased && alias.PreparationErrorType == null);
+
+        private static void ObserveShortAlias(string database, Identity original, Variant alias)
+        {
+            var shortName = new StringBuilder(32768);
+            var length = GetShortPathNameW(database, shortName, (uint)shortName.Capacity);
+            alias.NativeError = length == 0 ? Marshal.GetLastWin32Error() : 0;
+            alias.NativeSucceeded = length > 0 && length < shortName.Capacity;
+            if (!alias.NativeSucceeded) return;
+            var shortPath = shortName.ToString();
+            // .NET Framework GetFullPath expands an existing8.3 name. Compare
+            // the absolute Win32 spelling BEFORE expansion; require handle
+            // identity and pass that same RAW alias to the real authority API.
+            alias.DistinctAlias = Path.IsPathRooted(shortPath) && Path.IsPathRooted(database) &&
+                !string.Equals(shortPath, database, StringComparison.OrdinalIgnoreCase);
+            alias.SamePhysicalFile = ReadIdentity(shortPath).Hash == original.Hash;
+            if (alias.DistinctAlias && alias.SamePhysicalFile) alias.DenialCode = ProbeAuthority(shortPath);
+        }
+
+        private static void ProbeOwnedTempAlias(string database, HistoricalSalesQaContext context, Variant alias)
+        {
+            PosDatabaseAuthorityLease owner = null;
+            try
+            {
+                // Use the OS known folder, not TEMP/TMP overridden to the
+                // runner's alternate volume. Never change global8dot3 policy.
+                var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (string.IsNullOrWhiteSpace(local)) throw new InvalidOperationException("qa_alias_owned_temp_unavailable");
+                var parent = Path.GetFullPath(Path.Combine(local, "Temp"));
+                PosDatabasePathIdentity.RejectReparseComponents(parent);
+                var volume = new DriveInfo(Path.GetPathRoot(parent));
+                if (!volume.IsReady || volume.DriveType != DriveType.Fixed || !string.Equals(volume.DriveFormat, "NTFS", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("qa_alias_owned_ntfs_unavailable");
+                Directory.CreateDirectory(parent);
+                var root = Path.GetFullPath(Path.Combine(parent, "W7Q83." + context.RunNonce.Substring(0, 8) + "." + Guid.NewGuid().ToString("N").Substring(0, 12)));
+                if (!root.StartsWith(parent.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                    Directory.Exists(root) || File.Exists(root) || root.StartsWith(Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("qa_alias_owned_root_invalid");
+                Directory.CreateDirectory(root);
+                alias.FixturePath = Path.Combine(root, "authority-variant.db");
+                alias.VolumeFileSystem = volume.DriveFormat;
+                alias.FixtureRunId = context.RunId;
+                alias.FixtureRunNonce = context.RunNonce;
+                var options = new PosDbOptions(alias.FixturePath);
+                owner = PosDatabaseAuthorityLease.AcquireSyntheticNew(options);
+                alias.FixtureToken = owner.FixtureToken;
+                // Prepared A has no open SQLite consumers here. This read-only
+                // guard prevents mutation while copying its exact closed image.
+                using (var frozen = new FileStream(database, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    if (File.Exists(database + "-journal") || File.Exists(database + "-wal") || File.Exists(database + "-shm"))
+                        throw new InvalidOperationException("qa_alias_source_sidecar_present");
+                    var sourceHash = HashStream(frozen);
+                    using (var target = new FileStream(alias.FixturePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    { frozen.Position = 0; frozen.CopyTo(target); target.Flush(true); }
+                    owner.AccessContext.BindCreatedFile();
+                    using (var target = new FileStream(alias.FixturePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                        alias.CopyConsistent = target.Length == frozen.Length && HashStream(target) == sourceHash && HashStream(frozen) == sourceHash;
+                    if (!alias.CopyConsistent) throw new InvalidOperationException("qa_alias_copy_not_consistent");
+                    alias.SourceSha256 = sourceHash;
+                    ObserveShortAlias(alias.FixturePath, ReadIdentity(alias.FixturePath), alias);
+                }
+            }
+            catch (Exception error)
+            {
+                // This optional volume cannot make an absent alias PASS. Keep
+                // preparation failures distinct from the actual denial code.
+                alias.PreparationErrorType = error.GetType().FullName;
+                alias.PreparationHResult = error.HResult;
+                alias.PreparationError = error.ToString();
+            }
+            finally
+            {
+                if (owner != null) { owner.Dispose(); alias.OwnerReleased = true; }
+                // Synthetic image/token stay retained at the unique owned path;
+                // no recursive cleanup or traversal of user data is performed.
+            }
+        }
+
+        private static string HashStream(Stream stream)
+        {
+            stream.Position = 0;
+            using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
         }
 
         private static string ProbeAuthority(string path)
@@ -138,6 +225,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "schemaVersion")] public string SchemaVersion { get; set; } = "win7pos-authority-variants-private-v1";
             [DataMember(Name = "runId")] public string RunId { get; set; }
             [DataMember(Name = "runNonce")] public string RunNonce { get; set; }
+            [DataMember(Name = "effectiveShortVariant")] public string EffectiveShortVariant { get; set; }
             [DataMember(Name = "variants")] public List<Variant> Variants { get; set; } = new List<Variant>();
         }
         [DataContract] private sealed class Variant
@@ -150,6 +238,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "linkCount")] public uint LinkCount { get; set; }
             [DataMember(Name = "reparsePoint")] public bool ReparsePoint { get; set; }
             [DataMember(Name = "denialCode")] public string DenialCode { get; set; } = "not_run";
+            [DataMember(Name = "fixturePath", EmitDefaultValue = false)] public string FixturePath { get; set; }
+            [DataMember(Name = "fixtureToken", EmitDefaultValue = false)] public string FixtureToken { get; set; }
+            [DataMember(Name = "fixtureRunId", EmitDefaultValue = false)] public string FixtureRunId { get; set; }
+            [DataMember(Name = "fixtureRunNonce", EmitDefaultValue = false)] public string FixtureRunNonce { get; set; }
+            [DataMember(Name = "volumeFileSystem", EmitDefaultValue = false)] public string VolumeFileSystem { get; set; }
+            [DataMember(Name = "sourceSha256", EmitDefaultValue = false)] public string SourceSha256 { get; set; }
+            [DataMember(Name = "copyConsistent")] public bool CopyConsistent { get; set; }
+            [DataMember(Name = "ownerReleased")] public bool OwnerReleased { get; set; }
+            [DataMember(Name = "preparationErrorType", EmitDefaultValue = false)] public string PreparationErrorType { get; set; }
+            [DataMember(Name = "preparationHResult")] public int PreparationHResult { get; set; }
+            [DataMember(Name = "preparationError", EmitDefaultValue = false)] public string PreparationError { get; set; }
         }
         [StructLayout(LayoutKind.Sequential)] private struct FileInformation
         {

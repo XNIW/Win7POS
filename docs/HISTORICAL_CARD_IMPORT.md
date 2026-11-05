@@ -63,7 +63,7 @@ annullamenti mantengono il loro segno anche nel grafico. La copertura esplicita
 distingue un sottoinsieme verificato da un totale completo o da dati indisponibili.
 
 Per includere i nativi serve una policy temporale canonica approvata per il negozio.
-**Configura policy temporale** legge un file JSON con hash, versione, provenienza e
+Il pulsante **Fuso report** legge un file JSON con hash, versione, provenienza e
 segmenti UTC; mostra l'anteprima e richiede evidenza e autorizzazione prima di
 attivarlo con backup e audit. Richiede `register.import_history`. Il formato è quello di
 `SalesReportTimePolicyRepository.SerializeApprovedFile`. Nessuna zona del PC viene

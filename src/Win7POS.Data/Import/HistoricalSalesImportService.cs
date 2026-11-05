@@ -326,21 +326,24 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 }
                 var inserted = 0; var duplicates = 0; long amount = 0;
                 var approvedCorrections = new List<HistoricalSalesCorrectionApproval>();
+                var assignments = new MerchantAssignmentLookup(plan.Assignments);
+                var usedBindings = new HashSet<string>(StringComparer.Ordinal);
+                using var commands = new ApplyCommands(c, tx, plan.ShopId, batch, now);
                 _testHooks?.AtPhase?.Invoke("before_insert", c, tx);
                 foreach (var r in plan.Analysis.AcceptedTransactions)
                 {
                     ct.ThrowIfCancellationRequested();
-                    var a = plan.Assignments.Single(x => x.AliasKey == HistoricalMerchantAssignment.MerchantKey(r.Merchant));
-                    var old = ReadMovement(c, tx, plan.ShopId, a.ScopeId, r, true);
+                    var a = assignments.Resolve(r.Merchant);
+                    var old = commands.ReadMovement(a.ScopeId, r, true);
                     if (old != null)
                     {
                         if (old.Value.ConflictsWith(EconomicValue(r)))
                             throw new InvalidOperationException("historical_economic_identity_conflict");
                         if (old.SettlementState != r.SettlementStatus || old.CardSubtype != r.CardSubtype.ToString() || old.Fee != r.CommissionClp || old.FeeVat != r.CommissionVatClp || old.Net != r.NetClp)
-                            Observe(c, tx, batch, files[r.Source.FileId], r.Source.RowNumber, "Metadata", SerializeMetadata(r), old.Id);
-                        Observe(c, tx, batch, files[r.Source.FileId], r.Source.RowNumber, "Duplicate", "same_economic_identity", old.Id); duplicates++; continue;
+                            commands.Observe(files[r.Source.FileId], r.Source.RowNumber, "Metadata", SerializeMetadata(r), old.Id);
+                        commands.Observe(files[r.Source.FileId], r.Source.RowNumber, "Duplicate", "same_economic_identity", old.Id); duplicates++; continue;
                     }
-                    var inactive = ReadMovement(c, tx, plan.ShopId, a.ScopeId, r, false);
+                    var inactive = commands.ReadMovement(a.ScopeId, r, false);
                     long? supersedes = inactive?.Id;
                     if (inactive != null && inactive.Value.ConflictsWith(EconomicValue(r)))
                     {
@@ -348,15 +351,21 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                         var approval = plan.CorrectionApprovals.SingleOrDefault(candidate.Matches);
                         if (approval == null) throw new InvalidOperationException("historical_inactive_correction_approval_required");
                         approvedCorrections.Add(approval);
-                        Observe(c, tx, batch, files[r.Source.FileId], r.Source.RowNumber, "Correction", "inactive_economic_correction_approved", inactive.Id);
+                        commands.Observe(files[r.Source.FileId], r.Source.RowNumber, "Correction", "inactive_economic_correction_approved", inactive.Id);
                     }
-                    c.Execute(@"INSERT INTO historical_transactions(batch_id,file_id,shop_id,provider,merchant_scope_id,binding_id,external_namespace,external_id,business_ticks,timestamp_raw,offset_minutes,occurred_at_utc_ms,movement_kind,state,settlement_state,signed_amount_clp,signed_fee_clp,signed_fee_vat_clp,signed_net_clp,original_cashier_id,card_subtype,source_sheet,source_row,is_active,supersedes_id)
-VALUES(@batch,@file,@ShopId,@Provider,@ScopeId,@BindingId,@ExternalNamespace,@ExternalId,@ticks,@raw,@offset,@utc,@kind,@state,@settlement,@GrossClp,@CommissionClp,@CommissionVatClp,@NetClp,NULL,@card,@sheet,@row,1,@supersedes)", new { batch, file = files[r.Source.FileId], plan.ShopId, r.Provider, a.ScopeId, a.BindingId, r.ExternalNamespace, r.ExternalId, ticks = r.BusinessDateTime.Value.Ticks, raw = r.Timestamp.RawTimestamp, offset = r.Timestamp.OffsetMinutes, utc = r.Timestamp.OccurredAtUtc?.ToUnixTimeMilliseconds(), kind = r.MovementKind.ToString(), state = r.TransactionStatus, settlement = r.SettlementStatus, r.GrossClp, r.CommissionClp, r.CommissionVatClp, r.NetClp, card = r.CardSubtype.ToString(), sheet = r.Source.SheetName, row = r.Source.RowNumber, supersedes }, tx);
-                    c.Execute("UPDATE historical_merchant_binding SET used_at=COALESCE(used_at,@now) WHERE id=@BindingId", new { now, a.BindingId }, tx);
+                    commands.Insert(files[r.Source.FileId], a, r, supersedes);
+                    // All rows in this apply share now. The first inserted row
+                    // freezes its binding in this same transaction; subsequent
+                    // identical COALESCE updates cannot change that evidence.
+                    if (usedBindings.Add(a.BindingId)) commands.MarkBindingUsed(a.BindingId);
                     inserted++; amount = checked(amount + r.GrossClp);
                 }
                 if (approvedCorrections.Count != plan.CorrectionApprovals.Count) throw new InvalidOperationException("historical_correction_approval_stale");
-                foreach (var r in plan.Analysis.RejectedRows) Observe(c, tx, batch, files[r.Source.FileId], r.Source.RowNumber, "Rejected", "provider_rejected", null);
+                foreach (var r in plan.Analysis.RejectedRows)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    commands.Observe(files[r.Source.FileId], r.Source.RowNumber, "Rejected", "provider_rejected", null);
+                }
                 result = new HistoricalSalesOperationReceipt { OperationId = plan.OperationId, OperationKind = "Apply", BatchId = batch, InsertedCount = inserted, DuplicateCount = duplicates, RejectedCount = plan.Analysis.RejectedRows.Count, SignedAmountClp = amount, CorrectionCount = approvedCorrections.Count, CorrectionApprovals = approvedCorrections.ToArray(), CurrentBatchState = "Active", CurrentBatchRevision = 1 };
                 InsertReceipt(c, tx, guard, result, now);
                 _testHooks?.AtPhase?.Invoke("before_commit", c, tx);
@@ -440,8 +449,6 @@ VALUES(@batch,@file,@ShopId,@Provider,@ScopeId,@BindingId,@ExternalNamespace,@Ex
             if (binding == null) c.Execute("INSERT INTO historical_merchant_binding(id,scope_id,shop_id,provider,alias_version,alias_key,evidence_reference,is_active) VALUES(@BindingId,@ScopeId,@shop,'getnet','getnet-merchant-alias-v1',@AliasKey,@EvidenceReference,1)", new { a.BindingId, a.ScopeId, shop, a.AliasKey, a.EvidenceReference }, tx);
             else if (binding.Id != a.BindingId || binding.Scope != a.ScopeId || binding.Shop != shop || binding.Provider != "getnet" || binding.Alias != a.AliasKey) throw new InvalidOperationException("historical_merchant_binding_conflict");
         }
-        private static void Observe(SqliteConnection c, SqliteTransaction tx, string batch, string file, int row, string kind, string code, long? existing)
-            => c.Execute("INSERT INTO historical_import_observation(batch_id,file_id,source_row,observation_kind,code,existing_transaction_id) VALUES(@batch,@file,@row,@kind,@code,@existing)", new { batch, file, row, kind, code, existing }, tx);
         private static void InsertReceipt(SqliteConnection c, SqliteTransaction tx, HistoricalImportAuthorizationCommitGuard guard, HistoricalSalesOperationReceipt receipt, long now)
             => c.Execute(@"INSERT INTO historical_import_operation(operation_id,operation_kind,shop_id,dataset_id,request_fingerprint,batch_id,operator_id,created_at,receipt_json,inserted_count,duplicate_count,signed_amount_clp)
 VALUES(@OperationId,@kind,@ShopId,@DatasetId,@RequestFingerprint,@BatchId,@OperatorId,@now,@json,@InsertedCount,@DuplicateCount,@SignedAmountClp)", new { guard.OperationId, kind = guard.Kind.ToString(), guard.ShopId, guard.DatasetId, guard.RequestFingerprint, receipt.BatchId, guard.OperatorId, now, json = Serialize(receipt), receipt.InsertedCount, receipt.DuplicateCount, receipt.SignedAmountClp }, tx);
@@ -495,6 +502,137 @@ FROM historical_transactions WHERE shop_id=@shop AND provider=@Provider AND merc
             [DataMember] public long? FeeClp;
             [DataMember] public long? FeeVatClp;
             [DataMember] public long? NetClp;
+        }
+        /// <summary>
+        /// Operation-local resolution of the already approved immutable merchant
+        /// evidence. At most the plan's existing 200-merchant bound is retained;
+        /// neither customer data nor a hash/proof is cached across operations.
+        /// </summary>
+        private sealed class MerchantAssignmentLookup
+        {
+            private readonly Dictionary<string, HistoricalMerchantAssignment> _aliases;
+            private readonly Dictionary<HistoricalSalesMerchant, HistoricalMerchantAssignment> _merchants =
+                new Dictionary<HistoricalSalesMerchant, HistoricalMerchantAssignment>(MerchantEvidenceComparer.Instance);
+            internal MerchantAssignmentLookup(IReadOnlyList<HistoricalMerchantAssignment> assignments)
+                => _aliases = assignments.ToDictionary(a => a.AliasKey, StringComparer.Ordinal);
+            internal HistoricalMerchantAssignment Resolve(HistoricalSalesMerchant merchant)
+            {
+                if (_merchants.TryGetValue(merchant, out var assignment)) return assignment;
+                if (!_aliases.TryGetValue(HistoricalMerchantAssignment.MerchantKey(merchant), out assignment))
+                    throw new InvalidOperationException("historical_overlap_or_binding_unresolved");
+                if (_merchants.Count < HistoricalSalesImportPlan.MaximumMerchantAssignments) _merchants.Add(merchant, assignment);
+                return assignment;
+            }
+        }
+        private sealed class MerchantEvidenceComparer : IEqualityComparer<HistoricalSalesMerchant>
+        {
+            internal static readonly MerchantEvidenceComparer Instance = new MerchantEvidenceComparer();
+            public bool Equals(HistoricalSalesMerchant x, HistoricalSalesMerchant y)
+                => ReferenceEquals(x, y) || (x != null && y != null && x.Local == y.Local && x.Seller == y.Seller &&
+                    x.SellerId == y.SellerId && x.LocalNumber == y.LocalNumber && x.Rut == y.Rut);
+            public int GetHashCode(HistoricalSalesMerchant merchant)
+            {
+                unchecked
+                {
+                    var hash = StringComparer.Ordinal.GetHashCode(merchant.Local);
+                    hash = hash * 31 + StringComparer.Ordinal.GetHashCode(merchant.Seller);
+                    hash = hash * 31 + StringComparer.Ordinal.GetHashCode(merchant.SellerId);
+                    hash = hash * 31 + StringComparer.Ordinal.GetHashCode(merchant.LocalNumber);
+                    return hash * 31 + StringComparer.Ordinal.GetHashCode(merchant.Rut);
+                }
+            }
+        }
+        /// <summary>
+        /// Reuses statements only within one live connection and transaction.
+        /// Both identity lookups still run against SQLite for every source row,
+        /// observing earlier inserts in this batch and the latest inactive ID.
+        /// </summary>
+        private sealed class ApplyCommands : IDisposable
+        {
+            private readonly PreparedStatement _active, _inactive, _insert, _observation, _used;
+            private const string LookupSql = @"SELECT id,business_ticks,signed_amount_clp,signed_fee_clp,signed_fee_vat_clp,
+signed_net_clp,movement_kind,state,settlement_state,card_subtype
+FROM historical_transactions WHERE shop_id=$shop AND provider=$provider AND merchant_scope_id=$scope AND external_namespace=$namespace AND external_id=$external AND is_active=";
+            internal ApplyCommands(SqliteConnection connection, SqliteTransaction transaction, string shop, string batch, long now)
+            {
+                try
+                {
+                    var identity = new[] { "shop", "provider", "scope", "namespace", "external" };
+                    _active = new PreparedStatement(connection, transaction, LookupSql + "1 ORDER BY id DESC LIMIT 1", identity, Array.Empty<string>());
+                    _inactive = new PreparedStatement(connection, transaction, LookupSql + "0 ORDER BY id DESC LIMIT 1", identity, Array.Empty<string>());
+                    _active.Set("shop", shop); _inactive.Set("shop", shop);
+                    _insert = new PreparedStatement(connection, transaction, @"INSERT INTO historical_transactions(batch_id,file_id,shop_id,provider,merchant_scope_id,binding_id,external_namespace,external_id,business_ticks,timestamp_raw,offset_minutes,occurred_at_utc_ms,movement_kind,state,settlement_state,signed_amount_clp,signed_fee_clp,signed_fee_vat_clp,signed_net_clp,original_cashier_id,card_subtype,source_sheet,source_row,is_active,supersedes_id)
+VALUES($batch,$file,$shop,$provider,$scope,$binding,$namespace,$external,$ticks,$raw,$offset,$utc,$kind,$state,$settlement,$gross,$fee,$vat,$net,NULL,$card,$sheet,$row,1,$supersedes)",
+                        new[] { "batch", "file", "shop", "provider", "scope", "binding", "namespace", "external", "raw", "kind", "state", "settlement", "card", "sheet" },
+                        new[] { "ticks", "offset", "utc", "gross", "fee", "vat", "net", "row", "supersedes" });
+                    _insert.Set("batch", batch); _insert.Set("shop", shop);
+                    _observation = new PreparedStatement(connection, transaction,
+                        "INSERT INTO historical_import_observation(batch_id,file_id,source_row,observation_kind,code,existing_transaction_id) VALUES($batch,$file,$row,$kind,$code,$existing)",
+                        new[] { "batch", "file", "kind", "code" }, new[] { "row", "existing" });
+                    _observation.Set("batch", batch);
+                    _used = new PreparedStatement(connection, transaction,
+                        "UPDATE historical_merchant_binding SET used_at=COALESCE(used_at,$now) WHERE id=$binding", new[] { "binding" }, new[] { "now" });
+                    _used.Set("now", now);
+                }
+                catch { Dispose(); throw; }
+            }
+            internal ExistingMovement ReadMovement(string scope, HistoricalSalesTransaction row, bool active)
+            {
+                var statement = active ? _active : _inactive;
+                statement.Set("provider", row.Provider); statement.Set("scope", scope);
+                statement.Set("namespace", row.ExternalNamespace); statement.Set("external", row.ExternalId);
+                using var reader = statement.Command.ExecuteReader();
+                if (!reader.Read()) return null;
+                return new ExistingMovement
+                {
+                    Id = reader.GetInt64(0), BusinessTicks = reader.GetInt64(1), Gross = reader.GetInt64(2),
+                    Fee = NullableInt64(reader, 3), FeeVat = NullableInt64(reader, 4), Net = NullableInt64(reader, 5),
+                    Kind = reader.GetString(6), TransactionState = reader.GetString(7),
+                    SettlementState = reader.IsDBNull(8) ? null : reader.GetString(8), CardSubtype = reader.GetString(9)
+                };
+            }
+            private static long? NullableInt64(SqliteDataReader reader, int ordinal)
+                => reader.IsDBNull(ordinal) ? (long?)null : reader.GetInt64(ordinal);
+            internal void Insert(string file, HistoricalMerchantAssignment assignment, HistoricalSalesTransaction row, long? supersedes)
+            {
+                _insert.Set("file", file); _insert.Set("provider", row.Provider); _insert.Set("scope", assignment.ScopeId);
+                _insert.Set("binding", assignment.BindingId); _insert.Set("namespace", row.ExternalNamespace); _insert.Set("external", row.ExternalId);
+                _insert.Set("ticks", row.BusinessDateTime.Value.Ticks); _insert.Set("raw", row.Timestamp.RawTimestamp);
+                _insert.Set("offset", row.Timestamp.OffsetMinutes); _insert.Set("utc", row.Timestamp.OccurredAtUtc?.ToUnixTimeMilliseconds());
+                _insert.Set("kind", row.MovementKind.ToString()); _insert.Set("state", row.TransactionStatus); _insert.Set("settlement", row.SettlementStatus);
+                _insert.Set("gross", row.GrossClp); _insert.Set("fee", row.CommissionClp); _insert.Set("vat", row.CommissionVatClp); _insert.Set("net", row.NetClp);
+                _insert.Set("card", row.CardSubtype.ToString()); _insert.Set("sheet", row.Source.SheetName); _insert.Set("row", row.Source.RowNumber);
+                _insert.Set("supersedes", supersedes); _insert.Command.ExecuteNonQuery();
+            }
+            internal void Observe(string file, int row, string kind, string code, long? existing)
+            {
+                _observation.Set("file", file); _observation.Set("row", row); _observation.Set("kind", kind);
+                _observation.Set("code", code); _observation.Set("existing", existing); _observation.Command.ExecuteNonQuery();
+            }
+            internal void MarkBindingUsed(string binding) { _used.Set("binding", binding); _used.Command.ExecuteNonQuery(); }
+            public void Dispose()
+            {
+                _active?.Dispose(); _inactive?.Dispose(); _insert?.Dispose(); _observation?.Dispose(); _used?.Dispose();
+            }
+        }
+        private sealed class PreparedStatement : IDisposable
+        {
+            private readonly Dictionary<string, SqliteParameter> _parameters = new Dictionary<string, SqliteParameter>(StringComparer.Ordinal);
+            internal PreparedStatement(SqliteConnection connection, SqliteTransaction transaction, string sql, string[] text, string[] integers)
+            {
+                Command = connection.CreateCommand(); Command.Transaction = transaction; Command.CommandText = sql;
+                try
+                {
+                    foreach (var name in text) _parameters.Add(name, Command.Parameters.Add("$" + name, SqliteType.Text));
+                    foreach (var name in integers) _parameters.Add(name, Command.Parameters.Add("$" + name, SqliteType.Integer));
+                    foreach (var parameter in _parameters.Values) parameter.Value = DBNull.Value;
+                    Command.Prepare();
+                }
+                catch { Command.Dispose(); throw; }
+            }
+            internal SqliteCommand Command { get; }
+            internal void Set(string name, object value) => _parameters[name].Value = value ?? DBNull.Value;
+            public void Dispose() => Command.Dispose();
         }
         private sealed class ExistingMovement
         {

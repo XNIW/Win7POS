@@ -25,13 +25,11 @@ nonoverlapping. All raw diagnostics and real financial controls stay private.
 Previous FAIL/TIMEOUT evidence must remain available; no result is inferred from
 static inspection, missing prerequisite, or a receipt schema alone.
 
-Current resume point: run03 ended with unchanged source and retained FAIL;
-Core1692/1692 and gates50/50 PASS. Focused Recovery and foundation5/5 subsequently
-PASS. Latest focused run021708997 completes Smoke8/8 (44/44 assertions) and actual
-Load11/11 on unchanged fingerprint, with cleanup=true/remaining0. The latest audit
-maintenance regression plus native proof tests pass23/23. Code SHA remains pending;
-these results are not a full Windows rerun or a relabeling of run03. Root remains
-the sole build/test writer.
+Current resume point: main77427d1 first hosted CI41955182242 retains FAIL on
+real shortpath alias and apply18014ms/15000ms. Core/functional20/20/smoke8/8
+passed. Root coordinates two minimal fixes; only root builds/tests. Security and
+WPF/QA payload passed on77427d1; Release41955182205 cancellation was requested
+because that candidate is superseded. New exact-SHA workflows remain required.
 Earlier process/next-command notes below are historical checkpoints; this pointer
 and the newest run section are authoritative.
 
@@ -388,3 +386,66 @@ following observed C/load qualification. Final privacy inventory:216 eligible
 files plus10 OOXML parts, clean; the external qualification card names the
 applicable skill portably without a user-profile path. Final code SHA, CI All,
 Security Supply Chain, Release Pack and exact separate QA payload remain pending.
+
+## First main candidate hosted qualification (2026-11-05 UTC)
+
+Main/code SHA77427d1f943c271e040dd5a67f58c34a3d2b83c1 was pushed without force,
+with branch rules read as empty and remote baseline unchanged. Clean fingerprint
+3100112310734093d2e5137be1993171473e09342081fdd2c3c9a79054c7f1a4.
+CI41955182242 (run022701667Z.56d79e8536c7404da3af0c24916cb4d9) retains FAIL:
+Core gate PASS (1085366ms), functional20/20 and historicalSmoke8/8 PASS; foundation
+3/4 completed cases PASS, case_shortpath_alias_collide=false, backup case NOT_RUN.
+Actual genuine HOT, commit authority and admission passed. Load completed with
+measurementCompleted/environmentValid=true but thresholdsPassed=false: apply
+18014.0284ms exceeds15000ms. Its795 Dispatcher/398 memory samples are complete,
+zero drop/pending/overflow/suspend, p95 .2897ms/max3.4235ms, warm359.8263ms.
+Public bundle publication PASS, separately from scenarios FAIL; downloaded GitHub
+archive and inner bundle digests verified. Private evidence remains retained.
+Security41955182236 PASS (including CodeQL), WPF41955181554 PASS. Downloaded QA
+bundle39files, manifest/fixture/closure hashes verified; foreign empty-CWD smoke
+run022928230Z.6d6b5892cd06491193d683655047681e8/8+44checks PASS, cleanuptrue/0.
+These are attributed to77427d1 only, not a future correction SHA.
+
+Root is correcting two concrete causes: provision a genuine owned8.3 fixture
+on an available local NTFS volume if the prepared path has no short alias (absence
+is consistent with hosted-volume configuration, not proven by exported detail);
+reuse prepared transactional SQL commands and binding/merchant resolution to
+remove repeated preparation and identical updates across49k accepted rows.
+All variant assertions and15000ms apply threshold remain mandatory. No global
+volume setting, budget, permission or productlimit change. Root alone runs builds
+and focused regressions; exact final CIAll/security/release/QA payload must follow.
+
+## Prepared-apply correction checkpoint (2026-11-05 UTC)
+
+Only HistoricalSalesImportService.cs and HistoricalSalesAuthorityVariants.cs
+changed runtime behaviour after the first hosted failure. The service reuses
+five typed SQLite statements within the same transaction, preserves per-row
+active/latest-inactive lookup and intra-batch visibility, updates used_at on the
+first inserted row of each binding, and resolves immutable merchant evidence in
+an operation-local cache bounded at200. Integer/nullable values, checked sums,
+source handles, approval/replay/receipt/hooks and commit guard remain unchanged.
+The harness always exercises the independently owned local-temp NTFS copy too:
+real raw8.3, identical physical file, database_in_use, consistent copy, owner
+released, no preparation error. It uses that proof if the prepared fixture lacks
+a genuine alias; no global filesystem setting or skipped assertion.
+
+Prepared-apply-regression27:113/113 PASS, zero skipped,38s; all Historical/Getnet,
+PosDatabaseAuthority, audit maintenance and native-proof filtered regressions.
+Harness28 Release net48/x86 PASS, zero warnings/errors. Focused canonical group
+Win7POS.QA.20261105T030459605Z.e0d33b992cf94cf192cc895c56917d80: foundation5/5,
+Smoke8/8+44checks, Load11/11 PASS; existing supervisor/Job/context/validators,
+all exit0/cleanuptrue/remaining0. Source fingerprint
+842ca111714aecfb5928d3929293b17644c6e134a1b6dac79efc7427cba2d428 unchanged.
+Wrapper times B24142ms/H26986ms/L18114ms. Load analysis1450.2855ms,
+apply2184.1727ms (previous local7862.5155), fullservice2393.6904ms,
+backup175.4882ms/coldownership4384.695ms/warm177.6638ms. All three qualification
+flags true;280/280 dispatcher and140/140 memory samples, zero pending/drop,
+p95 .4894ms/max21.6212ms, peak86450176bytes. No budget increase.
+
+Old Release41955182205 was explicitly cancelled as superseded after CI failed;
+its unfinished Core/package are not claimed PASS. Other first-candidate results
+remain attributed only to77427d1. Next: final required gates29, clean task-only
+main correction commit, new exact-SHA workflows/artifacts. No real apply/Win7.
+
+Required-gates29:50/50 PASS after the prepared-apply/alias correction. Only the
+seven task source/docs plus worklog are staged for the correction commit.
