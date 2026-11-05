@@ -445,10 +445,12 @@ WHERE p.remote_product_id = @remoteProductId;", new { remoteProductId });
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             Root = root;
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             Factory = new SqliteConnectionFactory(options);
             DbInitializer.EnsureCreated(options);
         }
@@ -466,6 +468,7 @@ WHERE p.remote_product_id = @remoteProductId;", new { remoteProductId });
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

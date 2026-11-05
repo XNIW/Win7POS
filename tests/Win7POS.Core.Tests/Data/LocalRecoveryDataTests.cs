@@ -151,11 +151,13 @@ END;");
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             Root = root;
             var dbPath = Path.Combine(root, "pos.db");
             var options = PosDbOptions.ForPath(dbPath);
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             Factory = new SqliteConnectionFactory(options);
             DbInitializer.EnsureCreated(options);
         }
@@ -189,6 +191,7 @@ END;");
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

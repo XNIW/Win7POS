@@ -17,9 +17,10 @@ public sealed class CustomerOrderInboxMigrationTests
             "win7pos-order-inbox-migration-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
-        var factory = new SqliteConnectionFactory(options);
         try
         {
+            using var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
+            var factory = new SqliteConnectionFactory(options);
             new SchemaMigrationRunner(
                 factory,
                 SchemaMigrationRegistry.All.Take(11)).Run();

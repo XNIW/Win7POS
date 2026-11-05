@@ -4,6 +4,24 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-11-04 – Revisione conclusiva R3 storico Getnet (ASUS-W7POS-019)
+
+- Aggiornato lo stesso [PLAN canonico](plans/ASUS-W7POS-019_GETNET_HISTORY/PLAN.md): R2 locale uguale allo SHA-256 ricevuto, main/HEAD invariati `32618249fc01f29e86c6774d2b2c9262a90f226f`; lavoro locale e audit precedenti preservati.
+- R3 `PLAN_READY_FOR_REVIEW`: integrati R3-01..08 su contesti DB ausiliari/fixture, permit CSV e IO fuori lock, copertura senza divulgazione e geometria negativa, cinque scenari B autonomi, console sicura, diagnosi postjob e bundle univoco del run corrente. Matrice/assertion/comandi e delta filemap allineati; otto runner All e functional20 preservati.
+- Solo piano, voce019 e worklog; implementazione `NOT_STARTED`, build/test/runtime `NOT_RUN`, nessuna pubblicazione Git o operazione DB/live. Prossimo passo consentito: review R3; futura Execution solo su richiesta, iniziando dalla tranche A.
+
+## 2026-11-04 – Revisione mirata R2 storico Getnet (ASUS-W7POS-019)
+
+- Aggiornato lo stesso [piano canonico](plans/ASUS-W7POS-019_GETNET_HISTORY/PLAN.md), preservando la R1 locale e la sua cronologia: SHA-256 iniziale uguale al target ricevuto; main GitHub/HEAD invariati su `32618249fc01f29e86c6774d2b2c9262a90f226f`. R1 e fonte sufficiente, nessun blocco per un altro piano Claude.
+- R2 `PLAN_READY_FOR_REVIEW`: integrati R2-01..14 su replay terminale senza input, revisioni atomiche, recovery esistente, lease di tutti gli entry point/attese cancellabili, fotografia mista/KPI POS, CSV Core/fixture distribuite, campionamento e crash sullo stesso DB/Job. Definiti otto runner All, diagnosi parziali sicure e proiezione/manifest per upload pubblico; originali privati e gate esterni preservati.
+- Solo PLAN, voce019 e worklog; implementazione `NOT_STARTED`, build/test/runtime `NOT_RUN`, nessun DB, live, commit o pubblicazione Git. Prossimo passo: review R2, nessuna Execution automatica.
+
+## 2026-11-04 – Planning persistente storico Getnet (ASUS-W7POS-019)
+
+- Creata la [task canonica](plans/ASUS-W7POS-019_GETNET_HISTORY/PLAN.md) dopo verifica della numerazione e assenza di un piano Getnet locale; baseline main/HEAD `32618249fc01f29e86c6774d2b2c9262a90f226f`, checkout inizialmente pulito.
+- Piano R1 `PLAN_READY_FOR_REVIEW`: integrate correzioni su tenant proof nativo, capability/fence al commit, autorita DB e manutenzione, mapping persistente, cicli undo/reimport, movimenti firmati/resto e CSV tipizzato. Specificati smoke/load separati, receipt/validator/allowlist di contenuto, matrice gate e tranche A/B/C. Dati finanziari e riferimenti personali restano privati; fonte Claude distinta, originali, ora Getnet, binding reale e Win7 hanno blocchi espliciti.
+- Solo documenti autorizzati; implementazione `NOT_STARTED`, build e test runtime `NOT_RUN`; nessun DB, servizio live o pubblicazione Git.
+
 ## 2026-10-16 – Evidenza completa per i gate falliti dopo PR128
 
 - PR128 integrata normalmente in `1f7327f` dopo regressione causale, review e CI/Security sul candidato `0e9580a`: 1.599 Core/Data, 50 gate, visual e 19 scenari, Recovery 11/11 in 30,152 s con 60.000 ms invariati. Checkout allineato senza toccare lo stash preesistente.
@@ -1343,3 +1361,27 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   HOSTED_WPF è evidenza separata. Readiness Admin ancora esterna; Win7 reale
   differito dall'utente. Esiti, SHA e limiti nel report esterno
   `WIN7POS_RECOVERY_CAUSE_RESULT.md` e relativo JSON.
+
+### 2026-11-04 — ASUS-W7POS-019 Execution A+B+C (in progress)
+
+Explicit end-to-end Execution mandate supersedes historical Planning-only limits.
+Preserved baseline and local documentation; independent private corpus audit and
+product preview matched without source changes. Implementing isolated historical
+ledger/receipts/undo, DB authority/AUX, mixed report/CSV and WPF consumers with
+closed QA contracts. Intermediate Data/WPF/dialog checks and regression failures
+are recorded in the [execution ledger](plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md).
+No real shop import, public release or physical Windows 7 qualification claimed.
+
+### 2026-11-05 UTC — ASUS-W7POS-019 software qualification and delivery
+
+Implemented A+B+C with bounded Getnet analysis, historical ledger/undo, database
+authority and mixed reports/CSV with operator-scoped publication. Local Run03
+retains its FAIL alongside Core1692/1692 PASS. Subsequent focused canonical
+steps qualified Recovery, foundation5/5, smoke8/8 and the first measured50k load;
+audit/ownership regression23/23 and final required gates50/50 PASS. Real pending
+report reads exposed synchronous audit admission; LogEventAsync now awaits the
+factory, with a regression under actual maintenance. CI now requests All.
+Main commit, exact-SHA workflows and downloaded artifacts are recorded separately
+in the [result](reports/ASUS_W7POS_019_EXECUTION_RESULT.md) as they become observed.
+Private originals remain unmodified; real Shop/time and physical Win7 qualification
+are pending external evidence, without blocking software delivery.

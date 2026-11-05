@@ -125,9 +125,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckManagerLifecycleAsync(string root)
         {
-            var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
-            DbInitializer.EnsureCreated(options);
-            var repository = new CustomerDisplaySettingsRepository(new SqliteConnectionFactory(options));
+            using var database = HarnessSqliteDatabase.CreateNew(Path.Combine(root, "pos.db"));
+            DbInitializer.EnsureCreated(database.Options);
+            var repository = new CustomerDisplaySettingsRepository(database.Factory);
             var saved = CustomerDisplaySettings.CreateDefault(2);
             saved.Enabled = true; saved.AutoOpen = false; saved.AlwaysOnTop = false;
             await repository.SaveAsync(saved, () => { }, "qa_fixture").ConfigureAwait(true);

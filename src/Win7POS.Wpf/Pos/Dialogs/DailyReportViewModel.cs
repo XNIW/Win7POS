@@ -17,7 +17,7 @@ using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public sealed class DailyReportViewModel : INotifyPropertyChanged, IDisposable
+    public sealed partial class DailyReportViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly Pos.PosWorkflowService _service;
         private readonly IOverrideAuthService _overrideAuthService;
@@ -45,10 +45,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _disposed;
         private bool _useReceipt42 = true;
         private CancellationTokenSource _historyPreviewCts;
-        private int _historyPreviewVersion;
         private bool _isHistoryPreviewLoading;
         private CancellationTokenSource _markedPreviewCts;
-        private int _markedPreviewVersion;
         private bool _isMarkedPreviewLoading;
         private int _dailyPreviewVersion;
         private int _historyLoadVersion;
@@ -61,13 +59,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private long _periodCardAmount;
         private int _periodSalesCount;
 
-        public DailyReportViewModel(Pos.PosWorkflowService service, IOverrideAuthService overrideAuthService = null)
+        public DailyReportViewModel(Pos.PosWorkflowService service, IOverrideAuthService overrideAuthService = null, IPermissionService permissions = null, OperatorSession session = null, Func<Task> importHistoryAction = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _overrideAuthService = overrideAuthService;
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             ToggleFiscalPrintedModeCommand = new AsyncRelayCommand(ToggleFiscalPrintedModeAsync, _ => !IsBusy && _overrideAuthService != null);
-            PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
+            PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && ReportNumbersVisible && !string.IsNullOrEmpty(SummaryReceiptPreview));
             PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintStampaRiepilogoAsync, _ => !IsBusy && CanPrintStampaRiepilogo());
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy && CanLoadHistory());
             ExportCommand = new AsyncRelayCommand(ExportAsync, _ => !IsBusy && CanExport());
@@ -82,6 +80,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             HistoryRows = new ObservableCollection<HistoryRow>();
             HourlySalesPoints = new ObservableCollection<HourlySalesPoint>();
             PosLocalization.Current.LanguageChanged += OnLanguageChanged;
+            InitializeAnalyticalReports(permissions, session, importHistoryAction);
         }
 
         public string DateText
@@ -93,6 +92,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (string.Equals(_dateText, normalized, StringComparison.Ordinal)) return;
                 _dateText = normalized;
                 InvalidateDailyPreview();
+                InvalidateAnalyticalReport();
                 OnPropertyChanged();
             }
         }
@@ -169,7 +169,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string NetAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.NetAmount ?? 0);
         public int SalesCountDisplay => _currentHeaderSummary?.SalesCount ?? 0;
         public string TicketMedioDisplay => _currentHeaderSummary != null && _currentHeaderSummary.SalesCount > 0
-            ? MoneyClp.FormatDisplay(_currentHeaderSummary.NetAmount / _currentHeaderSummary.SalesCount) : "0";
+            ? FormatNativeAverage(_currentHeaderSummary.NativePositiveSalesClp, _currentHeaderSummary.SalesCount) : PosLocalization.T("historyReport.notAvailable");
 
         /// <summary>Badge stato: "Report caricato" / "Nessun dato" per header.</summary>
         public string StatusBadgeText => !_reportLoaded ? "" : (SalesCount > 0 || NetAmount != 0 ? PosLocalization.T("reports.loaded") : PosLocalization.T("reports.noData"));
@@ -226,6 +226,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (string.Equals(_historyFromText, normalized, StringComparison.Ordinal)) return;
                 _historyFromText = normalized;
                 InvalidateHistoryLoad();
+                InvalidateAnalyticalReport();
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasInvalidHistoryRange));
                 (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
@@ -241,13 +242,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (string.Equals(_historyToText, normalized, StringComparison.Ordinal)) return;
                 _historyToText = normalized;
                 InvalidateHistoryLoad();
+                InvalidateAnalyticalReport();
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasInvalidHistoryRange));
                 (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             }
         }
 
-        public ObservableCollection<HistoryRow> HistoryRows { get; }
+        public ObservableCollection<HistoryRow> HistoryRows { get; private set; }
 
         private HistoryRow _selectedHistoryRow;
         public HistoryRow SelectedHistoryRow
@@ -278,7 +280,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool HasHistoryRows => HistoryRowCount > 0;
 
         /// <summary>True per mostrare "Nessun movimento nel periodo" (evita converter inverso).</summary>
-        public bool ShowHistoryEmptyMessage => !HasHistoryRows;
+        public bool ShowHistoryEmptyMessage => ReportNumbersVisible && !HasHistoryRows;
 
         /// <summary>Testo placeholder quando nessuna riga storico selezionata.</summary>
         public string PreviewPlaceholderText => HasHistorySelection ? "" : PosLocalization.T("reports.selectHistoryPlaceholder");
@@ -335,7 +337,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string PeriodRefundsDisplay => MoneyClp.FormatDisplay(PeriodRefundsAmount);
         public string PeriodCashDisplay => MoneyClp.FormatDisplay(PeriodCashAmount);
         public string PeriodCardDisplay => MoneyClp.FormatDisplay(PeriodCardAmount);
-        public string PeriodTicketAverageDisplay => PeriodSalesCount > 0 ? MoneyClp.FormatDisplay(PeriodNetAmount / PeriodSalesCount) : "0";
+        public string PeriodTicketAverageDisplay => FormatNativeAverage(_periodNativePositiveSalesClp, PeriodSalesCount);
 
         private int _markedCount;
         private long _markedNetAmount, _markedGrossAmount, _markedRefundsAmount, _markedCashAmount, _markedCardAmount;
@@ -352,7 +354,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string MarkedRefundsDisplay => MoneyClp.FormatDisplay(MarkedRefundsAmount);
         public string MarkedCashDisplay => MoneyClp.FormatDisplay(MarkedCashAmount);
         public string MarkedCardDisplay => MoneyClp.FormatDisplay(MarkedCardAmount);
-        public string MarkedTicketAverageDisplay => MarkedSalesCount > 0 ? MoneyClp.FormatDisplay(MarkedNetAmount / MarkedSalesCount) : "0";
+        public string MarkedTicketAverageDisplay => FormatNativeAverage(HistoryRows.Where(row => row.IsMarked).Aggregate(0L, (sum,row) => checked(sum + row.NativePositiveSalesClp)), MarkedSalesCount);
         public bool HasMarkedRows => MarkedCount > 0;
         public bool ShowMarkedSummary => MarkedCount > 0;
         public bool ShowSingleDayDetail => MarkedCount == 1;
@@ -419,7 +421,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         /// <summary>24 punti (0-23) per grafico vendite orarie nel tab Giornaliero.</summary>
-        public ObservableCollection<HourlySalesPoint> HourlySalesPoints { get; }
+        public ObservableCollection<HourlySalesPoint> HourlySalesPoints { get; private set; }
 
         /// <summary>Etichetta picco orario (es. "Picco: 13h").</summary>
         public string HourlyPeakText => GetHourlyPeakText();
@@ -430,48 +432,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task LoadAsync()
         {
-            if (!TryParseDate(out var date))
-            {
-                Status = PosLocalization.T("reports.invalidDate");
-                return;
-            }
-
-            var version = BeginDailyPreviewLoad();
-            IsBusy = true;
-            try
-            {
-                var includeFiscalPrinted = true;
-                var useReceipt42 = await _service.GetUseReceipt42Async().ConfigureAwait(true) ?? true;
-                DailySalesSummary summary = await _service.GetDailySummaryAsync(date, includeFiscalPrinted).ConfigureAwait(true);
-                if (!IsCurrentDailyPreview(version)) return;
-                var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
-                if (!IsCurrentDailyPreview(version)) return;
-
-                _useReceipt42 = useReceipt42;
-                SalesCount = summary.SalesCount;
-                TotalAmount = summary.TotalAmount;
-                CashAmount = summary.CashAmount;
-                CardAmount = summary.CardAmount;
-                GrossSalesAmount = summary.GrossSalesAmount;
-                RefundsAmount = summary.RefundsAmount;
-                NetAmount = summary.NetAmount;
-                UpdateSummaryReceiptPreview(date, summary, shop);
-                _reportLoaded = true;
-                RefreshHeaderSummary();
-                _ = LoadHourlySalesAsync(date, includeFiscalPrinted, version);
-                OnPropertyChanged(nameof(StatusBadgeText));
-                OnPropertyChanged(nameof(ShowStatusBadge));
-                SetStatusKey("reports.loaded");
-            }
-            catch (Exception ex)
-            {
-                if (IsCurrentDailyPreview(version))
-                    Status = PosLocalization.F("reports.loadError", ex.Message);
-            }
-            finally
-            {
-                IsBusy = false;
-            }
+            await LoadAnalyticalDailyAsync().ConfigureAwait(true);
         }
 
         private int BeginDailyPreviewLoad()
@@ -555,6 +516,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private bool CanExport()
         {
+            if (!ReportNumbersVisible) return false;
             if (SelectedTabIndex == 0)
                 return TryParseDate(out _);
             return HasHistoryRows || HasHistorySelection || HasMarkedRows;
@@ -631,33 +593,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Restituisce il contenuto CSV per la richiesta (chiamato dalla View dopo SaveFileDialog con estensione .csv).</summary>
         public async Task<string> GetExportCsvContentAsync(ExportRequest request)
         {
-            if (request == null) throw new ArgumentNullException(nameof(request));
-                var includeFiscalPrinted = true;
-                switch (request.Scope)
-            {
-                case ExportScope.Daily:
-                case ExportScope.Day:
-                    return await _service.GetDailyCsvContentAsync(request.Date.Value, includeFiscalPrinted).ConfigureAwait(true);
-                case ExportScope.Period:
-                    return await _service.GetPeriodCsvContentAsync(request.From.Value, request.To.Value, includeFiscalPrinted).ConfigureAwait(true);
-                case ExportScope.Marked:
-                    return await _service.GetDaysCsvContentAsync(request.Dates ?? Array.Empty<DateTime>(), includeFiscalPrinted).ConfigureAwait(true);
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(request));
-            }
+            return await GetAnalyticalCsvContentAsync(request).ConfigureAwait(true);
         }
 
         private void UpdateSummaryReceiptPreview(DateTime date, DailySalesSummary summary, ReceiptShopInfo shop = null)
         {
-            SummaryReceiptPreview = Pos.DailyCloseReceiptTextRenderer.Render(
-                date,
-                summary,
-                shop ?? new ReceiptShopInfo(),
-                _useReceipt42);
+            SummaryReceiptPreview = RenderAnalyticalSummary(date, summary);
         }
 
         private async Task PrintSummaryAsync()
         {
+            await DemandAnalyticalCurrentAsync(CancellationToken.None).ConfigureAwait(true);
             if (string.IsNullOrEmpty(SummaryReceiptPreview)) return;
             IsBusy = true;
             try
@@ -677,6 +623,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private bool CanPrintStampaRiepilogo()
         {
+            if (!ReportNumbersVisible) return false;
             if (SelectedTabIndex == 0)
                 return !string.IsNullOrEmpty(SummaryReceiptPreview);
             if (MarkedCount >= 2) return true;
@@ -690,6 +637,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task PrintStampaRiepilogoAsync()
         {
+            await DemandAnalyticalCurrentAsync(CancellationToken.None).ConfigureAwait(true);
             string textToPrint = null;
             if (SelectedTabIndex == 0)
             {
@@ -733,7 +681,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var width = _useReceipt42 ? 42 : 32;
             var sep = ReceiptTextLayout.Separator(width);
             var lines = new List<string>();
-            lines.AddRange(ReceiptTextLayout.WrapText(PosLocalization.T("reports.receiptTitle"), width));
+            lines.AddRange(ReceiptTextLayout.WrapText(PosLocalization.T("historyReport.analyticalTitle"), width));
             lines.AddRange(ReceiptTextLayout.WrapText(PosLocalization.F("reports.receiptSummaryDays", MarkedCount), width));
             var markedRows = HistoryRows.Where(r => r.IsMarked).OrderBy(r => r.Date).ToList();
             if (markedRows.Count > 0)
@@ -751,119 +699,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.net"), MarkedNetDisplay, width));
             lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.cash"), MarkedCashDisplay, width));
             lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.card"), MarkedCardDisplay, width));
-            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.averageTicket"), MarkedTicketAverageDisplay, width));
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("historyReport.nativeAverage"), MarkedTicketAverageDisplay, width));
             lines.Add(sep);
             return string.Join(Environment.NewLine, lines);
         }
 
         private async Task LoadHistoryAsync()
         {
-            if (!TryParseHistoryDates(out var from, out var to))
-            {
-                Status = PosLocalization.T("reports.historyDatesInvalid");
-                return;
-            }
-            if (from > to)
-            {
-                Status = PosLocalization.T("reports.fromAfterTo");
-                return;
-            }
-
-            var version = Interlocked.Increment(ref _historyLoadVersion);
-            Volatile.Write(ref _activeHistoryLoadVersion, version);
-            var capturedTabIndex = SelectedTabIndex;
-            var capturedFromText = HistoryFromText;
-            var capturedToText = HistoryToText;
-            IsBusy = true;
-            try
-            {
-                var includeFiscalPrinted = true;
-                var summaries = await _service.GetDailySummariesAsync(from, to, includeFiscalPrinted).ConfigureAwait(true);
-                if (!IsHistoryLoadCurrent(
-                    version,
-                    capturedTabIndex,
-                    capturedFromText,
-                    capturedToText)) return;
-                CancelMarkedPreviewLoad();
-                SingleMarkedReceiptPreview = string.Empty;
-                foreach (var row in HistoryRows)
-                    row.PropertyChanged -= OnHistoryRowPropertyChanged;
-                SelectedHistoryRow = null;
-                HistoryRows.Clear();
-                HistoryRowCount = 0;
-                PeriodNetAmount = 0;
-                PeriodGrossAmount = 0;
-                PeriodRefundsAmount = 0;
-                PeriodCashAmount = 0;
-                PeriodCardAmount = 0;
-                PeriodSalesCount = 0;
-                long periodNet = 0, periodGross = 0, periodRefunds = 0, periodCash = 0, periodCard = 0;
-                int periodCount = 0;
-                foreach (var s in summaries)
-                {
-                    periodNet += s.NetAmount;
-                    periodGross += s.GrossSalesAmount;
-                    periodRefunds += s.RefundsAmount;
-                    periodCash += s.CashAmount;
-                    periodCard += s.CardAmount;
-                    periodCount += s.SalesCount;
-                    var row = new HistoryRow
-                    {
-                        Date = s.Date,
-                        DateText = s.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                        SalesCount = s.SalesCount,
-                        NetAmount = s.NetAmount,
-                        GrossAmount = s.GrossSalesAmount,
-                        RefundsAmount = s.RefundsAmount,
-                        CashAmount = s.CashAmount,
-                        CardAmount = s.CardAmount,
-                        GrossDisplay = MoneyClp.FormatDisplay(s.GrossSalesAmount),
-                        RefundsDisplay = MoneyClp.FormatDisplay(s.RefundsAmount),
-                        NetDisplay = MoneyClp.FormatDisplay(s.NetAmount),
-                        CashDisplay = MoneyClp.FormatDisplay(s.CashAmount),
-                        CardDisplay = MoneyClp.FormatDisplay(s.CardAmount),
-                        IsMarked = true
-                    };
-                    row.PropertyChanged += OnHistoryRowPropertyChanged;
-                    HistoryRows.Add(row);
-                }
-                PeriodNetAmount = periodNet;
-                PeriodGrossAmount = periodGross;
-                PeriodRefundsAmount = periodRefunds;
-                PeriodCashAmount = periodCash;
-                PeriodCardAmount = periodCard;
-                PeriodSalesCount = periodCount;
-                HistoryRowCount = HistoryRows.Count;
-                if (HistoryRows.Count > 0)
-                    SelectedHistoryRow = HistoryRows[0];
-                RefreshMarkedAggregates();
-                RefreshHeaderSummary();
-                (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-                (MarkAllHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                Status = PosLocalization.F("reports.historyLoadedAllSelected", summaries.Count);
-            }
-            catch (Exception ex)
-            {
-                if (IsHistoryLoadCurrent(
-                    version,
-                    capturedTabIndex,
-                    capturedFromText,
-                    capturedToText))
-                {
-                    Status = PosLocalization.F("reports.historyLoadError", ex.Message);
-                }
-            }
-            finally
-            {
-                if (Interlocked.CompareExchange(
-                    ref _activeHistoryLoadVersion,
-                    0,
-                    version) == version)
-                {
-                    IsBusy = false;
-                }
-            }
+            await LoadAnalyticalHistoryAsync().ConfigureAwait(true);
         }
 
         private bool IsHistoryLoadCurrent(
@@ -946,106 +789,30 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void RefreshMarkedAggregates()
         {
-            int count = 0, salesCount = 0;
-            long net = 0, gross = 0, refunds = 0, cash = 0, card = 0;
-            foreach (var row in HistoryRows)
-            {
-                if (!row.IsMarked) continue;
-                count++;
-                salesCount += row.SalesCount;
-                net += row.NetAmount;
-                gross += row.GrossAmount;
-                refunds += row.RefundsAmount;
-                cash += row.CashAmount;
-                card += row.CardAmount;
-            }
-            MarkedCount = count;
-            MarkedSalesCount = salesCount;
-            MarkedNetAmount = net;
-            MarkedGrossAmount = gross;
-            MarkedRefundsAmount = refunds;
-            MarkedCashAmount = cash;
-            MarkedCardAmount = card;
-            (PrintSelectedHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            if (count == 1)
-                _ = LoadPreviewForSingleMarkedAsync();
-            else
-            {
-                CancelMarkedPreviewLoad();
-                SingleMarkedReceiptPreview = string.Empty;
-            }
-            RefreshHeaderSummary();
+            RefreshAnalyticalMarkedAggregates();
         }
 
         /// <summary>Aggiorna _currentHeaderSummary: MarkedCount>=1 → somma spuntate; Storico+riga selezionata → riga; altrimenti giorno Giornaliero.</summary>
         private void RefreshHeaderSummary()
         {
-            if (MarkedCount >= 1)
-                _currentHeaderSummary = BuildHeaderSummaryFromMarkedRows();
-            else if (SelectedTabIndex == 1 && SelectedHistoryRow != null)
-                _currentHeaderSummary = BuildHeaderSummaryFromRow(SelectedHistoryRow);
-            else
-                _currentHeaderSummary = BuildHeaderSummaryFromDaily();
-            OnPropertyChanged(nameof(NetAmountDisplay));
-            OnPropertyChanged(nameof(SalesCountDisplay));
-            OnPropertyChanged(nameof(TicketMedioDisplay));
-            OnPropertyChanged(nameof(RefundsAmountDisplay));
-            OnPropertyChanged(nameof(CashAmountDisplay));
-            OnPropertyChanged(nameof(CardAmountDisplay));
-            OnPropertyChanged(nameof(GrossSalesAmountDisplay));
+            RefreshAnalyticalHeader();
         }
 
         private HeaderSummary BuildHeaderSummaryFromDaily()
         {
-            return new HeaderSummary
-            {
-                SalesCount = _salesCount,
-                NetAmount = _netAmount,
-                CashAmount = _cashAmount,
-                CardAmount = _cardAmount,
-                GrossAmount = _grossSalesAmount,
-                RefundsAmount = _refundsAmount
-            };
+            return new HeaderSummary { SalesCount = _salesCount, NativePositiveSalesClp = _nativePositiveSalesClp, NetAmount = _netAmount, CashAmount = _cashAmount, CardAmount = _cardAmount, GrossAmount = _grossSalesAmount, RefundsAmount = _refundsAmount };
         }
 
         private HeaderSummary BuildHeaderSummaryFromRow(HistoryRow row)
         {
             if (row == null) return BuildHeaderSummaryFromDaily();
-            return new HeaderSummary
-            {
-                SalesCount = row.SalesCount,
-                NetAmount = row.NetAmount,
-                CashAmount = row.CashAmount,
-                CardAmount = row.CardAmount,
-                GrossAmount = row.GrossAmount,
-                RefundsAmount = row.RefundsAmount
-            };
+            return new HeaderSummary { SalesCount = row.SalesCount, NativePositiveSalesClp = row.NativePositiveSalesClp, NetAmount = row.NetAmount, CashAmount = row.CashAmount, CardAmount = row.CardAmount, GrossAmount = row.GrossAmount, RefundsAmount = row.RefundsAmount };
         }
 
         private HeaderSummary BuildHeaderSummaryFromMarkedRows()
         {
-            var rows = HistoryRows.Where(r => r.IsMarked).ToList();
-            int salesCount = 0;
-            long net = 0, cash = 0, card = 0, gross = 0, refunds = 0;
-            foreach (var r in rows)
-            {
-                salesCount += r.SalesCount;
-                net += r.NetAmount;
-                cash += r.CashAmount;
-                card += r.CardAmount;
-                gross += r.GrossAmount;
-                refunds += r.RefundsAmount;
-            }
-            return new HeaderSummary
-            {
-                SalesCount = salesCount,
-                NetAmount = net,
-                CashAmount = cash,
-                CardAmount = card,
-                GrossAmount = gross,
-                RefundsAmount = refunds
-            };
+            var rows = HistoryRows.Where(row => row.IsMarked).ToArray();
+            return new HeaderSummary { SalesCount = checked(rows.Sum(row => row.SalesCount)), NativePositiveSalesClp = rows.Aggregate(0L, (sum,row) => checked(sum + row.NativePositiveSalesClp)), NetAmount = rows.Sum(row => row.NetAmount), CashAmount = rows.Sum(row => row.CashAmount), CardAmount = rows.Sum(row => row.CardAmount), GrossAmount = rows.Sum(row => row.GrossAmount), RefundsAmount = rows.Sum(row => row.RefundsAmount) };
         }
 
         private string GetStampaRiepilogoSubtitle()
@@ -1118,49 +885,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task LoadPreviewForSelectedHistoryAsync()
         {
-            CancelHistoryPreviewLoad();
-            var row = SelectedHistoryRow;
-            if (row == null || _disposed)
-            {
-                IsHistoryPreviewLoading = false;
-                SummaryReceiptPreview = string.Empty;
-                return;
-            }
-            var cts = new CancellationTokenSource();
-            _historyPreviewCts = cts;
-            var version = ++_historyPreviewVersion;
-            IsHistoryPreviewLoading = true;
-            try
-            {
-                var summary = await _service.GetDailySummaryAsync(row.Date, includeFiscalPrinted: true).ConfigureAwait(true);
-                cts.Token.ThrowIfCancellationRequested();
-                if (!IsCurrentHistoryPreview(row, version)) return;
-                SalesCount = summary.SalesCount;
-                TotalAmount = summary.TotalAmount;
-                CashAmount = summary.CashAmount;
-                CardAmount = summary.CardAmount;
-                GrossSalesAmount = summary.GrossSalesAmount;
-                RefundsAmount = summary.RefundsAmount;
-                NetAmount = summary.NetAmount;
-                var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
-                cts.Token.ThrowIfCancellationRequested();
-                if (!IsCurrentHistoryPreview(row, version)) return;
-                UpdateSummaryReceiptPreview(row.Date, summary, shop);
-            }
-            catch (OperationCanceledException) { }
-            catch { if (IsCurrentHistoryPreview(row, version)) SummaryReceiptPreview = ""; }
-            finally
-            {
-                if (IsCurrentHistoryPreview(row, version))
-                {
-                    IsHistoryPreviewLoading = false;
-                    RefreshHeaderSummary();
-                }
-            }
+            await LoadAnalyticalSelectedPreviewAsync(false).ConfigureAwait(true);
         }
-
-        private bool IsCurrentHistoryPreview(HistoryRow row, int version)
-            => !_disposed && version == _historyPreviewVersion && ReferenceEquals(SelectedHistoryRow, row);
 
         private void CancelHistoryPreviewLoad()
         {
@@ -1176,50 +902,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task LoadPreviewForSingleMarkedAsync()
         {
-            CancelMarkedPreviewLoad();
-            var row = HistoryRows.FirstOrDefault(r => r.IsMarked);
-            if (row == null || _disposed)
-            {
-                IsMarkedPreviewLoading = false;
-                SingleMarkedReceiptPreview = string.Empty;
-                return;
-            }
-            var cts = new CancellationTokenSource();
-            _markedPreviewCts = cts;
-            var version = ++_markedPreviewVersion;
-            IsMarkedPreviewLoading = true;
-            try
-            {
-                var summary = await _service.GetDailySummaryAsync(row.Date, includeFiscalPrinted: true).ConfigureAwait(true);
-                cts.Token.ThrowIfCancellationRequested();
-                if (!IsCurrentMarkedPreview(row, version)) return;
-                var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
-                cts.Token.ThrowIfCancellationRequested();
-                if (!IsCurrentMarkedPreview(row, version)) return;
-                SingleMarkedReceiptPreview = Pos.DailyCloseReceiptTextRenderer.Render(
-                    row.Date,
-                    summary,
-                    shop ?? new ReceiptShopInfo(),
-                    _useReceipt42);
-            }
-            catch (OperationCanceledException) { }
-            catch
-            {
-                if (IsCurrentMarkedPreview(row, version))
-                    SingleMarkedReceiptPreview = string.Empty;
-            }
-            finally
-            {
-                if (IsCurrentMarkedPreview(row, version))
-                    IsMarkedPreviewLoading = false;
-            }
-        }
-
-        private bool IsCurrentMarkedPreview(HistoryRow row, int version)
-        {
-            if (_disposed || version != _markedPreviewVersion || MarkedCount != 1)
-                return false;
-            return ReferenceEquals(HistoryRows.FirstOrDefault(candidate => candidate.IsMarked), row);
+            await LoadAnalyticalSelectedPreviewAsync(true).ConfigureAwait(true);
         }
 
         private void CancelMarkedPreviewLoad()
@@ -1326,6 +1009,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void RaiseCanExecuteChanged()
         {
+            (CancelReportCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ImportHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ConfigureReportTimePolicyCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ToggleFiscalPrintedModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
@@ -1376,6 +1062,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (_disposed) return;
             _disposed = true;
+            DisposeAnalyticalReports();
             InvalidateHistoryLoad();
             CancelHistoryPreviewLoad();
             CancelMarkedPreviewLoad();
@@ -1440,6 +1127,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>DTO per i 6 KPI in alto (sorgente unica).</summary>
         private sealed class HeaderSummary
         {
+            public long NativePositiveSalesClp { get; set; }
             public int SalesCount { get; set; }
             public long NetAmount { get; set; }
             public long CashAmount { get; set; }
@@ -1476,7 +1164,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public double NormalizedHeight { get; set; }
             public bool IsPeak { get; set; }
             /// <summary>Altezza barra in pixel (0–80) per il grafico.</summary>
-            public double BarHeightPx => Math.Max(0, NormalizedHeight * 80);
+            public double BarHeightPx => PositiveBarHeightPx;
+            public double PositiveBarHeightPx => NormalizedHeight > 0 ? NormalizedHeight * 44 : 0;
+            public double NegativeBarHeightPx => NormalizedHeight < 0 ? -NormalizedHeight * 44 : 0;
             /// <summary>Etichetta asse: solo per 0, 6, 12, 18, 23.</summary>
             public string TickLabel => (Hour == 0 || Hour == 6 || Hour == 12 || Hour == 18 || Hour == 23) ? Hour + "h" : "";
             /// <summary>Tooltip barra: ora e importo.</summary>
@@ -1491,6 +1181,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public sealed class HistoryRow : INotifyPropertyChanged
         {
+            public long NativePositiveSalesClp { get; set; }
+            public long HistoricalMovementCount { get; set; }
             private bool _isMarked;
 
             public DateTime Date { get; set; }

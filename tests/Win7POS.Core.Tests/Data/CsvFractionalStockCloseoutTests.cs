@@ -19,10 +19,11 @@ public sealed class CsvFractionalStockCloseoutTests
         var directory = Path.Combine(Path.GetTempPath(), "Win7POS.CsvStock." + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var options = PosDbOptions.ForPath(Path.Combine(directory, "pos.db"));
-        DbInitializer.EnsureCreated(options);
-        var factory = new SqliteConnectionFactory(options);
         try
         {
+            using var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
             using (var connection = factory.Open())
                 await connection.ExecuteAsync("INSERT INTO products(barcode,name,unitPrice) VALUES('00a B条码','Original',1500); INSERT INTO product_meta(barcode,stock_qty) VALUES('00a B条码',1.234);");
             var rows = new[] { CsvImportParser.Parse("00a B条码;Renamed;1500;300").Rows.Single(), CsvImportParser.Parse("00a B条码;Renamed again;1500;300;2.345").Rows.Single() };

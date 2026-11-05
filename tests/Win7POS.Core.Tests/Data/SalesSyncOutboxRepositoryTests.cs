@@ -1638,10 +1638,12 @@ WHERE outbox.sale_id = @saleId;",
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             _root = root;
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             Factory = new SqliteConnectionFactory(options);
             DbInitializer.EnsureCreated(options);
         }
@@ -1661,6 +1663,7 @@ WHERE outbox.sale_id = @saleId;",
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(_root, true); } catch { }
         }
     }

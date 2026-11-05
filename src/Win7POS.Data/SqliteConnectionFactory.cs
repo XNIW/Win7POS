@@ -3,6 +3,8 @@ using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
+using Win7POS.Core.Reports;
+using System.IO;
 
 namespace Win7POS.Data
 {
@@ -30,61 +32,145 @@ namespace Win7POS.Data
         private static int _activeConnections;
 
         private readonly PosDbOptions _opt;
+        private PosDatabaseAccessContext _accessContext;
 
-        public SqliteConnectionFactory(PosDbOptions opt) => _opt = opt;
+        public SqliteConnectionFactory(PosDbOptions opt)
+        { _opt = opt ?? throw new ArgumentNullException(nameof(opt)); _accessContext = opt.AccessContext ?? PosDatabaseAuthorityLease.FindLiveMemory(opt.DbPath); }
 
         public string DbPath => _opt.DbPath;
+        public PosDatabaseAccessContext AccessContext
+        {
+            get
+            {
+                var context = Volatile.Read(ref _accessContext) ?? PosDatabaseAccessContext.Resolve(_opt);
+                Interlocked.CompareExchange(ref _accessContext, context, null);
+                context.DemandPath(DbPath); return context;
+            }
+        }
+        public SalesReportAuthorityStamp AuthorityStamp => (Volatile.Read(ref _accessContext) ??
+            throw new PosDatabaseAuthorityException("database_authority_required")).AuthorityStamp;
 
-        private static string BuildConnectionString(string dbPath)
+        private static string BuildConnectionString(string dbPath, PosDatabaseAccessContext context, bool existingOnly = false)
         {
             var cs = new SqliteConnectionStringBuilder
             {
                 DataSource = dbPath,
-                ForeignKeys = true
+                ForeignKeys = true,
+                Mode = context.OpenMode(existingOnly),
+                Pooling = context.Pooling
             }.ToString();
             return cs + ";Default Timeout=5";
         }
 
-        public SqliteConnection Open()
+        public SqliteConnection Open() => OpenCore(false);
+
+        public Task<SqliteConnection> OpenAsync(CancellationToken ct = default) => OpenAsyncCore(false, ct);
+        public Task<SqliteConnection> OpenExistingForRecoveryAsync(CancellationToken ct = default) => OpenAsyncCore(true, ct);
+
+        private async Task<SqliteConnection> OpenAsyncCore(bool existingOnly, CancellationToken ct)
         {
-            var connectionLease = RegisterConnection();
-            var conn = new SqliteConnection(BuildConnectionString(_opt.DbPath));
-            AttachConnectionLease(conn, connectionLease);
+            ct.ThrowIfCancellationRequested();
+            var context = AccessContext;
+            if (existingOnly && !File.Exists(DbPath)) throw new FileNotFoundException("database_existing_file_required");
+            var connectionLease = await RegisterConnectionAsync(ct).ConfigureAwait(false);
+            AuthorityConnectionResources resources = null;
+            SqliteConnection conn = null;
             try
             {
-                conn.Open();
-                ApplyAndVerifyRuntimePolicy(conn);
+                resources = new AuthorityConnectionResources(context.EnterConnection());
+                conn = new SqliteConnection(BuildConnectionString(_opt.DbPath, context, existingOnly));
+                AttachAuthorityLease(conn, resources);
+                AttachConnectionLease(conn, connectionLease);
+                if (File.Exists(DbPath))
+                { resources.SetGuard(new FileStream(DbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)); context.DemandPath(DbPath); }
+                await conn.OpenAsync(ct).ConfigureAwait(false);
+                context.BindCreatedFile();
+                resources.EnsureGuard(DbPath);
+                if (!existingOnly && context.AppliesRuntimePolicy) await ApplyAndVerifyRuntimePolicyAsync(conn, ct).ConfigureAwait(false);
                 SqliteWorkMetrics.ConnectionOpened();
                 return conn;
             }
             catch
             {
-                ClearConnectionPoolBestEffort(conn);
-                connectionLease.Release();
-                conn.Dispose();
+                if (conn != null) ClearConnectionPoolBestEffort(conn);
+                try { conn?.Dispose(); }
+                finally { resources?.Dispose(); connectionLease.Release(); }
                 throw;
             }
         }
 
-        public async Task<SqliteConnection> OpenAsync(CancellationToken ct = default)
+        public SqliteConnection OpenExistingForRecovery() => OpenCore(true);
+
+        private SqliteConnection OpenCore(bool existingOnly)
         {
-            ct.ThrowIfCancellationRequested();
-            var connectionLease = RegisterConnection();
-            var conn = new SqliteConnection(BuildConnectionString(_opt.DbPath));
-            AttachConnectionLease(conn, connectionLease);
+            var context = AccessContext;
+            context.DemandPath(DbPath);
+            if (existingOnly && !File.Exists(DbPath)) throw new FileNotFoundException("database_existing_file_required");
+            var lease = RegisterConnection();
+            AuthorityConnectionResources resources = null;
+            SqliteConnection connection = null;
             try
             {
-                await conn.OpenAsync(ct).ConfigureAwait(false);
-                await ApplyAndVerifyRuntimePolicyAsync(conn, ct).ConfigureAwait(false);
+                resources = new AuthorityConnectionResources(context.EnterConnection());
+                connection = new SqliteConnection(BuildConnectionString(DbPath, context, existingOnly));
+                AttachAuthorityLease(connection, resources); AttachConnectionLease(connection, lease);
+                if (File.Exists(DbPath))
+                { resources.SetGuard(new FileStream(DbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)); context.DemandPath(DbPath); }
+                connection.Open(); context.BindCreatedFile();
+                resources.EnsureGuard(DbPath);
+                if (!existingOnly && context.AppliesRuntimePolicy) ApplyAndVerifyRuntimePolicy(connection);
                 SqliteWorkMetrics.ConnectionOpened();
-                return conn;
+                return connection;
             }
-            catch
+            catch { try { connection?.Dispose(); } finally { resources?.Dispose(); lease.Release(); } throw; }
+        }
+
+        public void RefreshAuthorityStamp()
+        {
+            long? observedEpoch = null;
+            using (var connection = OpenExistingForRecovery())
+            using (var command = connection.CreateCommand())
             {
-                ClearConnectionPoolBestEffort(conn);
-                connectionLease.Release();
-                conn.Dispose();
-                throw;
+                command.CommandText = "SELECT COUNT(1) FROM sqlite_schema WHERE type='table' AND name='app_settings';";
+                if (Convert.ToInt64(command.ExecuteScalar()) == 0) return;
+                command.CommandText = "SELECT value FROM app_settings WHERE key='pos.catalog.transition_epoch';";
+                var raw = Convert.ToString(command.ExecuteScalar()); long epoch;
+                if (long.TryParse(raw, out epoch) && epoch >= 0) observedEpoch = epoch;
+            }
+            // The short memory publication boundary must not retain this reader.
+            if (observedEpoch.HasValue) AccessContext.SetRestoreEpoch(observedEpoch.Value);
+        }
+
+        private static void AttachAuthorityLease(SqliteConnection connection, IDisposable lease)
+        {
+            connection.StateChange += (_, args) => { if (args.CurrentState == ConnectionState.Closed) lease.Dispose(); };
+            connection.Disposed += (_, __) => lease.Dispose();
+        }
+
+        private sealed class AuthorityConnectionResources : IDisposable
+        {
+            private readonly object _sync = new object();
+            private IDisposable _authority;
+            private IDisposable _guard;
+            internal AuthorityConnectionResources(IDisposable authority) { _authority = authority; }
+            internal void SetGuard(IDisposable guard)
+            {
+                lock (_sync)
+                {
+                    if (_authority == null) { guard.Dispose(); throw new ObjectDisposedException(nameof(AuthorityConnectionResources)); }
+                    _guard = guard;
+                }
+            }
+            internal void EnsureGuard(string path)
+            { lock (_sync) { if (_guard == null) SetGuard(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)); } }
+            public void Dispose()
+            {
+                lock (_sync)
+                {
+                    if (_authority == null) return;
+                    try { _guard?.Dispose(); _guard = null; }
+                    finally { _authority.Dispose(); _authority = null; }
+                }
             }
         }
 
@@ -640,6 +726,31 @@ namespace Win7POS.Data
                 }
 
                 maintenanceReleased.GetAwaiter().GetResult();
+            }
+        }
+
+        private static async Task<ActiveConnectionLease> RegisterConnectionAsync(CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Task released;
+                lock (MaintenanceSync)
+                {
+                    var current = CurrentMaintenance.Value;
+                    var isOwner = current != null && string.Equals(current.Token, _maintenanceOwnerToken, StringComparison.Ordinal);
+                    if (!_maintenancePending || isOwner || (!_maintenanceEntered && _activeConnections > 0))
+                    { _activeConnections++; return new ActiveConnectionLease(); }
+                    released = _maintenanceReleased.Task;
+                }
+                if (!cancellationToken.CanBeCanceled) { await released.ConfigureAwait(false); continue; }
+                var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                using (cancellationToken.Register(() => cancelled.TrySetCanceled()))
+                {
+                    await Task.WhenAny(released, cancelled.Task).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await released.ConfigureAwait(false);
+                }
             }
         }
 

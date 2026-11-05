@@ -692,13 +692,16 @@ UPDATE catalog_import_recovery SET delivery_known=0,dispatch_count=1 WHERE origi
     internal static PosTrustedDeviceSession Trusted() => new() { ShopCode = "TEST-SHOP", ShopId = "test-shop-id", ShopDeviceId = "test-device-id", PosSessionId = "test-pos", DeviceToken = "synthetic-device", SessionToken = "synthetic-session" };
     internal sealed class PlanFixture : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "Win7POS.Plan." + Guid.NewGuid().ToString("N"));
         public SqliteConnectionFactory Factory { get; }
         public PlanFixture()
         {
-            var options = PosDbOptions.ForPath(Path.Combine(Root, "pos.db")); DbInitializer.EnsureCreated(options); Factory = new SqliteConnectionFactory(options);
+            var options = PosDbOptions.ForPath(Path.Combine(Root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
+            DbInitializer.EnsureCreated(options); Factory = new SqliteConnectionFactory(options);
             using var conn = Factory.Open(); conn.Execute("INSERT INTO app_settings(key,value) VALUES(@id,'test-shop-id'),(@code,'TEST-SHOP')", new { id = OutboxShopBinding.OfficialShopIdKey, code = OutboxShopBinding.OfficialShopCodeKey });
         }
-        public void Dispose() { SqliteConnection.ClearAllPools(); try { Directory.Delete(Root, true); } catch { } }
+        public void Dispose() { SqliteConnection.ClearAllPools(); _ownedFile.Dispose(); try { Directory.Delete(Root, true); } catch { } }
     }
 }

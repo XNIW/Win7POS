@@ -41,8 +41,9 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="{loc:Loc reports.closeTitle}" Style="{StaticResource DialogTitleStyle}" Margin="0"/>
-                <TextBlock Text="{loc:Loc reports.closeSubtitle}" FontSize="11" Foreground="#666" Margin="0,2,0,0"/>
+                <TextBlock Text="{loc:Loc historyReport.analyticalTitle}" Style="{StaticResource DialogTitleStyle}" Margin="0"/>
+                <TextBlock Text="{Binding ReportCoverageText}" TextWrapping="Wrap" FontSize="11" Foreground="#666" Margin="0,2,0,0"/>
+                <TextBlock Text="{Binding HistoricalMovementCountText}" FontSize="11" Foreground="#666" Margin="0,2,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <Border Background="#E8F5E9" BorderBrush="#81B082" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,8,0"
@@ -57,6 +58,13 @@
 
         <!-- Filtri rapidi (pill) -->
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <WrapPanel Margin="0,0,0,6">
+                <TextBlock Text="{loc:Loc historyReport.origin}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ComboBox ItemsSource="{Binding ReportOriginLabels}" SelectedIndex="{Binding ReportOriginIndex}" MinWidth="190" Margin="0,0,8,0"/>
+                <Button Content="{loc:Loc reportTimePolicy.configure}" Command="{Binding ConfigureReportTimePolicyCommand}" Style="{StaticResource OutlineButtonStyle}" MinHeight="30" Margin="0,0,8,0"/>
+                <Button Content="{loc:Loc common.cancel}" Command="{Binding CancelReportCommand}" Style="{StaticResource OutlineButtonStyle}" MinHeight="30"/>
+                <TextBlock Text="{loc:Loc historyReport.cardCoverage}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="12,0,0,0" MaxWidth="480" FontSize="10" Foreground="#666"/>
+            </WrapPanel>
             <WrapPanel>
                 <Button MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterOggiCommand}" Style="{StaticResource OutlineButtonStyle}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
@@ -98,7 +106,7 @@
         </StackPanel>
 
         <!-- KPI: Netto, Scontrini, Ticket medio, Rimborsi, Contanti, Carta -->
-        <Grid Grid.Row="2" Margin="0,0,0,14">
+        <Grid Grid.Row="2" Margin="0,0,0,14" Visibility="{Binding ReportNumbersVisible, Converter={StaticResource BoolToVis}}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
@@ -115,13 +123,13 @@
             </Border>
             <Border Grid.Column="1" Background="#F3E5F5" BorderBrush="#9B7BAD" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0" MinHeight="48">
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{loc:Loc common.receipts}" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
                     <TextBlock Text="{Binding SalesCountDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#7B1FA2"/>
                 </StackPanel>
             </Border>
             <Border Grid.Column="2" Background="#E8F5E9" BorderBrush="#81B082" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0" MinHeight="48">
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{loc:Loc common.averageTicket}" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{loc:Loc historyReport.nativeAverage}" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
                     <TextBlock Text="{Binding TicketMedioDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#2E7D32"/>
                 </StackPanel>
             </Border>
@@ -270,7 +278,9 @@
                                 <TextBlock Grid.Row="0" Text="{loc:Loc reports.salesByHour}" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,4"/>
                                 <TextBlock Grid.Row="1" Text="{Binding HourlyPeakText, Mode=OneWay}" FontSize="11" Foreground="#666" Margin="0,0,0,6"/>
                                 <Border Grid.Row="2" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="8,4" Background="#FAFAFA" Margin="0,0,0,4">
-                                    <ItemsControl ItemsSource="{Binding HourlySalesPoints}">
+                                  <Grid x:Name="HourlyPlot" Height="92" VerticalAlignment="Center">
+                                    <Border x:Name="HourlyZeroLine" AutomationProperties.AutomationId="HourlyZeroLine" Height="1" Background="#707070" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                    <ItemsControl x:Name="HourlyBars" AutomationProperties.AutomationId="HourlyBars" ItemsSource="{Binding HourlySalesPoints}">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
                                                 <UniformGrid Columns="24" Rows="1"/>
@@ -278,26 +288,17 @@
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Grid Margin="1,0" VerticalAlignment="Bottom">
-                                                    <Border x:Name="Bar" Background="#7B1FA2" VerticalAlignment="Bottom" Height="{Binding BarHeightPx}" CornerRadius="2,2,0,0" ToolTip="{Binding ToolTipText}"
-                                                            BorderThickness="0" BorderBrush="Transparent">
-                                                        <Border.Style>
-                                                            <Style TargetType="Border">
-                                                                <Setter Property="BorderThickness" Value="0"/>
-                                                                <Setter Property="BorderBrush" Value="Transparent"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsPeak}" Value="True">
-                                                                        <Setter Property="BorderThickness" Value="1"/>
-                                                                        <Setter Property="BorderBrush" Value="#E1BEE7"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Border.Style>
-                                                    </Border>
+                                                <Grid Margin="1,0">
+                                                    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                                    <Border x:Name="PositiveBar" Grid.Row="0" AutomationProperties.AutomationId="{Binding Hour, StringFormat='HourlyPositive_{0}'}"
+                                                            Background="#7B1FA2" VerticalAlignment="Bottom" Height="{Binding PositiveBarHeightPx}" CornerRadius="2,2,0,0" ToolTip="{Binding ToolTipText}"/>
+                                                    <Border x:Name="NegativeBar" Grid.Row="1" AutomationProperties.AutomationId="{Binding Hour, StringFormat='HourlyNegative_{0}'}"
+                                                            Background="#C44F26" VerticalAlignment="Top" Height="{Binding NegativeBarHeightPx}" CornerRadius="0,0,2,2" ToolTip="{Binding ToolTipText}"/>
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                  </Grid>
                                 </Border>
                                 <!-- Etichette asse X (24 colonne, testo solo su 0/6/12/18/23) -->
                                 <ItemsControl Grid.Row="3" ItemsSource="{Binding HourlySalesPoints}" Margin="0,2,0,0">
@@ -349,6 +350,7 @@
                                             <TextBlock Text="{loc:Loc reports.loadHistory}" Margin="8,0,0,0"/>
                                         </StackPanel>
                                     </Button>
+                                    <Button Content="{loc:Loc historyReport.import}" Command="{Binding ImportHistoryCommand}" MinWidth="120" Height="36" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0"/>
                                     <Button MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0" ToolTip="{loc:Loc reports.exportCsvTooltip}">
                                         <StackPanel Style="{StaticResource IconButtonContent}">
                                             <Path Data="{StaticResource IconExport}" Style="{StaticResource ButtonIconPathStyle}"/>
@@ -399,7 +401,7 @@
                                 <TextBlock Text="{Binding PeriodGrossDisplay, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"/>
                             </StackPanel>
                             <StackPanel Grid.Column="3" Margin="8,0,0,0">
-                                <TextBlock Text="{loc:Loc common.receipts}" FontSize="10" Foreground="#666"/>
+                                <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="10" Foreground="#666"/>
                                 <TextBlock Text="{Binding PeriodSalesCount, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"/>
                             </StackPanel>
                             <StackPanel Grid.Column="4" Margin="8,0,0,0">
@@ -450,7 +452,7 @@
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="{loc:Loc common.receipts}" Binding="{Binding SalesCount}" Width="70">
+                                    <DataGridTextColumn Header="{loc:Loc historyReport.originNative}" Binding="{Binding SalesCount}" Width="70">
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -584,13 +586,13 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{loc:Loc common.receipts}" FontSize="11" Foreground="#666"/>
+                                                <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="11" Foreground="#666"/>
                                                 <TextBlock Text="{loc:Loc common.gross}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.returns}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.net}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.cash}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.card}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
-                                                <TextBlock Text="{loc:Loc common.averageTicket}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{loc:Loc historyReport.nativeAverage}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" HorizontalAlignment="Right">
                                                 <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
@@ -608,13 +610,13 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{loc:Loc common.receipts}" FontSize="11" Foreground="#666"/>
+                                                <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="11" Foreground="#666"/>
                                                 <TextBlock Text="{loc:Loc common.gross}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.returns}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.net}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.cash}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.card}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
-                                                <TextBlock Text="{loc:Loc common.averageTicket}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{loc:Loc historyReport.nativeAverage}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" HorizontalAlignment="Right">
                                                 <TextBlock Text="{Binding SalesCountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
@@ -632,13 +634,13 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{loc:Loc common.receipts}" FontSize="11" Foreground="#666"/>
+                                                <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="11" Foreground="#666"/>
                                                 <TextBlock Text="{loc:Loc common.gross}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.returns}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.net}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.cash}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.card}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
-                                                <TextBlock Text="{loc:Loc common.averageTicket}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{loc:Loc historyReport.nativeAverage}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" HorizontalAlignment="Right">
                                                 <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>

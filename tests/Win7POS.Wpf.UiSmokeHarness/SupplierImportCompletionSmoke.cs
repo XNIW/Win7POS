@@ -211,9 +211,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var row = MakeRows(1, "IMPORT-SNAPSHOT-")[0];
             var preview = await service.BuildSyncPreviewAsync(new[] { row });
             var result = await service.ApplyAsync(preview, false, "snapshot.xlsx");
-            var validation = await new DbMaintenanceRepository(new SqliteConnectionFactory(PosDbOptions.ForPath(result.BackupPath))).ValidateAsync();
+            using var backupRead = HarnessSqliteDatabase.ReadExistingSnapshot(result.BackupPath);
+            var validation = await new DbMaintenanceRepository(backupRead.Factory).ValidateAsync();
             Require(validation.IsValid && writerCommits == 20, "backup did not survive controlled writer");
-            using (var connection = new SqliteConnectionFactory(PosDbOptions.ForPath(result.BackupPath)).Open())
+            using (var connection = backupRead.Factory.Open())
             {
                 Require(connection.ExecuteScalar<int>("SELECT COUNT(DISTINCT version) FROM completion_import_writer") == 1, "backup contains torn committed writer state");
                 Require(connection.ExecuteScalar<string>("SELECT value FROM app_settings WHERE key='qa.import.snapshot'") == "captured", "published snapshot changed after capture");
@@ -495,7 +496,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             try
             {
                 var result = await service.ApplyAsync(preview, false, "unverified-backup.xlsx");
-                var validation = await new DbMaintenanceRepository(new SqliteConnectionFactory(PosDbOptions.ForPath(result.BackupPath))).ValidateAsync();
+                using var backupRead = HarnessSqliteDatabase.ReadExistingSnapshot(result.BackupPath);
+                var validation = await new DbMaintenanceRepository(backupRead.Factory).ValidateAsync();
                 lines.Add("apply_success=" + result.Success + " backup_valid=" + validation.IsValid + " foreign_keys=" + validation.ForeignKeyCheck);
             }
             catch (Exception exception)
@@ -504,7 +506,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var backup = Directory.GetFiles(AppPaths.BackupsDirectory, "supplier_import_preapply_*.db").SingleOrDefault();
                 if (backup != null)
                 {
-                    var validation = await new DbMaintenanceRepository(new SqliteConnectionFactory(PosDbOptions.ForPath(backup))).ValidateAsync();
+                    using var backupRead = HarnessSqliteDatabase.ReadExistingSnapshot(backup);
+                    var validation = await new DbMaintenanceRepository(backupRead.Factory).ValidateAsync();
                     lines.Add("published_backup_valid=" + validation.IsValid + " foreign_keys=" + validation.ForeignKeyCheck);
                 }
             }

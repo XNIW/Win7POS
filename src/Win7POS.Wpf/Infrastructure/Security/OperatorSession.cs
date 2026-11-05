@@ -15,7 +15,7 @@ using Sec = Win7POS.Core.Security.SecurityEventCodes;
 
 namespace Win7POS.Wpf.Infrastructure.Security
 {
-    public sealed class OperatorSession : IOperatorSession, INotifyPropertyChanged
+    public sealed partial class OperatorSession : IOperatorSession, INotifyPropertyChanged
     {
         private readonly UserRepository _userRepo;
         private readonly SecurityRepository _securityRepo;
@@ -40,6 +40,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
             _authorizationLeaseGuard = authorizationLeaseGuard ?? throw new ArgumentNullException(nameof(authorizationLeaseGuard));
         }
 
+        internal long CurrentOperatorAuthorityVersion => Interlocked.Read(ref _operatorAuthorityVersion);
         public UserAccount CurrentUser => _currentUser;
         public bool IsLoggedIn => _currentUser != null && _currentUser.IsActive;
         public bool CurrentUserIsAdmin => _currentUser?.IsAdmin ?? false;

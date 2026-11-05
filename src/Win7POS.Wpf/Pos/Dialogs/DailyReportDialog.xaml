@@ -4,7 +4,7 @@
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:pos="clr-namespace:Win7POS.Wpf.Pos"
-        Title="{Binding Source={x:Static loc:PosLocalization.Current}, Path=[reports.closeTitle]}"
+        Title="{Binding Source={x:Static loc:PosLocalization.Current}, Path=[historyReport.analyticalTitle]}"
         ShowHeader="False"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"

@@ -25,6 +25,8 @@
   <ItemGroup>
     <Compile Include="..\Win7POS.Core.Tests\Data\CatalogBatchPerformanceScenario.cs"
              Link="CatalogBatchPerformanceScenario.cs" />
+    <Compile Include="..\Win7POS.Core.Tests\Data\OwnedSqliteTestFile.cs"
+             Link="OwnedSqliteTestFile.cs" />
   </ItemGroup>
 
 </Project>

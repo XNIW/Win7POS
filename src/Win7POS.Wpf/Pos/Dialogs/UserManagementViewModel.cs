@@ -408,6 +408,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (code == PermissionCodes.PosRefund) return PosLocalization.T("users.permissionRefund");
             if (code == PermissionCodes.PosDiscountOverLimit) return PosLocalization.T("users.permissionDiscountOverLimit");
             if (code == PermissionCodes.RegisterViewAll) return PosLocalization.T("users.permissionRegisterViewAll");
+            if (code == PermissionCodes.RegisterImportHistory) return PosLocalization.T("history.permissionImport");
+            if (code == PermissionCodes.RegisterCancelHistory) return PosLocalization.T("history.permissionUndo");
             return null;
         }
 
@@ -420,6 +422,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 PermissionCodes.PosReprintReceipt,
                 PermissionCodes.CatalogView, PermissionCodes.CatalogEdit, PermissionCodes.CatalogImport, PermissionCodes.CatalogPriceEdit,
                 PermissionCodes.RegisterView, PermissionCodes.RegisterViewAll,
+                PermissionCodes.RegisterImportHistory, PermissionCodes.RegisterCancelHistory,
                 PermissionCodes.DailyCloseView, PermissionCodes.DailyCloseRun, PermissionCodes.DailyClosePrint,
                 PermissionCodes.SettingsShop, PermissionCodes.SettingsPrinter,
                 PermissionCodes.DbBackup, PermissionCodes.DbRestore, PermissionCodes.DbMaintenance,
@@ -436,6 +439,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 case PermissionCodes.RolesManage: return PosLocalization.T("users.permissionRolesManage");
                 case PermissionCodes.SecurityOverride: return PosLocalization.T("users.permissionSecurityOverride");
                 case PermissionCodes.RegisterViewAll: return PosLocalization.T("users.permissionRegisterViewAll");
+                case PermissionCodes.RegisterImportHistory: return PosLocalization.T("history.permissionImport");
+                case PermissionCodes.RegisterCancelHistory: return PosLocalization.T("history.permissionUndo");
                 case PermissionCodes.CatalogPriceEdit: return PosLocalization.T("users.permissionCatalogPriceEdit");
                 case PermissionCodes.PosReprintReceipt: return PosLocalization.T("users.permissionReprintReceipt");
                 case PermissionCodes.PosVoidSale: return PosLocalization.T("users.permissionVoidSale");

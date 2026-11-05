@@ -184,7 +184,10 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                     barcode.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(barcode), Environment.TickCount, Key.Enter)
                     { RoutedEvent = Keyboard.KeyDownEvent });
                     var expected = index;
-                    await WaitAsync(() => !vm.IsBusy && vm.CartItems.Count == expected, "public scanner command lost input");
+                    // IsBusy/count can be published before AsyncRelayCommand's
+                    // completion continuation re-enables the public command.
+                    // One existing 5-second wait covers state AND readiness.
+                    await WaitAsync(() => !vm.IsBusy && vm.CartItems.Count == expected && vm.AddBarcodeCommand.CanExecute(null), "public scanner command lost input");
                 }
                 phase = "routed scanner input and composition";
                 Require(vm.AcceptsScannerTerminator(ScannerTerminator.Enter) && vm.AcceptsScannerTerminator(ScannerTerminator.Tab), "scanner fixture not applied");

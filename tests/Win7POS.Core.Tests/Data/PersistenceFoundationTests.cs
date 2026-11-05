@@ -131,7 +131,8 @@ public sealed partial class PersistenceFoundationTests
         Assert.IsTrue(maximumOverlappingWriteMs < 5000, "An overlapping writer exceeded busy_timeout.");
         Assert.IsTrue(File.Exists(files.Backup));
 
-        var backupFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(files.Backup));
+        using var backupContext = PosDatabaseAccessContext.SelectedSource(files.Backup);
+        var backupFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(files.Backup).WithAccessContext(backupContext));
         var backupValidation = await new DbMaintenanceRepository(backupFactory).ValidateAsync();
         Assert.IsTrue(backupValidation.IsValid);
         using var backup = backupFactory.Open();
@@ -150,7 +151,8 @@ public sealed partial class PersistenceFoundationTests
         WriteForeignKeyViolationDatabase(files.Candidate);
         var liveHashBefore = Hash(files.Live);
 
-        var candidateFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(files.Candidate));
+        using var candidateContext = PosDatabaseAccessContext.SelectedSource(files.Candidate);
+        var candidateFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(files.Candidate).WithAccessContext(candidateContext));
         var validation = await new DbMaintenanceRepository(candidateFactory).ValidateAsync();
 
         Assert.IsFalse(validation.IsValid);
@@ -312,6 +314,7 @@ INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
 
     private sealed class PersistenceFiles : IDisposable
     {
+        private readonly OwnedSqliteTestFile _liveOwner;
         private PersistenceFiles(string root)
         {
             Root = root;
@@ -319,6 +322,7 @@ INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
             Candidate = Path.Combine(root, "live.db.restore-deadbeef.new");
             Live = Path.Combine(root, "live.db");
             Rollback = Path.Combine(root, "live.db.restore-deadbeef.old");
+            _liveOwner = OwnedSqliteTestFile.Create(Live);
         }
 
         public string Backup { get; }
@@ -337,6 +341,7 @@ INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
         public void Dispose()
         {
             SqliteConnectionFactory.ClearAllPools();
+            _liveOwner.Dispose();
             try { Directory.Delete(Root, recursive: true); } catch { }
         }
     }

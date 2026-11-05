@@ -264,7 +264,7 @@ public sealed class SettingsOperationsTests
     public async Task BackupPolicyPublicServiceChecksPermissionAndAuditsWithoutDestinationDigest()
     {
         using var fixture = new Fixture();
-        var destination = Path.Combine(Path.GetDirectoryName(fixture.Factory.DbPath)!, "backups");
+        var destination = Path.Combine(Path.GetDirectoryName(fixture.Factory.DbPath)!, "b");
         var backup = BackupAutomationService.GetOrCreate(fixture.Factory, destination);
         var options = new BackupAutomationOptions();
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() => backup.SaveOptionsAsync(options, "42", () => throw new UnauthorizedAccessException()));
@@ -286,7 +286,8 @@ public sealed class SettingsOperationsTests
     private static byte[] Bytes(IReadOnlyDictionary<string, string> settings) => Encoding.UTF8.GetBytes(PortableSettingsProfile.Create("1.2.3.4", DateTime.UtcNow, settings).ToJson());
     private sealed class Fixture : IDisposable
     {
-        private readonly string _root = Path.Combine(Path.GetTempPath(), "Win7POS-Operations-" + Guid.NewGuid().ToString("N"));
+        private readonly string _root = Path.Combine(Path.GetTempPath(), "O." + Guid.NewGuid().ToString("N").Substring(0, 12));
+        private readonly OwnedSqliteTestFile _ownedFile;
         internal SqliteConnectionFactory Factory { get; }
         internal SettingsRepository Repository { get; }
         internal SettingsOperationsService Service { get; }
@@ -295,11 +296,12 @@ public sealed class SettingsOperationsTests
         {
             Directory.CreateDirectory(_root);
             var options = PosDbOptions.ForPath(Path.Combine(_root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             Factory = new SqliteConnectionFactory(options);
             Repository = new SettingsRepository(Factory);
-            Service = new SettingsOperationsService(Factory, Path.Combine(_root, "backups"), code => Permitted && (code == PermissionCodes.DbBackup || code == PermissionCodes.DbMaintenance), "42");
+            Service = new SettingsOperationsService(Factory, Path.Combine(_root, "b"), code => Permitted && (code == PermissionCodes.DbBackup || code == PermissionCodes.DbMaintenance), "42");
         }
-        public void Dispose() { SqliteConnectionFactory.ClearAllPools(); Directory.Delete(_root, true); }
+        public void Dispose() { SqliteConnectionFactory.ClearAllPools(); _ownedFile.Dispose(); Directory.Delete(_root, true); }
     }
 }

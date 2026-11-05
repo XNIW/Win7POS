@@ -122,6 +122,41 @@ function Get-Win7PosAcceptanceLogicalRunCount {
     return 0
 }
 
+function Get-Win7PosAcceptanceProcessIdentity {
+    param([Parameter(Mandatory)]$Process,[Parameter(Mandatory)][string]$ExpectedPath,[ValidateRange(1,2000)][int]$TimeoutMilliseconds=2000)
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    $expected=[IO.Path]::GetFullPath($ExpectedPath);$expectedHash=(Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash.ToLowerInvariant()
+    $pinnedPid=$Process.Id;$pinnedCreation=$Process.StartTime.ToUniversalTime().Ticks;$sawMismatch=$false
+    do {
+        $Process.Refresh()
+        if ($Process.HasExited) {throw 'qa_owned_process_exited_before_identity'}
+        if($Process.Id -ne $pinnedPid -or $Process.StartTime.ToUniversalTime().Ticks -ne $pinnedCreation){throw 'qa_owned_process_identity_changed'}
+        $module=$Process.MainModule
+        if ($null -ne $module -and $module.FileName) {
+            if([string]::Equals([IO.Path]::GetFullPath($module.FileName),$expected,[StringComparison]::OrdinalIgnoreCase)){
+                $observedHash=(Get-FileHash -LiteralPath $module.FileName -Algorithm SHA256).Hash.ToLowerInvariant()
+                if($observedHash -cne $expectedHash){throw 'qa_owned_process_binary_changed'}
+                return @{pid=$pinnedPid;creationTicks=$pinnedCreation;executable=$expected;exeSha256=$observedHash}
+            }
+            # WOW64 can briefly expose its loader image through the retained
+            # process handle. Readiness still requires the exact expected image.
+            $sawMismatch=$true
+        }
+        $remaining=$TimeoutMilliseconds-[int]$clock.ElapsedMilliseconds
+        if($remaining -gt 0){[Threading.Thread]::Sleep([Math]::Min(10,$remaining))}
+    } while ($clock.ElapsedMilliseconds -lt $TimeoutMilliseconds)
+    if($sawMismatch){throw 'qa_owned_process_image_mismatch'}
+    throw 'qa_owned_process_identity_missing'
+}
+
+function Test-Win7PosAcceptanceProcessIdentity {
+    param($Process,$Identity)
+    try {
+        $Process.Refresh()
+        return -not $Process.HasExited -and $Process.Id -eq $Identity.pid -and $Process.StartTime.ToUniversalTime().Ticks -eq $Identity.creationTicks -and [string]::Equals($Process.MainModule.FileName,$Identity.executable,[StringComparison]::OrdinalIgnoreCase)
+    } catch {return $false}
+}
+
 function Invoke-Win7PosWaitedProcess {
     [CmdletBinding()]
     param(
@@ -130,7 +165,10 @@ function Invoke-Win7PosWaitedProcess {
         [Parameter(Mandatory = $true)]
         [ValidateRange(100, 3600000)]
         [int]$TimeoutMilliseconds,
-        [Parameter(Mandatory = $true)][string]$EvidenceDirectory
+        [Parameter(Mandatory = $true)][string]$EvidenceDirectory,
+        [scriptblock]$OnStarted,
+        [string]$CancellationFile = '',
+        [hashtable]$EnvironmentVariables = @{}
     )
 
     $result = [ordered]@{
@@ -141,47 +179,60 @@ function Invoke-Win7PosWaitedProcess {
         Started = $false
         TimedOut = $false
         LaunchError = $null
+        Identity = $null
+        CleanupSucceeded = $true
+        Cancelled = $false
     }
 
     $process = $null
+    $clock=[Diagnostics.Stopwatch]::StartNew()
     try {
-        $process = Start-Process `
-            -FilePath ([System.IO.Path]::GetFullPath($FilePath)) `
-            -ArgumentList $ArgumentList `
-            -PassThru `
-            -WindowStyle Hidden
+        if ($CancellationFile -and (Test-Path -LiteralPath $CancellationFile)) {throw [OperationCanceledException]::new('qa_cancelled')}
+        $launch=@{FilePath=([IO.Path]::GetFullPath($FilePath));ArgumentList=$ArgumentList;PassThru=$true;WindowStyle='Hidden'}
+        if($EnvironmentVariables.Count){
+            foreach($key in $EnvironmentVariables.Keys){if($key -cnotin @('WIN7POS_DATA_DIR','WIN7POS_ADMIN_WEB_BASE_URL')){throw 'qa_owned_child_environment_invalid'}}
+            # Start-Process -Environment is available on the required QA host
+            # PowerShell 7.4; no caller environment is changed.
+            $launch.Environment=$EnvironmentVariables
+        }
+        $process=Start-Process @launch
         $result.Started = $true
         $result.ProcessId = $process.Id
-
-        if (-not $process.WaitForExit($TimeoutMilliseconds)) {
-            $result.TimedOut = $true
-            try {
-                $process.Kill()
-            }
-            catch [System.InvalidOperationException] {
-            }
-            if (-not $process.WaitForExit(30000)) {
-                $result.OrphanRemaining = $true
-            }
+        $null=$process.Handle
+        $identityBudget=[int][Math]::Min(2000,$TimeoutMilliseconds-$clock.ElapsedMilliseconds)
+        if($identityBudget -lt 1){$result.TimedOut=$true;throw 'qa_owned_process_identity_deadline'}
+        $result.Identity=Get-Win7PosAcceptanceProcessIdentity $process $FilePath -TimeoutMilliseconds $identityBudget
+        # Callback shares this absolute deadline and the existing outer Job.
+        # It can wait for nonce-bound readiness and invoke a contender through
+        # this same helper, without creating a new supervisor or work root.
+        if ($null -ne $OnStarted) {$null=& $OnStarted $process ([Math]::Max(0,$TimeoutMilliseconds-[int]$clock.ElapsedMilliseconds))}
+        if ($clock.ElapsedMilliseconds -ge $TimeoutMilliseconds) {$result.TimedOut=$true}
+        while (-not $result.TimedOut -and -not $process.WaitForExit(50)) {
+            if ($CancellationFile -and (Test-Path -LiteralPath $CancellationFile)) {$result.Cancelled=$true;break}
+            if ($clock.ElapsedMilliseconds -ge $TimeoutMilliseconds) {$result.TimedOut=$true;break}
         }
-        else {
-            # The second wait flushes redirected/native completion state for WinExe.
-            $process.WaitForExit()
-            $result.ExitCode = $process.ExitCode
-        }
+        if ($process.HasExited -and -not $result.TimedOut -and -not $result.Cancelled) {$result.ExitCode=$process.ExitCode}
     }
+    catch [OperationCanceledException] {$result.Cancelled=$true;$result.LaunchError='qa_cancelled'}
     catch {
         $result.LaunchError = $_.Exception.GetType().Name
+        try {[IO.File]::AppendAllText((Join-Path $result.EvidenceDirectory 'qa-process-error.private.txt'),$_.Exception.ToString()+[Environment]::NewLine+$_.ScriptStackTrace+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))} catch {}
     }
     finally {
         if ($null -ne $process) {
-            $process.Dispose()
+            try {
+                if (-not $process.HasExited) {
+                    if ($null -ne $result.Identity -and (Test-Win7PosAcceptanceProcessIdentity $process $result.Identity)) {$process.Kill()}
+                    # If identity was not yet available, the retained start
+                    # handle still identifies exactly our just-launched child.
+                    elseif ($result.Started -and $null -eq $result.Identity) {$process.Kill()}
+                    else {$result.CleanupSucceeded=$false}
+                    if (-not $process.WaitForExit(5000)) {$result.OrphanRemaining=$true;$result.CleanupSucceeded=$false}
+                }
+                $result.OrphanRemaining=$result.OrphanRemaining -or -not $process.HasExited
+            } catch {$result.CleanupSucceeded=$false;$result.OrphanRemaining=$true}
+            finally {$process.Dispose()}
         }
-    }
-
-    if ($null -ne $result.ProcessId) {
-        $result.OrphanRemaining = $result.OrphanRemaining -or
-            ($null -ne (Get-Process -Id $result.ProcessId -ErrorAction SilentlyContinue))
     }
 
     [pscustomobject]$result
@@ -193,4 +244,6 @@ Export-ModuleMember -Function `
     Get-Win7PosAcceptanceLogicalRunCount, `
     Get-Win7PosAcceptanceResultCode, `
     Test-Win7PosAcceptanceProcessActive, `
+    Get-Win7PosAcceptanceProcessIdentity, `
+    Test-Win7PosAcceptanceProcessIdentity, `
     Invoke-Win7PosWaitedProcess

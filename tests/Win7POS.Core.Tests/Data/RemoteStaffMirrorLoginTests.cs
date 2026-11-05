@@ -234,10 +234,12 @@ public sealed class RemoteStaffMirrorLoginTests
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             Root = root;
             var dbPath = Path.Combine(root, "pos.db");
+            _ownedFile = OwnedSqliteTestFile.Create(dbPath);
             Factory = new SqliteConnectionFactory(PosDbOptions.ForPath(dbPath));
             DbInitializer.EnsureCreated(PosDbOptions.ForPath(dbPath));
         }
@@ -255,6 +257,7 @@ public sealed class RemoteStaffMirrorLoginTests
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

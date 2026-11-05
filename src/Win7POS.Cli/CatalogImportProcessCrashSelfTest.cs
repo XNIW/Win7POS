@@ -25,7 +25,7 @@ internal static class CatalogImportProcessCrashSelfTest
     private static readonly string EntryPoint = Path.GetFullPath(Assembly.GetExecutingAssembly().Location);
 
     internal sealed record Control(string Root, string Scenario, string Nonce, int ParentPid,
-        string Database, string EntryPoint, string EntryPointSha256, long OriginalId);
+        string Database, string EntryPoint, string EntryPointSha256, long OriginalId, string FixtureToken);
     internal sealed record SavedPart(string ClientImportId, string IdempotencyKey, string PayloadJson, string PayloadHash);
     internal sealed record FileProof(string Path, string Sha256);
     internal sealed record Marker(string Nonce, int ChildPid, int ParentPid, string Database,
@@ -88,6 +88,7 @@ internal static class CatalogImportProcessCrashSelfTest
         Directory.CreateDirectory(caseOutput);
         var database = Path.Combine(directory, "transaction.db");
         var options = PosDbOptions.ForPath(database);
+        using var authority = new CrashAuthority(options);
         DbInitializer.EnsureCreated(options);
         var factory = new SqliteConnectionFactory(options);
         using (var connection = factory.Open())
@@ -121,10 +122,11 @@ internal static class CatalogImportProcessCrashSelfTest
         Write(Path.Combine(caseOutput, "before.json"), baseline);
         var beforeOutbox = SavedOutbox(factory);
         var control = new Control(root, scenario, Guid.NewGuid().ToString("N"), Environment.ProcessId,
-            database, EntryPoint, HashFile(EntryPoint), originalId);
+            database, EntryPoint, HashFile(EntryPoint), originalId, authority.Token);
         var controlPath = Path.Combine(directory, "child-control.json");
         Write(controlPath, control);
         var start = ChildStartInfo(controlPath);
+        authority.ReleaseForChild();
         using var child = Process.Start(start) ?? throw new InvalidOperationException("Child failed to start.");
         var stdout = child.StandardOutput.ReadToEndAsync();
         var stderr = child.StandardError.ReadToEndAsync();
@@ -164,6 +166,9 @@ internal static class CatalogImportProcessCrashSelfTest
             File.WriteAllText(Path.Combine(caseOutput, "child.stderr.txt"), await stderr);
         }
         File.Copy(Path.Combine(directory, "before-commit.json"), Path.Combine(caseOutput, "before-commit.json"));
+        authority.Reacquire();
+        factory = new SqliteConnectionFactory(options);
+        applier = new SupplierExcelImportApplier(factory);
         marker = marker ?? throw new InvalidOperationException("Missing marker.");
         var afterKill = Capture(factory); // opens/recover SQLite before taking one consistent read transaction
         Require(Equal(baseline, afterKill), "Killed transaction left partial persisted state.");
@@ -261,6 +266,7 @@ internal static class CatalogImportProcessCrashSelfTest
         ValidateControl(control, controlPath);
         Require(HashFile(EntryPoint) == control.EntryPointSha256 && SamePath(EntryPoint, control.EntryPoint), "Child executable binding mismatch.");
         var directory = Path.Combine(control.Root, control.Scenario);
+        using var authority = PosDatabaseAuthorityLease.AcquireSyntheticExisting(PosDbOptions.ForPath(control.Database), control.FixtureToken);
         var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(control.Database));
         CatalogImportOutboxPlan plan;
         CatalogImportRecoveryDraft? draft = null;
@@ -354,6 +360,17 @@ internal static class CatalogImportProcessCrashSelfTest
     {
         using var connection = factory.Open();
         return Capture(connection);
+    }
+
+    private sealed class CrashAuthority : IDisposable
+    {
+        private readonly PosDbOptions _options;
+        private PosDatabaseAuthorityLease? _lease;
+        internal CrashAuthority(PosDbOptions options) { _options = options; _lease = PosDatabaseAuthorityLease.AcquireSyntheticNew(options); Token = _lease.FixtureToken; }
+        internal string Token { get; }
+        internal void ReleaseForChild() { SqliteConnectionFactory.ClearAllPools(); _lease?.Dispose(); _lease = null; }
+        internal void Reacquire() { if (_lease != null) throw new InvalidOperationException("Crash parent authority is already held."); _lease = PosDatabaseAuthorityLease.AcquireSyntheticExisting(_options, Token); }
+        public void Dispose() { SqliteConnectionFactory.ClearAllPools(); _lease?.Dispose(); _lease = null; }
     }
     private static Snapshot CaptureReadOnly(string path)
     {

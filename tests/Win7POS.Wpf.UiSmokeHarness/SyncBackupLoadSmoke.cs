@@ -252,7 +252,12 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,100000 FROM products 
                 Require(state.CatalogPeak == 1 && state.BackupPeak == 1 && state.UiPeak == 1 && state.CatalogActive == 0 && state.BackupActive == 0 && state.UiActive == 0, "fixture workers overlapped within a lane or remained active");
                 Require(state.PagesCommitted == PageCount && state.BackupsPublished == 1 && state.ScansCompleted == UiSamples && state.PaymentsCompleted == UiSamples && state.OutputCalls == 0, "finite load workload did not finish exactly once");
                 Require(samples.Any(row => row.Kind == "public_scan" && row.BackupAtStart == 1 && row.CatalogAtStart == 1), "public scan did not overlap the controlled backup/catalog operations");
-                await Task.Run(() => { CheckBusiness(factory, state, true); CheckBusiness(new SqliteConnectionFactory(PosDbOptions.ForPath(backupPath)), state, false); }).ConfigureAwait(true);
+                await Task.Run(() =>
+                {
+                    CheckBusiness(factory, state, true);
+                    using var backupRead = HarnessSqliteDatabase.ReadExistingSnapshot(backupPath);
+                    CheckBusiness(backupRead.Factory, state, false);
+                }).ConfigureAwait(true);
                 state.BehaviorPassed = true;
             }
             catch (Exception error) { failure = error; }

@@ -116,6 +116,7 @@ public sealed class HardwareSettingsTests
         try
         {
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            using var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             await test(new SqliteConnectionFactory(options));
         }

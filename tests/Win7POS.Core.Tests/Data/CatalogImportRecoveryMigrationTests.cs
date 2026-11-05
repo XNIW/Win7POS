@@ -34,7 +34,7 @@ VALUES(1,0,4,'unverified',10,20);");
         }
 
         var migrated = new SchemaMigrationRunner(database.Factory).Run();
-        CollectionAssert.AreEqual(new[] { "0014-catalog-import-plans-and-drafts" }, migrated.AppliedMigrationIds.ToArray());
+        CollectionAssert.AreEqual(new[] { "0014-catalog-import-plans-and-drafts", "0015-historical-card-imports" }, migrated.AppliedMigrationIds.ToArray());
         Assert.AreEqual(ledgerless ? 13 : 0, migrated.BootstrappedMigrationIds.Count);
         Assert.IsFalse(string.IsNullOrEmpty(migrated.BackupFileName));
         using (var connection = database.Factory.Open())
@@ -124,7 +124,7 @@ INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_
         var result = new SchemaMigrationRunner(database.Factory).Run();
 
         CollectionAssert.AreEqual(
-            new[] { "0013-catalog-import-recovery", "0014-catalog-import-plans-and-drafts" },
+            new[] { "0013-catalog-import-recovery", "0014-catalog-import-plans-and-drafts", "0015-historical-card-imports" },
             result.AppliedMigrationIds.ToArray());
         Assert.AreEqual(ledgerless ? 12 : 0, result.BootstrappedMigrationIds.Count);
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.BackupFileName));
@@ -143,11 +143,11 @@ INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_
     }
 
     [TestMethod]
-    public void NewDatabaseAndCurrentLedgerlessBaseline_UseCanonical0014()
+    public void NewDatabaseAndCurrentLedgerlessBaseline_UseCanonical0015()
     {
         using var database = MigrationDatabase.Create();
         var first = new SchemaMigrationRunner(database.Factory).Run();
-        Assert.AreEqual(14, first.AppliedMigrationIds.Count);
+        Assert.AreEqual(15, first.AppliedMigrationIds.Count);
         Assert.AreEqual(0, first.BootstrappedMigrationIds.Count);
         using (var connection = database.Factory.Open())
         {
@@ -161,7 +161,7 @@ INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_
 
         var bootstrapped = new SchemaMigrationRunner(database.Factory).Run();
 
-        Assert.AreEqual(14, bootstrapped.BootstrappedMigrationIds.Count);
+        Assert.AreEqual(15, bootstrapped.BootstrappedMigrationIds.Count);
         Assert.AreEqual(0, bootstrapped.AppliedMigrationIds.Count);
         using var verify = database.Factory.Open();
         CollectionAssert.AreEqual(
@@ -411,7 +411,7 @@ VALUES(@priorId,0,1,'retired',@retirement,@id,3,6);",
         if (valid)
         {
             var result = new SchemaMigrationRunner(database.Factory).Run();
-            Assert.AreEqual(14, result.BootstrappedMigrationIds.Count);
+            Assert.AreEqual(15, result.BootstrappedMigrationIds.Count);
             Assert.AreEqual(0, result.AppliedMigrationIds.Count);
         }
         else
@@ -450,9 +450,9 @@ COALESCE(last_error_code,'') || '|' || created_at || '|' || updated_at FROM cata
         Assert.ThrowsExactly<InvalidDataException>(() => new SchemaMigrationRunner(database.Factory).Run());
 
         using var verify = database.Factory.Open();
-        Assert.AreEqual(0L, verify.ExecuteScalar<long>(@"
-SELECT COUNT(*) FROM schema_migrations WHERE migration_id = '0013-catalog-import-recovery';"));
-        Assert.AreEqual(12L, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM schema_migrations;"));
+        Assert.AreEqual(0L, new LegacySchemaDetector(verify).TableExists("schema_migrations")
+            ? verify.ExecuteScalar<long>("SELECT COUNT(*) FROM schema_migrations;") : 0L);
+        Assert.IsFalse(new LegacySchemaDetector(verify).HasCatalogImportRecoverySchema(), "The malformed original schema must not be repaired or falsely ledgered.");
     }
 
     private static void InsertOutbox(SqliteConnection connection, int id, int attemptCount)
@@ -488,11 +488,13 @@ FROM schema_migrations ORDER BY migration_id;").ToArray();
     private sealed class MigrationDatabase : IDisposable
     {
         private readonly string _root;
+        private readonly OwnedSqliteTestFile _ownedFile;
 
         private MigrationDatabase(string root)
         {
             _root = root;
             Options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(Options.DbPath);
             Factory = new SqliteConnectionFactory(Options);
         }
 
@@ -510,6 +512,7 @@ FROM schema_migrations ORDER BY migration_id;").ToArray();
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(_root, true); } catch { }
         }
     }

@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using System.Threading;
+using Win7POS.Data.Reports;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
@@ -75,16 +77,7 @@ namespace Win7POS.Data.Repositories
                     .ConfigureAwait(false);
                 if (replaySaleId.HasValue)
                 {
-                    if (authorizationCommitGuard == null)
-                    {
-                        CommitExactSaleReplay(commitTransaction);
-                    }
-                    else
-                    {
-                        authorizationCommitGuard.CommitIfStillValid(
-                            () => CommitExactSaleReplay(
-                                commitTransaction));
-                    }
+                    await CommitWithPublicationAsync(conn, tx, authorizationCommitGuard, commitTransaction, TimeSpan.Zero).ConfigureAwait(false);
                     return replaySaleId.Value;
                 }
 
@@ -117,17 +110,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
                 await EnqueueSalesSyncOutboxAsync(conn, tx, saleId, sale.ClientSaleId).ConfigureAwait(false);
                 await HeldCartRepository.ConsumeWithinTransactionAsync(conn, tx, sale).ConfigureAwait(false);
 
-                if (authorizationCommitGuard == null)
-                {
-                    commitTransaction();
-                }
-                else
-                {
-                    authorizationCommitGuard.CommitIfStillValid(
-                        SqliteConnectionFactory
-                            .DurableCommitSafetyBudget,
-                        commitTransaction);
-                }
+                await CommitWithPublicationAsync(conn, tx, authorizationCommitGuard, commitTransaction, SqliteConnectionFactory.DurableCommitSafetyBudget).ConfigureAwait(false);
                 return saleId;
             }
             catch
@@ -149,10 +132,21 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
             }
         }
 
-        private static void CommitExactSaleReplay(
-            Action commit)
+        private async Task CommitWithPublicationAsync(SqliteConnection connection, SqliteTransaction transaction,
+            SaleAuthorizationCommitGuard guard, Action commit, TimeSpan safety)
         {
-            commit();
+            var coordinator = SalesReportSnapshotCoordinator.ForDatabase(_factory.DbPath);
+            using (await coordinator.EnterPublicationAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                coordinator.CommitAndPublishReportRevision(connection, transaction,
+                    () =>
+                    {
+                        if (guard == null)
+                            commit();
+                        else
+                            guard.CommitIfStillValid(safety, commit);
+                    }, _factory.AuthorityStamp);
+            }
         }
 
         private static async Task<long?> TryResolveExactSaleReplayAsync(
@@ -343,6 +337,33 @@ WHERE sale_id = @saleId
                 new { saleId }).ConfigureAwait(false);
         }
 
+        internal async Task MarkSaleVoidedAsync(long originalSaleId, long refundSaleId, long nowMs)
+        {
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            var transactionCommitted = false;
+            Action commitTransaction = () =>
+            {
+                tx.Commit();
+                transactionCommitted = true;
+            };
+            try
+            {
+                await _reversalWriter.MarkSaleVoidedAsync(conn, tx, originalSaleId, refundSaleId, nowMs).ConfigureAwait(false);
+                await NativeSalesOwnershipRepository.RefreshForSaleInTransactionAsync(conn, tx, originalSaleId, CancellationToken.None).ConfigureAwait(false);
+                await CommitWithPublicationAsync(conn, tx, null, commitTransaction, TimeSpan.Zero).ConfigureAwait(false);
+            }
+            catch
+            {
+                if (!transactionCommitted)
+                {
+                    try { tx.Rollback(); }
+                    catch { /* Preserve the original persistence failure. */ }
+                }
+                throw;
+            }
+        }
+
         internal async Task<long> InsertRefundSaleAsync(
             RefundCreateRequest req,
             long totalMinor,
@@ -365,7 +386,8 @@ WHERE sale_id = @saleId
                     paidCashMinor,
                     paidCardMinor,
                     changeMinor).ConfigureAwait(false);
-                tx.Commit();
+                await NativeSalesOwnershipRepository.RefreshForSaleInTransactionAsync(conn, tx, saleId, CancellationToken.None).ConfigureAwait(false);
+                await CommitWithPublicationAsync(conn, tx, null, tx.Commit, TimeSpan.Zero).ConfigureAwait(false);
                 return saleId;
             }
             catch
@@ -485,14 +507,11 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
                         originalSaleIdToMarkVoided.Value,
                         saleId,
                         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                    await NativeSalesOwnershipRepository.RefreshForSaleInTransactionAsync(
+                        conn, tx, originalSaleIdToMarkVoided.Value, CancellationToken.None).ConfigureAwait(false);
                 }
 
-                if (authorizationCommitGuard == null)
-                    commitTransaction();
-                else
-                    authorizationCommitGuard.CommitIfStillValid(
-                        SqliteConnectionFactory.DurableCommitSafetyBudget,
-                        commitTransaction);
+                await CommitWithPublicationAsync(conn, tx, authorizationCommitGuard, commitTransaction, SqliteConnectionFactory.DurableCommitSafetyBudget).ConfigureAwait(false);
                 return saleId;
             }
             catch
@@ -595,6 +614,7 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
             await _salesSyncOutbox
                 .EnqueueAsync(conn, tx, saleId, normalizedClientSaleId)
                 .ConfigureAwait(false);
+            await NativeSalesOwnershipRepository.RefreshForSaleInTransactionAsync(conn, tx, saleId, CancellationToken.None).ConfigureAwait(false);
         }
 
         private static string BuildClientSaleId(long saleId)

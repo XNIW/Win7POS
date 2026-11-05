@@ -33,11 +33,12 @@ public sealed class MigrationRunnerTests
             ["0011-product-image-outbox"] = "59eff792775e9c2e65f15d158a75ab80430bed6d69c409e9bfb97a425e5f74d0",
             ["0012-customer-order-inbox"] = "1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3",
             ["0013-catalog-import-recovery"] = "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883",
-            ["0014-catalog-import-plans-and-drafts"] = "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff"
+            ["0014-catalog-import-plans-and-drafts"] = "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff",
+            ["0015-historical-card-imports"] = "9e04be2f76ee6ec7e7bd1eee99c4be59ee93e137277a0314747180274d0d720e"
         };
 
-        Assert.AreEqual(14, migrations.Count);
-        Assert.AreEqual("0014-catalog-import-plans-and-drafts", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(15, migrations.Count);
+        Assert.AreEqual("0015-historical-card-imports", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -125,6 +126,63 @@ WHERE code = 'SNAPSHOT-BASELINE';"),
     }
 
     [TestMethod]
+    public void Ledgerless0014_BootstrapsPublishedPrefixAndAppliesOnly0015()
+    {
+        using var database = MigrationDatabase.Create();
+        new SchemaMigrationRunner(database.Factory, SchemaMigrationRegistry.All.Take(14)).Run();
+        using (var connection = database.Factory.Open())
+        {
+            Assert.IsFalse(new LegacySchemaDetector(connection).TableExists("historical_import_dataset"));
+            connection.Execute("DROP TABLE schema_migrations;");
+        }
+        var backups = 0;
+        var result = new SchemaMigrationRunner(database.Factory, SchemaMigrationRegistry.All,
+            OptionsThatCountBackups(() => backups++)).Run();
+        Assert.AreEqual(1, backups);
+        CollectionAssert.AreEqual(SchemaMigrationRegistry.All.Take(14).Select(x => x.MigrationId).ToArray(), result.BootstrappedMigrationIds.ToArray());
+        CollectionAssert.AreEqual(new[] { "0015-historical-card-imports" }, result.AppliedMigrationIds.ToArray());
+        AssertLatestLedger(database.Factory);
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_dataset"));
+    }
+
+    [TestMethod]
+    [DataRow("DROP TRIGGER report_ownership_insert_revision;")]
+    [DataRow("DROP INDEX ux_historical_active_identity;")]
+    [DataRow("DELETE FROM historical_import_dataset;")]
+    [DataRow("UPDATE historical_import_dataset SET dataset_id=' ';")]
+    [DataRow("DELETE FROM role_permissions WHERE role_id=(SELECT id FROM roles WHERE code='cashier') AND permission_code='pos.pay';")]
+    [DataRow("INSERT INTO sales(code,createdAt,total,paidCash,paidCard,change) VALUES('UNBOUND',1,1000,0,1000,0); INSERT INTO sales_sync_outbox(sale_id,client_sale_id,idempotency_key,created_at,updated_at) VALUES(last_insert_rowid(),'unbound-client','unbound-key',1,1);")]
+    public void Ledgerless0015_IncompleteOrUnsafeBaselineRejectsBeforeLedgerOrBackfill(string mutation)
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        string[] schema;
+        string[] dataset;
+        long permissions;
+        string[] outbox;
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute("DROP TABLE schema_migrations;");
+            connection.Execute(mutation);
+            schema = connection.Query<string>("SELECT type||'|'||name||'|'||COALESCE(sql,'') FROM sqlite_master ORDER BY type,name").ToArray();
+            dataset = connection.Query<string>("SELECT singleton_id||'|'||dataset_id||'|'||data_revision FROM historical_import_dataset").ToArray();
+            permissions = connection.ExecuteScalar<long>("SELECT COUNT(*) FROM role_permissions");
+            outbox = connection.Query<string>("SELECT client_sale_id||'|'||status||'|'||COALESCE(last_error_code,'') FROM sales_sync_outbox ORDER BY id").ToArray();
+        }
+        var backups = 0;
+        Assert.ThrowsExactly<InvalidDataException>(() => new SchemaMigrationRunner(database.Factory, SchemaMigrationRegistry.All,
+            OptionsThatCountBackups(() => backups++)).Run());
+        Assert.AreEqual(0, backups, "A rejected baseline must not enter backup or mutation phases.");
+        using var verify = database.Factory.Open();
+        Assert.IsFalse(new LegacySchemaDetector(verify).TableExists("schema_migrations"));
+        CollectionAssert.AreEqual(schema, verify.Query<string>("SELECT type||'|'||name||'|'||COALESCE(sql,'') FROM sqlite_master ORDER BY type,name").ToArray());
+        CollectionAssert.AreEqual(dataset, verify.Query<string>("SELECT singleton_id||'|'||dataset_id||'|'||data_revision FROM historical_import_dataset").ToArray());
+        Assert.AreEqual(permissions, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM role_permissions"));
+        CollectionAssert.AreEqual(outbox, verify.Query<string>("SELECT client_sale_id||'|'||status||'|'||COALESCE(last_error_code,'') FROM sales_sync_outbox ORDER BY id").ToArray());
+    }
+
+    [TestMethod]
     public void LedgerThrough0006_AppliesOnlyReceiptSnapshotMigrationAndBacksUpFirst()
     {
         using var database = MigrationDatabase.Create();
@@ -156,7 +214,8 @@ VALUES('PRE-0007', 2, 750, 750, 0, 0);");
                 "0011-product-image-outbox",
                 "0012-customer-order-inbox",
                 "0013-catalog-import-recovery",
-                "0014-catalog-import-plans-and-drafts"
+                "0014-catalog-import-plans-and-drafts",
+                "0015-historical-card-imports"
             },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
@@ -204,7 +263,8 @@ VALUES('perf2a.migration-probe', 'preserve-before-0009');");
                 "0011-product-image-outbox",
                 "0012-customer-order-inbox",
                 "0013-catalog-import-recovery",
-                "0014-catalog-import-plans-and-drafts"
+                "0014-catalog-import-plans-and-drafts",
+                "0015-historical-card-imports"
             },
             first.AppliedMigrationIds.ToArray());
         Assert.IsTrue(second.WasNoOp);
@@ -376,7 +436,8 @@ ALTER TABLE sales ADD COLUMN unknown_future_state TEXT NULL;");
         using var verify = database.Factory.Open();
         Assert.AreEqual(
             0L,
-            verify.ExecuteScalar<long>("SELECT COUNT(1) FROM schema_migrations;"));
+            new LegacySchemaDetector(verify).TableExists("schema_migrations") ? verify.ExecuteScalar<long>("SELECT COUNT(1) FROM schema_migrations;") : 0L);
+        Assert.IsTrue(new LegacySchemaDetector(verify).HasAllColumns("sales", "unknown_future_state"));
     }
 
     [TestMethod]
@@ -404,7 +465,7 @@ DROP TABLE schema_migrations;");
         using var verify = database.Factory.Open();
         Assert.AreEqual(
             0L,
-            verify.ExecuteScalar<long>("SELECT COUNT(1) FROM schema_migrations;"),
+            new LegacySchemaDetector(verify).TableExists("schema_migrations") ? verify.ExecuteScalar<long>("SELECT COUNT(1) FROM schema_migrations;") : 0L,
             "Unsatisfied 0003 ownership evidence must never be ledgered as historical.");
         Assert.AreEqual(
             0L,
@@ -542,7 +603,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
     public void CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor()
     {
         using var database = MigrationDatabase.Create();
-        DbInitializer.EnsureCreated(database.Options);
+        new SchemaMigrationRunner(database.Factory, SchemaMigrationRegistry.All.Take(14)).Run();
         using (var connection = database.Factory.Open())
             connection.Execute("DROP TABLE schema_migrations;");
 
@@ -561,7 +622,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
 
         Assert.AreEqual(0, result.BootstrappedMigrationIds.Count);
         CollectionAssert.AreEqual(
-            new[] { "0000-custom-predecessor", "0014-catalog-import-plans-and-drafts" },
+            new[] { "0000-custom-predecessor", "0015-historical-card-imports" },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
         Assert.IsTrue(new LegacySchemaDetector(verify).TableExists("custom_predecessor"));
@@ -1342,10 +1403,12 @@ ON catalog_authoritative_id_stage(scope_id, stage_id);"));
 
     private sealed class MigrationDatabase : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private MigrationDatabase(string root)
         {
             Root = root;
             Options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(Options.DbPath);
             Factory = new SqliteConnectionFactory(Options);
         }
 
@@ -1364,6 +1427,7 @@ ON catalog_authoritative_id_stage(scope_id, stage_id);"));
         public void Dispose()
         {
             SqliteConnectionFactory.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(Root, recursive: true); } catch { }
         }
     }

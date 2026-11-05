@@ -236,13 +236,16 @@ namespace Win7POS.Data.Online
             CancellationToken cancellationToken)
         {
             var candidatePath = AllocateCandidatePath(livePath);
+            var candidateContext = PosDatabaseAccessContext.Allocate(candidatePath, PosDatabaseAccessRole.RestoreCandidate, _liveFactory.AccessContext.ForOperation(operationId));
             try
             {
+                using var sourceContext = PosDatabaseAccessContext.SelectedSource(sourcePath, operationId);
                 var snapshotWatch = Stopwatch.StartNew();
                 var busyRetries = await Task.Run(
                         () => CreateReadOnlySnapshot(
-                            sourcePath,
-                            candidatePath,
+                            sourceContext,
+                            candidateContext,
+                            operationId,
                             cancellationToken))
                     .ConfigureAwait(false);
                 snapshotWatch.Stop();
@@ -259,7 +262,8 @@ namespace Win7POS.Data.Online
                 // BackupDatabase is synchronous and deliberately not abandoned.
                 cancellationToken.ThrowIfCancellationRequested();
                 var migrationWatch = Stopwatch.StartNew();
-                DbInitializer.EnsureCreated(PosDbOptions.ForPath(candidatePath));
+                DbInitializer.EnsureCreated(PosDbOptions.ForPath(candidatePath)
+                    .WithAccessContext(candidateContext.Narrow(PosDatabaseAccessRole.CandidateMigration)));
                 migrationWatch.Stop();
                 _testHooks?.AtRestore(RestoreFailurePoint.AfterCandidateMigration);
                 Report(
@@ -272,7 +276,8 @@ namespace Win7POS.Data.Online
                     "ok");
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var candidateFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(candidatePath));
+                var candidateFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(candidatePath)
+                    .WithAccessContext(candidateContext.Narrow(PosDatabaseAccessRole.CandidateValidation)));
                 var integrityWatch = Stopwatch.StartNew();
                 var validation = await new DbMaintenanceRepository(candidateFactory)
                     .ValidateAsync(cancellationToken)
@@ -316,12 +321,15 @@ namespace Win7POS.Data.Online
                     candidatePath,
                     candidateFactory,
                     expectedShopId,
-                    expectedShopCode);
+                    expectedShopCode,
+                    candidateContext,
+                    operationId);
             }
             catch
             {
                 SqliteConnectionFactory.ClearAllPools();
-                DeleteSqliteFiles(candidatePath);
+                try { DeleteSqliteFiles(candidatePath); }
+                finally { candidateContext.Dispose(); }
                 throw;
             }
         }
@@ -351,16 +359,23 @@ namespace Win7POS.Data.Online
         }
 
         private int CreateReadOnlySnapshot(
-            string sourcePath,
-            string candidatePath,
+            PosDatabaseAccessContext sourceContext,
+            PosDatabaseAccessContext candidateContext,
+            string operationId,
             CancellationToken cancellationToken)
         {
+            var sourcePath = sourceContext.DbPath;
+            var candidatePath = candidateContext.DbPath;
             var retryWindow = Stopwatch.StartNew();
             for (var attempt = 1; ; attempt++)
             {
                 try
                 {
+                    sourceContext.DemandOperation(operationId, sourcePath, PosDatabaseAccessRole.SelectedSnapshotSource);
+                    candidateContext.DemandOperation(operationId, candidatePath, PosDatabaseAccessRole.RestoreCandidate);
                     _testHooks?.AtRestore(RestoreFailurePoint.DuringSourceSnapshotIdentityGuard);
+                    using (var sourceBorrow = sourceContext.EnterConnection())
+                    using (var candidateBorrow = candidateContext.EnterConnection())
                     using (var source = new SqliteConnection(BuildSourceConnectionString(sourcePath)))
                     using (var destination = new SqliteConnection(BuildCandidateConnectionString(candidatePath)))
                     {
@@ -377,6 +392,7 @@ namespace Win7POS.Data.Online
                     retryWindow.ElapsedMilliseconds < NativeSnapshotRetryWindowMilliseconds)
                 {
                     DeleteSqliteFiles(candidatePath);
+                    candidateContext.RecreateOwnedPartial();
                     cancellationToken.ThrowIfCancellationRequested();
                     var remaining = NativeSnapshotRetryWindowMilliseconds -
                         (int)retryWindow.ElapsedMilliseconds;
@@ -424,7 +440,7 @@ namespace Win7POS.Data.Online
                 Cache = SqliteCacheMode.Private,
                 DataSource = path,
                 ForeignKeys = true,
-                Mode = SqliteOpenMode.ReadWriteCreate,
+                Mode = SqliteOpenMode.ReadWrite,
                 Pooling = false
             }.ToString();
         }
@@ -511,17 +527,24 @@ namespace Win7POS.Data.Online
         private readonly string _expectedShopCode;
         private readonly string _expectedShopId;
         private string _candidatePath;
+        private PosDatabaseAccessContext _candidateContext;
+        private readonly string _operationId;
 
         public RestoreCandidatePreparation(
             string candidatePath,
             SqliteConnectionFactory candidateFactory,
             string expectedShopId,
-            string expectedShopCode)
+            string expectedShopCode,
+            PosDatabaseAccessContext candidateContext,
+            string operationId)
         {
             _candidatePath = candidatePath ?? throw new ArgumentNullException(nameof(candidatePath));
             _candidateFactory = candidateFactory ?? throw new ArgumentNullException(nameof(candidateFactory));
             _expectedShopId = expectedShopId;
             _expectedShopCode = expectedShopCode;
+            _candidateContext = candidateContext;
+            _operationId = operationId;
+            _candidateContext.DemandOperation(operationId, candidatePath, PosDatabaseAccessRole.RestoreCandidate);
         }
 
         public async Task<SealedRestoreCandidate> ValidateAndSealAsync(
@@ -552,8 +575,11 @@ namespace Win7POS.Data.Online
                 path,
                 seal,
                 seal.Length,
-                File.GetLastWriteTimeUtc(path));
+                File.GetLastWriteTimeUtc(path),
+                _candidateContext,
+                _operationId);
             _candidatePath = null;
+            _candidateContext = null;
             return candidate;
         }
 
@@ -569,6 +595,8 @@ namespace Win7POS.Data.Online
             TryDelete(path + "-journal");
             TryDelete(path + "-wal");
             TryDelete(path + "-shm");
+            _candidateContext?.Dispose();
+            _candidateContext = null;
         }
 
         private string RequirePath()
@@ -617,17 +645,24 @@ namespace Win7POS.Data.Online
         private string _path;
         private FileStream _seal;
         private bool _consumed;
+        private readonly PosDatabaseAccessContext _context;
+        private readonly string _operationId;
 
         public SealedRestoreCandidate(
             string path,
             FileStream seal,
             long expectedLength,
-            DateTime expectedLastWriteUtc)
+            DateTime expectedLastWriteUtc,
+            PosDatabaseAccessContext context,
+            string operationId)
         {
             _path = path ?? throw new ArgumentNullException(nameof(path));
             _seal = seal ?? throw new ArgumentNullException(nameof(seal));
             _expectedLength = expectedLength;
             _expectedLastWriteUtc = expectedLastWriteUtc;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _operationId = operationId;
+            _context.DemandOperation(operationId, path, PosDatabaseAccessRole.RestoreCandidate);
         }
 
         public string FileName
@@ -640,10 +675,12 @@ namespace Win7POS.Data.Online
             }
         }
 
-        public string ConsumeForAtomicReplace(string liveDatabasePath)
+        public string ConsumeForAtomicReplace(string liveDatabasePath, string operationId)
         {
             if (_consumed || string.IsNullOrWhiteSpace(_path) || _seal == null)
                 throw new InvalidOperationException("Restore candidate was already consumed.");
+            _context.DemandOperation(operationId, _path, PosDatabaseAccessRole.RestoreCandidate);
+            if (_operationId != operationId) throw new PosDatabaseAuthorityException("database_context_operation_or_role_mismatch");
             var candidateDirectory = Path.GetDirectoryName(Path.GetFullPath(_path));
             var liveDirectory = Path.GetDirectoryName(Path.GetFullPath(liveDatabasePath));
             if (!string.Equals(candidateDirectory, liveDirectory, StringComparison.OrdinalIgnoreCase))
@@ -674,12 +711,12 @@ namespace Win7POS.Data.Online
             _seal?.Dispose();
             _seal = null;
             if (_consumed || string.IsNullOrWhiteSpace(_path))
-                return;
-            TryDelete(_path);
-            TryDelete(_path + "-journal");
-            TryDelete(_path + "-wal");
-            TryDelete(_path + "-shm");
-            _path = null;
+            { _context.Dispose(); return; }
+            try
+            {
+                TryDelete(_path); TryDelete(_path + "-journal"); TryDelete(_path + "-wal"); TryDelete(_path + "-shm"); _path = null;
+            }
+            finally { _context.Dispose(); }
         }
 
         private static void TryDelete(string path)

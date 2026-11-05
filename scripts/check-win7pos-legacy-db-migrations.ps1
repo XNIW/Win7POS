@@ -37,7 +37,8 @@ $migrationFiles = @(
     "src/Win7POS.Data/Migrations/SchemaMigration.cs",
     "src/Win7POS.Data/Migrations/SchemaMigrationRegistry.cs",
     "src/Win7POS.Data/Migrations/SchemaMigrationRunner.cs",
-    "src/Win7POS.Data/Migrations/LegacySchemaDetector.cs"
+    "src/Win7POS.Data/Migrations/LegacySchemaDetector.cs",
+    "src/Win7POS.Data/Import/HistoricalSalesSchema.cs"
 )
 $testFiles = @(
     "tests/Win7POS.Core.Tests/Data/MigrationRunnerTests.cs",
@@ -91,6 +92,7 @@ Require-Text $registry 'DbInitializer\.CoreSchemaFingerprintSql' "core bootstrap
 Require-Text $registry 'DbInitializer\.DependentSchemaSql' "dependent bootstrap uses exact table definitions"
 Require-Text $registry 'DbInitializer\.PrBKnownSchemaSql' "ledgerless bootstrap is bounded to the frozen PR-B schema whitelist"
 Require-Text $registry 'IsRecognizedPostPr7LedgerlessBaseline' "post-PR7 ledgerless bootstrap uses a dedicated bounded baseline recognizer"
+Require-Text $registry 'HistoricalSalesSchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalSalesBaseline' "historical imports require the current schema invariant and explicit ledgerless baseline recognizer"
 Require-Text $registry 'IsCanonicalRegistry' "special ledgerless recognition is restricted to the canonical registry"
 Require-Text $migration 'RecognizesLedgerlessBaseline' "ledgerless baseline recognition is explicit migration metadata"
 Require-Text $initializer 'PostPr7LedgerlessKnownSchemaSql' "post-PR7 receipt schema has a separate frozen whitelist"
@@ -128,7 +130,8 @@ $expectedIds = @(
     "0011-product-image-outbox",
     "0012-customer-order-inbox",
     "0013-catalog-import-recovery",
-    "0014-catalog-import-plans-and-drafts"
+    "0014-catalog-import-plans-and-drafts",
+    "0015-historical-card-imports"
 )
 if (($ids -join "|") -ne ($expectedIds -join "|")) {
     Fail "registry is not the expected append-only ordered migration sequence"
@@ -151,7 +154,8 @@ $expectedChecksums = @(
     "59eff792775e9c2e65f15d158a75ab80430bed6d69c409e9bfb97a425e5f74d0",
     "1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3",
     "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883",
-    "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff"
+    "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff",
+    "9e04be2f76ee6ec7e7bd1eee99c4be59ee93e137277a0314747180274d0d720e"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or
@@ -163,7 +167,7 @@ if (-not $failed) { Pass "published ID-to-checksum mapping is pinned in registry
 
 $trueBeforeApplyCount = [regex]::Matches(
     $registry,
-    'true,\s*\r?\n\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply)').Count
+    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply)').Count
 if ($trueBeforeApplyCount -ne $expectedIds.Count) {
     Fail "every published PR-B migration must require a pre-migration backup"
 }
@@ -190,6 +194,8 @@ foreach ($token in @(
     "LedgerlessPostPr7WithMissingOwnershipBackfill_IsNotFalselyBootstrapped",
     "AuthenticLatestLedgerWithoutReceiptSnapshotColumn_FailsCurrentSchemaValidation",
     "CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor",
+    "Ledgerless0014_BootstrapsPublishedPrefixAndAppliesOnly0015",
+    "Ledgerless0015_IncompleteOrUnsafeBaselineRejectsBeforeLedgerOrBackfill",
     "MalformedSchemaWithLedgerThrough0006_DoesNotCommit0007")) {
     if ($runnerTests -notmatch [regex]::Escape($token)) {
         Fail "migration runner regression scenario missing: $token"

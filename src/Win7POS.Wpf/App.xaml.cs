@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Win7POS.Core;
+using Win7POS.Data;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
@@ -19,6 +20,7 @@ namespace Win7POS.Wpf
         private const string SingleInstanceMutexName = @"Local\Win7POS.Wpf.SingleInstance";
         private const string SafeStartEnvironmentVariable = "WIN7POS_SAFE_START";
         private static Mutex _singleInstanceMutex;
+        private PosDatabaseAuthorityLease _databaseAuthority;
 
         public App()
         {
@@ -50,6 +52,9 @@ namespace Win7POS.Wpf
             _logger.LogInfo("App.OnStartup entered");
 
             IsSafeStart = IsSafeStartRequested(e?.Args);
+            if (e?.Args != null && Array.IndexOf(e.Args, "--qa-authority-probe") >= 0 &&
+                PosDatabaseAuthorityQaProbe.TryRun(e.Args, PosDbOptions.Default(), IsSafeStart ? "wpf-safe" : "wpf-normal", out var probeExit))
+            { Shutdown(probeExit); return; }
             if (IsSafeStart)
             {
                 StartupTrace.Write("safe-start enabled");
@@ -73,6 +78,7 @@ namespace Win7POS.Wpf
                 StartupTrace.Write("AppPaths.EnsureCreated start");
                 _logger.LogInfo("AppPaths.EnsureCreated start");
                 AppPaths.EnsureCreated();
+                _databaseAuthority = PosDatabaseAuthorityLease.AcquireOperational(PosDbOptions.Default());
                 StartupTrace.Write("AppPaths.EnsureCreated end");
                 _logger.LogInfo("AppPaths.EnsureCreated done");
                 base.OnStartup(e);
@@ -102,6 +108,13 @@ namespace Win7POS.Wpf
 
         protected override void OnExit(ExitEventArgs e)
         {
+            try
+            {
+                SqliteConnectionFactory.ClearAllPools();
+                _databaseAuthority?.Dispose();
+                _databaseAuthority = null;
+            }
+            catch (Exception error) { _logger.LogWarning("Database authority remains held until process exit.", error); }
             try
             {
                 if (_singleInstanceMutex != null)

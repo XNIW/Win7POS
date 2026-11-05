@@ -43,4 +43,10 @@
     </Content>
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\fixtures\historical-sales-getnet-v1\*">
+      <Link>fixtures\historical-sales-getnet-v1\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

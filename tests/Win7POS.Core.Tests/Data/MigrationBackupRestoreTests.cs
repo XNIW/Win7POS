@@ -303,7 +303,8 @@ ON catalog_authoritative_id_stage(scope_id, stage_id);"));
 
     private static async Task AssertDatabaseValidAsync(string databasePath)
     {
-        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(databasePath));
+        using var context = PosDatabaseAccessContext.SelectedSource(databasePath);
+        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(databasePath).WithAccessContext(context));
         var validation = await new DbMaintenanceRepository(factory).ValidateAsync();
         Assert.IsTrue(
             validation.IsValid,
@@ -359,6 +360,8 @@ INSERT INTO legacy_child(id, parent_id) VALUES(1, 999);");
 
     private sealed class MigrationFiles : IDisposable
     {
+        private readonly OwnedSqliteTestFile _liveOwner;
+        private readonly OwnedSqliteTestFile _candidateOwner;
         private MigrationFiles(string root)
         {
             Root = root;
@@ -366,6 +369,8 @@ INSERT INTO legacy_child(id, parent_id) VALUES(1, 999);");
             CandidatePath = Path.Combine(root, "candidate.db");
             BackupDirectory = Path.Combine(root, "backups");
             DeclaredRollbackPath = Path.Combine(root, "declared-rollback.db");
+            _liveOwner = OwnedSqliteTestFile.Create(LivePath);
+            _candidateOwner = OwnedSqliteTestFile.Create(CandidatePath);
         }
 
         public string BackupDirectory { get; }
@@ -387,6 +392,8 @@ INSERT INTO legacy_child(id, parent_id) VALUES(1, 999);");
         public void Dispose()
         {
             SqliteConnectionFactory.ClearAllPools();
+            _liveOwner.Dispose();
+            _candidateOwner.Dispose();
             try { Directory.Delete(Root, recursive: true); } catch { }
         }
     }

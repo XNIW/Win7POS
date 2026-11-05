@@ -555,12 +555,15 @@ VALUES(@saleId, 'CORRUPT-LINE', @name, 1, 0, 0);",
 
     private sealed class TestDb : IDisposable
     {
+        private readonly Win7POS.Core.Tests.Data.OwnedSqliteTestFile _database;
         private TestDb(string root)
         {
             Root = root;
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
-            Factory = new SqliteConnectionFactory(options);
-            DbInitializer.EnsureCreated(options);
+            _database = Win7POS.Core.Tests.Data.OwnedSqliteTestFile.Create(options.DbPath);
+            Factory = _database.Factory;
+            try { DbInitializer.EnsureCreated(_database.Options); }
+            catch { _database.Dispose(); throw; }
         }
 
         public SqliteConnectionFactory Factory { get; }
@@ -579,6 +582,7 @@ VALUES(@saleId, 'CORRUPT-LINE', @name, 1, 0, 0);",
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _database.Dispose();
             try { Directory.Delete(Root, recursive: true); } catch { }
         }
     }

@@ -49,7 +49,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static async Task CheckStartupAsync(string root, bool autoOpen)
         {
             var topology = new FixtureTopology();
-            using (var manager = await CreateAsync(root, topology, false, autoOpen))
+            using (var fixture = await CreateAsync(root, topology, false, autoOpen))
+            using (var manager = fixture.Manager)
             using (var pos = new PosViewModel())
             {
                 var scanner = new TextBox();
@@ -102,7 +103,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static async Task CheckPreviewAndSettingsAsync(string root)
         {
             var topology = new FixtureTopology();
-            using (var manager = await CreateAsync(root, topology, false))
+            using (var fixture = await CreateAsync(root, topology, false))
+            using (var manager = fixture.Manager)
             using (var pos = new PosViewModel())
             {
                 manager.Attach(pos);
@@ -127,7 +129,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static async Task CheckMinimizeAsync(string root)
         {
             var topology = new FixtureTopology();
-            using (var manager = await CreateAsync(root, topology, false))
+            using (var fixture = await CreateAsync(root, topology, false))
+            using (var manager = fixture.Manager)
             {
                 Require(!manager.IsOpen, "AutoOpen=false opened at initialization");
                 manager.OpenDisplay();
@@ -157,7 +160,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static async Task CheckReconnectAsync(string root, bool reopen, bool snapshotBeforeDebounce)
         {
             var topology = new FixtureTopology();
-            using (var manager = await CreateAsync(root, topology, reopen))
+            using (var fixture = await CreateAsync(root, topology, reopen))
+            using (var manager = fixture.Manager)
             {
                 manager.OpenDisplay();
                 Publish(manager, Cart("before unplug"));
@@ -200,7 +204,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static async Task CheckLifecycleAsync(string root)
         {
             var topology = new FixtureTopology();
-            using (var manager = await CreateAsync(root, topology, true))
+            using (var fixture = await CreateAsync(root, topology, true))
+            using (var manager = fixture.Manager)
             {
                 var scanner = new TextBox();
                 var cashier = new Window { Content = scanner, Width = 280, Height = 140, ShowInTaskbar = false };
@@ -252,22 +257,34 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
         }
 
-        private static async Task<CustomerDisplayManager> CreateAsync(string root, FixtureTopology topology, bool reopen, bool autoOpen = false)
+        private static async Task<ManagerFixture> CreateAsync(string root, FixtureTopology topology, bool reopen, bool autoOpen = false)
         {
-            var options = PosDbOptions.ForPath(Path.Combine(root, Guid.NewGuid().ToString("N") + ".db"));
-            DbInitializer.EnsureCreated(options);
-            var repository = new CustomerDisplaySettingsRepository(new SqliteConnectionFactory(options));
-            var settings = CustomerDisplaySettings.CreateDefault(2);
-            settings.Enabled = true;
-            settings.AutoOpen = autoOpen;
-            settings.AlwaysOnTop = false;
-            settings.FollowCashierMinimize = true;
-            settings.ThankYouSeconds = 1;
-            settings.ReopenWhenMonitorReturns = reopen;
-            await repository.SaveAsync(settings, () => { }, "qa_fixture");
-            var manager = new CustomerDisplayManager(topology, repository, Dispatcher.CurrentDispatcher, () => { }, () => "qa_fixture");
-            try { await manager.InitializeAsync(); return manager; }
-            catch { manager.Dispose(); throw; }
+            var database = HarnessSqliteDatabase.CreateNew(Path.Combine(root, Guid.NewGuid().ToString("N") + ".db"));
+            CustomerDisplayManager manager = null;
+            try
+            {
+                DbInitializer.EnsureCreated(database.Options);
+                var repository = new CustomerDisplaySettingsRepository(database.Factory);
+                var settings = CustomerDisplaySettings.CreateDefault(2);
+                settings.Enabled = true;
+                settings.AutoOpen = autoOpen;
+                settings.AlwaysOnTop = false;
+                settings.FollowCashierMinimize = true;
+                settings.ThankYouSeconds = 1;
+                settings.ReopenWhenMonitorReturns = reopen;
+                await repository.SaveAsync(settings, () => { }, "qa_fixture");
+                manager = new CustomerDisplayManager(topology, repository, Dispatcher.CurrentDispatcher, () => { }, () => "qa_fixture");
+                await manager.InitializeAsync(); return new ManagerFixture(manager, database);
+            }
+            catch { manager?.Dispose(); database.Dispose(); throw; }
+        }
+
+        private sealed class ManagerFixture : IDisposable
+        {
+            private readonly HarnessSqliteDatabase _database;
+            internal ManagerFixture(CustomerDisplayManager manager, HarnessSqliteDatabase database) { Manager = manager; _database = database; }
+            internal CustomerDisplayManager Manager { get; }
+            public void Dispose() => _database.Dispose(); // The nested manager using has completed first.
         }
 
         private static async Task TopologyChangeAsync(CustomerDisplayManager manager, FixtureTopology topology, bool connected)

@@ -23,7 +23,14 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="{loc:Loc sales.register.title}" Style="{StaticResource DialogTitleStyle}"/>
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="{loc:Loc sales.register.title}" Style="{StaticResource DialogTitleStyle}"/>
+            <WrapPanel Margin="0,0,0,8" Visibility="{Binding HasAnalyticalControls, Converter={StaticResource BoolToVis}}">
+                <ComboBox ItemsSource="{Binding RegisterOriginLabels}" SelectedIndex="{Binding RegisterOriginIndex}" MinWidth="180" Margin="0,0,8,0"/>
+                <Button Content="{loc:Loc historyReport.loadMore}" Command="{Binding LoadMoreCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0"/>
+                <TextBlock Text="{Binding RegisterCoverageText}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="500" FontSize="10"/>
+            </WrapPanel>
+        </StackPanel>
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.35*" MinWidth="340"/>
@@ -102,6 +109,7 @@
 
                     <!-- Lista scontrini -->
                     <ListBox Grid.Row="4" ItemsSource="{Binding SalesList}" SelectedItem="{Binding SelectedSale, Mode=TwoWay}"
+                             Visibility="{Binding RegisterNumbersVisible, Converter={StaticResource BoolToVis}}"
                              BorderThickness="0" Background="Transparent" Padding="0,0,4,0"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
@@ -142,6 +150,7 @@
                                                 <TextBlock Text="{Binding VoidedText, Mode=OneWay}" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="DarkRed" FontSize="11"/>
                                             </StackPanel>
                                             <TextBlock Text="{Binding TimeText, Mode=OneWay}" Margin="0,2,0,0" FontSize="11" Foreground="#666"/>
+                                            <TextBlock Text="{Binding OriginText}" Margin="0,2,0,0" FontSize="10" Foreground="#5C3778"/>
                                         </StackPanel>
                                         <TextBlock Grid.Column="1" Text="{Binding TotalDisplay, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"/>
                                     </Grid>

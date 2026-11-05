@@ -2,7 +2,9 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Local','Windows','Staging','Win7','Hardware')][string]$Suite = 'Local',
+    [ValidateSet('All','Smoke','Load','CrashProbe')][string]$HistoricalSalesMode = 'All',
     [string]$OutputRoot = ([IO.Path]::GetTempPath()),
+    [string]$PublicOutputRoot = '',
     [ValidatePattern('^$|^[a-z0-9][a-z0-9-]{0,63}$')][string]$Profile = '',
     [ValidatePattern('^$|^ASUSART_POST_PR68_[0-9]{8}T[0-9]{9}Z_[A-F0-9]{8}$')][string]$ReadinessRunId = '',
     [ValidatePattern('^$|^[0-9]+$')][string]$ReleasePackRunId = '',
@@ -10,6 +12,9 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'Win7PosHistoricalSalesValidation.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot 'Win7PosQaPublicEvidence.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot 'Win7PosQaDiagnosticProjection.psm1') -Force -DisableNameChecking
 
 function Test-QaWithin([string]$Path, [string]$Root) {
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\','/')
@@ -228,7 +233,8 @@ function Stop-QaOwnedJob([IntPtr]$Job, [int]$TimeoutMilliseconds = 5000) {
 
 function Invoke-QaProcess {
     param([string]$Executable, [string[]]$Arguments, [string]$Directory,
-        [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$CancellationFile = '', [bool]$Staging = $false)
+        [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$CancellationFile = '', [bool]$Staging = $false,
+        [string]$RunId='', [string]$SourceFingerprint='', [string]$DiagnosticStepId='')
     $result = [ordered]@{ status='FAIL'; code='process_launch_failed'; exitCode=$null; identity=$null; elapsedMs=0; errorType=$null; workDirectory=$null; temporaryDirectory=$null; dataDirectory=$null; cleanupSucceeded=$true; processRemaining=0; activeProcessesAtCleanup=0; cleanupError=$null }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $process = $null; $started = $false; $job = [IntPtr]::Zero; $outFile = $null; $errFile = $null; $outTask = $null; $errTask = $null
@@ -270,6 +276,9 @@ try {
         foreach ($key in @('TEMP','TMP','TMPDIR')) { $start.Environment[$key] = $work.temporaryDirectory }
         $start.Environment['WIN7POS_DATA_DIR'] = $work.dataDirectory
         $start.Environment['WIN7POS_QA_TEMP_BASE'] = $work.baseDirectory
+        if($RunId -cmatch '^Win7POS\.QA\.\d{8}T\d{9}Z\.[a-f0-9]{32}$'){$start.Environment['WIN7POS_QA_RUN_ID']=$RunId}
+        if($SourceFingerprint -cmatch '^[a-f0-9]{64}$'){$start.Environment['WIN7POS_QA_SOURCE_FINGERPRINT']=$SourceFingerprint}
+        if($DiagnosticStepId -cin @('product-image-profile','functional-completion','authorization-lease','bounded-logging','product-paging-dispatcher')){$start.Environment['WIN7POS_QA_DIAGNOSTIC_STEP']=$DiagnosticStepId}
         if (-not $Staging) { $start.Environment['WIN7POS_ADMIN_WEB_BASE_URL'] = 'http://127.0.0.1:9' }
         if ($IsWindows) { Initialize-QaJobApi; $job = [Win7PosQaJob]::Create() }
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
@@ -349,7 +358,7 @@ function New-QaStep($Name, $Executable, [string[]]$Arguments, [string[]]$Depends
     [pscustomobject]@{ name=$Name; executable=$Executable; arguments=$Arguments; depends=$Depends; timeout=$Timeout; evidence=$Evidence }
 }
 
-function New-QaPlan([string]$Suite, [string]$RunDirectory, [string]$Shell) {
+function New-QaPlan([string]$Suite, [string]$RunDirectory, [string]$Shell, [string]$HistoricalMode = 'All', $Context = $null) {
     $core = 'tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj'; $cli = 'src/Win7POS.Cli/Win7POS.Cli.csproj'
     if ($Suite -eq 'Windows') {
         New-QaStep 'restore' 'dotnet' @('restore','Win7POS.slnx','--locked-mode')
@@ -384,6 +393,26 @@ function New-QaPlan([string]$Suite, [string]$RunDirectory, [string]$Shell) {
         if ($smoke -eq 'functional-completion') { $arguments += @('-OutputDirectory',(Join-Path $RunDirectory 'functional')); $evidence = 'functional' }
         New-QaStep $smoke $Shell $arguments @('build-harness') 1800 $evidence
     }
+    foreach ($history in @(
+        @{name='historical-sales-import-crash';mode='CrashProbe';evidence='historical-sales-foundation-v3';timeout=360;depends=@('build-harness')},
+        @{name='historical-sales-import-smoke';mode='Smoke';evidence='historical-sales-smoke-v3';timeout=90;depends=@('build-harness')},
+        @{name='historical-sales-import-load';mode='Load';evidence='historical-sales-load-v2';timeout=240;depends=@('build-harness','historical-sales-import-smoke')}
+    )) {
+        if ($HistoricalMode -ne 'All' -and $history.mode -ne $HistoricalMode -and -not ($HistoricalMode -eq 'Load' -and $history.mode -eq 'Smoke')) { continue }
+        $step=New-QaStep $history.name $Shell @('-NoProfile','-File','scripts/run-historical-sales-import-smoke.ps1','-Mode',$history.mode,'-OutputDirectory',(Join-Path $RunDirectory $history.name)) $history.depends $history.timeout $history.evidence
+        $step | Add-Member NoteProperty historicalMode $history.mode
+        $step | Add-Member NoteProperty context $Context
+        $step
+    }
+}
+
+function New-QaHistoricalContext($Step, [string]$RepoRoot, $Report) {
+    $harness=Join-Path $RepoRoot 'tests/Win7POS.Wpf.UiSmokeHarness/bin/x86/Release/net48/Win7POS.Wpf.UiSmokeHarness.exe'
+    $wpf=Join-Path $RepoRoot 'src/Win7POS.Wpf/bin/x86/Release/net48/Win7POS.Wpf.exe'
+    $fixture=Join-Path ([IO.Path]::GetDirectoryName($harness)) 'fixtures/historical-sales-getnet-v1/manifest.json'
+    foreach ($path in @($harness,$wpf,$fixture)) { $null=Assert-QaPath $path $RepoRoot; if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'qa_history_binary_or_fixture_missing' } }
+    if ($null -eq $Report -or $null -eq $Report.sourceState) { throw 'qa_history_parent_context_missing' }
+    return [ordered]@{schemaVersion='win7pos-historical-sales-context-v1';runId=$Report.runId;runNonce=[Guid]::NewGuid().ToString('N');sourceSha=$Report.sourceSha;sourceFingerprintSha256=$Report.sourceState.fingerprintSha256;harnessSha256=(Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash.ToLowerInvariant();wpfSha256=(Get-FileHash -LiteralPath $wpf -Algorithm SHA256).Hash.ToLowerInvariant();fixtureVersion='historical-sales-getnet-v1';fixtureSha256=(Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant();timePolicyVersion='synthetic-fixed-offset-v1'}
 }
 
 function Export-QaSmokeEvidence([string]$WorkDirectory, [string]$DestinationDirectory) {
@@ -435,6 +464,11 @@ function Export-QaSmokeEvidence([string]$WorkDirectory, [string]$DestinationDire
 }
 
 function Assert-QaEvidence($Step, [string]$RunDirectory) {
+    if ($Step.PSObject.Properties.Name -contains 'historicalMode') {
+        $contract=Get-HistoricalSalesQaContract $Step.historicalMode
+        $receipt=Read-HistoricalSalesQaJson (Join-Path (Join-Path $RunDirectory $Step.name) $contract.file)
+        Assert-HistoricalSalesQaPass $receipt $Step.historicalMode $Step.context
+    }
     if ($Step.evidence -eq 'trx') {
         [xml]$trx = Get-Content -LiteralPath (Join-Path $RunDirectory 'core/core.trx') -Raw
         $counters = $trx.SelectSingleNode("//*[local-name()='Counters']")
@@ -467,8 +501,17 @@ function Invoke-QaPlan($Plan, [string]$RunDirectory, [string]$RepoRoot, [string]
                     if (-not (Test-Path -LiteralPath $directory -PathType Container)) { throw 'qa_step_directory_invalid' }
                 } else { New-Item -ItemType Directory -Path $directory | Out-Null }
                 $row.processReceipt=Join-Path $directory 'process-result.json'
+                $arguments=@($step.arguments)
+                if ($step.PSObject.Properties.Name -contains 'historicalMode') {
+                    $step.context=New-QaHistoricalContext $step $RepoRoot $Report
+                    $contextPath=Join-Path $directory 'historical-sales-context.json'
+                    [IO.File]::WriteAllText($contextPath,($step.context|ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
+                    $arguments+=@('-ContextFile',$contextPath)
+                }
                 $processInvoked=$true
-                $processResult = Invoke-QaProcess -Executable $step.executable -Arguments $step.arguments -Directory $directory -WorkingDirectory $RepoRoot -TimeoutSeconds $step.timeout -CancellationFile $CancellationFile
+                $runBinding=if($null -ne $Report -and $Report.Contains('runId')){$Report.runId}else{''}
+                $fingerprintBinding=if($null -ne $Report -and $Report.Contains('sourceState') -and $null -ne $Report.sourceState){$Report.sourceState.fingerprintSha256}else{''}
+                $processResult = Invoke-QaProcess -Executable $step.executable -Arguments $arguments -Directory $directory -WorkingDirectory $RepoRoot -TimeoutSeconds $step.timeout -CancellationFile $CancellationFile -RunId $runBinding -SourceFingerprint $fingerprintBinding -DiagnosticStepId $step.name
                 foreach ($key in @('status','code','exitCode','identity','elapsedMs')) { $row[$key] = $processResult.$key }
                 if ($processResult.PSObject.Properties.Name -contains 'errorType') { $row.errorType=$processResult.errorType }
                 foreach ($key in @('workDirectory','temporaryDirectory','dataDirectory')) {
@@ -494,6 +537,17 @@ function Invoke-QaPlan($Plan, [string]$RunDirectory, [string]$RepoRoot, [string]
                         $partial = Get-Content -LiteralPath (Join-Path $RunDirectory 'functional/functional-results.json') -Raw | ConvertFrom-Json
                         $row.tests = @($partial.results)
                     } catch { }
+                }
+                if ($step.PSObject.Properties.Name -contains 'historicalMode') {
+                    try {
+                        $contract=Get-HistoricalSalesQaContract $step.historicalMode
+                        $partial=Read-HistoricalSalesQaJson (Join-Path $directory $contract.file)
+                        $safe=ValidateHistoricalEvidenceStructureAndPrivacy $partial $step.historicalMode $step.context
+                        $row.tests=@($safe.results)
+                    } catch {
+                        $row.evidenceExportError=@{code='qa_history_receipt_privacy_rejected';errorType=$_.Exception.GetType().Name}
+                        if ($row.status -eq 'PASS') {$row.status='FAIL';$row.code='missing_or_invalid_test_evidence'}
+                    }
                 }
                 if ($row.status -eq 'PASS') {
                     try { Assert-QaEvidence $step $RunDirectory } catch { $row.status='FAIL'; $row.code='missing_or_invalid_test_evidence' }
@@ -526,12 +580,54 @@ function Write-QaReports($Report, [string]$Directory) {
     $Report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $Directory 'qa-results.json') -Encoding utf8
 }
 
+function Get-QaPrimaryFailure($Report) {
+    $primary=$Report.firstError
+    if($null -eq $primary){$primary=@($Report.results|Where-Object status -cne 'PASS'|Select-Object -First 1)|Select-Object -First 1}
+    if($null -eq $primary){return @{id='unknown';code=$(if($Report.status -ceq 'PASS'){'none'}else{'qa_step_failed'})}}
+    $keys=if($primary -is [Collections.IDictionary]){@($primary.Keys)}else{@($primary.PSObject.Properties.Name)}
+    $id=if($keys -contains 'name'){$primary.name}elseif($keys -contains 'test'){$primary.test}else{'unknown'}
+    $code=if($keys -contains 'code'){ConvertTo-QaPublicCode $primary.code}else{'qa_unclassified_failure'}
+    if($code -ceq 'none'){$code='qa_step_failed'}
+    return @{id=$(if($id -cin (Get-QaPublicCatalog).steps){$id}else{'unknown'});code=$code}
+}
+
+function Get-QaProjectedDiagnostics($Report,[string]$RunDirectory,[string]$RepoRoot) {
+    $events=[Collections.Generic.List[object]]::new()
+    foreach($row in @($Report.results)) {
+        if($row.name -cnotin @('core','gates')){continue}
+        $emitted=$false
+        $fingerprint=if($null -ne $Report.sourceState){$Report.sourceState.fingerprintSha256}else{$null}
+        $paths=if($row.name -ceq 'core'){@(Join-Path $RunDirectory 'core/core.trx')}else{@((Join-Path $RunDirectory 'gates/stdout.log'),(Join-Path $RunDirectory 'gates/stderr.log'))}
+        foreach($path in $paths) {
+            if(-not(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0){continue}
+            try {
+                $projection=if($row.name -ceq 'core'){ConvertFrom-QaTrxDiagnostics -TrxPath $path -RepoRoot $RepoRoot -RunId $Report.runId -SourceFingerprintSha256 $fingerprint}else{ConvertFrom-QaGateTranscript -TranscriptPath $path -RepoRoot $RepoRoot -RunId $Report.runId -SourceFingerprintSha256 $fingerprint}
+                if($projection.schemaVersion -cne 'win7pos-qa-diagnostics-v1' -or $projection.runId -cne $Report.runId -or $projection.sourceFingerprintSha256 -cne $fingerprint){throw 'qa_public_projection_identity_invalid'}
+                foreach($event in @($projection.results)) {
+                    if(-not $projection.projection.complete){$event.diagnosticCompleteness='partial'}
+                    $events.Add($event);$emitted=$true
+                }
+                if(-not $projection.projection.complete -and @($projection.results).Count -eq 0){throw 'qa_public_projection_incomplete'}
+            } catch {
+                # Original transcript/error remains in the private run directory.
+                $events.Add([pscustomobject]@{stepId=$row.name;scenarioId=$null;assertionId=$null;status='NOT_RUN';expected=$true;actual=$null;checkpoint='unavailable';code='unavailable';sequence=0;diagnosticCompleteness='partial'});$emitted=$true
+            }
+        }
+        if(-not $emitted){$events.Add([pscustomobject]@{stepId=$row.name;scenarioId=$null;assertionId=$null;status='NOT_RUN';expected=$true;actual=$null;checkpoint='unavailable';code='unavailable';sequence=0;diagnosticCompleteness='partial'})}
+    }
+    return $events.ToArray()
+}
+
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $runId = 'Win7POS.QA.' + [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '.' + [Guid]::NewGuid().ToString('N')
-$report = [ordered]@{ schemaVersion=1; runId=$runId; suite=$Suite; sourceSha=$null; sourceState=$null; sourceStateAfter=$null; host=[Environment]::MachineName; os=[Environment]::OSVersion.VersionString; powershell=$PSVersionTable.PSVersion.ToString(); profile=$Profile; packageSha256=$null; binaries=@(); status='FAIL'; firstError=$null; reportError=$null; results=@() }
+$report = [ordered]@{ schemaVersion=1; runId=$runId; suite=$Suite; historicalSalesMode=$HistoricalSalesMode; sourceSha=$null; sourceState=$null; sourceStateAfter=$null; host=[Environment]::MachineName; os=[Environment]::OSVersion.VersionString; powershell=$PSVersionTable.PSVersion.ToString(); profile=$Profile; packageSha256=$null; binaries=@(); status='FAIL'; firstError=$null; reportError=$null; results=@() }
 $mutex = $null; $locked = $false; $runDirectory = $null; $exitCode = 1
+$publicParent=$null; $publicBundle=$null; $plan=@()
 try {
     $root = Assert-QaOutputRoot $OutputRoot $repoRoot
+    $publicParent=Assert-QaOutputRoot $(if ($PublicOutputRoot) {$PublicOutputRoot} else {Join-Path $root 'public'}) $repoRoot
+    if (Test-Path -LiteralPath (Join-Path $publicParent $runId)) {throw 'qa_public_collision'}
+    if ($env:GITHUB_OUTPUT) { [IO.File]::AppendAllText($env:GITHUB_OUTPUT,"current_run_id=$runId`npublic_bundle_verified=false`n") }
     $runDirectory = Assert-QaPath (Join-Path $root $runId) $root
     if (Test-Path -LiteralPath $runDirectory) { throw 'qa_run_identity_reused' }
     New-Item -ItemType Directory -Path $runDirectory | Out-Null
@@ -571,7 +667,7 @@ try {
             $report.results = @([pscustomobject]@{ name='staging'; status=$result.status; code=$result.code; exitCode=$result.exitCode; identity=$result.identity; workDirectory=$result.workDirectory; temporaryDirectory=$result.temporaryDirectory; dataDirectory=$result.dataDirectory; cleanupSucceeded=$result.cleanupSucceeded; processRemaining=$result.processRemaining; cleanupError=$result.cleanupError; processReceipt=(Join-Path $directory 'process-result.json') })
         }
     } else {
-        $plan = @(New-QaPlan $Suite $runDirectory (Get-Process -Id $PID).Path)
+        $plan = @(New-QaPlan $Suite $runDirectory (Get-Process -Id $PID).Path $HistoricalSalesMode $report)
         $report.results = @(Invoke-QaPlan $plan $runDirectory $repoRoot $CancellationFile $report)
         $firstFailure = @($report.results | Where-Object { $_.status -cne 'PASS' } | Select-Object -First 1)
         if ($null -eq $report.firstError -and $firstFailure.Count) { $report.firstError=$firstFailure[0] }
@@ -595,7 +691,7 @@ try {
     elseif ($failures.Count -and $null -eq $report.firstError) { $report.firstError = $failures[0] }
 } catch {
     if ($null -eq $report.firstError) { $report.firstError = @{ test='preflight'; status='FAIL'; code=(Get-QaErrorCode $_) } }
-    [Console]::Error.WriteLine('WIN7POS_QA_FAILED: ' + $report.firstError.code)
+    Write-QaPublicConsoleEvent -RunId $runId -Suite $Suite -StepId preflight -Code $report.firstError.code
 } finally {
     try { if ($locked) { $mutex.ReleaseMutex() }; if ($null -ne $mutex) { $mutex.Dispose() } }
     catch {
@@ -603,13 +699,53 @@ try {
         if ($null -eq $report.firstError) { $report.firstError=@{ test='cleanup'; status='FAIL'; code='qa_checkout_lock_release_failed' } }
     }
     if ($runDirectory) {
+        $primaryFailure=Get-QaPrimaryFailure $report
         try { Write-QaReports $report $runDirectory }
         catch {
             $exitCode=1; $report.status='FAIL'
             if ($null -eq $report.firstError) { $report.firstError=@{ test='report'; status='FAIL'; code='qa_report_write_failed' } }
-            [Console]::Error.WriteLine('WIN7POS_QA_REPORT_WRITE_FAILED; firstError=' + ($report.firstError | ConvertTo-Json -Depth 10 -Compress))
+            $primaryFailure=Get-QaPrimaryFailure $report
+            Write-QaPublicConsoleEvent -RunId $runId -Suite $Suite -StepId report -Code $primaryFailure.code -PrimaryStepId $primaryFailure.id -SecondaryCode qa_report_write_failed
         }
-        Write-Output ('WIN7POS_QA_EVIDENCE=' + $runDirectory)
+        try {
+            $history=@()
+            foreach ($step in $plan) {
+                if ($step.PSObject.Properties.Name -notcontains 'historicalMode' -or $null -eq $step.context) {continue}
+                $contract=Get-HistoricalSalesQaContract $step.historicalMode
+                $receiptPath=Join-Path (Join-Path $runDirectory $step.name) $contract.file
+                if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {continue}
+                try {
+                    $receipt=Read-HistoricalSalesQaJson $receiptPath
+                    $null=ValidateHistoricalEvidenceStructureAndPrivacy $receipt $step.historicalMode $step.context
+                    $history+=@{mode=$step.historicalMode;receipt=$receipt;expected=$step.context}
+                } catch { Write-QaPublicConsoleEvent -RunId $runId -Suite $Suite -StepId $step.name -Code $primaryFailure.code -PrimaryStepId $primaryFailure.id -SecondaryCode qa_history_receipt_privacy_rejected }
+            }
+            $diagnostics=@(Get-QaTypedDiagnostics -Report $report -RepoRoot $repoRoot)
+            $diagnostics+=@(Get-QaProjectedDiagnostics -Report $report -RunDirectory $runDirectory -RepoRoot $repoRoot)
+            $visualEvidence=$null
+            foreach($step in $plan){
+                if($step.PSObject.Properties.Name -notcontains 'historicalMode' -or $step.historicalMode -cne 'Smoke' -or $null -eq $step.context){continue}
+                $visualPath=Join-Path (Join-Path $runDirectory $step.name) 'qa-visuals.json'
+                $visualRow=@($report.results|Where-Object name -ceq $step.name)
+                if(-not(Test-Path -LiteralPath $visualPath -PathType Leaf) -or $visualRow.Count -ne 1 -or -not $visualRow[0].dataDirectory){continue}
+                try{$visualEvidence=Read-QaSyntheticVisualEvidence -SidecarPath $visualPath -Expected $step.context -OwnedDataRoot $visualRow[0].dataDirectory}
+                catch{
+                    $report['visualProjectionError']=@{code='qa_public_projection_incomplete';errorType=$_.Exception.GetType().Name;privateError=$_.Exception.ToString()}
+                    try{Write-QaReports $report $runDirectory}catch{Write-QaPublicConsoleEvent -RunId $runId -Suite $Suite -StepId report -Code qa_report_write_failed}
+                    Write-QaPublicConsoleEvent -RunId $runId -Suite $Suite -StepId public-evidence -Status NOT_RUN -Code $primaryFailure.code -PrimaryStepId $primaryFailure.id -SecondaryCode qa_public_projection_incomplete
+                }
+            }
+            $publicBundle=Publish-QaPublicBundle -Report $report -RawDirectory $runDirectory -PublicParent $publicParent -HistoricalEvidence $history -Diagnostics $diagnostics -VisualEvidence $visualEvidence
+            if ($env:GITHUB_OUTPUT) { [IO.File]::AppendAllText($env:GITHUB_OUTPUT,"public_run_id=$runId`npublic_bundle_verified=true`n") }
+            Write-QaPublicConsoleEvent -RunId $runId -Suite $Suite -StepId public-evidence -Status $report.status -Code $primaryFailure.code -PrimaryStepId $primaryFailure.id -PublicationStatus PASS
+        } catch {
+            $exitCode=1; $report.status='FAIL'
+            $report.reportError=@{name='public-evidence';status='FAIL';code='qa_public_bundle_failed';privateError=$_.Exception.ToString();privateStack=$_.ScriptStackTrace}
+            if ($null -eq $report.firstError) {$report.firstError=$report.reportError}
+            $primaryFailure=Get-QaPrimaryFailure $report
+            Write-QaPublicConsoleEvent -RunId $runId -Suite $Suite -StepId public-evidence -Code $primaryFailure.code -PrimaryStepId $primaryFailure.id -SecondaryCode qa_public_bundle_failed -PublicationStatus FAIL -PublicationCode qa_public_bundle_failed
+            try {Write-QaReports $report $runDirectory} catch {Write-QaPublicConsoleEvent -RunId $runId -Suite $Suite -StepId report -Code qa_report_write_failed}
+        }
     }
 }
 exit $exitCode

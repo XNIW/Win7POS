@@ -1,0 +1,69 @@
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.HistoricalSalesImportDialog"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
+ xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+ Title="{loc:Loc history.title}" WindowStartupLocation="CenterOwner" ShowHeader="False"
+ Width="960" Height="700" MinWidth="720" MinHeight="520" ResizeMode="CanResize" SizeToContent="Manual">
+ <Grid Margin="20">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <TextBlock Text="{loc:Loc history.title}" Style="{StaticResource DialogTitleStyle}"/>
+  <TabControl Grid.Row="1" Margin="0,12,0,8">
+   <TabItem Header="{loc:Loc history.importTab}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="12">
+      <TextBlock Text="{loc:Loc history.instructions}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+      <StackPanel Orientation="Horizontal"><Button Content="{loc:Loc history.select}" Command="{Binding SelectCommand}" MinHeight="36"/><TextBlock Text="{Binding SelectedFiles}" Margin="12,0" VerticalAlignment="Center"/></StackPanel>
+      <StackPanel IsEnabled="{Binding CanEdit}" Margin="0,8,0,0">
+       <CheckBox Content="{loc:Loc history.legacyClp}" IsChecked="{Binding LegacyClpConfirmed}" Margin="0,4"/>
+       <Label Content="{loc:Loc history.timePolicy}" Target="{Binding ElementName=TimePolicy}"/>
+       <ComboBox x:Name="TimePolicy" ItemsSource="{Binding TimeChoices}" SelectedIndex="{Binding TimeChoice}" AutomationProperties.Name="{loc:Loc history.timePolicy}"/>
+       <Label Content="{loc:Loc history.timeEvidence}" Target="{Binding ElementName=TimeEvidence}"/>
+       <TextBox x:Name="TimeEvidence" Text="{Binding TemporalEvidence,UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{loc:Loc history.timeEvidence}"/>
+      </StackPanel>
+      <Button Content="{loc:Loc history.analyze}" Command="{Binding AnalyzeCommand}" HorizontalAlignment="Left" Margin="0,8" MinHeight="36"/>
+      <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,4,0,8" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock Text="{Binding CoverageDetails}" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.Name="{loc:Loc history.coverageTitle}"/>
+      <StackPanel IsEnabled="{Binding CanEdit}">
+       <TextBlock Text="{loc:Loc history.mappingInstructions}" TextWrapping="Wrap"/>
+       <Button Content="{loc:Loc history.addGroup}" Command="{Binding AddGroupCommand}" HorizontalAlignment="Left" Margin="0,4"/>
+       <ItemsControl ItemsSource="{Binding Merchants}">
+        <ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="220"/></Grid.ColumnDefinitions>
+         <TextBlock Text="{Binding MerchantLabel}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+         <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.Groups,RelativeSource={RelativeSource AncestorType=ItemsControl}}" SelectedItem="{Binding Group,UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{loc:Loc history.groupLabel}"/>
+        </Grid></DataTemplate></ItemsControl.ItemTemplate>
+       </ItemsControl>
+       <Label Content="{loc:Loc history.merchantEvidence}" Target="{Binding ElementName=MerchantEvidence}"/>
+       <TextBox x:Name="MerchantEvidence" Text="{Binding MerchantEvidence,UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{loc:Loc history.merchantEvidence}"/>
+       <Label Content="{loc:Loc history.nativeStart}" Target="{Binding ElementName=NativeStart}"/>
+       <DatePicker x:Name="NativeStart" SelectedDate="{Binding NativeStart}" AutomationProperties.Name="{loc:Loc history.nativeStart}"/>
+       <Label Content="{loc:Loc history.overlapEvidence}" Target="{Binding ElementName=OverlapEvidence}"/>
+       <TextBox x:Name="OverlapEvidence" Text="{Binding OverlapEvidence,UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{loc:Loc history.overlapEvidence}"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,10"><Button Content="{loc:Loc history.preview}" Command="{Binding PreviewCommand}" MinHeight="36"/><TextBlock Text="{Binding Shop}" Margin="12,0" VerticalAlignment="Center"/></StackPanel>
+      <TextBox Text="{Binding CorrectionSummary,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="240" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="{loc:Loc history.correctionCountLabel}"/>
+      <StackPanel IsEnabled="{Binding CanApproveCorrections}" Margin="0,8">
+       <CheckBox Content="{loc:Loc history.correctionApprove}" IsChecked="{Binding CorrectionsApproved}"/>
+       <Label Content="{loc:Loc history.correctionEvidence}" Target="{Binding ElementName=CorrectionEvidence}"/>
+       <TextBox x:Name="CorrectionEvidence" Text="{Binding CorrectionEvidence,UpdateSourceTrigger=PropertyChanged}" MaxLength="500" AutomationProperties.Name="{loc:Loc history.correctionEvidence}"/>
+      </StackPanel>
+     </StackPanel>
+    </ScrollViewer>
+   </TabItem>
+   <TabItem Header="{loc:Loc history.batchesTab}">
+    <DockPanel Margin="12">
+     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8"><Button Content="{loc:Loc history.refreshBatches}" Command="{Binding RefreshBatchesCommand}"/><Button Content="{loc:Loc history.viewReceipt}" Command="{Binding ViewReceiptCommand}" Margin="8,0"/><Button Content="{loc:Loc history.undo}" Command="{Binding UndoCommand}" Margin="8,0"/></StackPanel>
+     <DataGrid ItemsSource="{Binding Batches}" SelectedItem="{Binding SelectedBatch}" IsReadOnly="True" AutoGenerateColumns="False" EnableRowVirtualization="True" EnableColumnVirtualization="True" AutomationProperties.Name="{loc:Loc history.batchesTab}">
+      <DataGrid.Columns><DataGridTextColumn Header="{loc:Loc history.batch}" Binding="{Binding Id}" Width="*"/><DataGridTextColumn Header="{loc:Loc history.state}" Binding="{Binding State}"/><DataGridTextColumn Header="{loc:Loc history.rows}" Binding="{Binding Rows}"/><DataGridTextColumn Header="CLP" Binding="{Binding AmountClp}"/></DataGrid.Columns>
+     </DataGrid>
+    </DockPanel>
+   </TabItem>
+  </TabControl>
+  <ScrollViewer Grid.Row="2" MaxHeight="160" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4" AutomationProperties.LiveSetting="Assertive"/></ScrollViewer>
+  <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+   <Button Content="{loc:Loc history.cancelWork}" Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
+   <Button Content="{loc:Loc history.apply}" Command="{Binding ApplyCommand}" Style="{StaticResource DialogActionButtonStyle}" Margin="8,0"/>
+   <Button Content="{loc:Loc common.close}" IsCancel="True" IsEnabled="{Binding CanEdit}" Click="Close_Click" Style="{StaticResource DialogCancelButtonStyle}"/>
+  </StackPanel>
+ </Grid>
+</chrome:DialogShellWindow>

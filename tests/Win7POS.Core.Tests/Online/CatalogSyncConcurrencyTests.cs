@@ -161,12 +161,15 @@ public sealed class CatalogSyncConcurrencyTests
 
     private sealed class TestDb : IDisposable
     {
+        private readonly Win7POS.Core.Tests.Data.OwnedSqliteTestFile _database;
         private TestDb(string root)
         {
             Root = root;
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
-            Factory = new SqliteConnectionFactory(options);
-            DbInitializer.EnsureCreated(options);
+            _database = Win7POS.Core.Tests.Data.OwnedSqliteTestFile.Create(options.DbPath);
+            Factory = _database.Factory;
+            try { DbInitializer.EnsureCreated(_database.Options); }
+            catch { _database.Dispose(); throw; }
         }
 
         public SqliteConnectionFactory Factory { get; }
@@ -184,6 +187,7 @@ public sealed class CatalogSyncConcurrencyTests
 
         public void Dispose()
         {
+            _database.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

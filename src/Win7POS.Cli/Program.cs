@@ -30,6 +30,8 @@ using Win7POS.Core.Online;
 internal static class Program
 {
     private static string LastTask081CatalogDiagnostics = string.Empty;
+    private static readonly List<PosDatabaseAuthorityLease> CommandAuthorities = new();
+    private static bool SyntheticSelfTestInvocation;
 
     private sealed class DiffParams
     {
@@ -201,8 +203,18 @@ internal static class Program
 
     private static async Task Main(string[] args)
     {
+        SyntheticSelfTestInvocation = args.Length > 0 &&
+            (args[0] == "--selftest" || args[0].EndsWith("-selftest", StringComparison.Ordinal) || args[0].StartsWith("--task081-", StringComparison.Ordinal) || args[0] == "--task083-legacy-db-startup-harness") &&
+            !args.Any(x => x == "--daily" || x == "--diff-csv" || x == "--apply-csv" || x == "--export-products" || x == "--backup-db");
         try
         {
+            if (args.Contains("--qa-authority-probe", StringComparer.Ordinal))
+            {
+                var probeDb = Array.IndexOf(args, "--db");
+                var probeOptions = probeDb >= 0 && probeDb + 1 < args.Length ? PosDbOptions.ForPath(args[probeDb + 1]) : PosDbOptions.Default();
+                if (PosDatabaseAuthorityQaProbe.TryRun(args, probeOptions, "cli", out var probeExit))
+                { Environment.ExitCode = probeExit; return; }
+            }
             if (CatalogImportProcessCrashSelfTest.TryParse(args, out var crashRequest))
             {
                 await CatalogImportProcessCrashSelfTest.RunAsync(crashRequest).ConfigureAwait(false);
@@ -372,6 +384,12 @@ internal static class Program
         {
             Console.WriteLine($"TEST FAIL: {ex.Message}");
             Environment.Exit(1);
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            foreach (var owner in CommandAuthorities.AsEnumerable().Reverse()) owner.Dispose();
+            CommandAuthorities.Clear();
         }
     }
 
@@ -1094,7 +1112,7 @@ internal static class Program
 
     private static async Task RunTask081SalesSyncHarnessAsync(bool keepDb)
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS.CliFixture." + Guid.NewGuid().ToString("N"));
         var dbPath = Path.Combine(tempRoot, $"task081_sales_sync_{Guid.NewGuid():N}.db");
         var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
         var barcode = "TASK081000001";
@@ -1317,7 +1335,7 @@ internal static class Program
 
     private static async Task RunTask081ShopCacheHarnessAsync(bool keepDb)
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS.CliFixture." + Guid.NewGuid().ToString("N"));
         var dbPath = Path.Combine(tempRoot, $"task081_shop_cache_{Guid.NewGuid():N}.db");
         var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
 
@@ -1401,7 +1419,7 @@ internal static class Program
 
         var harnessSession = ReadTask081HttpHarnessSession(parameters.SessionJsonPath);
         var runId = NormalizeTask081RunId(harnessSession.RunId);
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS.CliFixture." + Guid.NewGuid().ToString("N"));
         var dbPath = Path.Combine(tempRoot, $"task081_sales_sync_http_{runId}_{Guid.NewGuid():N}.db");
         var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
         var barcode = "TASK081Z_WIN7HTTP_BARCODE_" + runId;
@@ -1695,7 +1713,7 @@ internal static class Program
 
         var harnessSession = ReadTask081HttpHarnessSession(parameters.SessionJsonPath);
         var runId = NormalizeTask081RunId(harnessSession.RunId);
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS.CliFixture." + Guid.NewGuid().ToString("N"));
         var ownsDb = string.IsNullOrWhiteSpace(parameters.DbPath);
         var dbPath = ownsDb
             ? Path.Combine(tempRoot, $"task081_catalog_price_{runId}_{Guid.NewGuid():N}.db")
@@ -1779,7 +1797,7 @@ internal static class Program
 
         var harnessSession = ReadTask081HttpHarnessSession(parameters.SessionJsonPath);
         var runId = NormalizeTask081RunId(harnessSession.RunId);
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS.CliFixture." + Guid.NewGuid().ToString("N"));
         var dbPath = Path.Combine(tempRoot, $"task081_offline_reconnect_{runId}_{Guid.NewGuid():N}.db");
         var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
         var barcode = "TASK081Z_WIN7HTTP_BARCODE_" + runId;
@@ -1970,7 +1988,7 @@ internal static class Program
 
     private static async Task RunTask083LegacyDbStartupHarnessAsync(bool keepDb)
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS.CliFixture." + Guid.NewGuid().ToString("N"));
         var dbPath = Path.Combine(tempRoot, $"task083_legacy_startup_{Guid.NewGuid():N}.db");
         var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
 
@@ -1979,6 +1997,7 @@ internal static class Program
 
         try
         {
+            OwnCommandDatabase(opt);
             await CreateTask083LegacyDbAsync(opt.DbPath).ConfigureAwait(false);
 
             await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
@@ -5337,7 +5356,7 @@ END;").ConfigureAwait(false);
 
     private static async Task RunSelfTest(bool keepDb)
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS.CliFixture." + Guid.NewGuid().ToString("N"));
         var dbPath = Path.Combine(tempRoot, $"selftest_{Guid.NewGuid():N}.db");
         var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
         Console.WriteLine($"DB path: {opt.DbPath}");
@@ -5938,6 +5957,7 @@ SELECT last_insert_rowid();";
 
         // Make sure pooled SQLite handles are released before deleting DB file on Windows runners.
         SqliteConnection.ClearAllPools();
+        ReleaseCommandDatabase(dbPath);
         await DeleteFileWithRetryAsync(path: dbPath, maxAttempts: 10, delayMs: 200).ConfigureAwait(false);
     }
 
@@ -6404,11 +6424,27 @@ SELECT last_insert_rowid();";
 
     private static async Task InitializeHarnessDbAsync(PosDbOptions options)
     {
+        OwnCommandDatabase(options);
         DbInitializer.EnsureCreated(options);
         await SeedHarnessOfficialShopAsync(
             new SqliteConnectionFactory(options),
             "cli-harness-shop-id",
             "CLI-HARNESS-SHOP").ConfigureAwait(false);
+    }
+
+    private static void OwnCommandDatabase(PosDbOptions options)
+    {
+        if (PosDatabaseAccessContext.TryResolve(options, out _)) return;
+        if (!OperatingSystem.IsWindows() && !SyntheticSelfTestInvocation) throw new PosDatabaseAuthorityException("database_operational_identity_unsupported");
+        var owner = OperatingSystem.IsWindows() ? PosDatabaseAuthorityLease.AcquireOperational(options) : PosDatabaseAuthorityLease.AcquireSyntheticNew(options);
+        CommandAuthorities.Add(owner);
+    }
+
+    private static void ReleaseCommandDatabase(string path)
+    {
+        var full = Path.GetFullPath(path);
+        foreach (var owner in CommandAuthorities.Where(x => string.Equals(x.DbPath, full, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)).ToArray())
+        { owner.Dispose(); CommandAuthorities.Remove(owner); }
     }
 
     private static Task SeedHarnessOfficialShopAsync(

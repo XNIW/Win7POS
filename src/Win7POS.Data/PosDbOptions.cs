@@ -8,13 +8,17 @@ namespace Win7POS.Data
     {
         public string DbPath { get; }
         public bool IsDemo { get; }
+        public PosDatabaseAccessContext AccessContext { get; }
 
-        public PosDbOptions(string dbPath, bool isDemo = false)
+        public PosDbOptions(string dbPath, bool isDemo = false, PosDatabaseAccessContext accessContext = null)
         {
             if (string.IsNullOrWhiteSpace(dbPath)) throw new ArgumentException("dbPath is empty");
             DbPath = dbPath;
             IsDemo = isDemo;
+            AccessContext = accessContext;
         }
+
+        public PosDbOptions WithAccessContext(PosDatabaseAccessContext context) => new PosDbOptions(DbPath, IsDemo, context);
 
         public static PosDbOptions Default(bool isDemo = false)
         {

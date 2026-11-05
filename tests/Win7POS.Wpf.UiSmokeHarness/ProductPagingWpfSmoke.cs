@@ -14,6 +14,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal static async Task<string> RunAsync()
         {
+            TypedQaDiagnosticWriter.BeginScenario(null, "product-paging-dispatcher");
+            try { return await RunCoreAsync().ConfigureAwait(true); }
+            catch (Exception error) { TypedQaDiagnosticWriter.CompleteScenario(false, error); throw; }
+        }
+
+        private static async Task<string> RunCoreAsync()
+        {
             var options = PosDbOptions.Default();
             DbInitializer.EnsureCreated(options);
             var factory = new SqliteConnectionFactory(options);
@@ -39,6 +46,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var page = await pageTask.ConfigureAwait(true);
             await dispatcherProbe.Task.ConfigureAwait(true);
+            TypedQaDiagnosticWriter.RecordAssertion(page.Items.Count == 200, 200, page.Items.Count);
+            TypedQaDiagnosticWriter.RecordAssertion(page.TotalCount == RowCount, RowCount, page.TotalCount);
+            TypedQaDiagnosticWriter.RecordAssertion(probeCount == 1, 1, probeCount);
+            TypedQaDiagnosticWriter.RecordAssertion(!wrongThreadProbe, false, wrongThreadProbe);
+            TypedQaDiagnosticWriter.CompleteScenario(page.Items.Count == 200 && page.TotalCount == RowCount && probeCount == 1 && !wrongThreadProbe);
 
             if (page.Items.Count != 200 || page.TotalCount != RowCount)
                 return "FAIL product paging result mismatch.";

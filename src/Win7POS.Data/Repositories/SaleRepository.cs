@@ -147,7 +147,7 @@ namespace Win7POS.Data.Repositories
             _reversalWriter.GetPersistedReversalEconomicsErrorAsync(saleId, request);
 
         public Task MarkSaleVoidedAsync(long originalSaleId, long refundSaleId, long nowMs) =>
-            _reversalWriter.MarkSaleVoidedAsync(originalSaleId, refundSaleId, nowMs);
+            _transactionWriter.MarkSaleVoidedAsync(originalSaleId, refundSaleId, nowMs);
 
         public Task<long> InsertRefundSaleAsync(
             RefundCreateRequest req,

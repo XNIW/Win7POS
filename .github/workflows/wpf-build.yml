@@ -8,6 +8,11 @@ on:
         required: false
         default: false
         type: boolean
+      historical_qa_payload:
+        description: Package the exact-SHA net48 x86 QA harness and synthetic fixtures separately from the installer
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -38,33 +43,80 @@ jobs:
         run: pwsh -File scripts/check-dialog-standards.ps1
       - run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
       - name: Restore and build functional harness
-        if: ${{ inputs.functional_completion_smoke == true }}
+        if: ${{ inputs.functional_completion_smoke == true || inputs.historical_qa_payload == true }}
         shell: pwsh
         run: |
           dotnet restore tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj --locked-mode
           if ($LASTEXITCODE -ne 0) { throw 'Locked harness restore failed.' }
           dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
           if ($LASTEXITCODE -ne 0) { throw 'Harness build failed.' }
+      - name: Package and validate net48 x86 QA payload
+        if: ${{ inputs.historical_qa_payload == true }}
+        shell: pwsh
+        env:
+          QA_PAYLOAD_SOURCE: ${{ github.sha }}
+        run: |
+          Import-Module ./scripts/qa/Win7PosHistoricalSalesValidation.psm1 -DisableNameChecking
+          Import-Module ./scripts/qa/Win7PosQaPublicEvidence.psm1 -DisableNameChecking
+          $null = New-QaNet48PayloadBundle -HarnessDirectory "$pwd/tests/Win7POS.Wpf.UiSmokeHarness/bin/x86/Release/net48" -OutputDirectory "$env:RUNNER_TEMP/net48-qa-payload" -SourceSha $env:QA_PAYLOAD_SOURCE
+          $null = Test-QaNet48PayloadBundle -Directory "$env:RUNNER_TEMP/net48-qa-payload" -SourceSha $env:QA_PAYLOAD_SOURCE
+      - name: Upload net48 x86 QA payload
+        if: ${{ inputs.historical_qa_payload == true && success() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Win7POS-QA-net48-x86-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/net48-qa-payload/Win7POS.QA-net48-x86.zip
+            ${{ runner.temp }}/net48-qa-payload/payload-manifest.json
+          if-no-files-found: error
       - name: Canonical functional completion smoke
+        id: functional_qa
         if: ${{ inputs.functional_completion_smoke == true }}
         shell: pwsh
+        env:
+          QA_FUNCTIONAL_SOURCE: ${{ github.sha }}
         run: |
           $diagnosticRoot = Join-Path $env:RUNNER_TEMP 'functional-diagnostics'
           New-Item -ItemType Directory -Path $diagnosticRoot -ErrorAction Stop | Out-Null
           $env:TEMP = $diagnosticRoot
           $env:TMP = $diagnosticRoot
-          pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Configuration Release -Platform x86
-          if ($LASTEXITCODE -ne 0) { throw 'Canonical functional smoke failed; diagnostics preserved.' }
+          Import-Module ./scripts/qa/Win7PosHistoricalSalesValidation.psm1 -DisableNameChecking
+          Import-Module ./scripts/qa/Win7PosQaPublicEvidence.psm1 -DisableNameChecking
+          $publicRun = 'Win7POS.QA.' + [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '.' + [Guid]::NewGuid().ToString('N')
+          "current_run_id=$publicRun" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+          "public_bundle_verified=false" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+          $env:WIN7POS_QA_RUN_ID = $publicRun
+          $env:WIN7POS_QA_DIAGNOSTIC_STEP = 'functional-completion'
+          Remove-Item Env:WIN7POS_QA_SOURCE_FINGERPRINT -ErrorAction SilentlyContinue
+          $raw = Join-Path $diagnosticRoot 'results'
+          # Child console/exception streams are private inputs, never public fallbacks.
+          & pwsh -NoProfile -File scripts/run-functional-completion-smoke.ps1 -Configuration Release -Platform x86 -OutputDirectory $raw *> (Join-Path $diagnosticRoot 'functional-wrapper.raw.log')
+          $primaryExit = $LASTEXITCODE
+          $tests = @()
+          try { $tests = @((Read-HistoricalSalesQaJson (Join-Path $raw 'functional-results.json')).results) } catch { }
+          $status = if ($primaryExit -eq 0) { 'PASS' } else { 'FAIL' }
+          $row = [pscustomobject]@{ name='functional-completion';status=$status;code='process_exit';exitCode=$primaryExit;elapsedMs=0;tests=$tests;workDirectory=$diagnosticRoot }
+          $report = [pscustomobject]@{runId=$publicRun;sourceSha=$env:QA_FUNCTIONAL_SOURCE;sourceState=$null;suite='Windows';status=$status;firstError=$(if ($primaryExit -ne 0) {$row} else {$null});results=@($row)}
+          try {
+            $diagnostics = @(Get-QaTypedDiagnostics -Report $report -RepoRoot $pwd.Path)
+            $bundle = Publish-QaPublicBundle -Report $report -RawDirectory $diagnosticRoot -PublicParent "$env:RUNNER_TEMP/functional-public" -Diagnostics $diagnostics
+            $null = Test-QaPublicBundle -Directory $bundle.directory -ExpectedRunId $publicRun
+            "public_bundle_verified=true" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+          } catch {
+            Write-QaPublicConsoleEvent -RunId $publicRun -Suite Windows -StepId public-evidence -Code qa_public_bundle_failed
+            exit 1
+          }
+          Write-QaPublicConsoleEvent -RunId $publicRun -Suite Windows -StepId functional-completion -Status $status -Code process_exit
+          exit $primaryExit
       - name: Upload functional diagnostics
-        if: ${{ always() && inputs.functional_completion_smoke == true }}
+        if: ${{ always() && inputs.functional_completion_smoke == true && steps.functional_qa.outputs.public_bundle_verified == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Win7POS-Functional-Diagnostics-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/functional-diagnostics/**/*.txt
-            ${{ runner.temp }}/functional-diagnostics/**/*.csv
-            ${{ runner.temp }}/functional-diagnostics/**/*.png
-          if-no-files-found: warn
+            ${{ runner.temp }}/functional-public/${{ steps.functional_qa.outputs.current_run_id }}/qa-public.zip
+            ${{ runner.temp }}/functional-public/${{ steps.functional_qa.outputs.current_run_id }}/upload-manifest.json
+          if-no-files-found: error
           retention-days: 14
       - name: List WPF bin output
         run: Get-ChildItem -Path "src/Win7POS.Wpf/bin" -Recurse | Select-Object FullName

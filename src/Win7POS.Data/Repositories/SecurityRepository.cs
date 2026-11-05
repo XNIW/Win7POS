@@ -17,7 +17,7 @@ namespace Win7POS.Data.Repositories
         public async Task LogEventAsync(string eventType, string details, int? userId = null)
         {
             var ts = UnixTime.NowSeconds();
-            using var conn = _factory.Open();
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             await conn.ExecuteAsync(
                 "INSERT INTO security_events(ts, user_id, event_type, details) VALUES(@ts, @userId, @eventType, @details)",
                 new { ts, userId, eventType = eventType ?? "", details = details ?? "" }).ConfigureAwait(false);

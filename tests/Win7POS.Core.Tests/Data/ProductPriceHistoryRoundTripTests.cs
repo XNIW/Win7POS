@@ -18,7 +18,9 @@ public sealed class ProductPriceHistoryRoundTripTests
     [DataRow(long.MaxValue)]
     public async Task WorkbookExportAndBothReaders_PreserveInt64ProductAndHistory(long price)
     {
-        var path = Path.Combine(Path.GetTempPath(), "price-history-" + Guid.NewGuid().ToString("N") + ".xlsx");
+        var root = Path.Combine(Path.GetTempPath(), "price-history-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "price-history.xlsx");
         try
         {
             ProductDbExcelWriter.Write(path, new ProductDbWorkbook
@@ -48,6 +50,7 @@ public sealed class ProductPriceHistoryRoundTripTests
                 try
                 {
                     var options = PosDbOptions.ForPath(dbPath);
+                    using var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
                     DbInitializer.EnsureCreated(options);
                     var factory = new SqliteConnectionFactory(options);
                     var result = await new ProductDbImporter(factory).ImportAsync(workbook, false);
@@ -62,6 +65,6 @@ public sealed class ProductPriceHistoryRoundTripTests
                 finally { SqliteConnection.ClearAllPools(); if (File.Exists(dbPath)) File.Delete(dbPath); }
             }
         }
-        finally { if (File.Exists(path)) File.Delete(path); }
+        finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
     }
 }

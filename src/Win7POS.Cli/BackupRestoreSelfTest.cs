@@ -36,6 +36,7 @@ internal static class BackupRestoreSelfTest
     private const string ShopId = "perf-shop";
     private const string ShopCode = "PERF-SHOP";
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
+    private static readonly List<PosDatabaseAuthorityLease> FixtureAuthorities = new();
 
     public static bool TryParse(string[] args, out BackupRestoreSelfTestRequest request)
     {
@@ -202,6 +203,7 @@ internal static class BackupRestoreSelfTest
         {
             Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", previousDataDirectory);
             SqliteConnectionFactory.ClearAllPools();
+            ReleaseFixtureAuthorities(root);
             if (!request.KeepDatabase)
                 DeleteDirectoryBestEffort(root);
             else
@@ -231,6 +233,7 @@ internal static class BackupRestoreSelfTest
     private static async Task CreateSeedAsync(string path, int requestedMiB)
     {
         var options = PosDbOptions.ForPath(path);
+        OwnFixtureFile(path);
         DbInitializer.EnsureCreated(options);
         var factory = new SqliteConnectionFactory(options);
         await new ShopOfficialSnapshotRepository(factory).SaveAsync(new OfficialShopSnapshot
@@ -1037,7 +1040,8 @@ CREATE TABLE IF NOT EXISTS backup_restore_perf_wal_writes(
 
     private static async Task AssertDeleteFullAsync(string path)
     {
-        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(path));
+        using var context = PosDatabaseAccessContext.SelectedSource(path);
+        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(path).WithAccessContext(context));
         using var connection = factory.Open();
         var journal = await connection.ExecuteScalarAsync<string>("PRAGMA journal_mode;").ConfigureAwait(false);
         var synchronous = await connection.ExecuteScalarAsync<long>("PRAGMA synchronous;").ConfigureAwait(false);
@@ -1048,6 +1052,7 @@ CREATE TABLE IF NOT EXISTS backup_restore_perf_wal_writes(
     private static void CloneSeed(string sourcePath, string destinationPath)
     {
         SqliteConnectionFactory.ClearAllPools();
+        OwnFixtureFile(destinationPath);
         File.Copy(sourcePath, destinationPath, true);
         DeleteSqliteSidecars(destinationPath);
     }
@@ -1144,6 +1149,7 @@ CREATE TABLE IF NOT EXISTS backup_restore_perf_wal_writes(
     private static void DeleteDirectoryBestEffort(string path)
     {
         SqliteConnectionFactory.ClearAllPools();
+        ReleaseFixtureAuthorities(path);
         try
         {
             if (Directory.Exists(path))
@@ -1152,6 +1158,20 @@ CREATE TABLE IF NOT EXISTS backup_restore_perf_wal_writes(
         catch
         {
         }
+    }
+
+    private static void OwnFixtureFile(string path)
+    {
+        var options = PosDbOptions.ForPath(path);
+        if (PosDatabaseAccessContext.TryResolve(options, out _)) return;
+        FixtureAuthorities.Add(PosDatabaseAuthorityLease.AcquireSyntheticNew(options));
+    }
+
+    private static void ReleaseFixtureAuthorities(string root)
+    {
+        var prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        foreach (var owner in FixtureAuthorities.Where(x => x.DbPath.StartsWith(prefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)).ToArray())
+        { owner.Dispose(); FixtureAuthorities.Remove(owner); }
     }
 
     private static void Require(bool condition, string message)

@@ -17,12 +17,13 @@ public sealed class CsvAbsentStockConcurrencyTests
         var directory = Path.Combine(Path.GetTempPath(), "Win7POS.CsvStockRace." + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var options = PosDbOptions.ForPath(Path.Combine(directory, "pos.db"));
-        DbInitializer.EnsureCreated(options);
-        var factory = new SqliteConnectionFactory(options);
+        var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
         Task<UpsertOutcome>? rename = null;
         var gateHeld = false;
         try
         {
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
             using (var connection = factory.Open())
                 await connection.ExecuteAsync("INSERT INTO products(barcode,name,unitPrice) VALUES('STOCK-RACE','Original',1500); INSERT INTO product_meta(barcode,stock_qty) VALUES('STOCK-RACE',1.234);");
 
@@ -53,6 +54,7 @@ public sealed class CsvAbsentStockConcurrencyTests
             if (gateHeld) CatalogMutationGate.Instance.Release();
             if (rename != null) await rename.WaitAsync(TimeSpan.FromSeconds(10));
             SqliteConnection.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(directory, true);
         }
     }

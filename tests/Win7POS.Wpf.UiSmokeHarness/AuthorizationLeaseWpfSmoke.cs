@@ -39,7 +39,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static readonly string ProcessInstanceId =
             Guid.NewGuid().ToString("N");
 
-        public static async Task<string> RunAsync()
+        public static Task<string> RunAsync() => TraceAsync(RunCoreAsync);
+        public static Task<string> RunClockCapacityAsync() => TraceAsync(RunClockCapacityCoreAsync);
+        public static Task<string> PrepareRestartProbeAsync() => TraceAsync(PrepareRestartProbeCoreAsync);
+        public static Task<string> VerifyRestartProbeAsync() => TraceAsync(VerifyRestartProbeCoreAsync);
+        private static async Task<string> TraceAsync(Func<Task<string>> run)
+        {
+            TypedQaDiagnosticWriter.BeginScenario(null, "authorization-lease");
+            try { var result = await run().ConfigureAwait(true); TypedQaDiagnosticWriter.RecordResult("authorization-lease", result); return result; }
+            catch (Exception error) { TypedQaDiagnosticWriter.RecordException(error); throw; }
+        }
+
+        private static async Task<string> RunCoreAsync()
         {
             var options = PosDbOptions.Default();
             DbInitializer.EnsureCreated(options);
@@ -2840,7 +2851,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
         }
 
-        public static Task<string> RunClockCapacityAsync()
+        private static Task<string> RunClockCapacityCoreAsync()
         {
             var serverAt = DateTimeOffset.UtcNow;
             var controlResponse = BuildClockCapacityResponse(
@@ -2997,7 +3008,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return response;
         }
 
-        public static async Task<string> PrepareRestartProbeAsync()
+        private static async Task<string> PrepareRestartProbeCoreAsync()
         {
             var options = PosDbOptions.Default();
             DbInitializer.EnsureCreated(options);
@@ -3032,7 +3043,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "offlineAttested=True" + Environment.NewLine;
         }
 
-        public static async Task<string> VerifyRestartProbeAsync()
+        private static async Task<string> VerifyRestartProbeCoreAsync()
         {
             var options = PosDbOptions.Default();
             DbInitializer.EnsureCreated(options);
@@ -3555,6 +3566,7 @@ VALUES(
             string expectedCode,
             string message)
         {
+            TypedQaDiagnosticWriter.RecordAssertion(decision != null && !decision.Allowed && decision.Code == expectedCode, expectedCode, decision?.Code);
             Require(
                 decision != null &&
                 !decision.Allowed &&
@@ -3562,8 +3574,11 @@ VALUES(
                 message + ": actual=" + (decision?.Code ?? "<null>"));
         }
 
-        private static void Require(bool condition, string message)
+        private static void Require(bool condition, string message,
+            [System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "",
+            [System.Runtime.CompilerServices.CallerLineNumber] int sourceLine = 0)
         {
+            TypedQaDiagnosticWriter.RecordAssertion(condition, sourceFile: sourceFile, sourceLine: sourceLine);
             if (!condition)
                 throw new InvalidOperationException(message);
         }

@@ -1,0 +1,1984 @@
+# ASUS-W7POS-019 — Importazione storico Getnet
+
+## 0. Stato corrente e mandato
+
+| Campo | Valore |
+| --- | --- |
+| Fase | EXECUTION A+B+C, autorizzata dalla richiesta del 2026-11-04 |
+| Revisione/data | R3 — 2026-11-04, America/Santiago |
+| Stato del piano | EXECUTION_IN_PROGRESS; specifica R3 congelata |
+| Implementazione | IN_PROGRESS; nessuna qualifica anticipata |
+| Build, test, harness e qualifica runtime | NOT_RUN |
+| Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
+| Branch e stato iniziale R3 | main; PLAN R2 untracked e modifiche locali di indice/worklog preservate |
+| Persistenza | Locale, non pubblicata in Git; nessun commit/push |
+| Prossimo passo consentito | Implementazione e qualifica A+B+C; stato corrente nel [registro Execution](EXECUTION.md) |
+
+Questo e il solo piano canonico. Lo stato corrente risiede qui; la sola voce
+ASUS-W7POS-019 nell'[indice](../../CODEX_ASUS_TASKS.md) ne e il collegamento.
+Il [worklog](../../AI_WORKLOG.md) registra la sessione, non un secondo piano.
+Salvare la task non introduce persistenza runtime delle anteprime.
+
+La richiesta esplicita successiva autorizza Execution A+B+C, test isolati e consegna.
+I vincoli Planning sotto sono storia della revisione R3, non il mandato corrente.
+Il registro Execution distingue implementazione, prove effettive e gate esterni.
+
+## 1. Fonti, baseline e precedenza
+
+### 1.1 Fonti e limiti
+
+| ID | Fonte e provenienza | Ambito/autorevolezza |
+| --- | --- | --- |
+| SRC-REQ-EXEC | Richiesta Execution end-to-end ricevuta 2026-11-04 | Mandato corrente A+B+C, automazione, test e consegna autorizzati |
+| SRC-REQ-R3 | Richiesta conclusiva R2 -> R3 ricevuta 2026-11-04 | Mandato storico Planning, superato dalla richiesta Execution |
+| SRC-REQ-R2 | Richiesta R1 -> R2 | Fonte storica della revisione precedente |
+| SRC-REQ-R1 | Precedente richiesta di persistenza/revisione | Fonte storica del mandato R1, preservata |
+| SRC-DESIGN-R0 | Precedente piano nella stessa conversazione, non salvato nel repo | Proposta da correggere; non prova di implementazione |
+| SRC-PLAN-R1 | PLAN.md R1 del 2026-11-04 indicato dall'utente, disponibile localmente | Target sufficiente dell'audit R2; SHA-256 locale verificato uguale a quello ricevuto: d1a2395231e48822f1ec2ef6781b8b0403942b1a260fb504868bc294ab70694f |
+| SRC-PLAN-R2 | PLAN R2 del 2026-11-04, target indicato dall'utente | SHA-256 locale verificato uguale al ricevuto: 3735e6e5784878f06246f570204ec378c5a8a2bf0d94677ac863d7e93d8170f6; nessuna revisione successiva trovata |
+
+| SRC-PRIVATE-AUDIT-v1 | Audit economico privato contenuto nella richiesta iniziale | Dati ricevuti, non misurati; non copiarne nominativi, file, riferimenti o totali in repo/artifact pubblici |
+| SRC-PRIVATE-XLSX | Sette workbook originali in percorso privato esterno al checkout | Audit indipendente OOXML eseguito in sola lettura durante Execution; hash prima/dopo e controlli ricevuti coincidenti. Non costituisce qualifica del parser Win7POS; semantica temporale e binding reale restano gate distinti |
+| SRC-CODE | Checkout e main GitHub allo SHA sotto | Fonte del comportamento effettivo osservato |
+| SRC-RULES | [AGENTS](../../../AGENTS.md), [Dialog Standard](../../DIALOG_STANDARD.md), [QA authorization](../../QA_AUTOMATION_AUTHORIZATION.md) | Regole del repository e confini delle prove |
+| SRC-INDEX | Indice Asus e worklog correnti | Numerazione e storia; non autorizzano nuove deroghe |
+| SRC-HISTORY | [Completion ledger](../WIN7POS_POST_MERGE_COMPLETION_LEDGER.md) | Chiusure di candidati precedenti; non MASTER-PLAN della funzione Getnet |
+
+Non esiste un MASTER-PLAN locale autorevole per questo lavoro. Non ne viene creato
+uno alternativo. Dopo controllo di indice, contenuti Markdown e nomi locali
+anche non tracciati, gli ID risultavano usati fino a 018, senza task Getnet:
+019 e stato riservato per questa funzione. Nessuna numerazione Mac/Admin e
+importata e nessun documento storico viene rinumerato.
+
+Precedenza: richiesta corrente per scope/autorizzazione; regole del progetto per
+invarianti; codice del candidato per fatti runtime; audit privato per attesi
+da verificare; piani e report storici per proposte/evidenza del proprio SHA.
+Una divergenza si registra con fonte e candidato, senza riscrivere la storia.
+
+Legenda usata nel documento: F = fatto letto staticamente; D = dato ricevuto;
+P = proposta per futura Execution; M = prova mancante. Una lettura F non e
+un PASS runtime. Tutte le decisioni implementative seguenti sono P.
+
+### 1.2 Repo Sync Check
+
+[Repository](https://github.com/XNIW/Win7POS) e
+[cronologia main](https://github.com/XNIW/Win7POS/commits/main/) letti tramite
+connessione GitHub in sola lettura il 2026-11-04. Main effettiva, origin/main e
+HEAD locale coincidono: 32618249fc01f29e86c6774d2b2c9262a90f226f.
+Nessun delta dalla baseline di preparazione; nessun fetch ulteriore necessario
+in R2. All'avvio R2 erano gia presenti PLAN R1 untracked e modifiche a indice e
+worklog: sono la persistenza locale autorizzata, non una task mancante su main.
+Nessun branch cambiato e nessuna modifica locale accantonata.
+
+| SHA corto | Messaggio verificato |
+| --- | --- |
+| 32618249 | Merge pull request #129 from XNIW/codex/residual-qa-recovery |
+| 94411d29 | test: retain bounded output probe progress on timeout |
+| c33624a3 | fix: realize Recovery action containers before harness interaction |
+| a4f21a25 | fix: preserve full diagnostics for failed required gates |
+| 1f7327f9 | Merge pull request #128 from XNIW/codex/residual-qa-recovery |
+| 0e9580a2 | fix: isolate dialog shadows from animated Recovery content |
+| b81f5ab3 | test: expose full-card shadow invalidation in Recovery [skip ci] |
+| 3026ce5f | fix: keep trust profiles out of functional QA artifacts |
+
+R3 ha ripetuto il Repo Sync Check via GET GitHub: stesso main, HEAD e
+origin/main; gli otto commit sotto restano invariati, nessun delta di codice.
+R2 aveva gia verificato la medesima baseline.
+Il checksum ricevuto identifica la R1: in questo checkout coincidono anche i
+byte locali. Non si attesta un autore ulteriore; l'eventuale assenza di R0 e un
+limite storico, non blocca la revisione R1 e non richiede un altro piano Claude.
+
+Questi commit motivano la conservazione di diagnostica completa, timeout e
+separazione dei controlli dinamici dall'ombra. Non qualificano la nuova funzione.
+Lo stato finale di questa sessione deve contenere soltanto il diff documentale.
+
+## 2. Scope e scelta architetturale
+
+V1: import locale dei pagamenti storici carta, lotti annullabili, audit,
+backup/restore e consultazione analitica integrata. WPF net48/x86, Windows 7 SP1;
+Core/Data netstandard2.0. Nessun requisito Excel installato, upgrade gratuito
+o dipendenza Win10+.
+
+Tabelle dedicate e query analitica comune sono la scelta confermata nel design.
+Non si estende Sale per rappresentare eventi senza articoli. F:
+Sale usa PaidCash/PaidCard; SaleTransactionWriter.InsertSaleAsync inserisce righe,
+aggiorna stock, outbox e held cart; PosSalesSyncRequestBuilder verifica totale
+contro righe e prepara metadati boleta. Riferimenti:
+[Sale](../../../src/Win7POS.Core/Models/Sale.cs),
+[writer](../../../src/Win7POS.Data/Repositories/SaleTransactionWriter.cs),
+[builder](../../../src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs).
+
+Estendere sales imporrebbe eccezioni a writer, resi, boleta, sync e chiusure.
+Il costo di alcune tabelle nuove e inferiore al rischio di attraversare quei
+contratti con dati incompleti. Vietati SKU storici, codici scontrino inventati,
+vendite native fittizie, pagamento/rimborso carta, stock, cassa, documenti
+fiscali e outbox commerciali generati dall'import.
+
+Il Master Console futuro serve al binding reale del negozio e ai permessi:
+non autorizza creazione account in questa task e non rende compatibile il
+protocollo vendite cloud. Nessun record storico verra lasciato pending nella
+normale outbox. Condivisione multi-postazione richiedera una fase server
+separata: contratto storico, idempotenza server, tenant scope, audit,
+annullamento e propagazione; fuori V1.
+
+## 3. Contratto dati Getnet
+
+### 3.1 Profili, campi e diagnostica
+
+V1 supporta i due layout XLSX verificabili tramite intestazioni, non filename,
+nome foglio o indici fissi. Normalizzazione versionata: Unicode NFD, rimozione
+diacritici, uppercase invariant, trim e compressione degli spazi. Gli alias
+sono espliciti, mai fuzzy. Si conservano intestazione originale e posizione
+per diagnostica. Duplicati dopo normalizzazione, alias incompatibili e piu
+fogli candidati bloccano la scelta automatica.
+
+| Campo | Legacy | Moderno |
+| --- | --- | --- |
+| Data vendita | FECHA VENTA | FECHA DE VENTA |
+| ID principale | ID TRANSACCIÓN | ID FINANCIERO DEL MOVIMIENTO |
+| Riferimenti secondari | COD.AUT | PAYMENT ID, COD.AUT |
+| Importo | VALOR TRANSACCIÓN | VALOR TRANSACCION / VALOR VENTA |
+| Controllo lordo | Importo transazione | MONTO BRUTO dopo classificazione |
+| Stato transazione | ESTADO | ESTADO TRX |
+| Tipo movimento | Solo vendita nel contratto legacy osservato | TIPO MOV. |
+| Commissione/netto | COMISIÓN, MONTO ABONO | COMISION, IVA COMISION, VALOR NETO |
+| Stato liquidazione | Limitato dal layout | ESTADO DEL ABONO separato |
+| Sottotipo carta | TIPO | TIPO, PREPAGO |
+| Esercente | LOCAL | VENDEDOR, LOCAL, SELLER ID, NUM LOCAL, RUT |
+| Terminale/offset | Assenti | TERMINAL, ZONA HORARIA (UTC) |
+
+Obbligatori per riga economica: data vendita, ID principale valido, importo
+esatto, stato, ambito esercente risolto. Moderno: anche tipo movimento,
+MONTO BRUTO, dichiarazione CLP e offset previsto dalla policy. Il nome esatto
+del campo valuta moderno resta da confermare sugli originali.
+Legacy: CLP e un'assunzione esplicita del profilo da confermare in preview,
+mai una valuta dedotta dal PC.
+
+Gli importi di commissione/IVA/netto sono richiesti per la riconciliazione
+completa quando la liquidazione e dichiarata conclusa. Per una vendita
+confermata non liquidata possono essere null: lordo incluso, netto sconosciuto.
+Un campo opzionale assente non blocca da solo la vendita e non diventa zero.
+Se entrambi gli alias dell'importo sono presenti, si leggono separatamente
+e si confrontano secondo il contratto; non si sceglie il primo.
+
+D: LOCAL moderno puo essere troncato mentre VENDEDOR e completo. Alcune
+colonne finali di clearing hanno contenuti incoerenti. Non si riallineano
+colonne a intuito e non si usano per identita o data vendita.
+
+Errori con codice stabile, file locale/foglio/riga/colonna nel dettaglio privato,
+campo e azione correttiva; nei log pubblicabili solo codici e contatori.
+Una riga economica non interpretabile o un conflitto blocca il lotto selezionato.
+Respinte riconosciute e duplicati sono esclusioni attese, visibili in preview.
+Nessuna importazione parziale silenziosa.
+
+### 3.2 Economia e identificativi
+
+Classificare prima di sommare:
+
+- Legacy Abonado: vendita accettata osservata. Altri stati non hanno una
+  semantica presunta; serve un contratto verificato.
+- Moderno Confirmada/Venta: vendita; Confirmada/Anulación: movimento negativo;
+  Rechazada: richiesta esclusa dai ricavi, conservata come esito di audit.
+- Stato transazione e stato accredito restano indipendenti. Confermata non
+  liquidata entra nel lordo commerciale, senza inventare un accredito.
+- Legacy: lordo meno commissione positiva uguale accredito.
+- Moderno liquidato: lordo piu commissione firmata piu IVA commissione
+  uguale netto. Non uniformare i segni dei due formati.
+- Int64 CLP, parsing lessicale esatto e aritmetica checked; nessun double nel
+  dominio, arrotondamento implicito, cambio valuta o moltiplicazione per CUOTAS.
+- Mance/vuelto non zero: errore bloccante V1 finche non e verificata una
+  separazione economica; nessuna regola inventata.
+- Metodo Carta per tutti; tipo originale conservato. PREPAGO=Si prevale su
+  TIPO=Débito per il sottotipo analitico, senza cambiare il checkout.
+- Contanti storici, articoli, costo, margine, IVA merce e cassiere assenti:
+  non disponibili, non zero ricostruito.
+
+ID e COD.AUT restano stringhe, compresi zeri e lettere; vietati cast Int32.
+Vuoto e segnaposto meno non sono ID. Preferire celle testuali; per numeriche
+usare il valore lessicale OOXML e il solo formato esplicito sicuro, senza
+CurrentCulture. Rifiutare ID non integrali, perdita di precisione, esponenti
+ambigui o cifre gia perse da Excel: non possono essere recuperate a intuito.
+
+L'annullamento del campione privato e un evento negativo autonomo. Conservare
+vendita positiva e annullamento firmato produce il saldo corretto. COD.AUT non
+prova il collegamento; non eliminare anche la vendita e sottrarre il negativo.
+Il test pubblico usa importi/ID sintetici, non i riferimenti reali ricevuti.
+
+Netto aggregato: esportare knownNetClp, knownNetCount e eligibleCount; dichiarare
+completo solo se la copertura e totale. Somma delle componenti note con mancanti
+deve dire "parziale" e mostrare copertura, senza confronto fuorviante al lordo.
+
+### 3.3 Date e policy
+
+Persistenza: raw timestamp, offset originale, business datetime senza Kind Local,
+business date, eventuale UTC, origine della policy e versione. Vendita,
+liquidazione e importazione sono date distinte.
+
+Legacy: dd/MM/yyyy HH:mm:ss, ora commerciale preservata. UTC nullable; se
+richiesto, dipende da regole negozio esplicite/versionate per l'intervallo.
+Moderno: suffisso Z e offset hanno semantica non verificata. Preview mostra
+entrambe le interpretazioni; applicazione reale bloccata fino alla prova esterna.
+Esempio esclusivamente sintetico: 2024-01-31T20:00:00.000Z con offset -4
+significa 16:00 secondo ISO, oppure 20:00 se gia ora locale esportata.
+Non scegliere dagli orari d'apertura.
+
+Secondi e millisecondi preservati. Ore inesistenti o ambigue non vengono
+corrette automaticamente: mantenere il dato commerciale sorgente e richiedere
+evidenza per l'UTC ambiguo. Per ISO standard l'istante e univoco e la conversione
+usa l'offset esplicito verificato, senza il fuso del PC.
+Cambio offset, fine mese e copertura parziale hanno test dedicati.
+Gli attesi privati per giorno/mese/ora si congelano solo dopo la scelta provata.
+Le policy dei record applicati sono immutabili; cambiarle richiede annulla e
+reimport esplicito, non una ricalcolazione silenziosa.
+Precisione frazionaria superiore ai millisecondi: conservarla in ticks fino
+alla precisione supportata oppure rifiutare il valore con diagnostica; mai
+troncarla silenziosamente. Il raw resta sempre disponibile.
+
+## 4. Merchant mapping e identita economica
+
+Correzione R1: audit da solo non basta. Due tabelle dedicate rendono riusabile
+la mappatura senza dipendere da nomi simili o dalla memoria dell'operatore:
+
+- historical_merchant_scopes: GUID stabile, shop_id e provider, identificatori
+  verificati, revisione, creazione/approvazione, riferimento alla prova.
+- historical_merchant_aliases: GUID binding, scope_id, shop/provider, namespace
+  dell'alias, valore canonico e originale privato, versione normalizzazione,
+  revisione/stato, autore e data di approvazione.
+
+Lookup per (shop_id, provider, alias_namespace, canonical_value) tra binding
+attivi; unicita attiva e nessuna scelta "primo risultato". Identificatori
+forti e alias riconosciuti devono convergere allo stesso scope; se divergono,
+preview bloccata. Nome troncato o RUT corrente da soli non associano il file.
+Il binding legacy/moderno e approvato esplicitamente con permesso import,
+in base alle prove disponibili, senza hardcode di un negozio.
+
+Nuovi scope/alias proposti restano nel piano in memoria e sono creati nella
+stessa transazione dell'import. I successivi lotti riusano il binding persistito.
+La preview cattura revisioni e hash di tutti i binding usati.
+Aggiunta di alias: nuova riga/revisione e audit; disattivazione soltanto se
+non referenziata. Nella V1 uno scope/binding gia usato non puo essere
+riassegnato a un altro esercente, fuso o reinterpretato, neppure annullando
+un solo lotto: tale modifica potrebbe cambiare la dedup di tutta la storia.
+Una correzione semantica richiede un futuro piano esplicito con tutti i record
+coinvolti; nessun pulsante generico di remap. Questa restrizione e una decisione
+V1, non un percorso architetturale lasciato indeterminato.
+
+Le transazioni conservano scope_id e binding/versione usati: nuove revisioni
+non riscrivono lo storico. Mapping, revisioni e audit viaggiano nel backup;
+restore ne verifica FK, unicita e coerenza shop. Nessuna sincronizzazione cloud.
+
+Identita evento attivo:
+(shop_id, provider, merchant_scope_id, external_namespace, external_id).
+Namespace legacy transaction, financial movement e payment restano distinti.
+Parser, profilo/versione, file/hash e riga sono provenienza, non identita.
+Non creare alias fra ID di famiglie diverse senza una prova specifica.
+
+| Caso | Decisione |
+| --- | --- |
+| Stessa identita, stessi dati canonici | Duplicato; osservazione audit, zero inserimenti |
+| Stessa identita, lordo/valuta/tipo/stato economico/data divergenti | Conflitto bloccante |
+| Commissioni/netto entrambi noti ma divergenti | Conflitto finanziario esplicito |
+| Liquidazione prima mancante poi disponibile, stato/data o metadati diversi | Segnalazione separata; record esistente invariato nella V1 |
+| ID distinti con stesso timestamp/importo | Due eventi; nessuna eliminazione euristica |
+| Identita presente soltanto fra record annullati | Reintroduzione/correzione esplicita in preview |
+| Overlap fra namespace o vendite native senza ID Getnet certo | Nessun merge: blocco del perimetro incerto fino a prova o scelta di intervallo non sovrapposto |
+
+Per il primo onboarding il periodo raccomandato precede l'avvio operativo POS.
+La data d'avvio e una prova esterna, non una costante del parser. Il piano
+registra la copertura autorizzata; nessun overlap e incluso due volte per
+una semplice conferma generica.
+
+## 5. Schema additivo e cicli di annullamento
+
+Ultima migration F: 0014-catalog-import-plans-and-drafts.
+Proposta: 0015-historical-card-imports, ricontrollando il numero prima di
+Execution. Registry, checksum e descrizioni 0001-0014 restano immutati.
+Aggiungere SQL/detector del nuovo schema senza cambiare il significato dei
+detector storici; provare DB nuovi, 0014, ledgerless riconosciuti e schema invalido.
+
+| Tabella proposta | Dati/invarianti |
+| --- | --- |
+| historical_import_dataset | Una riga: dataset_id UUID persistente e data_revision globale della proiezione report mista, aggiornata atomicamente dai trigger; identita copiata nel backup, non derivata dal percorso o PID |
+| historical_merchant_scopes | Scope stabile per shop/provider; chiavi forti verificate univoche quando disponibili |
+| historical_merchant_aliases | Binding versionati del paragrafo 4, FK scope/shop/provider |
+| historical_import_operations | operation_id PK globale, Apply/Undo, dataset/shop, request_fingerprint, batch_id, receipt terminale immutabile/versionata, UTC, revisione report al risultato; nessuna riga InProgress pubblicata |
+| historical_import_batches | batch_id, apply_operation_id UNIQUE/FK, dataset/shop ID/code, provider, manifest profili, importatore/staff, import UTC, stato corrente Applied/Cancelled, batch_revision, contatori/totali, backup reference, undo operation ID e motivo |
+| historical_import_files | FK batch, SHA-256/nome originale locale/dimensione, foglio, profilo/parser e policy/versione, valuta e copertura |
+| historical_transactions | ID interno nuovo, batch/file proprietari, shop/provider/scope, namespace/ID, riferimenti, business datetime/date e raw/offset/UTC, tipo/stati, importi INTEGER nullable dove sconosciuti, Carta/sottotipo, riga, is_active, supersedes_id opzionale |
+| historical_import_audit | Azione e disposition per riga, batch/file/riga, target_transaction_id per duplicati, codici/valori essenziali privati, autore/UTC, annulla/reintroduzione |
+| sales_report_native_ownership | Proiezione derivata per sale_id unico/FK: Unknown/CodeOnly/Verified/Conflict/Dirty, shop provato, policy hash e source fingerprint, senza sostituire l'outbox probatoria |
+| sales_report_time_policies | Shop/policy/versione/hash, copertura, segmenti UTC canonici, provenienza e approvazione; policy usata immutabile, selezione attiva univoca per shop |
+
+I dati finanziari locali non vengono riversati nei log pubblici. Operatore
+importatore distinto da original_cashier_id nullable.
+
+Vincoli: PK e FK RESTRICT, chiavi composite o vincoli equivalenti per assicurare
+che file/batch/shop/provider/scope appartengano allo stesso contesto.
+supersedes_id deve puntare a record inattivo della stessa identita; niente cicli.
+Importi Int64 e checks su tipi/stati/valuta. Non legare shop_id con FK a
+app_settings mutabile. Nessuna FK verso Sale per creare un falso evento nativo.
+
+Indice unico PARZIALE sulla chiave economica WHERE is_active=1.
+Non UNIQUE(key, active_flag): quella forma permetterebbe un solo record inattivo
+e fallirebbe al secondo annullamento. Indici non unici su chiave+storia,
+shop/business_date, batch/id, external namespace/ID e audit/target.
+Un solo proprietario per ogni versione introdotta; osservazioni duplicate
+non trasferiscono proprieta.
+
+La FK batch.apply_operation_id verso operations e DEFERRABLE INITIALLY DEFERRED:
+si puo inserire il batch e poi la receipt che lo referenzia nello stesso commit,
+senza un ciclo di FK impossibile da soddisfare. Verificare al commit coerenza
+di tipo Apply, batch e shop; Undo referenzia il batch gia esistente.
+
+Le chiavi forti esercente hanno UNIQUE(shop_id, provider, key_namespace,
+key_value) quando presenti; gli alias attivi hanno il proprio UNIQUE parziale
+per namespace/valore. Ogni transazione referenzia anche binding_id e revisione
+usati. Gli indici dei mapping sono distinti dalla chiave dell'evento: un nuovo
+alias non crea una seconda identita economica.
+
+Undo amministrativo: anteprima di lotto/revisione, righe attive possedute e
+totali; capability Undo; transazione che disattiva solo quelle righe, marca
+Cancelled, aggiorna batch_revision, receipt Undo e audit nella medesima
+transazione; i trigger aggiornano data_revision per la variazione della
+proiezione inclusa nei report. Nessun DELETE dei record,
+rimborso, restock o restore dell'intero DB. Undo ripetuto con lo stesso operation
+ID restituisce la ricevuta; lotto gia annullato con un'altra richiesta e
+segnalato senza una seconda modifica economica.
+
+Se B ha osservato duplicati di A, annullare A non mantiene gli eventi tramite B
+e non li promuove. Reimport dopo undo crea un nuovo batch e nuovi ID interni
+attivi, con eventuale supersedes; vecchi record e osservazioni restano.
+Prova obbligatoria: almeno tre cicli import/undo/reimport, stesso evento,
+zero duplicati attivi e tre versioni inattive conservabili.
+
+Backup protettivo della migration e backup pre-import sono distinti:
+il runner migration protegge l'upgrade; ogni apply/undo richiede il proprio
+snapshot verificato prima della mutazione. Preservare journal_mode=DELETE,
+synchronous=FULL, foreign keys, timeout e ripristino del locking_mode corrente.
+Il fence transitorio gia esistente non e una nuova policy di journaling.
+
+## 6. Shop proof e autorizzazione
+
+### 6.1 Attribuzione delle vendite native
+
+F: sales non ha shop_id. ReceiptShopInfo ha ShopCode, NON ShopId.
+SerializeReceiptShopSnapshot serializza quel tipo, mentre ReceiptShopMetadata
+e un altro contratto. La validazione di testo/dimensioni della ricevuta non
+attesta il tenant; il fallback di stampa usa impostazioni correnti.
+
+La decisione di ownership viene risolta una sola volta per sale_id, evitando
+join che moltiplichino i movimenti:
+
+| Livello | Prova | Esito |
+| --- | --- | --- |
+| N1 | Outbox della stessa vendita, origin_shop_id valorizzato e coerente; client ID/schema/operazione e payload/hash validi, codice senza contraddizioni | Attribuibile allo shop ID provato |
+| N2 | Contratto legacy hash-verificato con solo shop code | Code-only; attribuibile a un ID solo con corrispondenza storica autorevole non ambigua |
+| N3 | Solo snapshot ricevuta, nome/RUT, data o impostazioni correnti | Non attribuibile |
+| NX | Binding/payload/identita discordanti | Conflittuale, escluso e diagnosticato |
+
+La verifica hash locale prova coerenza con il payload conservato, non una firma
+server. Non esiste oggi prova che ogni code-only abbia una mappa storica:
+in assenza di tale prova resta non attribuibile. Nessun backfill dal negozio
+attivo o dalla ragione sociale. Snapshot e riferimenti accessori possono
+evidenziare contraddizioni, non promuovere da soli l'ownership.
+
+Solo N1 o N2 con prova completa entrano in report/search/detail/export dello
+shop. Non attribuibili e conflittuali restano nel DB e fuori da tali percorsi.
+La V1 non introduce una vista globale di transazioni senza tenant. Un futuro
+accesso amministrativo separato richiedera un'azione autorizzata esplicita e
+un proprio scope; non basta una colonna "sconosciuto".
+
+Storico: shop ID/code autorevoli obbligatori al commit, non derivati dal
+filename. Preview senza shop creato ammessa; apply no. Il guard shop corrente
+blocca outbox irrisolte e resetta catalogo/utenti, ma non ripartiziona sales:
+non dichiarare risolto l'isolamento nativo preesistente.
+
+### 6.2 Capability di import e undo
+
+F: BeginAuthorizationUseAsync e nominalmente generico ma produce un
+SaleAuthorizationCommitGuard limitato a Sale/Refund/Void. Non riusarlo fingendo
+una SaleKind. P: HistoricalImportAuthorizationCommitGuard, non costruibile dai
+consumer ordinari, emesso da un metodo dedicato di OperatorSession.
+
+Campi vincolanti: Apply/Undo, permesso esatto, operator/staff/versione,
+shop ID/code/device, generation ID/fingerprint, authorization epoch,
+dataset ID, restore/transition epoch, operation ID e fingerprint piano
+oppure batch/revisione da annullare. Metodi DemandStillValid e
+CommitIfStillValid(minimumRemaining, commitAction). Repository/applier
+richiedono obbligatoriamente tale capability; nessun Func<bool> di fallback.
+
+Permessi proposti register.import_history e register.cancel_history, nessun
+grant automatico a cashier/supervisor/manager. Admin tramite controllo attuale;
+catalogo/etichette custom aggiornati. Mapping come sotto-operazione autorizzata
+dell'import, con approvazione esplicita. Non toccare BuildRolePermissionSeeds:
+SecuritySeedMaterial entra nel checksum 0006 e nel confronto esatto del detector.
+
+La garanzia da riusare e quella effettiva del writer nativo: fence SQLite
+esclusivo, verifica completa della lease, poi final check e COMMIT sincrono
+sotto il latch della revoca. Preservare ordine _sync -> Gate; non chiamare il
+lease/store guard prendendo _sync mentre si possiede Gate. Alla soglia finale
+richiedere il DurableCommitSafetyBudget corrente di 10 secondi.
+Questo margine non e un budget di durata dell'intero import.
+
+Revoca prima del punto di linearizzazione: rollback. Revoca dopo il commit
+linearizzato: lotto applicato, eventuale consultazione/undo richiede una nuova
+autorizzazione. Testare la race immediatamente prima del commit, non soltanto
+la perdita permesso prima degli insert. Nessuna elevazione Recovery.
+
+### 6.3 Autorita DB condivisa, entry point e restore
+
+F: il mutex Local\Win7POS.Wpf.SingleInstance e session-local/fail-open.
+PosStartupCoordinator.Initialize recupera installazioni restore e inizializza
+il DB anche nel safe-start. Il harness crea System.Windows.Application e non
+attraversa App.OnStartup; la CLI inizializza/seeda DB anche per daily/export.
+Quindi R1 limitata ad App non garantiva il confine.
+
+P: PosDatabaseAuthorityLease in Data, con registro process-local dei contesti.
+L'entry point acquisisce un owner prima della prima possibile scrittura,
+compresi recovery e migration; operazioni annidate ottengono borrow contati.
+Factory, initializer e accessi raw di restore/backup richiedono quel contesto,
+senza acquisizioni implicite che nascondano una ownership mancante. Non occorre
+riscrivere tutti i repository. Il fallimento e DatabaseInUse/AuthorityUnavailable,
+prima di init/seed; nessun override QA e nessuna cancellazione della sidecar.
+
+| Entry point reale | Prima possibile scrittura F | Acquisizione/rilascio P e dataset ammesso |
+| --- | --- | --- |
+| WPF normale | PosStartupCoordinator.Initialize:126-142, recovery poi EnsureCreated | Bootstrap condiviso prima recovery; owner sul DB configurato fino a stop/drain servizi, chiusura connessioni/pool e shutdown |
+| WPF safe-start/Recovery | Medesimo Initialize; safe-start non e readonly | Stessa lease senza deroga; contesa impedisce init/recovery operativo |
+| CLI daily/diff/apply/export/backup | Program.InitializeHarnessDbAsync:6405, migration e seed sintetico | Owner command-scoped sul DB risolto prima della funzione; anche i comandi nominalmente di lettura vi aderiscono |
+| CLI selftest/crash esistente | CatalogImportProcessCrashSelfTest prepara DB e avvia figlio | Owner parent per prepare; chiude pool/handle e rilascia prima del figlio; figlio acquisisce; parent riacquisisce solo dopo uscita confermata |
+| Harness UI, ogni modalita | Program:320 Application; :339 init, seed :6917/:6977 | Dopo validazione --data-dir e prima di qualunque ramo DB; coordinator usa borrow, owner per intera invocazione |
+| Nuovo worker crash/verifier | Worker prepara; verifier puo causare journal recovery | Owner separato e sequenziale per lo stesso slot; verifier soltanto OpenExistingForRecovery, niente bootstrap |
+| Restore | AtomicRestoreInstaller sostituisce file | Mantiene owner sidecar per swap/rollback; rilascia solo guard no-delete DB durante swap, rebind fisico e epoch prima della ripresa |
+| Riavvio dopo crash | Recovery restore precede migration | Owner prima del recovery. Handle OS del processo morto liberato, sidecar lasciata al suo posto |
+
+SqliteConnectionFactory.Open/OpenAsync/initializer verificano DemandOwned; i
+percorsi raw ricevono owner/borrow esplicito. I test esercitano gli entry point
+reali WPF/harness/CLI, non solo due istanze del helper. Due DB distinti sono
+ammessi; i borrow dello stesso processo non creano un secondo owner.
+
+Identita: distinguere slot logico persistente (directory reale verificata +
+nome DB normalizzato) e file fisico (volume/file index) che cambia nel restore.
+Windows: GetFinalPathNameByHandleW e GetFileInformationByHandle, API compatibili
+Win7; verificare parent e file tramite handle, nNumberOfLinks=1 per DB/sidecar.
+Rifiutare UNC/rete, componenti reparse/junction, hard link multipli e identita
+non verificabili. Case/nomi 8.3/alias drive devono risolversi allo stesso slot;
+verificarlo dopo acquisizione, senza equiparare stringa path o dataset_id al
+file fisico. DB assente: rivendicare lo slot nella directory verificata prima
+di creare il file. Pin dei parent e guard senza FileShare.Delete impediscono
+cambi inattesi; un rebind non autorizzato invalida il contesto.
+
+Sidecar FileShare.None mantenuta lifetime; il file residuo non e un lock stale
+da eliminare. Il restore owner aggiorna l'identita fisica attesa e conserva
+lo slot. Dataset/generation/epoch sono verifiche aggiuntive, non sostituti.
+Riferimenti API:
+[handle identity](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle),
+[canonical handle path](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew).
+Le fixture Mac usano vere sidecar in root sintetiche nuove e policy portabile
+di test; non qualificano identita/alias Win32. Nessun bypass su un DB operativo
+esistente. La piattaforma non qualificata per identita fisica deve rifiutare
+l'apertura operativa, mentre logica pura/SQLite isolato restano testabili.
+
+Dentro la transazione verificare dataset, generation persistente, shop,
+operatore, restore epoch e revisioni del piano. Restore invalida prima dello
+swap e avanza epoch oltre max(live,candidato), come il percorso corrente;
+bootstrap reimposta lo stamp del report prima di riabilitare consumer.
+Vecchi binari/writer esterni che ignorano il protocollo non sono supportati;
+la contesa SQLite resta finita e non e una prova di autorizzazione cross-process.
+
+### 6.4 Contesti espliciti dei DB ausiliari e fixture
+
+F: SqliteOnlineBackup:109 valida temporaryPath tramite un nuovo factory e
+:199-205 usa connessioni raw source/destination; l'owner live non copre tali
+percorsi. AtomicRestoreInstaller.IsDatabaseValidAsync:450 apre candidate/
+rollback/live e oggi converte ogni eccezione in false. RestoreShopSafetyTests
+TestDb:410 crea factory/EnsureCreated senza il futuro owner. DemandOwned
+limitato al live renderebbe questi percorsi inutilizzabili o indurrebbe bypass.
+
+P: piccolo PosDatabaseAccessContext interno accanto all'owner, non un framework
+di autorizzazione: role, operation ID, percorso ESATTO, provenienza, identita
+attesa, apertura/creazione ammesse e lifecycle. Emissione solo da ingressi
+role-specific: borrow live, source selezionato esistente, allocator partial/
+candidate, rollback da marker validato. Nessun permesso wildcard per directory,
+adozione implicita o allow-all QA. Il factory accetta anche un contesto AUX
+esatto, senza cercare un owner live fittizio o saltare DemandOwned.
+
+| Ruolo/percorso e provenienza | Contesto/apertura consentita | Pool/handle, publish/swap ed errore |
+| --- | --- | --- |
+| Live source backup, percorso owner operativo | Borrow dello stesso live; raw ReadOnly esistente, no Create/seed | Pooling=false; no-delete guard sino al ritorno backup nativo, poi chiusura |
+| Source snapshot restore selezionato dall'utente | SelectedSnapshotSource, path verificato; existing ReadOnly, nessuna migration o recovery scrivente sul sorgente | Pooling=false, chiusura dopo copia; non promuove il backup a live |
+| Backup partial allocato dal backup service | BackupPartial del path unico; CreateNew atomico, poi ReadWrite senza Create sul file riservato | Pooling=false; retry solo sul partial posseduto dopo chiusura/rebind, invariati limiti retry gia esistenti |
+| Validazione del partial | Stesso AUX ristretto Validate; existing, integrity/FK senza init/seed | Reader/command/connection chiusi e pool assenti prima flush/publish |
+| Backup finale scelto secondo policy corrente | PublishTarget esatto, atteso assente; nessuna apertura SQLite RW | Chiudere guard partial; mantenere reservation logica, Move senza overwrite, trasferire Partial -> Published; errore non cancella target estraneo |
+| Restore candidate same-directory dall'allocator | AUX proprio; preparazione CreateNew, aperture successive existing; migration solo con grant CandidateMigration esplicito | Pooling=false; trasferimento Preparation -> SealedCandidate insieme al contesto, niente gap di ownership |
+| Rollback dal marker installazione validato | RestoreRollback esatto; existing, eventuale recovery tecnico controllato, niente bootstrap | Chiudere validate/seal/no-delete prima Replace/Move, preservando reservation e owner live |
+| Nuovo live dopo swap/rollback | Owner slot live conservato, rebind fisico dal solo protocollo restore | Riapertura solo dopo verifica; reset epoch/stamp prima della ripresa writer |
+| Ogni DB fixture nuovo in root posseduta | OwnedSqliteTestFile esatto prima Factory/EnsureCreated; contesti separati per source/candidate/live/rollback | Chiudere pool/connessioni, poi rilasciare contesti; teardown esistente limitato alle proprie fixture |
+
+Un borrow live non e valido per partial/candidate. Un AUX di validazione non
+abilita migrazione. La destinazione finale di backup conserva la policy
+esistente, inclusi i casi remoti gia supportati: non applicare automaticamente
+il divieto operativo UNC a un backup. Non cambiare DELETE/FULL.
+
+Lifecycle restore: ValidateAndSealAsync chiude SQLite prima di aprire il seal;
+ConsumeForAtomicReplace chiude quel handle prima dello swap. Reservation/
+contesto e owner live restano posseduti durante il trasferimento di identita:
+candidate -> live, precedente live -> rollback. Stessa disciplina per
+pubblicazione backup. Il guard no-delete protegge la fase di lettura, ma viene
+chiuso prima del PROPRIO Move/Replace autorizzato; non blocca l'operazione che
+deve proteggere. Recheck dei binding/seal nel protocollo, niente reopen generico.
+
+IsDatabaseValidAsync distingue IntegrityInvalid da AuthorityDenied, Cancelled,
+Busy, MissingFile e IoFailure: gli ultimi sono errori di protocollo propagati,
+non prova di corruzione che autorizza lo stesso ramo rollback. Nessun file
+mancante viene creato per "validarlo". Recovery adotta solo path identificati
+dal marker valido, non tutti i rollback presenti nella directory.
+
+Bootstrap fixture minimo: OwnedSqliteTestFile nei soli test condivisi, sidecar
+reale in root nuova e context prima di EnsureCreated; factory aggiuntive
+prendono borrow dello stesso file. Mac qualifica lifecycle/ownership portabile,
+non hardlink/reparse/file identity Win32. Nessun bypass per DB operativi.
+
+Regressioni dei percorsi reali: MigrationBackupRestoreTests (backup preledger,
+restore/upgrade), OnlineBackupContentionTests (retry/cancel invariati),
+RestoreShopSafetyTests (validated source, post-swap rollback),
+PersistenceFoundationHardeningTests (seal, source identity, marker, rollback).
+Negativi: live-context su partial, path/operation errati, validate mancante,
+migration con Validate-only, collisione publish, authority scambiata per
+corruption e errore/cancel a ogni trasferimento. Test già previsti in B, nessun
+runner aggiunto e nessun teardown eseguito in Planning.
+
+## 7. Replay, nuova mutazione, attese e recupero
+
+### 7.1 Due percorsi, senza dipendenza dai workbook per il replay
+
+Una sola analisi logica produce il piano immutabile: manifest/hash input,
+righe essenziali, mapping/policy, scope, esiti dedup, totali e precondizioni
+dataset/generation/epoch/revisioni. request_fingerprint identifica il contenuto
+della richiesta e il tipo Apply/Undo; le revisioni osservate e le scadenze sono
+precondizioni separate, non entrano nell'identita stabile del replay.
+
+Percorso A, consultazione/replay terminale:
+1. Autorizzazione ATTUALE alla consultazione del lotto nello shop corretto
+   (scope visibilita report, non la sola memoria dell'autorizzazione import).
+2. Apertura del DB esistente sotto autorita e query di operation_id. Per il
+   replay con richiesta confrontare tipo, dataset/shop e request_fingerprint.
+   Identita differente -> OperationIdentityConflict, senza dati di altri shop.
+3. Risultato terminale coincidente -> restituzione della receipt originaria
+   immutabile e, separatamente, stato/revisione correnti del lotto.
+   Nessun workbook, nuovo hash input, backup o nuova applicazione richiesti.
+4. Dopo riavvio, elenco lotti e GetOperationReceipt richiedono soltanto scope
+   attuale e operation ID; non un piano in memoria. Il replay di un Apply
+   poi annullato mostra receipt originaria + Cancelled, senza riattivarlo.
+   Per una NUOVA applicazione dopo undo occorrono nuovo operation ID e preview.
+
+Percorso B, nuova mutazione: soltanto quando manca un terminale coincidente.
+Tutti i preflight, autorizzazione Apply/Undo, input, backup e recheck restano
+obbligatori. La ricerca operation_id e ripetuta nella transazione prima di
+mutare: chiude la race dopo il percorso A. Un risultato apparso nel frattempo
+viene restituito se coincide; altrimenti conflitto. Un preflight gia iniziato
+non autorizza a reinserire un risultato esistente.
+
+Ordine di B, compatibile con restore:
+1. Fuori lock: conferma, hash file disponibili senza sharing write/delete,
+   permessi, copertura policy/merchant e sufficiente lease residua.
+2. Owner DB gia posseduto; backup-automation maintenance -> workflow gate
+   condiviso -> authorization-use dedicata -> catalog transition barrier.
+3. Exclusive maintenance SQLite, senza connessioni gia possedute; drain finito.
+4. Backup pre-apply/undo verificato. Distinto dal backup protettivo migration.
+   Deve precedere il fence della connessione apply, evitando autoblocco.
+5. Connessione posseduta/identity guard -> exclusive commit fence corrente ->
+   transazione; lookup operation ID, recheck dataset/epoch/permessi, mapping,
+   precondizioni e dedup. Piano stale -> rollback/revisione esplicita.
+6. Insert preparati o disattivazioni, audit, revisioni persistenti e receipt
+   terminale nella STESSA transazione. Nessun commit intermedio.
+7. Verifica contatori, ultimo cancel, breve confine pubblicazione report,
+   final authority/latch nel rispetto _sync -> Gate, COMMIT con margine
+   durevole corrente 10 s; pubblicazione stamp committato prima del rilascio.
+8. Dopo commit: soltanto invalidazione/sostituzione di cache e risultati in
+   memoria, rilascio inverso e ripristino centralizzato di comandi/focus.
+   Vietato data_revision++ o aggiornamento mapping/batch persistente postcommit.
+
+La receipt e uno snapshot locale del risultato: non viene rigenerata dai
+totali correnti. operation_id e globalmente unico; fingerprint piano non e
+univoco globale, permettendo una successiva reimportazione autorizzata.
+
+### 7.2 Revisioni atomiche, manutenzione e attese cancellabili
+
+Un solo data_revision persistente descrive la proiezione economica e di scope
+dei report misti (§8.1). Non e il numero di importazioni e puo avanzare piu
+volte in una transazione: il token e opaco. Trigger della migration 0015 coprono
+anche nativi e proof, con confronti null-safe. Rollback annulla dati e revisione
+insieme; overflow o tipo diverso da INTEGER fa fallire la mutazione.
+
+Apply con nuove transazioni/undo che cambia visibilita invalida il report.
+Batch duplicate-only, receipt aggiuntiva o nuove osservazioni di audit non
+cambiano l'economia/lo scope e NON incrementano data_revision. Nessuna revisione
+globale per metadati senza consumatore. batch_revision cambia atomicamente
+quando cambia lo stato del lotto; revisioni mapping referenziate restano
+immutabili o avanzano solo per una modifica esplicita ammessa da §4.
+La receipt registra la revisione al risultato, ma replay dopo revisioni
+successive NON richiede che sia ancora la revisione corrente.
+
+Apply/undo sono manutenzione controllata; niente writer POS ordinari concorrenti.
+Carrello preservato, comandi/scanner non accodano vendite da eseguire dopo.
+Messaggio di pausa e progress restano reattivi; ammissione/focus ripristinati
+anche su cancel/fault. Nessun cambio a DELETE/FULL, atomicita o busy_timeout.
+
+Deadline di ammissione proposta: 60 s complessivi per tutti i gate, con token
+collegato alla cancellazione utente. Ogni wait usa tempo residuo; drain ha
+inoltre il limite corrente 30 s, busy SQLite 5 s. Non presentare il solo drain
+come limite delle attese precedenti.
+
+| Punto osservato | Contratto cancellabile futuro |
+| --- | --- |
+| Workflow gate | WaitAsync(ct) sul gate condiviso, ownership soltanto dopo successo |
+| BackupAutomationService.EnterMaintenanceAsync | Gia token-aware; deadline collegata e rilascio nel catch/finally |
+| RevocationLatch.EnterAuthorizationUse/MaintenanceAsync | Overload mirato ct, vero AuthorizationUseGate.WaitAsync(ct), propagato da OperatorSession |
+| CatalogShopTransitionBarrier | Gia EnterAsync(ct), preservare ordine |
+| Factory maintenance gate/drain | Token e finally esistenti, deadline residua |
+| OpenAsync/RegisterConnection | Nuovo RegisterConnectionAsync(ct) per evitare l'attesa sincrona GetAwaiter.GetResult durante manutenzione |
+| Report publication gate | Acquisizione cancellabile prima del finale; UI solo TryEnter breve, mai attesa/IO |
+
+Ownership trasferita una sola volta: se validazione o costruzione lease fallisce
+dopo acquisizione e prima della consegna, il helper rilascia. Se consegnata,
+rilascia il chiamante con Dispose idempotente. Vietato Task.WhenAny su
+acquisizioni non cancellabili: il waiter abbandonato potrebbe ottenere una
+lease dopo il cancel. Provare assenza di waiter e risorse orfani.
+
+Backup nativo, SQLite fence/commit e I/O sincrono gia avviati non si abbandonano
+per simulare cancel: attendere il ritorno effettivo, registrare durata/overrun
+e controllare il token prima della successiva mutazione. Le garanzie di
+riscontro <=1 s valgono per lavoro cooperativo, non nascondono i 5 s busy
+o una chiamata nativa pendente. Nessun retry automatico.
+Snapshot/export lunghi vengono drenati; i report nuovi hanno letture brevi.
+
+### 7.3 Apertura esistente e ReconcilingOutcome
+
+F: il factory corrente omette Mode e puo creare un DB mancante, poi applica
+PRAGMA. P: opener dedicato OpenExistingForRecovery, con owner, FileMode.Open
+per identity guard, SQLite Mode=ReadWrite senza Create e senza initializer,
+EnsureCreated, seed, migration o riconfigurazione applicativa. File mancante,
+identita cambiata o schema non compatibile -> errore esplicito, non DB vuoto.
+
+SQLite puo dover ripristinare un hot journal prima di leggere; una connessione
+strettamente readonly puo fallire con SQLITE_READONLY_ROLLBACK. Per questo
+l'opener consente il solo recupero tecnico sotto autorita, quindi verifiche in
+transazione breve senza mutazioni applicative. Non rimuovere journal a mano.
+Riferimenti primari:
+[SQLite locking §4.1](https://www.sqlite.org/lockingv3.html#dealing_with_hot_journals),
+[SQLITE_READONLY_ROLLBACK](https://www.sqlite.org/rescode.html#readonly_rollback).
+
+ReconcilingOutcome usa quell'opener per cercare operation/receipt. Se il terminale
+esiste, restituirlo; se manca dopo recovery riuscito, non dichiarare successo
+e non applicare automaticamente. Restano invarianti/sentinel/schema e identita.
+Recovery di installazione restore e un passo distinto, esplicito e posseduto:
+non si invoca un bootstrap generico per far sembrare valido il DB.
+
+| Evento | Esito |
+| --- | --- |
+| Doppio clic | Single-flight, stesso operation ID |
+| Risposta persa, input rimosso o prossimo backup impossibile | Replay terminale autorizzato riesce senza quei prerequisiti |
+| Import/undo o proof cambiati dopo preview | Transazione rifiuta piano stale; nessun ricalcolo silenzioso |
+| Cancel precommit/crash precommit | Dati, revisioni e receipt assenti o tutti precedenti; rollback tecnico controllato |
+| Crash dopo commit/risposta persa | Dati, revisioni e receipt tutti durevoli; consultazione operation ID |
+| Replay dopo undo o altre revisioni | Receipt originaria + stato corrente, nessuna riattivazione |
+| Stesso operation ID con altro shop/tipo/fingerprint | Conflitto; zero mutazioni |
+| Disco pieno/file inaccessibile/backup fallito per nuova mutazione | FailedBeforeCommit, errore primario preservato |
+| Esito I/O incerto | ReconcilingOutcome su esistente; mai creare DB o ripetere apply alla cieca |
+
+Nessun lotto InProgress pubblicato dalla V1; dati/file/audit economico/receipt
+terminali diventano visibili soltanto insieme al commit.
+
+## 8. Report, routing e CSV
+
+### 8.1 Consumatore reale e aggregazione
+
+Ingresso F: MainWindow.OnMenuDailyReportClick e PosViewModel.CreateDailyReportViewModel
+aprono il tab incorporato; DailyReportView contiene Giornaliero/Storico.
+Il dialog alternativo riusa la view. Il testo attuale e Chiusura cassa:
+rendere esplicito il prospetto analitico e mantenerlo distinto dalle operazioni
+e stampe di chiusura.
+
+Nuovo contratto piccolo ISalesReportQuery con consumatori reali WPF/CSV/grafico.
+IDateRangeSalesQuery, DailyTakingsService e SalesQueryAdapter restano nativi:
+oggi servono il percorso CLI e non alimentano questi report WPF.
+Non introdurre un framework generico di query o trasformare lo storico in Sale.
+
+Scope immutabile e autorizzato: shop ID, data commerciale [from,to),
+origine, operatore/visibilita globale, policy ownership e fuso nativo,
+dataset/epoch/data revision. Identita riga (Origin, InternalId).
+Pagina, ricerca riferimenti, dettaglio, aggregati, grafico e CSV ricevono
+lo stesso scope; dettaglio/export lo rivalidano prima della restituzione.
+
+F: void nativo crea un record negativo e marca l'originale senza azzerarne il
+totale. Il nuovo prospetto usa movimenti firmati, non copia il filtro del
+Registro che esclude gli originali voided e puo sottrarre due volte:
+
+- grossPositiveClp = somma delle vendite positive selezionate;
+- reversalsClp = valore assoluto della somma dei movimenti negativi;
+- balanceClp = somma firmata di ogni movimento una volta;
+- cardClp = somma PaidCard firmata; cashTenderedClp = somma PaidCash;
+- changeClp = somma Change; cashClp = somma checked(PaidCash - Change),
+  cioe contante netto. Non confondere il denaro consegnato con l'incasso;
+- originale + reversal restano entrambi, ciascuno alla propria data.
+
+Esempio sintetico: +1000 al giorno D, -1000 a D+1: D=1000, D+1=-1000,
+periodo=0. Il flag voided governa stato/capacita, non riscrive il giorno D.
+Stessa regola per l'annullamento Getnet; nessun doppio collegamento per COD.AUT.
+
+F: la vendita salva payment.CashAmountMinor e payment.GetChangeMinor(total)
+separatamente (PosWorkflowService:1250-1252), mentre i reversal hanno Change=0.
+Il prospetto analitico espone resto e contante netto senza riscrivere le letture
+di chiusura. Verificare balanceClp = cashClp + cardClp per record validi; dati
+nativi legacy incoerenti producono un'anomalia di riconciliazione e impediscono
+di qualificare il prospetto come completo, senza correggere o scartare ricavi
+silenziosamente. Fixture obbligatoria con tender maggiore del totale.
+
+Grafico orario usa business datetime e saldo firmato, con barre negative
+necessarie; somma uguale al KPI del medesimo filtro. Giorni marcati e singolo
+giorno fissano anche l'export. Distinguere scontrini POS, movimenti nativi
+negativi, transazioni storiche e annullamenti. Contanti storici/articoli assenti
+non sono zeri commerciali. Badge "Importato · Getnet", filtro origine e
+subtotali quando utili.
+
+Il ramo nativo converte createdAt con policy fuso negozio esplicita e versionata,
+validata per le date, senza ToLocalTime()/SQLite localtime del PC. Non riscrive
+i record originari e non converte lo storico gia fissato con policy diversa.
+
+### 8.1.1 Fotografia mista, ownership verificata e paginazione
+
+Un filtro immutabile non congela i dati. SalesReportReadToken comprende
+datasetId, restoreEpoch, authorityInstanceEpoch, data_revision,
+scopeHash, ownershipPolicyHash e nativeTimePolicyHash. Nessun max(id),
+timestamp ultimo aggiornamento o PRAGMA data_version su connessioni diverse.
+
+data_revision e atomica con tutte le sorgenti della proiezione:
+- sales INSERT/DELETE e UPDATE di data, importi/pagamenti/resto, kind,
+  operatore, code/client ID, relazioni/void e snapshot usato come contraddizione;
+- sale_lines usate dal dettaglio, per mantenere lo stesso token anche li;
+- sales_sync_outbox: sale/client ID, shop origin, schema/operation, payload/hash
+  e campi realmente consumati da N1/N2, non retry/attempt/status di trasporto;
+- historical_transactions: inserimento, inclusione, dati economici/scope/data
+  consumati; stato batch solo quando modifica l'inclusione effettiva;
+- proiezione ownership e mapping quando cambia l'attribuzione ammessa.
+
+Trigger nuovi in 0015, confronti null-safe e CHECK typeof(data_revision)='integer'
+con limite Int64. Provare presenza/definizione nel detector; nessun checksum
+precedente cambiato. Insert retrodatato e aggiornamento proof invalidano
+anche se non cambia il massimo ID. Metadata/audit duplicate-only che non
+cambiano la proiezione non invalidano; batch/receipt si consultano freschi.
+
+N1 richiede verifica payload/hash prima dell'aggregazione, non dopo un filtro
+SQL su origin_shop_id. sales_report_native_ownership e una proiezione DERIVATA
+per sale_id, non un ledger alternativo. Enqueue canonico aggiorna la prova
+nella stessa transazione. Trigger sui campi sorgente marcano Dirty e invalidano
+il token. Legacy: lettura a blocchi e verifica bounded fuori lock, poi breve
+transazione con confronto dei campi/fingerprint sorgente prima della pubblicazione.
+Sorgente cambiata -> risultato scartato, non proof validata con dati precedenti.
+Missing/Dirty nel perimetro rende il report PendingOwnershipVerification,
+non un totale apparentemente completo con righe omesse. Unknown/CodeOnly
+senza prova/NX sono decisioni terminali di esclusione secondo §6.1; nessun
+fallback a shop corrente. Indice e join univoco su sale_id/proof valida.
+
+La prima ricostruzione puo richiedere piu blocchi; interrompibile senza prove
+parziali spacciate per complete. Il suo costo cold e misurato e visibile, non
+nascosto nel budget warm. Aggiornamenti della proiezione avanzano data_revision
+nella stessa transazione. Non deserializzare tutti i payload a ogni KPI.
+
+Fotografia per consumer:
+1. Caricamento iniziale: transazione di lettura BREVE, token/revisione e
+   scope, aggregati + grafico + prima pagina nello stesso snapshot; chiusura.
+2. Pagina/dettaglio/chunk CSV successivi: nuova transazione breve, confronto
+   esatto token e dati limitati. Mismatch -> ReportSnapshotStale, nessun merge
+   con risultati precedenti, nessuna continuazione del cursor vecchio.
+3. Prima di pubblicare: token e autorita ancora validi; Dispatcher confronta
+   versione richiesta/filtro/selezione e sostituisce il bundle con un solo
+   stato immutabile. Tutte le superfici riportano lo stesso token.
+4. Mutazione rilevata: invalidazione comune di header, grafico, pagine/cursor,
+   dettaglio e selezione marcata; refresh esplicito. La vecchia fotografia
+   puo restare visibile come precedente solo per mutazioni dati nello STESSO
+   scope ancora autorizzato, identificata e con azioni sospese. Su logout,
+   revoca o cambio operatore/shop rimuovere subito ogni contenuto finanziario
+   precedente; il badge stale non lo rende autorizzato. Nessun mix di revisioni.
+
+Per la race COMMIT/notifica: piccolo SalesReportSnapshotCoordinator per DB.
+Tutti i commit ufficiali che modificano la proiezione passano da
+CommitAndPublishReportRevision: acquisisce un breve publication gate PRIMA
+del finale di autorizzazione, legge la revisione nella propria transazione,
+esegue il commit e pubblica lo stamp immutabile prima del rilascio.
+Hook mirati in InsertSaleAsync, refund/void, MarkSaleVoided autonomo, mutatori
+outbox che cambiano prova, nuovo apply/undo e ownership refresher. Startup/
+backfill senza consumer e restore inizializzano lo stamp prima di abilitare UI.
+I trigger restano la garanzia dati anche per CLI; il helper chiude la race UI.
+
+Sul Dispatcher solo TryEnter e confronto dello stamp, nessuna attesa/IO,
+nessun accesso a _sync o latch. Se occupato, scartare/deferire il bundle;
+notifiche dei binding dopo il rilascio, senza comandi annidati nel gate.
+Ordine: coordinamento writer -> publication gate -> finale _sync/Gate
+preesistente; mai un consumer UI che inverta l'ordine. Test di interleaving
+obbligatori, non affidarsi alle sole notifiche asincrone.
+
+CSV: chunk sotto token, temporaneo privato completo/chiuso, poi il protocollo
+§8.3.1. Nessun lock DB mantenuto sino al rename. Il punto di autorizzazione
+linearizza una fotografia verificata, non l'ultimo dato al momento della
+visibilita filesystem; dopo il permit IO e riconciliazione non rileggono il DB.
+
+Ordine totale unico:
+(businessLocalTicks DESC, originOrdinal ASC, internalId DESC),
+con Native=0/Historical=1 e ticks a precisione supportata; nativi millisecondi
+convertiti checked, storico senza troncamenti. Cursor contiene tutta la tupla
+piu token. Successivo: tempo minore, oppure tempo uguale/origine maggiore,
+oppure tempo/origine uguali e ID minore. Ogni ramo legge pageSize+1, merge
+limitato; niente OFFSET crescente o caricamento dell'intera storia.
+Collisioni di timestamp e ID fra origini restano distinte. Un inserimento
+retrodatato invalida il token, anche se cadrebbe in una pagina gia letta.
+
+Intervalli locali -> UTC: Core riceve una tabella canonica congelata di
+segmenti [fromUtc,toUtc), offsetMinutes, con ID/versione/hash/provenienza/
+copertura, identica su Mac e net48. Le regole OS correnti Windows/IANA non
+sono una fonte implicita. Fuori copertura -> policy non disponibile.
+Approvazione e selezione della tabella sono esplicite nel flusso amministrativo;
+sales_report_time_policies ne conserva corpo/hash/provenienza nel backup.
+Una selezione di versione diversa invalida il token atomicamente, non modifica
+le date commerciali gia fissate sulle transazioni Getnet.
+Per ogni segmento calcolare la preimmagine dell'intervallo commerciale:
+WHERE createdAt >= fromUtcMs AND createdAt < toUtcMs usa idx_sales_createdAt,
+senza funzione timezone nel WHERE. Normalizzare intervalli disgiunti e giorni
+marcati; fold include entrambi gli istanti, gap nessuno. Agruppamento giorno/
+ora applica l'offset costante; cursore tradotto con limiti checked/rounding
+esatto verso i millisecondi nativi. Storico usa business datetime persistito.
+
+### 8.1.1.a Copertura e adozione del nuovo prospetto
+
+F: GetDailySummaryAsync/GetDailySummariesRangeAsync correnti non attribuiscono
+i nativi tramite N1/N2/N3/NX. Adottando la nuova query i valori possono cambiare
+anche prima di importare Getnet: non chiamare questa differenza "zero vendite"
+o nasconderla con fallback alle query globali.
+
+Coverage e parte del bundle/token, UI e CSV, distinta dalle somme:
+- NativePolicyStatus: NotRequired (storico puro), Ready, Missing, OutsideCoverage.
+- AttributionStatus: Pending, VerifiedSubset, CertifiedForSelectedScope.
+- SelectionStatus: HasAuthorizedMovements, VerifiedEmpty, NotEstablished.
+
+| Condizione | Valori/UX autorizzati |
+| --- | --- |
+| Policy nativa necessaria Missing/OutsideCoverage | Prospetto indisponibile e motivo generico/configurazione autorizzata; valori non definiti, niente fallback PC o query globale |
+| Proof Missing/Dirty | Verifica pendente; nessun totale complessivo definitivo. Eventuale subtotal dei soli ammessi e chiaramente "parte verificata" |
+| Unknown/CodeOnly senza prova/Conflict terminali | VerifiedSubset: solo subtotal ammesso, copertura non certificata |
+| Zero ammessi con attribuzione incompleta | "Nessun movimento attribuito nel filtro; copertura non certificata", non zero ricavi del negozio |
+| Policy/attribuzione richieste certificate e scope vuoto | VerifiedEmpty: assenza verificata nel solo archivio/origini selezionati, non prova di tutti gli incassi storici del negozio |
+
+Non esporre conteggi/importi degli esclusi, riferimenti/nomi/RUT di record
+non attribuiti o altri tenant, neanche nei messaggi di errore/dettaglio/export.
+Le azioni suggerite completano configurazione/verifica solo se autorizzate;
+non elencano dati esclusi. Lo storico puro non dipende da policy nativa che
+non consuma. Copertura Carta e periodo parziale restano visibili;
+certificazione dello scope locale non promette tutti i pagamenti del negozio.
+
+Prima dell'import Pending/Unavailable non diventano zeri. Percorsi operativi
+di cassa nativi separati e invariati. CSV: record_type=coverage obbligatorio,
+chiaramente non economico, con token, policy/stati/copertura e fotografia
+autorizzata; colonne monetarie movimento vuote. Seguono soltanto
+record_type=movement ammessi. Anche report senza righe conserva il metadata;
+nessuna transazione fittizia e nessun dato escluso pubblicabile.
+
+Variante F-MIXED-coverage: nativo A provato +1000, nativo U non attribuibile
++7000, storico A +9000. Somma ammessa10000, media POS1000, VerifiedSubset; tutti i KPI ereditano
+l'etichetta della parte attribuibile, senza presentarsi come totali del negozio.
+ID/valore7000 e conteggi esclusi assenti da bundle/UI/CSV. Varianti Pending,
+policy mancante, storico puro e VerifiedEmpty distinguono indisponibilita
+da zero con oracoli letterali.
+
+### 8.1.2 Scontrino medio POS
+
+F: TicketMedioDisplay, PeriodTicketAverageDisplay e MarkedTicketAverageDisplay
+dividono NetAmount per SalesCount; HeaderSummary e stampa marcati propagano
+lo stesso calcolo. Non applicarlo ai totali misti.
+
+Definizione V1 unica "Scontrino medio POS (vendite)":
+NativePositiveSalesClp / NativePositiveReceiptCount nello stesso scope.
+Entrambi includono solo vendite native positive, anche se successivamente
+stornate; storico e movimenti negativi esclusi da numeratore e denominatore.
+Denominatore zero -> nullable/N/D localizzato, non 0. Decimal e arrotondamento
+CLP esplicito AwayFromZero, senza double. Giorno/periodo/marcati/header/stampa
+e export aggregato trasportano numeratore e denominatore; si sommano e poi
+si divide, senza media delle medie. Media Getnet non aggiunta nella V1.
+
+Oracoli sintetici: POS 1000 + Getnet 9000 -> media POS 1000, non 10000;
+solo importati o soli negativi -> N/D. Il saldo economico misto rimane distinto.
+
+### 8.1.3 Geometria oraria firmata
+
+F: LoadHourlySalesAsync:515-530 normalizza sul solo massimo positivo;
+HourlySalesPoint.BarHeightPx:1479 usa Math.Max(0,...); XAML:281-282 disegna
+solo dal fondo. La parita numerica non dimostra un negativo visibile.
+
+Modifica piccola del plot esistente, senza nuova libreria/runner: linea zero
+comune e due meta nella stessa altezza disponibile, positivi sopra e negativi
+sotto. Scala max(abs(amount)) in decimal anche per Int64.MinValue; solo
+coordinate finali UI in double finite. Altezze positive/negative non negative,
+segno determina lato/stile, tooltip conserva il valore. Tutti zero -> asse
+senza barre; soli negativi -> barre effettive sotto zero. GetHourlyPeakText
+distingue il movimento negativo da una giornata senza dati.
+
+HIST07 mantiene hourly_parity e aggiunge hourly_signed_geometry: dopo
+UpdateLayout e realizzazione container, BoundsIn/IsRenderedWithin esistenti
+verificano asse visibile, ActualHeight negativo>0 sotto zero e dentro plot,
+positivo sopra lo stesso asse, nessun clipping. Riusare D/D+1 soli negativi
+e variante mista; somme corrette con barre invisibili devono fallire.
+Focus/tastiera/DPI/dimensioni minime restano le prove previste.
+
+### 8.2 Permessi, operatore e azioni
+
+Riepilogo globale mantiene DailyCloseView. Registro mantiene RegisterView e
+RegisterViewAll. Storico senza cassiere compare solo nella vista globale
+autorizzata, mai in "mie vendite" o filtro operatore preciso; importatore non
+diventa cassiere. Per i nativi il filtro indica l'operatore del singolo movimento,
+anche quando il reso e registrato da un operatore diverso dall'originale.
+
+Il ramo ricerca attuale bypassa il filtro operatore del ramo periodo:
+nel percorso comune ricerca/dettaglio/export devono usare le stesse
+predicazioni autorizzate, senza fallback unscoped.
+
+Capacita storico: HasItemLines=false, CanRefund=false,
+CanVoidNativeSale=false, CanReprintNativeReceipt=false.
+Il livello operativo verifica origine/scope prima di qualsiasi inoltro a
+GetSaleDetails/reso/ristampa nativi, anche se invocato fuori dal pulsante.
+Nessun ID storico numericamente uguale a un SaleId passa a tali metodi.
+Dettaglio dedicato di sola lettura: riferimenti/provenienza e
+"Dettaglio articoli non disponibile". Nessuna boleta originale simulata.
+
+Sessione cassa, chiusure consolidate, checkout e stampe chiusura restano nativi.
+Eventuale stampa analitica usa un renderer dedicato e titolo riconoscibile.
+
+### 8.3 Export tipizzato
+
+F: EscapeCsv corrente sostituisce il punto e virgola con virgola, e lossy.
+Serializzatore puro nuovo nel Core, senza estenderne ciecamente l'uso
+ai contratti nativi non interessati:
+
+- UTF-8, separatore ;, header/schema stabile; quote e CR/LF secondo CSV,
+  doppio apice raddoppiato, nessuna sostituzione distruttiva dei caratteri.
+- Testi esterni quotati e neutralizzati se iniziano, anche dopo whitespace/control,
+  con =, +, -, @. Regola documentata per colonna Text, conservando grezzo nel DB.
+- ClpAmount Int64 invariant senza migliaia: i negativi restano numeri, non
+  vengono trasformati dalla protezione applicata ai testi.
+- ID e codici rimangono stringhe nei byte, compresi zeri; niente formule Excel
+  del tipo ="...". CSV non trasporta tipi: per preservare zeri nell'apertura
+  Excel va importata la colonna come Testo. Non promettere auto-detect affidabile.
+- Campi minimi: versione/origine/chiave, data commerciale, tipo/importi,
+  provider/namespace/riferimento storico, lotto, ID nativo nullable e cassiere
+  nullable. Nessun document_status fiscale inventato per Getnet.
+
+SalesReportCsvSerializer/SalesReportCsvRow in Core: header e righe tipizzate,
+quoting/neutralizzazione/formattazione, nessun WPF/Data/IO/sessione. Testabile
+su Mac senza link indiscriminati di sorgenti WPF. WPF mantiene scelta percorso,
+autorizzazione, IO e pubblicazione atomica: SalesReportExportService nel livello
+WPF lavora su worker e usa le pagine Data sotto token. La query Data fornisce
+la verifica breve del token; il coordinatore e OperatorSession emettono il
+permit di §8.3.1, chiudendo tutte le risorse DB prima del rename in WPF.
+
+L'export funzionale con riferimenti e dati reali e locale/privato, soggetto
+a permessi e scope, mai artifact CI. Scrittura fuori Dispatcher, temp file
+nella destinazione scelta e pubblicazione finale soltanto a completamento;
+cancellazione/disco pieno non lasciano un report finale apparentemente completo.
+
+### 8.3.1 Pubblicazione CSV: permit breve e IO fuori dai lock
+
+F: il lock SQLite non serializza ChangeOperatorAuthority/InvalidateAuthorizationState,
+che pubblicano sotto il Gate del latch. R2 manteneva SHARED durante rename:
+non chiudeva la race di revoca e bloccava writer durante IO non limitabile.
+
+Un solo protocollo minimo:
+1. IO su worker: bytes completi in temporaneo privato, stream chiuso, hash/byte
+   count; token, copertura e intenzione destinazione/overwrite catturati.
+   Nessun dato finale visibile sotto il nome destinazione.
+2. Verifica breve scope/token sul DB esistente; chiudere transazione, connessione
+   e ogni guard DB. Nessuna lettura lunga sino al filesystem.
+3. Validazione completa lease/store fuori dai monitor e dalle connessioni DB,
+   catturando proof/versione/scadenza; rilasciare _sync. Poi breve gate del
+   SalesReportSnapshotCoordinator e confronto dello stamp committato col token.
+   Nessun IO nel successivo callback e nessun _sync riacquisito sotto Gate.
+4. OperatorSession usa il confine esistente TryReadOperatorAuthorityIf del
+   latch: ricontrollo in-memory di epoch, versione operatore, permesso esatto,
+   generation e scadenza; cattura SalesReportPublicationPermit immutabile.
+   Bind a export ID, token/policy/copertura, hash/byte, destinazione e policy
+   overwrite. Ultimo cancel/scope-version check in-memory e single-flight
+   dell'export impediscono doppio avvio. Nessuna SaleKind o guard vendita fittizio.
+5. Punto 4 e la linearizzazione. Rilasciare gate, lease di ammissione e monitor;
+   soltanto ora iniziare pubblicazione destinazione, fuori da tutti i lock DB
+   e autorizzazione. Nessun callback UI/logging/filesystem sotto latch.
+
+Ordine: preflight lease/store (_sync) e rilascio -> coordinator -> Gate con
+soli check in-memory. Mai _sync/store/DB/filesystem sotto quel callback.
+I writer ufficiali pubblicano lo stamp prima del
+rilascio del proprio confine: mutazione prima del permit -> ReportSnapshotStale.
+Revoca/cancel prima del permit -> pubblicazione negata. Revoca/cancel o dati
+cambiati dopo -> completamento gia autorizzato per il token del permit, senza
+ulteriori letture sotto autorita scaduta. Il file non promette di essere lo
+stato piu recente al momento della visibilita.
+
+Fase destinazione dopo permit non cancellabile: UI "Finalizzazione", attesa
+del ritorno reale, nessun Task.WhenAny che abbandona un publisher. Se occorre
+staging same-volume, copiarvi dopo il permit i bytes gia congelati e chiudere
+prima della primitive finale; niente lock DB/autorita mentre copia o rename.
+Atomicita finale solo con primitive supportata dalla destinazione: se non
+garantita, errore esplicito, niente fallback delete+move.
+
+Default NoOverwrite: target presente/apparso -> errore e preservazione.
+ReplaceApproved: consenso esplicito per quel percorso prima del permit,
+sostituzione atomica supportata, senza cancellazione preventiva. Il consenso
+e riferito al path; non si promette un CAS sull'identita sotto writer filesystem
+arbitrari. Nessun overwrite automatico dopo un esito incerto.
+
+Esiti separati: authorizationGranted, snapshotAuthorized, publicationOutcome,
+destinationIoElapsed e thresholdsPassed. Il budget 1 s e una misura sulla
+fixture, non una cancellabilita garantita di rete/storage. Rename riuscito
+oltre budget -> Published funzionale e FAIL prestazionale, mai "nessun file".
+Dopo errore ambiguo attendere ritorno e riconciliare solo target/temp con
+hash/byte del permit: contenuto coincidente -> pubblicazione osservata;
+mancata pubblicazione dimostrabile -> NotPublished; diverso/non verificabile
+-> PublicationOutcomeUnknown e decisione manuale. Niente retry/letture DB.
+
+Dentro HIST07, casi chiusi: revoke_before/after_permit, data_before/after_permit,
+cancel_before/after_permit, destination_error, delayed_success e
+preexisting_no_overwrite/approved_replace. Durante IO ritardato dimostrare
+writer POS e revoca non bloccati dall'export. Verificare filesystem osservato,
+token dichiarato e verdetto prestazionale separati; nessun nuovo runner.
+
+## 9. UX, sicurezza input e reattivita
+
+Stati: Selection -> Analyzing -> PreviewReady / NeedsEvidence / PreviewBlocked.
+Poi WaitingMaintenance -> PreparingBackup -> Applying -> Committing ->
+Completed oppure ReconcilingOutcome. Prima del commit: CancelRequested ->
+RollingBack -> Cancelled. PreviewStale e FailedBeforeCommit hanno motivi
+specifici e azioni per riprendere.
+
+Selection: piu XLSX, profili, shop destinazione, esercente, CLP e interpretazione
+oraria visibili. Preview: periodo effettivo/parziale, vendite/annullamenti/
+respinte/duplicati/conflitti/scarti, lordo e saldo delle sole nuove righe,
+netto e copertura distinti. Receipt: conteggi/somme, operation/batch ID,
+periodo e gestione lotto; default non distruttivi.
+
+NeedsEvidence non impedisce la preview ma disabilita apply con il dato mancante.
+Errori devono distinguere file inaccessibile/corrotto, valuta, formula, header,
+conflitto, dati cambiati, lease, backup, manutenzione e disco pieno.
+Nessun messaggio generico "successo" con scarti economici nascosti.
+Escape annulla prima del commit quando sicuro; durante commit indica attesa
+esito. Focus iniziale/ripristino, Tab/Enter e messaggi localizzati coerenti.
+
+Dialog categoria D: DialogShellWindow, CenterOwner, owner
+OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), risorse title/footer comuni;
+niente Left/Top, Loaded sizing o clamp fuori base. Non riportare progress/griglie
+nell'input dell'ombra corretto dai commit recenti. 1024x768 richiesto,
+1024x600 best effort documentato; DPI 100/125%, nested/monitor da qualificare.
+
+Reader: ExcelDataReader 3.9.0 e ClosedXML 0.105.1 gia referenziati, senza upgrade.
+Non copiare il reader fornitori che trattiene tutte le stringhe, formatta con
+CurrentCulture, arrotonda quasi-interi e puo perdere l'ora DateTime.
+Riutilizzare soltanto helper di IO/limiti/XML/cancellazione realmente sufficienti,
+con estrazione minima e test dei consumer precedenti se estratti.
+
+Limiti proposti, da verificare contro gli originali PRIMA del congelamento:
+20 file, 32 MiB compressi/file e 128 MiB/batch; 4096 entry ZIP/file;
+256 MiB decompressi/file, 1 GiB/batch; metadata workbook/relazioni 4 MiB;
+60000 righe/foglio, 100000 selezionate, 256 colonne, 2 milioni di celle/file
+e 4 milioni/batch, 32767 caratteri/cella,
+16 milioni caratteri trattenuti essenziali nel piano.
+Contare i byte realmente letti, non fidarsi solo delle dimensioni ZIP dichiarate.
+Limite esplicito su shared strings e XML, DTD proibite/XmlResolver null,
+nessuna estrazione ZIP su percorso arbitrario. Timeout analisi e token
+controllati per blocchi piccoli, anche su XML/shared strings.
+
+Formule nei campi contrattuali sono bloccanti, senza usare cache Excel o
+valutazione ClosedXML. Riferimenti workbook esterni non vengono risolti:
+dipendenze economiche esterne bloccanti; hyperlink passivi ignorati, mai aperti.
+Rifiutare encrypted, xlsm, HTML travestito, XLS o altro formato non supportato
+nella V1 con diagnostica precisa. Nessuna esecuzione macro/rete.
+
+Parsing/hash/dedup/backup/apply/CSV su worker; snapshot immutabili, niente accesso
+a ObservableCollection UI dal worker. Preview/pagine 200 righe e recycling,
+mai tutte le 76 colonne per ogni riga in DataSet duplicati. Progress massimo
+5 notifiche/s, non una per record. Query/lookup dedup a blocchi con parametri
+entro limite SQLite; paging keyset e aggregazioni SQL, senza caricare tutto
+lo storico per un KPI.
+
+## 10. Performance da qualificare
+
+Budget proposti, NON misure. Congelarli nel manifest/protocollo prima delle
+corse; cambiarli richiede una revisione motivata e nuova qualifica, mantenendo
+il FAIL precedente. Nessun rialzo retroattivo.
+
+| Metrica/unità | Windows build host di riferimento | Win7 SP1 target minimo identificato |
+| --- | --- | --- |
+| Analisi dataset sintetico 50000 righe, elapsed | <=30 s | <=60 s |
+| Apply DB incluso commit, esclusi backup e attesa ammissione | <=15 s | <=30 s |
+| Backup verificato su DB fixture di dimensione dichiarata | <=60 s | <=60 s; baseline del DB reale separata |
+| Drain manutenzione / busy SQLite | 30 s / 5 s, limiti correnti | Identici |
+| Incremento PrivateBytes sul carico | <=150 MiB | <=150 MiB |
+| Picco CAMPIONATO PrivateBytes complessivo | <=700 MiB | <=700 MiB |
+| Dispatcher heartbeat p95 / massimo | <=100 ms / <=500 ms | Identici |
+| Cancel analisi, riscontro dal token | <=1 s | <=1 s |
+| Cancel apply cooperativo e rollback | Riscontro <=1 s; rollback <=10 s sulla fixture; chiamate native pendenti misurate a parte | Identico; busy/fence possono richiedere il limite SQLite corrente |
+| Query mista aggregato/pagina con proof gia valide, warm | <=500 ms | <=1000 ms |
+| IO finale CSV su destinazione fixture qualificata | <=1 s osservato, fuori dai lock; successo oltre budget resta Published | Identico; non garanzia di cancellabilita per destinazioni arbitrarie |
+| Ricostruzione cold proof sui 10000 nativi F-MIXED | <=30 s | <=60 s |
+
+Misurare separatamente avvio processo, generazione fixture, parse, dedup,
+hashing, proof cold/warm, backup, attesa ammissione, insert/trigger, commit,
+rollback, query mista e export. I costi nuovi di revision/proof non sono esclusi
+dal servizio. Riconciliare tempo servizio con tempo processo e supervisione;
+nessun PASS sulla sola fase piu favorevole.
+
+Protocollo HISTORY-MEASUREMENT-v2 congelato prima delle corse:
+- Thread background dedicato, Stopwatch monotono, tick nominali 50 ms; puo
+  osservare lo stallo anche mentre il Dispatcher non esegue callback.
+  Al massimo un proprio probe Dispatcher pendente, priorita dichiarata.
+- Ogni slot: sequence, phaseId, dueTicks, observedTicks, probeId,
+  posted/completedTicks o pendingAge. Ogni fase ha start/end monotoni e
+  expectedSlots ricalcolato dal validator dalla griglia temporale, non fidato
+  dal valore autocompilato. Slot mancanti/saltati registrati come gap.
+- Il thread continua a registrare l'eta del pending durante lo stallo.
+  Niente burst di campioni inventati al risveglio o recupero retroattivo di
+  tick. Callback tardiva conserva la latenza completa dall'originale post.
+- Sequenze uniche/ordinate, expected/observed/completed/pending/dropped/overflow
+  riconciliati. Gap non spiegati, overflow, drop, pending finale o fasi senza
+  campioni obbligatori rendono measurementCompleted=false. Venti superstiti
+  non bastano. Almeno 20 probe completi nel carico e tutti gli slot previsti.
+- P95 nearest-rank ceil(0.95*N) delle latenze dei probe reali completati;
+  nessun outlier/cold rimosso. Il massimo include il lower bound dei pending:
+  uno stallo non scompare perche non ha ancora completato.
+- PrivateBytes su background ogni 100 ms, propria sequenza/expectedSlots/gap.
+  E un PICCO CAMPIONATO, non una misura garantita dell'assoluto picco istantaneo.
+  Nessun GC forzato; buffer bounded con overflow esplicito.
+- Suspend/resume, clock awake incoerente, sessione/desktop non qualificati
+  producono environmentValid=false. Non interpolare attraverso sospensioni.
+- Campi separati measurementCompleted, environmentValid, thresholdsPassed.
+  PASS richiede tutti e tre veri, receipt/identita valide e supervisione conclusa.
+  Il validator cart esistente conserva il proprio contratto, non certifica import.
+
+Registrare CPU/RAM/storage/OS/architettura/CLR e toolchain, versione policy,
+manifest e protocollo. Una variazione dei budget e una nuova revisione prima
+delle prove successive; il precedente FAIL resta. Full load e smoke distinti:
+F-LOAD verifica import, una sola estensione F-MIXED verifica query/join/proof/
+filtri, senza moltiplicare i benchmark. Gli originali sono un gate privato.
+Il POS non promette throughput vendite durante manutenzione: qualificare
+rifiuto dell'ammissione, reattivita UI e ripristino scanner/checkout.
+
+## 11. Inventario strumenti e modifiche future
+
+| Tool/file osservato | Capacita reale | Decisione futura/test |
+| --- | --- | --- |
+| SupplierExcelImportReader/Limits | Bounds/token/XML, conversioni non adatte | Riuso selettivo; reader Getnet nuovo, precisione/bounds/regressione helper |
+| SqliteOnlineBackup | Snapshot verificato pubblicato completo | Riuso; backup prima fence, fail/cancel senza apply |
+| SchemaMigrationRunner/Registry | Ledger/checksum/detector e backup migration | Estensione 0015 per dati, operation receipt, proof/revision trigger; immutabilita storico |
+| SqliteConnectionFactory | Open puo creare; OpenAsync attende RegisterConnection sync | Authority demand, opener esistente per recovery, registrazione async cancellabile |
+| OperatorSession/revocation latch | Commit final fence, ma gate use/maintenance senza token | Capability dedicata e overload ct; race/expiry/ownership waiter |
+| App/CLI/harness/coordinator | Bootstrap diversi, alcuni read nominali fanno seed | Lease condivisa Data prima di ogni primo write, tabella entry point §6.3 |
+| Writer nativi/outbox/proof refresher | Commit separati nelle facciate interessate | Hook circoscritti CommitAndPublishReportRevision, economia invariata; interleaving UI |
+| New-QaPlan | Cinque runner Windows attuali | Tre step storici (smoke/load/crash), otto in All, selezione con dipendenze chiuse |
+| Invoke-QaProcess | Ogni chiamata crea work/data root nuova e Job posseduto | Una sola chiamata per CrashProbe; nessun secondo launcher |
+| Invoke-QaPlan/Assert-QaEvidence | Partial tests oggi specificamente functional | Raccolta/checkpoint storico su ogni raw status; structural/privacy separata da PASS |
+| Export-QaSmokeEvidence | Allowlist nomi/limiti, non catena upload | DTO sicuri anche parziali + proiezione finale/manifest di upload |
+| Test-Win7PosAutonomousTests | AST/mock e Runtime PowerShell sintetico | Otto mapping All, negativi di receipt/partial/crash/proiezione, Runtime senza WPF |
+| check-owned-catalog-qa / required gates | Node18+, test supervisore e output gate completo | Riusare, nessun gate generale duplicato o output troncato |
+| run-functional-completion-smoke | 20 risultati distinti, 60000 ms/processo | Invariato; crash/storico fuori dal functional20 |
+| UiSmokeHarness.Program | System.Windows.Application, --data-dir e automated dispatch | Owner prima init/seed, nuovi flag e verifier senza bootstrap |
+| Win7PosPerformanceValidation | Specifico cart; concetti completed/environment/threshold | Non usarlo per import; validator storico v2 con sampler background |
+| csproj Core.Tests/harness | Solo corpus attuali; harness non copia fixture storiche | Content/CopyToOutputDirectory minimi, hash/lookup da BaseDirectory |
+| ci.yml upload autonomous QA | Ricorsivo qa JSON/TXT/LOG/TRX/CSV/PNG, non solo smoke | Upload due percorsi esatti del pubblico validato; test canali/ZIP/manifest |
+| wpf-build/release-pack letti | Output WPF/functional/dist, non la root raw storica | Solo wpf-build: bundle QA manuale net48/x86 separato §16.1; Release Pack operativo invariato |
+| Suite Win7/Hardware | BLOCKED_EXTERNAL, niente executor fisico | Checklist del candidato, nessuna qualifica dedotta |
+| Supabase/staging/cloud | Nessun protocollo storico V1 | Fuori scope, nessuna invocazione |
+
+Il test AST resta una tecnica dei test del supervisore: non e l'API operativa
+per i worker. Non dot-source dell'orchestratore con entrypoint operativo.
+Se un helper va riusato, estrarre solo funzioni pure in un modulo minimo,
+senza duplicare launcher/Job/identita/cleanup.
+
+## 12. Harness, crash posseduto e pubblicazione delle evidence
+
+Tutti i nuovi script/flag/receipt sotto sono PROPOSTI, non disponibili oggi.
+Wrapper scripts/run-historical-sales-import-smoke.ps1 con Mode Smoke/Load/
+CrashProbe. Il solo processo esterno e avviato da Invoke-QaProcess: stessa
+supervisione/Job, root breve isolata, deadline/cancel/cleanup/checkpoint.
+Il wrapper invoca il harness sequenzialmente con &, senza Start-Process,
+gestione autonoma di WaitForExit/Job, kill per nome, nuovo Invoke-QaProcess,
+dot-source operativo o estrazione AST nel runtime. Per i soli holder/contender
+B riusa il modulo esistente esteso come §12.2, non un launcher nuovo.
+
+Nuovi flag harness --historical-sales-import-smoke, --historical-sales-import-load,
+--historical-sales-import-crash-probe, --historical-sales-import-crash-verify,
+--historical-sales-import-foundation;
+riuso --data-dir e --diagnostics-dir; contesto nuovo --run-id, --run-nonce,
+--source-fingerprint, --fixture-version, --receipt e hash binari/manifest.
+D e il --data-dir canonico derivato da WIN7POS_DATA_DIR; nessun DB sotto la
+root lunga dei report. Ogni invocazione acquisisce il proprio owner prima DB.
+
+New-QaPlan Windows:
+| Step | Dipendenze | Evidence/budget |
+| --- | --- | --- |
+| historical-sales-import-crash | build-harness, soli componenti B | historical-sales-foundation-v3; supervisore360 s, corpo<=330 s, cinque scenari B sotto |
+| historical-sales-import-smoke | build-harness | historical-sales-smoke-v3; supervisore 90 s, corpo <=60 s |
+| historical-sales-import-load | build-harness + smoke storico | historical-sales-load-v2; supervisore 240 s, corpo <=180 s |
+
+Nuovo parametro orchestratore -HistoricalSalesMode All/Smoke/Load/CrashProbe,
+default All. Seleziona solo i nuovi step; conserva cinque runner, required
+gates/build e altre dipendenze. All=8 runner, Smoke=6, CrashProbe=6,
+Load=7 includendo il suo prerequisito Smoke. Non lasciare Load dipendente da
+uno step escluso. Crash B non dipende dallo smoke C. Failed cleanup blocca
+i dipendenti come oggi; un FAIL crash con cleanup confermato lascia raccogliere
+gli altri step indipendenti, mantenendo FAIL finale. Functional20 e budget
+60000 ms invariati.
+
+### 12.1 Receipt smoke e load
+
+Schema proposto smoke win7pos-historical-sales-qa-v3, protocolVersion=3,
+nome privato historical-sales-results.json.
+Scenari/assertion obbligatori preservati e completati:
+
+| Scenario ID | Assertion ID obbligatori |
+| --- | --- |
+| HIST01_PROFILES_PREVIEW | profiles_detected, header_mapping, exact_values, text_ids, policy_visible, invalid_input_blocked |
+| HIST02_APPLY_REOPEN | durable_receipt, manifest_totals, reopened_records, operational_invariants |
+| HIST03_IDENTITY_DEDUP | unchanged_zero_new, renamed_reordered_overlap_zero, distinct_ids_kept, conflict_blocked |
+| HIST04_STALE_AUTH_SCOPE | permission_revoked, operator_changed, shop_changed, epoch_changed, precommit_revocation |
+| HIST05_ATOMIC_CANCEL_RECOVERY | cancel_rollback, precommit_fault_rollback, disk_fault_safe, lost_response_reconciled |
+| HIST06_BATCH_CANCEL_REIMPORT | owner_only_undo, duplicate_batch_not_owner, three_cycles, audit_retained |
+| HIST07_REPORTS_EXPORT | signed_totals, hourly_parity, operator_scope, tenant_scope, detail_routing, csv_contract, native_ticket_average, snapshot_invalidation, export_publication_authorization, export_publication_outcome, coverage_state_no_disclosure, hourly_signed_geometry |
+| HIST08_UI_LIFECYCLE | keyboard_focus, dialog_standard, nonblocking_dispatcher, stale_result_ignored, reopened_receipt |
+
+HIST05 failpoint controllati non sono un vero crash: B-D07 e separato.
+Envelope chiuso: runId/sourceSha/sourceFingerprintSha256, hash harness/WPF/
+fixture, versioni policy/protocollo, start/end/duration monotoni, identita
+processo e architettura, status/completed, summary e results, lastCheckpoint.
+Niente testo libero da celle/Exception.ToString. Ogni risultato contiene ID,
+rawStatus, completed, durationMs, assertionResults e soli counters del manifest.
+PASS smoke: tutti otto e ogni assertion completati; summary riconciliato.
+Checkpoint atomico dopo ogni scenario e fase, con flush; timeout dopo HIST03
+deve conservare quei risultati e l'ultimo checkpoint, senza promuovere i restanti.
+
+Load: historical-sales-load-results.json, schema
+win7pos-historical-sales-load-v2, protocolVersion=2. Un solo HIST_LOAD_50K
+con check ID: fixture_identity, exact_counters, phase_measurements,
+memory_budget, dispatcher_budget, cancellation_budget, mixed_query_budget,
+ownership_cold_warm, snapshot_invalidation, maintenance_writer_exclusion,
+environment_identity. Contatori F-LOAD/F-MIXED e campioni §10, inclusi
+measurementCompleted/environmentValid/thresholdsPassed. La fixture mista
+estende la medesima corsa, non un secondo benchmark ridondante.
+
+PID bootstrap PowerShell diverso dal PID harness: correlare runId/nonce,
+hash, process creation time, intervallo e Job, non uguaglianza dei PID.
+PASS richiede anche exit esterno corretto, cleanup e zero processi rimasti.
+
+### 12.2 CrashProbe: gate B completo, stesso DB e recovery reale
+
+Il comando B e C-CRASH con -HistoricalSalesMode CrashProbe, non C-WINDOWS
+default All. Build/gate/Core/CLI e cinque runner preesistenti restano; Smoke/
+Load/report C non sono dipendenze. La receipt B contiene esattamente cinque
+scenari e tutte le varianti sotto, non certificati dal solo hot journal.
+
+| Scenario B | Assertion/varianti chiuse obbligatorie | Requisiti |
+| --- | --- | --- |
+| HIST_CRASH_HOT_JOURNAL | same_existing_database, prepared_sentinel, reached_after_spill, expected_abrupt_exit, journal_recovery_completed, atomic_data_and_revision, operational_invariants, owned_process_cleanup | B-D07 |
+| HIST_B_COMMIT_AUTHORITY | apply_revoke_before_insert, apply_revoke_precommit, undo_revoke_precommit, expiry_before_commit, operator_permission_changed, linearized_commit_once | B-D03 |
+| HIST_B_PROCESS_ADMISSION | real_holder_contender, sqlite_busy_bounded, workflow_cancel_no_orphan, auth_cancel_no_orphan, maintenance_cancel_no_orphan, lock_order_no_deadlock, commands_cart_restored | B-D05/B-D12 |
+| HIST_B_ENTRYPOINT_AUTHORITY | wpf_normal_rejected_before_init, wpf_safe_rejected_before_init, cli_rejected_before_seed, harness_rejected_before_init, distinct_databases_admitted, case_shortpath_alias_collide, reparse_hardlink_rejected, restart_reacquires | B-D05/B-D12 |
+| HIST_B_BACKUP_RESTORE | backup_validate_publish, aux_scope_reject, candidate_swap_rebind, rollback_restore, epoch_stales_plan, mapping_fk_preserved, reimport_zero, all_handles_released | B-D10/B-D13 |
+
+B usa servizi/capability/backend e bootstrap reali disponibili nella tranche.
+Catalogo in HistoricalSalesCrashProbe.cs nel medesimo harness: niente wizard
+o report C. Wrapper Mode CrashProbe invoca anche il nuovo flag PROPOSTO
+--historical-sales-import-foundation con scenario/variante chiusi e fixture
+autonome sotto D; crash/verify ricevono invece lo STESSO path canonico.
+Nessun runner aggiunto per requisito.
+
+Concorrenza: & sequenziale basta per crash/verify, non per holder/contender.
+Estendere minimamente l'esistente Invoke-Win7PosWaitedProcess in
+Win7PosAcceptanceProcessRunner: callback interno OnStarted/Ready, deadline
+assoluta comune, identity da handle/PID/creationTime/exeHash, ritorno/cleanup
+bounded. Rimuovere il secondo WaitForExit illimitato e il check del solo PID;
+test in Test-Win7PosOwnedProcessIdentity esistente. Stesso Job esterno
+ereditato, niente launcher parallelo o nuovo Job.
+
+Callback attende readiness nonce-bound e avvia il contendente con lo stesso
+helper e tempo residuo. Hook nei veri bootstrap WPF normale/safe, CLI e harness,
+dopo owner e prima del primo write; non due copie artificiali del sidecar.
+Holder CLI/harness evita che il mutex UI WPF mascheri l'ammissione DB.
+Contendente WPF in QA posseduta attraversa il bootstrap vero senza dialogo
+inatteso. DB distinti: holder CLI/harness A e contendente B ammessi; non si
+promette una seconda UI contro il single-instance WPF preesistente.
+Solo root sintetica/nonce validi, niente account/rete/DB operativi.
+Sentinel/hash del DB negato invariati, init/seed non eseguiti; errori e timeout
+rilasciano gli esatti processi e lease posseduti.
+
+Budget aggregato NUOVO e congelato prima delle prove: 360 s supervisione,
+330 s corpo. Hot journal<=90 s (limite R2 preservato), commit authority<=25,
+admission<=30, entrypoint<=120, backup/restore<=45, checkpoint/report<=20.
+L'aggregato include quattro scenari B aggiunti; non rialza il limite crash,
+functional20 o i cinque runner e non converte fallimenti in PASS.
+Smoke90/60 e Load240/180 invariati. Superamento -> raw TIMEOUT/FAIL.
+
+Un solo step esterno crea UNA root sintetica nuova D. Wrapper:
+1. Genera nonce N, registra run/source/binari/fixture e invoca con &
+   harness --historical-sales-import-crash-probe --data-dir D, contesto N.
+2. Cattura subito raw exit. Solo exit riservato 79 e checkpoint atteso
+   consentono la fase verifier. Uscita/startup diversa -> FAIL, non "crash OK".
+3. Invoca con & il medesimo binario --historical-sales-import-crash-verify
+   con D/N identici; nessuna nuova root e nessun Invoke-QaProcess interno.
+4. Raccoglie receipt, senza cambiare raw status worker; il Job esterno
+   supervisiona entrambi. Timeout/cancel/cleanup non confermato impediscono PASS.
+
+Worker, sotto owner:
+- Prepara esplicitamente F-CRASH nel DB sintetico: schema corrente, sentinel
+  durevole {runNonce,datasetId,fixtureVersion,baselineId}, oracolo dati e
+  revisioni iniziali. Checkpoint prepared con identita fisica/slot/hash.
+- Chiude la preparazione e usa il vero apply su DB esistente; modifica abbastanza
+  pagine per spill reale con DELETE/FULL/cache del prodotto invariati.
+- Prima del failpoint verifica journal con header valido e dati realmente
+  spillati nel main, non solo un file -journal non vuoto. Checkpoint
+  precommit_after_spill contiene nonce/identita, stato fase, hash main prima/
+  durante e caratteristiche journal; flush durevole FUORI dalla transazione.
+- Termina il SOLO processo corrente tramite helper OS di test per terminazione
+  improvvisa con exit 79, senza unwind/dispose/rollback applicativo. Non copiare
+  il vecchio launcher CLI e non chiamare questa prova power-loss hardware.
+  Il Job e la lease OS rilasciano i handle alla morte del worker.
+
+Verifier:
+- Prima di aprire SQLite controlla esistenza, identita attesa, checkpoint
+  prepared/failpoint, nonce e caratteristiche del journal. Se manca il DB,
+  e diverso, e ricreato o sentinel non coincide, FAIL; niente init/seed.
+- Acquisisce owner per lo stesso slot e OpenExistingForRecovery (§7.3),
+  Mode=ReadWrite senza Create. L'apertura/lettura puo eseguire il recovery
+  tecnico SQLite; non si promette readonly assoluto e non si elimina journal
+  dal wrapper. Eventuale SQLITE_BUSY/recovery fallito e FAIL finito.
+- Poi transazione breve senza mutazioni applicative: sentinel e baseline
+  invariati, dati/revisioni/receipt import precommit assenti, invarianti
+  native/stock/cart/outbox/cassa integri, integrity/FK validi.
+- Dimostrare journal prima del recovery, spill e recupero completato secondo
+  DELETE; non inferire tutto da "nonzero + zero batch". Un'eccezione controllata
+  rimane un test distinto. Postcommit/risposta persa resta B-D08.
+
+Receipt historical-sales-crash-results.json, schema
+win7pos-historical-sales-foundation-v3, protocolVersion=3: cinque risultati B
+e varianti esatte sopra, summary expected=executed=passed=5 per PASS;
+run/nonce/source/binari/fixture,
+prepared/failpoint/verifier checkpoint, process identity distinte, physical
+identity privata, workerRawExitCode=79 e workerRawStatus=FAIL, verifier exit,
+sentinel/baseline/recovery/invariants, completed/status esterno.
+Il risultato HIST_CRASH_HOT_JOURNAL conserva i check ID:
+same_existing_database, prepared_sentinel, reached_after_spill,
+expected_abrupt_exit, journal_recovery_completed, atomic_data_and_revision,
+operational_invariants, owned_process_cleanup.
+Startup fallito, checkpoint mancante, timeout, causa diversa o verifier non
+avviato non soddisfano il protocollo. Il PASS esterno certifica gli invarianti
+attesi, non riscrive in PASS il raw nonzero del worker.
+
+### 12.3 Diagnosi sicura e certificazione PASS sono contratti distinti
+
+ValidateHistoricalEvidenceStructureAndPrivacy accetta complete, fallite o
+parziali con schema chiuso, tipi/enum/versioni/nonce/identita e contenuto sicuro.
+Puo mancare la parte non eseguita; checkpoint elenca solo risultati conclusi
+piu il punto d'arresto, senza inventare assert. Proprieta sconosciute, chiavi
+JSON duplicate, campi sensibili o identita incoerente respingono il payload.
+
+CertifyHistoricalEvidencePass richiede invece tutti scenari/assert richiesti,
+counters/metriche/ambiente, causa ed exit attesi, completamento e cleanup.
+Un payload strutturalmente valido FAIL/TIMEOUT non e certificabile PASS.
+Contesto atteso viene dal run/manifest, non da expected autocompilati.
+
+Invoke-QaPlan estende row.tests e lastCheckpoint per TUTTI i tre tipi storici,
+su ogni raw status, PRIMA di eventuale certificazione. Un payload insicuro
+resta nel raw privato, escluso dal pubblico con diagnostico enum
+qa_history_receipt_privacy_rejected; primo errore invariato. Raccolta sicura
+delle parti concluse non cancella TIMEOUT/FAIL/NOT_RUN.
+
+Negativi futuri:
+- absent/empty/corrupt/stale/wrong run, duplicate JSON keys, extra fields,
+  hash/version/policy/identity differenti;
+- zero/missing/duplicate/unknown scenario o assertion; summary/counters errati,
+  fractional CLP, somme con respinte, completed falso;
+- metriche non finite, gap/drop/overflow/pending/suspend, ambiente non valido,
+  soglie superate e file modificato dopo hash;
+- exit0 senza assert, worker exit diverso da 79, failpoint non raggiunto,
+  DB assente/ricreato/sentinel diversa, verifier non avviato o recovery non provato;
+- timeout dopo HIST03 con tre risultati conservati; cancel/report non scrivibile,
+  export fallito, residui Job/identita errata, dipendenze bloccate e primo errore.
+
+Test-Win7PosAutonomousTests esercita i blocchi reali con AST solo NEI TEST,
+non un runtime alternativo. Runtime resta di soli figli PowerShell sintetici;
+il crash DB vero appartiene al gate Windows CrashProbe.
+
+### 12.4 Console, diagnosi disponibile e bundle del run corrente
+
+F: ci.yml carica oggi glob raw; R2 li sostituisce con una coppia sicura.
+R3 chiude anche lo stream principale: nel catch finale Write-QaReports
+l'orchestratore:610 serializza firstError intero su stderr e :612 stampa
+evidence path. Il wrapper functional:216-223 espone fallback analoghi.
+Due file di upload sicuri non impediscono questo leak console.
+
+Write-QaPublicConsoleEvent, helper piccolo nello stesso gruppo QA:
+DTO chiuso con schemaVersion, runId, suite, stepId, scenarioId/assertionId
+opzionali, rawStatus, code, secondaryCode e diagnosticCompleteness.
+ID da registro/manifest, status/codici enum; sconosciuti -> unknown /
+qa_unclassified_failure. Niente row, Exception.Message/ToString, arguments,
+host o path assoluti. Sostituire catch/preflight/report/proiettore e conclusioni,
+compresi wrapper pubblicamente invocati. Child stdout/stderr gia catturati
+rimangono privati, non vengono ristampati come fallback CI.
+Il workflow cattura inoltre stdout/stderr dell'orchestratore e dei wrapper
+pubblicamente invocati in un file raw privato e ripubblica solo DTO validati;
+non ristampa altre righe. Cosi anche errori prima del catch/module load o
+fallback host non passano come output libero. E redirezione dell'invocazione
+esistente, non un launcher/Job nuovo; output CI run/flag restano nel canale
+controllato. Il collector fallito emette soltanto una costante sicura.
+Serializer/DTO fallito -> sola costante
+WIN7POS_QA_PUBLIC_EVENT_FAILED code=qa_safe_console_failed.
+Run/step ID correlabili, non percorso assoluto. firstError raw intatto.
+
+Raw: OutputRoot/<runId> e root dati brevi conservate, input integri e transcript
+completo dei gate falliti. Nessuna pulizia/redazione in-place. Hosted retention
+raw limitata al job, dichiarata; originali richiedono host privato autorizzato.
+Pubblico deve pero conservare diagnosi UTILE dopo il job, non solo PASS/FAIL:
+
+| Produttore esistente | Dettaglio pubblico sicuro e consumer |
+| --- | --- |
+| Required gates/Core | Gate/test/assertion-template ID, expected/actual tipizzati, checkpoint, posizione source-relative verificata, transcript ordinato |
+| Product-image-profile | Check serializzazione/error mapping, expected/actual, fase e runtime |
+| Functional20 | Tutti venti esiti/parti concluse, failed assertion, expected/actual, ultimo checkpoint, tempo/budget/cleanup e capture sintetiche ammesse |
+| Authorization-lease | Causa/modo attesi e osservati, alias sintetici epoch/generation, checkpoint expiry/restart |
+| Bounded-logging | Counters/drop/budget attesi/osservati, checkpoint flush e cleanup, mai il segreto sentinella |
+| Product-paging | Pagina/probe/thread attesi/osservati e misure, contesto sintetico |
+| Nuovi tre step storici | Scenari/varianti/permit/copertura/geometry/campioni e checkpoint secondo registri chiusi |
+
+Raccogliere i valori ALL'ORIGINE negli assertion/result helper esistenti:
+FunctionalCompletionSmoke oggi conserva ex.Message, quindi solo il proiettore
+non puo inventare expected/actual. Per bool esistente expected=true/actual=false,
+scalari solo se osservati. Tipi pubblici: enum, bool, contatori/metriche finite,
+valori dichiarati sintetici e consentiti dal manifest; stringhe variabili
+sensibili diventano withheld, non hash di un segreto. Nessun secondo framework.
+
+check-required-gates mantiene intero transcript raw, non ultimi quattro messaggi.
+La proiezione conserva sequenza completa dei template riconosciuti e slot
+tipizzati; righe non esportabili -> diagnostic_line_withheld con posizione/
+motivo e diagnosticCompleteness=partial. Lacuna visibile, primo errore invariato,
+nessuna pretesa di diagnosi completa. Le assertion obbligatorie devono comunque
+avere evidence sicura sufficiente; mancanza impedisce certificazione PASS.
+
+Capture functional sintetiche: solo RenderTargetBitmap del controllo/view
+previsto, mai desktop. Verificare contesto fixture e testi visual-tree contro
+statiche/localizzazione/manifest prima del render; testo inatteso -> capture
+esclusa con motivo, non screenshot d'errore arbitrario. Ricodificare PNG senza
+metadata, bounds/dimensione/byte count/hash/capturePoint e run/fixture nel
+manifest. Riutilizzare punti visuali esistenti; non aggiungere runner.
+Se una capture richiesta non e esportabile, dichiarare la lacuna anziche
+qualificarla come disponibile dopo il job.
+
+Namespace pubblico UNIVOCO: PublicOutputRoot/<runId>/; default controllato e
+sibling dell'OutputRoot raw (in CI runner.temp/qa-public). Final assente,
+runId corrente validato, separazione dal raw/reparse/alias e collisioni in
+preflight. Nessuna selezione "ultimo bundle", nessun riuso/eliminazione di
+run precedenti. Staging sibling nuovo, stesso volume del final.
+
+Entry base chiuse:
+qa-results.public.json, qa-summary.public.txt, core-tests.public.json,
+historical-sales-smoke.public.json, historical-sales-load.public.json,
+historical-sales-crash.public.json, diagnostics.public.json,
+runner-diagnostics.public.json.
+Piu le sole visual/<capturePoint>.png enumerate dal registro sintetico
+validato. Unselected/partial -> stato esplicito, non PASS. Numero/byte/profondita
+bounded prima delle prove, niente extra o troncamenti silenziosi di evidence.
+CSV finanziari, workbook, DB/backup, trust, dump e path personali restano esclusi.
+
+Ordine di pubblicazione obbligatorio:
+1. Validare tutte entry/DTO/capture e scriverle nello staging posseduto.
+2. ZIP solo dalla lista validata, chiuso e completo.
+3. Calcolare bytes/SHA-256 ZIP.
+4. Scrivere upload-manifest.json FINALE esterno: schema/protocollo, run/source/
+   fixture e lista entry/hash, bytes/hash ZIP. Non inserirlo nel ZIP, evitando
+   il riferimento circolare al digest.
+5. Riaprire e verificare cross-binding run, lista esatta, entry/ZIP hash e limiti.
+6. Directory.Move dello staging al final del run, atomico sullo stesso volume,
+   senza overwrite; ricontrollare coppia pubblicata.
+7. Solo ora emettere output CI runId/publicRunId e publicBundleVerified=true;
+   default false. Valori ID/enum chiusi, niente path liberi negli output.
+
+Workflow ci.yml: costruire i due path ESATTI del run corrente:
+qa-public/<runId>/qa-public.zip e upload-manifest.json. Pre-upload verifica
+run/source/digest e coppia completata. always() condizionato al flag verificato
+del medesimo step/run attuale, mai un glob sul parent. Un bundle completo di
+una QA FAIL puo essere caricato per diagnosi; un projector fallito NON
+autorizza un bundle precedente o una coppia parziale. Dopo publish ma prima
+flag, un crash lascia bundle non qualificato per upload: dichiarare assenza,
+non recuperare "latest". Nessun servizio di retention aggiunto.
+
+Negativi nel test QA esistente: firstError con sentinella poi report non
+scrivibile/serializer rotto; codici tecnici utili presenti senza segreto su
+stdout/stderr e archivio; transcript completo ordinato con withheld espliciti;
+due run sullo stesso parent, collisione, secondo projector fallito,
+ZIP nuovo/manifest vecchio e inverso, directory senza flag e identita errata.
+Ispezionare byte console, manifest e ZIP e tutti i canali intercettati:
+command/process-result, stdout/stderr, TRX, summary, receipt, CSV e PNG inattesi.
+Niente fallback raw ne retry automatico.
+
+Export/proiezione obbligatoria fallita dopo PASS -> FAIL; un precedente
+FAIL/TIMEOUT/NOT_RUN resta primario, evidenceExportError e lacuna diagnostica
+separati. Raw TIMEOUT/BLOCKED_EXTERNAL preservati. Processi posseduti, cleanup
+bounded e dipendenti bloccati se non confermato; nessuna pulizia ricorsiva.
+wpf-build/Release Pack non introducono raw storico in bin/dist; gli output
+diretti dei wrapper interessati seguono la medesima policy console.
+
+## 13. Fixture, matrice eseguibile e comandi futuri
+
+### 13.1 Oracoli
+
+F-SMALL: righe e attesi letterali nel manifest, senza usare parser/query/helper
+di produzione per calcolarli. Shop/operatori/ID inventati.
+
+Esempio pubblico: vendita nativa +1000 carta, suo void -1000 registrato da un
+altro operatore; vendita contanti +2000 (tender 2500, resto 500) e reso
+parziale -500; storico +700 e
+annullamento -700. Lordo positivo=3700, rettifiche=2200, saldo=1500,
+Carta=0, Contanti=1500; due scontrini POS e due movimenti storici, sei righe.
+Operatore della vendita carta e del contante: saldo 2500; operatore void:
+-1000. Sconosciuto storico escluso dalle viste personali.
+Fixture separate: vendita a D e void D+1; altro shop, tenant ignoto/conflittuale,
+lotto annullato e ID interno storico uguale numericamente a un SaleId.
+
+F-CSV: attesi byte/stringa letterali per testo 000123, ID oltre Int32,
+A;B"C, multilinea, prefissi formula con spazio/tab e importo tipizzato -700.
+Parser CSV indipendente verifica il writer; non fare roundtrip solo con
+lo stesso helper.
+
+F-LOAD-v1: 50000 righe, due layout e 76 colonne nel moderno, senza dati reali.
+Legacy: 25000 vendite da 1000. Moderno: 23900 vendite da 1000, 100 annullamenti
+da -1000 e 1000 respinte da 1000. Attesi letterali: 48900 vendite,
+100 annullamenti, 1000 respinte, 49000 accettati, saldo 48800000 CLP.
+Seed/versione e hash manifest congelati; date sintetiche e policy controllata.
+Tutti gli ID distinti salvo duplicati esplicitamente previsti nelle fixture
+di dedup. La somma attesa e dichiarata indipendentemente dal codice sotto test.
+
+F-MIXED-v1: estensione del medesimo load, non nuovi dati reali. Ai 49000
+eventi storici accettati F-LOAD aggiungere 10000 movimenti nativi con outbox/
+proof sintetiche: 9000 vendite carta +1000 e 1000 reversal -1000, relativi
+a originali presenti. Attesi letterali: 59000 righe, saldo 56800000,
+9000 scontrini POS e media POS 1000. ID/timestamp collidono fra origini e
+sono previsti due segmenti di transizione; native ID e storico ID uguali
+non si confondono. Backdated insert +1000 -> 59001 righe/56801000 dopo refresh;
+vecchio cursor rifiutato. Varianti piccole separate per shop B, proof
+Unknown/Conflict/Dirty, mutazioni fra KPI/grafico/pagine/export e undo.
+
+F-KPI: POS1000 + storico9000 -> media POS1000; solo importati o soli negativi
+-> N/D. Giorni marcati con 1 scontrino da1000 e 3 da2000: media aggregata1750,
+non media delle medie1500. Manifest con attesi literal, non prodotti dal
+medesimo serializer/query sotto test.
+
+Distribuzione futura: contenuti chiusi di tests/fixtures/historical-sales-getnet-v1
+in Core.Tests.csproj e UiSmokeHarness.csproj con Content/Link e
+CopyToOutputDirectory=PreserveNewest; nessun nuovo package o upgrade/lock change.
+Lookup da AppContext.BaseDirectory o AppDomain.CurrentDomain.BaseDirectory,
+sottocartella fissa fixtures/historical-sales-getnet-v1, mai working directory
+o risalita al checkout. F-SMALL/F-CSV e oracoli letterali distribuiti; F-LOAD/
+F-MIXED/F-CRASH generati deterministicamente dal manifest/seed/protocollo con
+helper di fixture condiviso nei soli test/harness, senza introdurre logica QA
+nel runtime prodotto. Versioni/hash canonici del manifest e dei contenuti
+controllati; hash del workbook generato registrato, non fiducia nei timestamp
+ZIP non deterministici. Nessun file finanziario privato copiato nell'output.
+
+F-CRASH-v2: manifest sintetico con schema/protocollo corrente, sentinel e
+oracolo precommit espliciti, pagine sufficienti allo spill e limite finito di
+righe/tempo. La fase prepare e distinta dall'apertura verifier. Recordare
+impostazioni SQLite effettive e journal prima/dopo, senza cambiarle per
+forzare il PASS; se lo spill richiesto non e dimostrato la prova non passa.
+
+F-R3: estensioni piccole dei manifest esistenti, non nuove suite.
+F-MIXED-coverage usa A provato1000/U non attribuibile7000/GetnetA9000 e oracoli
+di §8.1.1.a; i dati U non compaiono negli output. F-SMALL D/D+1 e misto
+alimentano geometria reale signed. F-CSV include le varianti permit/revoca/
+mutazione/cancel/destinazione/overwrite con oracoli filesystem indipendenti.
+F-CRASH-v3 aggiunge i quattro subscenari B e relative varianti; nessun consumer C.
+Negativi pubblicazione: due run stesso parent, report/proiettore non scrivibile,
+sentinelle nei fallback, coppie stale/parziali e capture non declassificabili.
+
+F-PRIVATE: sette originali e audit ricevuto, solo nel perimetro privato.
+Attesi per file e complessivi esattamente quelli ricevuti; nessuna tolleranza
+su CLP/conteggi. Baseline temporale derivata solo dopo verifica Z.
+Il futuro manifest privato con percorsi/hash/attesi dovra essere fornito e
+conservato fuori repo/CI. Ora non viene creato ne inventato.
+
+### 13.2 Comandi
+
+I codici C-* sotto abbreviano i comandi, NON sono tool nuovi.
+Tutti sono FUTURA EXECUTION, non eseguiti in questa revisione.
+
+C-LOCAL (A/B, Mac o Windows sviluppo):
+~~~powershell
+pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Local
+~~~
+
+C-WINDOWS (comando canonico esistente; nella feature completa default All
+per C integrata, NON comando di completamento B):
+~~~powershell
+pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -OutputRoot C:\Dev\_codex-evidence
+~~~
+
+C-BUILD (solo build mirata necessaria fuori wrapper, non in parallelo):
+~~~powershell
+dotnet restore src/Win7POS.Wpf/Win7POS.Wpf.csproj --locked-mode
+dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+~~~
+
+C-QA-UNIT / C-QA-RUNTIME (solo sviluppo del supervisore se fuori gate canonico):
+~~~powershell
+pwsh -NoProfile -File tests/qa/Test-Win7PosAutonomousTests.ps1
+pwsh -NoProfile -File tests/qa/Test-Win7PosAutonomousTests.ps1 -Runtime
+~~~
+
+C-CORE-FOCUSED (diagnosi mirata necessaria, non duplicata dopo suite verde):
+~~~powershell
+dotnet restore tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj --locked-mode
+dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-restore --filter "FullyQualifiedName~HistoricalSales|FullyQualifiedName~Getnet"
+~~~
+
+C-ALL, futura tranche C integrata, parametro PROPOSTO esplicito:
+~~~powershell
+pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -HistoricalSalesMode All -OutputRoot C:\Dev\_codex-evidence
+~~~
+Raggiunge B + Smoke/Load C con relativi prerequisiti e artifact. Non duplicare
+build/test fuori wrapper dopo PASS, salvo nuova modifica o diagnosi motivata.
+
+C-SMOKE/C-LOAD/C-CRASH: nuovi argomenti PROPOSTI dell'orchestratore, non
+utilizzabili finche non implementati e verificati. Il wrapper riceve contesto e
+nonce dall'orchestratore e non viene lanciato come supervisore alternativo.
+~~~powershell
+pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -HistoricalSalesMode Smoke -OutputRoot C:\Dev\_codex-evidence
+pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -HistoricalSalesMode Load -OutputRoot C:\Dev\_codex-evidence
+pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -HistoricalSalesMode CrashProbe -OutputRoot C:\Dev\_codex-evidence
+~~~
+C-B e alias documentale di C-CRASH, non un altro tool/comando. CrashProbe
+raggiunge B-D03/05/07/10/12/13 con cinque scenari e liste chiuse §12.2, senza
+componenti C. Default All ha otto runner; CrashProbe e Smoke ne hanno6,
+Load ne ha7 perche include Smoke.
+I comandi non autorizzano alcuna esecuzione in questa sessione.
+C-PRIVATE: procedura UI/benchmark locale privata, dopo gate esterni.
+C-WIN7: pacchetto candidato/checklist specifica, non SDK/pwsh sul target.
+
+Prerequisiti F: SDK 10.0.301 e rollForward disable in global.json;
+PowerShell 7.4+, Node18+ per check-owned-catalog-qa, lock restore, Windows
+interattivo per harness net48/x86. Le librerie restano quelle referenziate.
+Non installare SDK/pwsh moderni sul POS Win7. I gate canonici comprendono gia
+dialog/required gates/test supervisore: non ripeterli senza una nuova ragione.
+Le modifiche al wrapper non autorizzano staging/live.
+
+### 13.3 Matrice di prove future
+
+Stato iniziale di tutte le prove: NOT_RUN; dove manca un asset, BLOCKED con
+raw BLOCKED_EXTERNAL. Timeout C-LOCAL/Core: limite corrente 3600 s; C-WINDOWS
+mantiene i limiti per step esistenti. S/L indicano 90/240 s; il gate B
+aggregato ha 360 s/330 s corpo con sottobudget chiusi §12.2.
+Per ogni riga PASS richiede anche identita/evidence valida; mismatch e FAIL.
+
+| ID/requisito | Ambiente e prerequisiti | Fixture/oracolo | Comando; tool/validator; timeout | Atteso e artifact | Dipendenza/sblocco |
+| --- | --- | --- | --- | --- | --- |
+| A-D01 due profili/header | Core/Data, SDK/Node | F-SMALL, mapping letterale | C-LOCAL; MSTest/TRX; 3600 s step | Riconoscimento ordine/accents, ambigui bloccati; TRX | A implementato |
+| A-D02 precisione/ID | Core/Data | F-SMALL/CSV, ID text/numerici unsafe | C-LOCAL; MSTest; 3600 s | Int64 esatto, zero/lettere conservati, perdita respinta; TRX | A-D01 |
+| A-D03 stati/segni/netto | Core/Data | F-SMALL, pending/null | C-LOCAL; MSTest; 3600 s | Respinte escluse, segni/reconciliation e coverage corretti; TRX | A-D01 |
+| A-D04 tempo | Core/Data, policy sintetica | Ora ambigua/inesistente, offset e confine mese | C-LOCAL; MSTest; 3600 s | Raw/ms/policy e date indipendenti PC; TRX | A-D01 |
+| A-D05 bounds/file safety | Core/Data | ZIP/XML corrupt/oversize/formule/link | C-LOCAL; MSTest; 3600 s | Errore finito/cancel, zero esecuzione o rete; TRX | Reader A |
+| B-D01 schema/mapping | SQLite sintetico, SDK | Nuovo/0014/ledgerless/invalidi e alias ambigui | C-LOCAL; MSTest/detector; 3600 s | Checksum preesistenti immutati, FK/unique, lookup deterministico; TRX | A; schema B |
+| B-D02 dedup/conflict | SQLite sintetico | Duplicati intra/inter-file, rename/reorder/overlap, ID distinti | C-LOCAL; MSTest; 3600 s | Zero nuove solo per identita provata; conflitto rollback; TRX | B-D01 |
+| B-D03 commit auth | Windows B, capability dedicata e fixture posseduta | Apply/undo e varianti revoca/expiry/operator | C-B (=C-CRASH); HIST_B_COMMIT_AUTHORITY, elenco §12.2;360/330s gate | Ogni variante obbligatoria, zero effetti negati o commit linearizzato; receipt foundation-v3 | Componenti B, nessun Smoke/Load C |
+| B-D04 tenant proof | Core/Data | N1/N2/N3/NX, hash/client/operation errati | C-LOCAL; MSTest; 3600 s | Esclusione coerente search/detail/export, zero fallback; TRX | Query B |
+| B-D05 processi/lock | Windows B, holder/contender veri nello stesso Job | DB posseduti, contesa SQLite/lock | C-B; HIST_B_PROCESS_ADMISSION + ENTRYPOINT_AUTHORITY;360/330s gate | Processi sovrapposti, busy finito/no deadlock, negazione prima write; receipt B | Estensione helper esistente e bootstrap B |
+| B-D06 cancel/disk/fault | SQLite sintetico | Failpoint ogni fase precommit, spazio simulato | C-LOCAL; MSTest; 3600 s | Rollback completo, primo errore conservato; TRX | Applier B |
+| B-D07 crash/journal vero | Windows B, owner e unico Job | F-CRASH, sentinel/spill/checkpoint | C-B; HIST_CRASH_HOT_JOURNAL; gate360/330s, subcase<=90s | Raw79 atteso, stesso DB recuperato, dati+revisione e cleanup; receipt B | Nessuna UI/report C |
+| B-D08 replay terminale | Core/Data B, permesso consultazione attuale | Commit, input rimosso, backup impossibile, altre revisioni/undo | C-LOCAL; HistoricalSalesReplayTests PROPOSTI, MSTest/TRX;3600s | Receipt originale e fingerprint conflict, zero file/backup/mutazione; dati/revisione durevoli insieme | B-D02/03; HIST05 e solo regressione supplementare C |
+| B-D09 undo/reimport | SQLite sintetico | Tre cicli e lotto duplicate-only | C-LOCAL; MSTest; 3600 s | Una sola versione attiva, ownership e audit conservati; TRX | B-D01/B-D02 |
+| B-D10 backup/restore | Windows B e SQLite sintetico | Mapping/batch, backup e restore epoch | C-B; HIST_B_BACKUP_RESTORE + test backup/restore gia esistenti | Reimportzero, piano stale, scope AUX e FK; receipt B/TRX | B-D09 e AUX B |
+| B-D11 no effetti operativi | Core/Data | Snapshot tabelle stock/sales/cart/outbox/cassa | C-LOCAL; MSTest; 3600 s | Nessuna variazione import/undo; TRX | Applier B |
+| C-H01..H08 UI completa | Windows interattivo, build-harness x86 | F-SMALL/CSV, assertion esatte par.12 | C-WINDOWS; HIST01..08/Assert-QaEvidence; S | Tutti 8 scenari e check completi, receipt smoke | B; wiring C |
+| C-R01 semantica movimenti | Core/Data e UI | F-SMALL signed + giorno successivo | C-LOCAL/C-WINDOWS; TRX/HIST07 | Giorno/periodo/Carta/grafico/CSV uguali ad oracolo, no doppio void | Query C |
+| C-R02 CSV puro/scope | Mac Core/Data e UI Windows | F-CSV distribuita, ID storico=nativo | C-LOCAL/C-SMOKE; serializer Core, parser indipendente/HIST07 | Quoting/formule/negativi, zero WPF reference Mac, routing negato; TRX/receipt | C-R01 |
+| C-P01 full/misto sintetico | Windows x86, ambiente qualificato | F-LOAD + F-MIXED, manifest/protocollo congelati | C-LOAD/C-WINDOWS; HIST_LOAD_50K/validator v2; L | Contatori, proof cold/warm, revisioni e campioni completi entro budget; receipt/metriche | Smoke PASS |
+| B-D12 entrypoint/attese | Windows B; fixture portabili solo per lifecycle | Entry reali, alias/DB distinti/cancel | C-B; HIST_B_ENTRYPOINT_AUTHORITY/PROCESS_ADMISSION;360/330s | Seconda autorita prima init, no waiter orfani, comandi ripristinati; receipt B | Mode CrashProbe, non All C |
+| B-D13 AUX/fixture | Mac Core/Data e Windows B | Context path/role errati, partial/candidate/rollback/fixture | C-LOCAL e C-B; test esistenti + HIST_B_BACKUP_RESTORE/aux_scope_reject;3600s Core o gateB | Publish/swap reali, nessun bypass/ricreazione, handle rilasciati; TRX/receipt | Context AUX e bootstrap fixture B |
+| C-R04 permit/export | Windows C | F-CSV interleaving/errore/delay/overwrite | C-SMOKE/HIST07 export_publication_authorization/outcome;90/60s | Nessun IO sotto lock, deny prima/allow dopo, writer procede, esito osservato distinto da timing; receipt | Permit/coordinator/OperatorSession C |
+| C-R05 coverage/geometry | Windows C + Core | F-MIXED-coverage, D/D+1, misto/zero | C-SMOKE/HIST07 coverage_state_no_disclosure/hourly_signed_geometry;90/60s | Totale ammesso10000 e media1000, nessun dato U, barra negativa realizzata; receipt/capture sintetica sicura | UI/query/copertura C |
+
+| C-R03 fotografia/KPI | Core/Data e UI | F-MIXED/F-KPI, insert nativo/void/proof/undo interleaved | C-LOCAL/C-SMOKE/C-LOAD; token/summary validator;3600/S/L | Un token per bundle/export, stale rifiutato, POS average esatta/N-D; TRX/receipt | Trigger e publication hooks C |
+| Q-F01 distribuzione | Mac Core/Data e Windows harness da CWD diversa | Content manifest/fixture hash output | C-LOCAL/C-SMOKE; lookup validator;3600/S | Tutte le fixture reperibili senza checkout/CWD, niente originali; TRX/receipt | Content csproj A |
+| Q-P01 protocollo misure | Test puri + Windows load | Slot mancanti durante apply, pending, drop/overflow/suspend | C-LOCAL/C-LOAD; validator measurement v2;3600/L | Nessun PASS con venti superstiti/gap o ambiente invalido; TRX/receipt | Sampler/validator C |
+| Q-U02 console/diagnosi | PowerShell/Node, soli sintetici | firstError sentinella + report rotto, assert tipizzati/capture | C-QA-UNIT/Runtime o gate canonico; console DTO e diagnostica;limiti correnti | Segreto assente anche stderr fallback, dettagli utili/withheld espliciti, primo errore conservato; console+bundle sicuri | Helper/produttori/proiettore C |
+| Q-U03 bundle current-run | PowerShell, parent comune a due run | Collisioni, secondo proiettore fallito, manifest/ZIP stale | C-QA-UNIT/Runtime o gate; manifest/flag validator | Solo due path del run verificato caricabili, nessun vecchio/parziale; artifact pubblici | Namespace/commit directory/workflow C |
+
+| Q-U01 upload effettivo | PowerShell/Node, soli sintetici | Sentinelle command/process/stdout/TRX/receipt/CSV/PNG | C-QA-UNIT/Runtime o gate; proiettore/ZIP manifest;limiti correnti | Nessuna sentinella nei due artifact caricati, raw intatto; partial/errori conservati | Workflow/proiezione C |
+
+| Q-T01 validator negativo | PowerShell/Node, soli mock | Receipt corrotta/stale/zero/extra/mismatch | C-QA-UNIT o gate canonico; AST; timeout corrente | Falsi verdi respinti; output sintetico | Estensione QA |
+| Q-T02 supervisione/export | PowerShell, figli posseduti | Timeout/cancel/Job/output/export/prime failure | C-QA-RUNTIME o gate; AST/runtime; limiti correnti | Stato raw e primo errore, cleanup/dependents corretti | Q-T01 |
+| Q-T03 privacy | PowerShell/Node | Sentinelle DTO/testo/path/trust | C-QA-UNIT/Runtime o gate; content validator | Zero sentinelle export, nome corretto non basta; report sintetico | Export QA |
+| P-REAL-01 originali | Ambiente privato autorizzato | SRC-PRIVATE-XLSX + audit | C-PRIVATE; manifest privato; <=120 s analisi iniziale | Esatti attesi per file/totale, no tolleranza; evidence privata | Originali disponibili |
+| P-REAL-02 ora/overlap | Portale/voucher o specifica, profilo shop | Casi temporali e riferimenti privati | Review privata prima apply, nessun tool live implicito | Policy provata e baseline giorno/ora congelata | Prova Getnet+inizio POS |
+| W7-01 qualifica fisica | Win7 SP1 identificato, net48, pacchetto x86/hash | Sintetico e originali privati autorizzati | C-WIN7; checklist candidato; sessione finita <=30 min | Import/reopen/undo/restore, tempi/memoria/DPI/tastiera e scanner/stampa ordinaria; evidence privata | Host/pacchetto/periferiche reali; nessuna deroga ereditata |
+
+## 14. Tranche e gate di completamento
+
+A — Core, profili/reader e analisi.
+Dipendenze: regole integrate R2 e fixture sanificate/distribuite. Completamento: A-D01..05 e gate
+Local pertinenti, source fingerprint e TRX non vuoti. Originali e ora Getnet
+possono restare gate esterni espliciti; nessuna funzionalita reale approvata
+dai soli sintetici.
+
+B — Schema, merchant mapping, autorita DB, commit capability, apply/undo e backup.
+Dipende da A. Completamento: B-D01..13. Sul build host Windows usare C-B/CrashProbe,
+con tutti cinque scenari B e varianti certificate, oltre a test supervisore
+pertinenti; non usare All come prerequisito B perche seleziona C.
+Nella futura patch B anche la chiamata CI di qualifica usa esplicitamente
+CrashProbe; solo con C completa passa ad All. Non cablare riferimenti a classi
+C inesistenti nel dispatcher B, ne fare PASS di step C non implementati.
+build net48/x86 e prove Windows necessarie a fence/processi. In questo
+incremento la funzione non e attivata nell'uso ordinario prima del completamento
+dei guard. Correzioni alias usati bloccate per scelta V1.
+
+C — UI/report/export e qualifica.
+Dipende da B. Completamento software: C-H/R/P (inclusi fotografia/KPI e misure complete),
+Q-T/Q-F/Q-P/Q-U (incluse console/diagnosi/current-run), suite Windows
+canonica C-ALL con otto runner,
+dialog/localizzazione, review del candidato e evidence dello stesso SHA/
+fingerprint. CI/package delivery segue la convenzione reale del repo soltanto
+nella futura Execution autorizzata; qui non si apre branch/PR.
+Completamento richiesto della funzione comprende W7-01 e gate privati
+prima dell'import reale. Non ereditare DONE_SOFTWARE/owner-defer da task 018.
+
+## 15. Stati, evidence e blocchi
+
+| Stato riassuntivo | Regola |
+| --- | --- |
+| PASS | Eseguito, assert completi, identita/evidence valide; zero test non passa |
+| FAIL | Requisito violato, timeout o errore tecnico/evidence obbligatoria |
+| BLOCKED | Prerequisito/accesso/ambiente mancante; causa e sblocco espliciti |
+| NOT_RUN | Non eseguito o incompleto/cancellato; registrare parte avviata e identita |
+| PASS_WITH_NOTES | Solo giudizio review con tutti obblighi soddisfatti, note non bloccanti |
+
+Raw TIMEOUT -> riepilogo FAIL, mantenendo raw e causa; raw BLOCKED_EXTERNAL ->
+BLOCKED. Cancellazione puo restare raw NOT_RUN anche dopo avvio.
+PASS_WITH_NOTES non promuove FAIL/TIMEOUT/NOT_RUN e non maschera Win7 mancante.
+Un positivo statico e verifica documentale, non PASS runtime.
+
+Fase PLANNING, revisione piano, implementazione e qualifica sono indipendenti.
+PLAN_READY_FOR_REVIEW significa decisioni integrate e gate esterni tracciati,
+non feature REVIEW o DONE. REVIEW della feature richiede implementazione
+candidata e prove della tranche. DONE richiede gate e consegna richiesti.
+Eventuale distinzione futura DONE_SOFTWARE/qualifica esterna deve rimanere
+esplicita, senza deroghe prese da altri closeout.
+
+| Blocco/prova mancante | Responsabile/fonte e sblocco | Impatto |
+| --- | --- | --- |
+| EXT-XLSX | Utente: sette originali integri in posizione privata accessibile e manifest privato degli attesi ricevuti | Contratto/baseline reali non verificati; sintetici non li sostituiscono |
+| EXT-TIME | Getnet: prova privata Z+offset/cambio offset; per il report nativo tabella canonica di transizioni approvata con provenienza/copertura | Apply moderno reale e proiezione nativa fuori policy bloccati; nessun fallback al PC |
+| EXT-SHOP | Utente crea successivamente profilo; dati autorevoli shop/esercente e periodo avvio POS | Binding/overlap reali non verificati; nessun account creato qui |
+| EXT-WIN7 | Host Win7 SP1, periferiche e pacchetto candidato identificati | Qualifica fisica BLOCKED_EXTERNAL, produzione non qualificata |
+
+Checklist W7 futura, specifica del candidato: source/pacchetto SHA256, installer
+Release x86 da pipeline, host OS/SP1/net48 e hardware identificati, scope
+privato autorizzato, installazione/riavvio, due profili e carico, anteprima/ora,
+apply/reopen/undo/restore, memoria/tempi, DPI 100/125%, tastiera, scanner e stampa
+ordinaria dopo import. Usare la
+[checklist esistente](../../QA/WIN7_PHYSICAL_SMOKE_REQUEST.md) come struttura,
+senza copiare vecchi SHA/pacchetti o passi staging. Suite Win7/Hardware oggi
+BLOCKED_EXTERNAL non e una prova fisica. Nessun Supabase live.
+
+## 16. FUTURA EXECUTION — mappa dei file
+
+Percorsi relativi alla root del repository, non file creati da questa sessione.
+
+| Esistenti da modificare | Motivo circoscritto |
+| --- | --- |
+| src/Win7POS.Wpf/App.xaml.cs e Pos/Online/PosStartupCoordinator.cs | Bootstrap owner condiviso prima recovery/init, normale/safe-start e lifetime |
+| src/Win7POS.Cli/Program.cs; CatalogImportProcessCrashSelfTest.cs | Owner prima init/seed di ogni comando e handoff parent/child reale |
+| src/Win7POS.Wpf/Infrastructure/Security/OperatorSession.cs; Pos/Online/PosOnlineSyncRevocationLatch.cs | Capability dedicata, overload token/deadline senza waiter abbandonati |
+| src/Win7POS.Wpf/Pos/PosWorkflowService.cs | Coordinamento manutenzione condiviso, query/CSV e scope routing |
+| src/Win7POS.Wpf/Pos/PosViewModel.cs | Composizione dipendenze/ingressi tab e dialog |
+| src/Win7POS.Wpf/Pos/DailyReportView.xaml e .xaml.cs | Ingresso Storico, origine/conteggi/prospetto |
+| src/Win7POS.Wpf/Pos/Dialogs/DailyReportViewModel.cs | Filtro comune, refresh, analitico separato dalla cassa |
+| src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterViewModel.cs e SalesRegisterDialog.xaml | Identita composta, paging, scope/capacita, signed aggregate |
+| src/Win7POS.Core/Security/PermissionCodes.cs; Wpf/Pos/Dialogs/UserManagementViewModel.cs | Codici/etichette, nessun cambio ai seed 0006 |
+| src/Win7POS.Data/Migrations/SchemaMigrationRegistry.cs e detector corrente pertinenti | Append 0015, operation receipt/proof/time policies e trigger revision, checksum precedenti immutati |
+| src/Win7POS.Data/SqliteConnectionFactory.cs; DbInitializer.cs | DemandOwned condiviso, RegisterConnectionAsync(ct), OpenExistingForRecovery senza init |
+| src/Win7POS.Data/Repositories/SaleTransactionWriter.cs; SaleReversalWriter.cs; SalesSyncOutboxRepository.cs | Solo hook prova/commit-publication mirati, nessuna modifica economia nativa |
+| src/Win7POS.Data/Online/RestoreShopSafetyRepository.cs e solo wiring restore necessario | Invarianti storico, mapping, epoch/invalidazione |
+| src/Win7POS.Wpf/Localization/PosLocalization.cs | Registrazione partial traduzioni |
+| tests/Win7POS.Wpf.UiSmokeHarness/Program.cs | Flag/automatedRun/dispatch/receipt sicura |
+| scripts/qa/Invoke-Win7PosAutonomousTests.ps1 | Tre step/Mode selezionabili, partial collection, structural/PASS validators, proiezione finale |
+| tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj; tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj | Solo Content/Link/copia fixture, nessun upgrade o lock change |
+| .github/workflows/ci.yml | Solo catena pubblicazione QA: due artifact esatti validati invece di glob raw |
+| tests/qa/Test-Win7PosAutonomousTests.ps1 | Mapping/negative evidence/privacy/process tests |
+
+SaleReadRepository e helper fornitori si modificano solo per contratti concreti,
+mai per riscrittura generale. Non mutare seed storici, economia dei writer o
+query CLI di chiusura. I piccoli hook CLI/factory/writer, Content csproj e
+upload CI sopra sono necessari ai confini R2; non sono refactor gratuiti.
+DailyReportDialog e gia contenitore della view, MainWindow letto per ingresso.
+Package, lock e toolchain restano invariati; altri workflow non si cambiano
+senza un nuovo collegamento concreto alla root di evidence.
+
+| Nuovi file proposti | Responsabilita |
+| --- | --- |
+| src/Win7POS.Core/Import/HistoricalSalesImportModels.cs; HistoricalSalesImportRules.cs; HistoricalSalesTimePolicy.cs | Modelli/regole pure; nessun IO |
+| src/Win7POS.Core/Import/HistoricalImportAuthorizationCommitGuard.cs | Capability Apply/Undo dedicata |
+| src/Win7POS.Core/Reports/SalesReportEntry.cs; SalesReportFilter.cs; SalesReportReadToken.cs; ISalesReportQuery.cs | Contratto analitico/token/KPI realmente consumato |
+| src/Win7POS.Core/Reports/SalesReportTimePolicy.cs; SalesReportCsvRow.cs; SalesReportCsvSerializer.cs | Planner di transizioni/intervalli e serializzazione pura portabile |
+| src/Win7POS.Data/Import/GetnetLegacyImportProfile.cs; GetnetTransactionsImportProfile.cs; GetnetExcelImportReader.cs | Adapter e IO bounded |
+| src/Win7POS.Data/Import/HistoricalSalesImportAnalyzer.cs; HistoricalSalesImportApplier.cs | Analisi unica e applicazione atomica |
+| src/Win7POS.Data/Repositories/HistoricalSalesImportRepository.cs; HistoricalMerchantRepository.cs; NativeSalesOwnershipRepository.cs; SalesReportQuery.cs | Operations/receipt, mapping, proiezione proof e query tokenizzate |
+| src/Win7POS.Data/Reports/SalesReportSnapshotCoordinator.cs | Stamp commit e verifica breve token per permit; nessun guard DB passato al rename |
+| src/Win7POS.Wpf/Pos/SalesReportExportService.cs | Destinazione/autorizzazione, paging su worker, IO CSV e rename atomico usando il serializer Core |
+| src/Win7POS.Data/Migrations/HistoricalSalesImportSchema.cs | SQL e invarianti nuovi |
+| src/Win7POS.Data/PosDatabaseAuthorityLease.cs | Owner/borrow/identity comuni a WPF, CLI, harness e recovery; non launcher |
+| src/Win7POS.Wpf/Import/HistoricalSalesImportWorkflowService.cs | UI sottile, coordinamento e receipt |
+| src/Win7POS.Wpf/Pos/Dialogs/HistoricalSalesImportViewModel.cs; HistoricalSalesImportDialog.xaml/.xaml.cs; HistoricalTransactionDialog.xaml/.xaml.cs | Wizard, gestione lotti e dettaglio |
+| src/Win7POS.Wpf/Localization/PosLocalization.HistoricalSalesImport.cs | Catalogo en/es/it/zh-CN completo |
+| src/Win7POS.Wpf/Pos/SalesReportAnalyticalRenderer.cs, solo se stampa offerta | Renderer con KPI nativi/aggregati comuni; CSV puro nel Core |
+| tests/Win7POS.Core.Tests/Import/Getnet*Tests.cs; HistoricalSales*Tests.cs | Profili/regole/tempo/safety con fixture sintetiche |
+| tests/Win7POS.Core.Tests/Data/HistoricalSales*Tests.cs; HistoricalMerchant*Tests.cs | Schema/dedup/auth/undo/restore/ownership/query |
+| tests/Win7POS.Wpf.UiSmokeHarness/HistoricalSalesImportSmoke.cs; HistoricalSalesImportLoad.cs; HistoricalSalesCrashProbe.cs | Otto smoke, load misto e probe/verifier stesso DB senza nuovo launcher |
+| scripts/run-historical-sales-import-smoke.ps1; scripts/qa/Win7PosHistoricalSalesValidation.psm1 | Adapter tre Mode, structural/PASS validator e protocollo misure |
+| scripts/qa/Win7PosQaPublicEvidence.psm1 | Sole funzioni proiezione/manifest ZIP; niente API operative di process supervision |
+| tests/fixtures/historical-sales-getnet-v1/ e helper fixture condiviso nei soli test/harness | Manifest/oracoli F-SMALL/CSV/LOAD/MIXED/CRASH e generazione riproducibile |
+
+Docs da aggiornare nella futura Execution: questo piano/stato, worklog e
+QA authorization limitatamente ai nuovi contratti, senza trascrivere dati privati.
+
+### 16.1 Delta mirato della mappa R3 — FUTURA EXECUTION
+
+Aggiunte rispetto a R2 motivate dai percorsi confermati, non file modificati ora:
+
+| File effettivo/proposto | Motivo R3 e test/consumer |
+| --- | --- |
+| Esistenti: src/Win7POS.Data/Backup/SqliteOnlineBackup.cs; Online/SqliteRestoreCoordinator.cs; Online/AtomicRestoreInstaller.cs | Context su source/partial/candidate/rollback, chiusure prima publish/swap, errori authority distinti da integrity; B-D10/13 |
+| Proposto: src/Win7POS.Data/PosDatabaseAccessContext.cs | Contesto esatto role/path/lifecycle, nessun owner live implicito; factory/backup/restore consumer |
+| Esistenti: tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs; MigrationBackupRestoreTests.cs; OnlineBackupContentionTests.cs; PersistenceFoundationHardeningTests.cs | Bootstrap/borrow e test dei percorsi reali, teardown limitato alle fixture esistenti |
+| Proposto: tests/Win7POS.Core.Tests/Data/OwnedSqliteTestFile.cs | Helper minimo portabile per i soli file sintetici posseduti, prima Factory/EnsureCreated |
+| Gia mappati: OperatorSession.cs; PosOnlineSyncRevocationLatch.cs; SalesReportSnapshotCoordinator ed ExportService proposti | Permit breve sotto confine attuale, IO fuori lock, test interleaving C-R04 |
+| Proposto: src/Win7POS.Core/Reports/SalesReportPublicationPermit.cs | DTO immutabile del risultato di autorizzazione emesso solo dal trusted issuer, non framework/capability vendita |
+| Gia mappati: DailyReportViewModel.cs; DailyReportView.xaml; contratti/query/CSV Core | Coverage esplicita, record coverage, geometria signed; HIST07 senza runner nuovo |
+| Esistente: scripts/qa/Win7PosAcceptanceProcessRunner.psm1; tests/qa/Test-Win7PosOwnedProcessIdentity.ps1 | Ready callback/deadline/identity e rimozione wait illimitato; concorrenza nel gate B esistente |
+| Esistenti: tests/Win7POS.Wpf.UiSmokeHarness/FunctionalCompletionSmoke.cs; scripts/run-functional-completion-smoke.ps1; scripts/check-required-gates.ps1 | Detail tipizzati all'origine/console safe, transcript completo e capture declassificabili |
+| Esistenti: tests/Win7POS.Wpf.UiSmokeHarness/AuthorizationLeaseWpfSmoke.cs; ProductPagingWpfSmoke.cs; ProductImageProfileWpfSmoke.cs; Program.cs (risultati logging) | Expected/actual/checkpoint pubblicabili dei quattro runner; non una riscrittura delle suite |
+| Gia mappati: orchestratore/test QA, wrapper storico, validator/proiettore, ci.yml | Cinque scenari B, console DTO, dettagli postjob e namespace/flag current-run, conti runner invariati |
+| Esistente: .github/workflows/wpf-build.yml, limitatamente al payload QA manuale | Consegna separata net48/x86 descritta sotto, senza installer operativo o raw |
+
+Delivery Win7 se si usa il harness: estendere il workflow WPF gia presente con
+opzione manuale di bundle QA; build harness quando richiesta e artifact separato
+Win7POS-QA-net48-x86 dello STESSO candidato. ZIP con exe/config, closure
+runtime x86 necessaria, fixture sintetiche e manifest SHA256/source/binari.
+Niente SDK/pwsh/CLI net10, originali o inserimento automatico nell'installer.
+Preparazione da output verificato, non glob di dati QA; test closure/manifest
+nei controlli di packaging pertinenti. I cinque scenari B con CLI restano sul
+build host; Win7 esegue gli scenari compatibili net48 e la checklist reale,
+con istruzioni del candidato e directory QA posseduta. Consegna del payload
+non e una qualifica Win7 e non aggiunge un nuovo workflow/runner.
+
+## 17. Audit tracciabile R1
+
+Severita di design: P1 = rischio economico/tenant/autorizzazione/falso PASS;
+P2 = affidabilita, UX, ripresa o manutenzione. Tutti i rilievi chiusi sotto
+sono "risolto nel design; implementazione/verifica futura", NON prodotto risolto.
+
+| ID/severita | Requisito -> sezione | File/simbolo verificato e provenienza | Rilievo/conseguenza | Correzione integrata e verifica futura |
+| --- | --- | --- | --- | --- |
+| G00/P2 | Provenienza -> 1/15 | Limite storico R1; SRC-PLAN-R1 ora disponibile e checksum verificato | R1 chiedeva una fonte distinta non necessaria a questo audit | Chiuso in R2 per il target ricevuto; R0 resta solo limite storico, nessun blocco Claude |
+| G01/P1 | Tenant proof -> 6.1 | ReceiptShopInfo:13; SerializeReceiptShopSnapshot:2090; F SRC-CODE | Snapshot stampa scambiato per prova ShopId | Gerarchia N1/N2/N3/NX, esclusione uniforme; B-D04 |
+| G02/P1 | Legacy binding -> 6.1 | DbInitializer.TryReadLegacySalesOriginShopCode:1510; F | Hash/code non provano automaticamente tenant ID | Code-only richiede prova storica, nessun current fallback; B-D04 |
+| G03/P1 | Commit revoca -> 6.2/7 | OperatorSession:802; PosOnlineSyncRevocationLatch:76; writer:126; F | Check prima insert lascia race precommit | Capability dedicata, finale sotto latch e budget 10 s; B-D03 |
+| G04/P1 | Processo concorrente -> 6.3 | App:19/136/166; barrier e maintenance; F | Mutex session-local/fail-open, autorita non cross-process | Lease OS lifetime e limiti modello supportato; B-D05 |
+| G05/P1 | Lock e contesa -> 7 | RestoreDbAsync:379; factory.AcquireExclusiveCommitFence:333; F | BEGIN IMMEDIATE e apply lungo non equivalgono al fence | Ordine restore-compatible, manutenzione, backup prima fence; B-D05/06 |
+| G06/P1 | Mapping persistente -> 4/5 | R0 audit-only; P | Alias non riusabili deterministicamente, dedup instabile | Scope/alias versionati, unique lookup, freeze binding usati; B-D01 |
+| G07/P1 | Cicli undo -> 5 | SQLite partial index gia usato nel repo; F/P | UNIQUE(key,active) impedisce piu record inattivi | Partial unique attivi, nuova versione per reimport; tre cicli B-D09 |
+| G08/P1 | Economia nativa -> 8 | PosWorkflowService:1541; SaleReversalWriter:423; RegisterVM:330; F | Esclusione originale voided piu negativo sottrae due volte | Registro firmato con originali, data di ciascun movimento; C-R01 |
+| G09/P1 | Scope operativo -> 8.2 | RegisterVM:306/426/540 e command; F | Search senza filtro e ID storico possono raggiungere reso nativo | Scope obbligatorio e guard origine anche nel service; C-R02 |
+| G10/P1 | CSV sicuro -> 8.3 | EscapeCsv:2839; F | Sostituzione lossy, quote/newline/formule non gestiti | Writer typed, text-only neutralization, limite tipi CSV; C-R02 |
+| G11/P1 | Input precisione -> 3/9 | SupplierReader:669/691/709/721; F | Formattazione cultura, quasi-integer e perdita orario | Reader contrattuale, raw numeric e rejection; A-D02/05 |
+| G12/P1 | Dati ricevuti -> 1/3/13 | SRC-PRIVATE-AUDIT D, workbook M | Audit confuso con test; copia pubblica divulga dati | Riferimenti privati, oracoli sintetici, gate originali; P-REAL |
+| G13/P1 | Ora -> 3.3 | Audit privato D; nessuna prova portale M | Z non confermato sposta giorno/ora e KPI | Policy visibile/versionata, gate reale EXT-TIME; A-D04/P-REAL-02 |
+| G14/P2 | Netto incompleto -> 3.2 | Contratto liquidazione D/P | Somma nota presentata come totale completo | Coverage e nullable espliciti; A-D03 |
+| G15/P1 | QA evidence -> 12 | New-QaPlan:352; Assert-QaEvidence:437; F | Exit0 o receipt vuota potrebbe simulare PASS | Scenario/check ID esatti, contesto atteso e negativi; Q-T01 |
+| G16/P1 | Privacy export -> 12.4 | Export-QaSmokeEvidence:389; Program error catch; F | Allowlist nomi non redige contenuti/eccezioni | DTO chiuso e proiezione pubblica, sentinelle; Q-T03 |
+| G17/P2 | Smoke/load -> 10/12 | functional20 e validator carrello; F | Carico mischiato a smoke e validator non pertinente | Otto smoke piccoli, full load separato, budget congelati; C-P01 |
+| G18/P1 | Permission seed -> 6.2 | SecuritySeedMaterial/registry0006; F | Nuovi grant possono alterare checksum pubblicato | Codici/catalogo nuovi, nessun seed automatico; B-D01 |
+| G19/P2 | Restore/ripresa -> 6.3/7 | Generation repository e CatalogShopState epoch; F | Dataset restaurato puo rendere vecchia preview apparentemente valida | Dataset+epoch+revision/generation, invalidazione e operation recovery; B-D08/10 |
+| G20/P2 | Task/evidence states -> 0/15 | Index/ledger/worklog; F | Piano completo confuso con DONE o deroga storica | Stato piano distinto, runtime NOT_RUN e gate esterni nominati |
+| G21/P1 | Contante e resto -> 8.1/13 | PosWorkflowService:1250-1252; SaleReadRepository:66; F | PaidCash consegnato confuso con incasso netto gonfia il totale contanti | Tender/resto/netto separati, fixture con resto e riconciliazione; C-R01 |
+
+Riferimenti lineari sopra relativi esclusivamente allo SHA baseline; dopo
+modifiche Execution usare i simboli e aggiornare le evidenze del candidato.
+
+### 17.1 Rilievi mirati R2
+
+Stato di ogni R2 sotto: risolto nel design; implementazione/verifica futura.
+Non riaprono G01-G21 senza nuova contraddizione e non attestano prodotto corretto.
+
+| ID/severita | Sezione R1 / osservazione verificata | Conseguenza | Decisione integrata / prova futura |
+| --- | --- | --- | --- |
+| R2-01/P2 | §1/15, R1 locale e hash ricevuto identici | Falso blocco per un altro piano Claude | Provenienza SRC-PLAN-R1 sufficiente, G00 chiuso per R2 |
+| R2-02/P1 | §7.1 lookup operation dopo file/backup | Risposta persa non recuperabile senza input | Replay consultivo prima preflight e recheck in tx; B-D08 input assente/backup impossibile/undo/fingerprint |
+| R2-03/P1 | §7.1.8 revision postcommit, §5 batch receipt | Dati/revisioni divergerebbero; receipt originaria mutabile | Operation receipt immutabile + revisioni atomiche e duplicate-only senza bump; B-D01/08 |
+| R2-04/P1 | §7.3 opener factory Mode omesso, SQLite locking §4.1 | DB assente ricreato o recovery readonly impossibile | OpenExistingForRecovery senza bootstrap, recovery tecnico poi letture; B-D07/08 |
+| R2-05/P1 | §6.3 App-only; CLI.Program:6405 e Harness.Program:320/339 | Entry point scrivono prima della lease | Context comune/DemandOwned e matrice entry point/identita/handoff; B-D12 |
+| R2-06/P1 | Latch.EnterAuthorizationUseAsync:44 e factory.RegisterConnection:616 | Wait non cancellabile acquisisce dopo cancel | Overload ct, deadline globale e trasferimento lease certo; B-D12, no orphan waiter |
+| R2-07/P1 | §8.1 token storico; writer/outbox mutano il nativo | KPI/grafico/pagine/export mescolano versioni | Trigger report revision, proof derivata e publication stamp; C-R03/C-P01 |
+| R2-08/P2 | §8.1 query/cursor e localtime attuale | Backdate/tie/DST possono saltare o duplicare righe | Ordine totale ticks/origine/ID, policy segmenti canonici e WHERE UTC indicizzato; C-R01/03 |
+| R2-09/P1 | DailyReportVM:171/338/355, header/marked print | Getnet gonfia media scontrino POS | NativePositiveSales/Count, zero->N/D, somme prima divisione; F-KPI/HIST07 |
+| R2-10/P2 | §16 serializer WPF e csproj solo corpus esistenti | CSV non testabile Mac, fixture assenti da output | Serializer Core e Content BaseDirectory distribuiti/hash; C-R02/Q-F01 |
+| R2-11/P1 | §10 heartbeat Dispatcher/20 superstiti | Stallo/gap/suspend invisibili possono dare PASS | Sampler background, sequenze e tre verdetti separati; Q-P01/C-P01 |
+| R2-12/P1 | §12.2 Invoke-QaProcess:268 crea root a ogni call, C-CRASH non agganciato | Verifier puo leggere altro DB o non essere un gate | Un Job/root, due &, nonce/sentinel/spill/recovery/exit79 e terzo step; B-D07 |
+| R2-13/P2 | Invoke-QaPlan:492 partial solo functional | Timeout cancella diagnosi storica | Structural/privacy accetta partial safe, raccolta/checkpoint su tutti i raw status; Q-T01/02 |
+| R2-14/P1 | ci.yml:108-113 glob raw, command/process/stdout/TRX inclusi | Leak anche con smoke basename corretto | Raw privato + DTO/ZIP/manifest chiuso, upload due path; Q-U01/Q-T03 |
+
+I riferimenti di codice sono dello SHA baseline; sono verifiche statiche.
+Originali privati, semantica temporale, binding reale e Win7 restano asset
+esterni con gate, non decisioni architetturali lasciate aperte.
+
+### 17.2 Residui confermati R3
+
+Stato di ogni riga: risolto nel design; implementazione/verifica futura.
+G01-G21 e R2-01..14 restano chiusi: qui si precisano percorsi non coperti o
+contraddizioni concrete della R2, senza riaprire le decisioni solide.
+
+| ID/severita | Controesempio / simbolo allo SHA baseline | Sezione/decisione integrata | Fixture/assertion -> comando/evidence |
+| --- | --- | --- | --- |
+| R3-01/P1 | SqliteOnlineBackup:109/199, AtomicRestoreInstaller.IsDatabaseValidAsync:450 e fixture TestDb:410: path diverso dal live, catch authority->false | §6.4 AUX esatto, aperture existing, transfer/handle prima publish/swap, errori distinti | B-D13 e HIST_B_BACKUP_RESTORE aux_scope_reject/all_handles_released; C-LOCAL/C-B, TRX/receipt B |
+| R3-02/P1 | Latch.ChangeOperatorAuthority:111 e InvalidateAuthorizationState:195 non attendono SQLite; R2 SHARED sino rename | §8.3.1 permit sotto confine esistente, nessun IO/DB sotto monitor, revoca prima/dopo ed esiti separati | HIST07 export_publication_authorization/outcome; C-SMOKE, receipt con token/esito/timing |
+| R3-03/P1 | SaleReadRepository:55/87 globali vs nuova attribuzione: nativo escluso diventa apparentemente zero | §8.1.1.a Coverage non numerica senza leak, Pending/Subset/Empty distinti, nessun fallback globale | F-MIXED-coverage/HIST07 coverage_state_no_disclosure; C-SMOKE, UI/CSV ammessi |
+| R3-04/P2 | VM.LoadHourlySalesAsync:515 e BarHeightPx:1479, XAML:281: negativi invisibili con somma corretta | §8.1.3 asse zero e due direzioni nell'area corrente, assert geometria realizzata | D/D+1 e misto/HIST07 hourly_signed_geometry; C-SMOKE, receipt/capture sintetica |
+| R3-05/P1 | B usava All con C; receipt solo crash non prova auth/process/restore. Helper waited-process ha secondo wait illimitato e PID-only | §12.2 C-B/CrashProbe con cinque scenari B, helper esistente esteso, aggregate budget motivato senza rialzo del crash | B-D03/05/07/10/12/13 -> catalogo chiuso §12.2; C-B, foundation-v3 e TRX |
+| R3-06/P1 | Orchestratore:610 stderr firstError intero e :612 evidence path, fallback functional:216-223 | §12.4 console DTO e fallback costante in tutti i rami, nessun raw/path | Q-U02 sentinella+report/serializer rotto; gate QA esistente, stdout/stderr e bundle |
+| R3-07/P2 | FunctionalCompletionSmoke:239-247 solo ex.Message; raw hosted sparisce, recenti gate richiedono diagnostica completa | §12.4 detail raccolti all'origine, transcript ordinato e withheld espliciti, capture declassificata | Q-U02/Q-T03 per cinque runner+functional20; assertion tipizzate/capture/diagnostics pubblici |
+| R3-08/P1 | qa-public condiviso + always potrebbe usare coppia vecchia/parziale dopo projector fallito | §12.4 namespace per run, ZIP prima digest/manifest, cross-check e publish directory prima flag CI | Q-U03 due run/collisione/stalepair; gate QA esistente, soli due artifact correnti |
+
+Prove statiche positive non diventano PASS runtime. Non restano decisioni
+sostanziali aperte nel design R3; originali/ora/binding/Win7 mantengono i gate
+esterni §15 e non sono sostituiti dai sintetici.
+
+## 18. Controllo documentale e cronologia
+
+R3 parte dalla R2 locale con hash target verificato e modifiche pregresse
+preservate, senza add/stash/commit. Controllo finale: confronto diretto R2->R3
+anche per PLAN untracked, link, Mode/count/dipendenze e assertion raggiungibili,
+assenza dati privati e stato/diff generale.
+Solo PLAN, voce019 e breve worklog sono scrivibili; nessuno script/check runtime
+viene eseguito per ispezionare questi documenti.
+
+| Revisione | Data | Motivazione/provenienza |
+| --- | --- | --- |
+| R0 | Conversazione precedente | Proposta storica non persistita; assenza non blocca R2 |
+| R1 | 2026-11-04 | Prima persistenza sanificata; G00-G21; hash target d1a2395231e48822f1ec2ef6781b8b0403942b1a260fb504868bc294ab70694f |
+| R2 | 2026-11-04 | R2-01..14 integrati; hash target3735e6e5784878f06246f570204ec378c5a8a2bf0d94677ac863d7e93d8170f6, preservato come provenienza |
+| R3 | 2026-11-04 | Residui R3-01..08 integrati nelle sezioni normative, matrice B/C, filemap delta e pubblicazione; soli documenti |
+
+Esito della review documentale R3: PLAN_READY_FOR_REVIEW sulle fonti disponibili;
+nessuna incoerenza di design lasciata aperta. Prossimo passo: review di R3 e
+gate esterni. Dopo futura autorizzazione Execution riprendere da §14 tranche A:
+contratti/regole/parser e fixture sintetiche distribuite, con C-LOCAL; prima
+verificare nuovamente main e il numero migration senza toccare ora il codice.
+Implementazione NOT_STARTED; build/test/runtime NOT_RUN; qualifica Win7 e
+verifica dati reali non effettuate. Nessuna pubblicazione Git.

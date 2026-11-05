@@ -181,15 +181,17 @@ public sealed class CatalogImportRecoveryTests
     private sealed class Fixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "Win7POS.Recovery." + Guid.NewGuid().ToString("N"));
+        private readonly OwnedSqliteTestFile _ownedFile;
         public Fixture()
         {
             var options = PosDbOptions.ForPath(Path.Combine(_root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             Factory = new SqliteConnectionFactory(options);
             using var conn = Factory.Open();
             conn.Execute("INSERT INTO app_settings(key,value) VALUES(@id,'test-shop-id'),(@code,'TEST-SHOP')", new { id = OutboxShopBinding.OfficialShopIdKey, code = OutboxShopBinding.OfficialShopCodeKey });
         }
         public SqliteConnectionFactory Factory { get; }
-        public void Dispose() { SqliteConnection.ClearAllPools(); try { Directory.Delete(_root, true); } catch { } }
+        public void Dispose() { SqliteConnection.ClearAllPools(); _ownedFile.Dispose(); try { Directory.Delete(_root, true); } catch { } }
     }
 }

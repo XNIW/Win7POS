@@ -138,7 +138,7 @@ try {
         $dataDir = Join-Path $dataRoot ('case-{0:D2}' -f $caseIndex++)
         New-Item -ItemType Directory -Path $dataDir | Out-Null
         $visual = $name -eq 'FUNCTIONAL_VISUAL'
-        $timeoutMs = if ($visual) { 120000 } else { 60000 }
+        $timeoutMs = 60000 # ASUS-W7POS-019 R3: all twenty process scenarios share the declared budget.
         $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
         $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$evidenceDir; dataDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; cleanupSucceeded=$null; cleanupError=$null; evidenceExportError=$null; error=$null }
         $process = $null

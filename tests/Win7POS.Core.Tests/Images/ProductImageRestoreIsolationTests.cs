@@ -678,6 +678,7 @@ VALUES(
 
     private sealed class TestEnvironment : IDisposable
     {
+        private readonly Win7POS.Core.Tests.Data.OwnedSqliteTestFile _database;
         private TestEnvironment(string root)
         {
             Root = root;
@@ -686,8 +687,10 @@ VALUES(
             Directory.CreateDirectory(CacheRoot);
             Directory.CreateDirectory(StagingRoot);
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
-            Factory = new SqliteConnectionFactory(options);
-            DbInitializer.EnsureCreated(options);
+            _database = Win7POS.Core.Tests.Data.OwnedSqliteTestFile.Create(options.DbPath);
+            Factory = _database.Factory;
+            try { DbInitializer.EnsureCreated(_database.Options); }
+            catch { _database.Dispose(); throw; }
         }
 
         internal string CacheRoot { get; }
@@ -704,6 +707,7 @@ VALUES(
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _database.Dispose();
             ProductImageTestData.DeleteTempDirectory(Root);
         }
     }

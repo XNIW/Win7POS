@@ -20,6 +20,7 @@ public sealed class CardSalePersistenceTests
 
         try
         {
+            using var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             var initialFactory = new SqliteConnectionFactory(options);
             await new ShopOfficialSnapshotRepository(initialFactory).SaveAsync(new OfficialShopSnapshot

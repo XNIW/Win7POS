@@ -111,17 +111,19 @@ public sealed class CustomerDisplaySettingsCloseoutTests
     private sealed class DisplayFiles : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "Win7POS-display-closeout-" + Guid.NewGuid().ToString("N"));
+        private readonly OwnedSqliteTestFile _ownedFile;
         public SqliteConnectionFactory Factory { get; }
         public CustomerDisplaySettingsRepository Repository { get; }
         public SettingsRepository Generic { get; }
         public DisplayFiles()
         {
             var options = PosDbOptions.ForPath(Path.Combine(_root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             Factory = new SqliteConnectionFactory(options);
             Repository = new CustomerDisplaySettingsRepository(Factory);
             Generic = new SettingsRepository(Factory);
         }
-        public void Dispose() { SqliteConnectionFactory.ClearAllPools(); Directory.Delete(_root, true); }
+        public void Dispose() { SqliteConnectionFactory.ClearAllPools(); _ownedFile.Dispose(); Directory.Delete(_root, true); }
     }
 }

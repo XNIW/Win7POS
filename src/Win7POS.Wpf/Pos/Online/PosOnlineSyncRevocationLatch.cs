@@ -22,6 +22,31 @@ namespace Win7POS.Wpf.Pos.Online
         private static long _authorizationEpoch;
         private static int _authorizationMaintenanceDepth;
         private static bool _revocationHistoryOverflowed;
+        internal sealed class AuthorizationReadStamp
+        {
+            internal AuthorizationReadStamp(long epoch, bool inactive) { Epoch = epoch; Inactive = inactive; }
+            internal long Epoch { get; }
+            internal bool Inactive { get; }
+        }
+        private static AuthorizationReadStamp _authorizationReadStamp = new AuthorizationReadStamp(0, false);
+        internal static AuthorizationReadStamp ReadAuthorizationStamp() => Volatile.Read(ref _authorizationReadStamp);
+        internal static bool IsAuthorizationReadStampCurrent(AuthorizationReadStamp stamp)
+            => stamp != null && !stamp.Inactive && ReferenceEquals(stamp, Volatile.Read(ref _authorizationReadStamp));
+        // Only mutation owners call this while holding Gate. Read consumers
+        // compare the immutable reference without entering Gate or another monitor.
+        private static void PublishAuthorizationReadStamp()
+            => Volatile.Write(ref _authorizationReadStamp, new AuthorizationReadStamp(_authorizationEpoch,
+                _authorizationMaintenanceDepth > 0 || _revocationHistoryOverflowed));
+        // Subscribers must be nonblocking: only memory invalidation and queued
+        // UI work. An outer lease/store monitor may still be held by the caller.
+        internal static event Action AuthorizationStateChanged;
+        private static void NotifyAuthorizationStateChanged()
+        {
+            var handlers = AuthorizationStateChanged;
+            if (handlers == null) return;
+            foreach (Action handler in handlers.GetInvocationList())
+                try { handler(); } catch { /* A subscriber cannot undo or hide revocation from the others. */ }
+        }
 
         public static bool IsAuthorizationMaintenanceActive
         {
@@ -33,17 +58,21 @@ namespace Win7POS.Wpf.Pos.Online
         }
 
         public static async Task<IDisposable>
-            EnterAuthorizationMaintenanceAsync()
+            EnterAuthorizationMaintenanceAsync(CancellationToken cancellationToken = default)
         {
-            await AuthorizationUseGate.WaitAsync().ConfigureAwait(false);
+            await AuthorizationUseGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             lock (Gate)
+            {
                 _authorizationMaintenanceDepth++;
+                PublishAuthorizationReadStamp();
+            }
+            NotifyAuthorizationStateChanged();
             return new AuthorizationMaintenanceLease();
         }
 
-        public static async Task<IDisposable> EnterAuthorizationUseAsync()
+        public static async Task<IDisposable> EnterAuthorizationUseAsync(CancellationToken cancellationToken = default)
         {
-            await AuthorizationUseGate.WaitAsync().ConfigureAwait(false);
+            await AuthorizationUseGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             lock (Gate)
             {
                 if (_authorizationMaintenanceDepth == 0)
@@ -119,7 +148,9 @@ namespace Win7POS.Wpf.Pos.Online
                 if (invalidateAuthorization)
                     _authorizationEpoch++;
                 mutation();
+                PublishAuthorizationReadStamp();
             }
+            NotifyAuthorizationStateChanged();
         }
 
         internal static bool TryChangeOperatorAuthority(
@@ -144,8 +175,10 @@ namespace Win7POS.Wpf.Pos.Online
                 }
 
                 mutation();
-                return true;
+                PublishAuthorizationReadStamp();
             }
+            NotifyAuthorizationStateChanged();
+            return true;
         }
 
         internal static bool TryChangeOperatorAuthorityIf(
@@ -166,8 +199,10 @@ namespace Win7POS.Wpf.Pos.Online
                 if (invalidateAuthorization)
                     _authorizationEpoch++;
                 mutation();
-                return true;
+                PublishAuthorizationReadStamp();
             }
+            NotifyAuthorizationStateChanged();
+            return true;
         }
 
         internal static bool TryReadOperatorAuthorityIf(
@@ -199,7 +234,11 @@ namespace Win7POS.Wpf.Pos.Online
             // revocation before COMMIT. Waiting for their semaphore here would
             // hide the revocation until after the sale had committed.
             lock (Gate)
+            {
                 _authorizationEpoch++;
+                PublishAuthorizationReadStamp();
+            }
+            NotifyAuthorizationStateChanged();
         }
 
         public static bool TryInvalidateAuthorizationState(long expectedEpoch)
@@ -212,8 +251,10 @@ namespace Win7POS.Wpf.Pos.Online
                     return false;
                 }
                 _authorizationEpoch++;
-                return true;
+                PublishAuthorizationReadStamp();
             }
+            NotifyAuthorizationStateChanged();
+            return true;
         }
 
         internal static void InvalidateAuthorizationStateWhileMaintenanceHeld()
@@ -226,7 +267,9 @@ namespace Win7POS.Wpf.Pos.Online
                         "Authorization maintenance is not active.");
                 }
                 _authorizationEpoch++;
+                PublishAuthorizationReadStamp();
             }
+            NotifyAuthorizationStateChanged();
         }
 
         public static bool IsRevoked(OnlineSyncGeneration generation)
@@ -295,7 +338,9 @@ namespace Win7POS.Wpf.Pos.Online
                         _revocationHistoryOverflowed = true;
                     }
                 }
+                PublishAuthorizationReadStamp();
             }
+            NotifyAuthorizationStateChanged();
         }
 
         private sealed class AuthorizationMaintenanceLease : IDisposable
@@ -310,6 +355,7 @@ namespace Win7POS.Wpf.Pos.Online
                     _disposed = true;
                     if (_authorizationMaintenanceDepth > 0)
                         _authorizationMaintenanceDepth--;
+                    PublishAuthorizationReadStamp();
                 }
                 AuthorizationUseGate.Release();
             }

@@ -155,12 +155,14 @@ public sealed class SettingsRepositoryMonotonicIntTests
     private sealed class TestDb : IDisposable
     {
         private readonly string _root;
+        private readonly OwnedSqliteTestFile _ownedFile;
 
         public TestDb()
         {
             _root = Path.Combine(Path.GetTempPath(), "Win7POS-Monotonic-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_root);
             Options = PosDbOptions.ForPath(Path.Combine(_root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(Options.DbPath);
             DbInitializer.EnsureCreated(Options);
             Factory = new SqliteConnectionFactory(Options);
         }
@@ -171,6 +173,7 @@ public sealed class SettingsRepositoryMonotonicIntTests
         public void Dispose()
         {
             SqliteConnectionFactory.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(_root, recursive: true); }
             catch { }
         }

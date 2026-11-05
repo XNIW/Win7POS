@@ -24,6 +24,7 @@
     <InternalsVisibleTo Include="Win7POS.Core.Tests" />
     <InternalsVisibleTo Include="Win7POS.Cli" />
     <InternalsVisibleTo Include="Win7POS.Wpf.UiSmokeHarness" />
+    <InternalsVisibleTo Include="Win7POS.CatalogPerformance" />
   </ItemGroup>
 
 </Project>

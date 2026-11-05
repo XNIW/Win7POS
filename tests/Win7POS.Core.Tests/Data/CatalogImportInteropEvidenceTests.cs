@@ -636,12 +636,15 @@ public sealed class CatalogImportInteropEvidenceTests
 
     private sealed class Fixture : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private readonly string root=Path.Combine(Path.GetTempPath(),"Win7POS.Interop."+Guid.NewGuid().ToString("N"));
         private readonly Dictionary<string,string> files=new(StringComparer.Ordinal);
         internal SqliteConnectionFactory Factory { get; }
         internal Fixture()
         {
-            var options=PosDbOptions.ForPath(Path.Combine(root,"pos.db"));DbInitializer.EnsureCreated(options);Factory=new SqliteConnectionFactory(options);
+            var options=PosDbOptions.ForPath(Path.Combine(root,"pos.db"));
+            _ownedFile=OwnedSqliteTestFile.Create(options.DbPath);
+            DbInitializer.EnsureCreated(options);Factory=new SqliteConnectionFactory(options);
             using var conn=Factory.Open();conn.Execute("INSERT INTO app_settings(key,value) VALUES(@id,@shop),(@code,'FIXTURE')",
                 new { id=OutboxShopBinding.OfficialShopIdKey,shop=Shop,code=OutboxShopBinding.OfficialShopCodeKey });
         }
@@ -660,7 +663,7 @@ public sealed class CatalogImportInteropEvidenceTests
                 acceptanceClaim=false,files=files.Select(pair=>new { path=pair.Key,bytes=Encoding.UTF8.GetByteCount(pair.Value),sha256=Hash(pair.Value) })
             },new JsonSerializerOptions { WriteIndented=true }),new UTF8Encoding(false));
         }
-        public void Dispose() { SqliteConnection.ClearAllPools();try { Directory.Delete(root,true); } catch(IOException) { } }
+        public void Dispose() { SqliteConnection.ClearAllPools();_ownedFile.Dispose();try { Directory.Delete(root,true); } catch(IOException) { } }
     }
     private sealed class Peer : IDisposable
     {

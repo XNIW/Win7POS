@@ -25,6 +25,7 @@ public sealed class ProductLiteralSearchTests
         var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
         try
         {
+            using var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             var factory = new SqliteConnectionFactory(options);
             using (var connection = factory.Open())

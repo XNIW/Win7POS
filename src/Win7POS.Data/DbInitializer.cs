@@ -18,6 +18,7 @@ namespace Win7POS.Data
     {
         public static void EnsureCreated(PosDbOptions opt)
         {
+            PosDatabaseAccessContext.Resolve(opt).DemandInitialization();
             SQLitePCL.Batteries_V2.Init();
 
             var directory = Path.GetDirectoryName(opt.DbPath);

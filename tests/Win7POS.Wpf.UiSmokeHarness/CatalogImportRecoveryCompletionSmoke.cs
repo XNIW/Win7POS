@@ -83,6 +83,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 admin.Stop();
                 Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, previousUrl);
+                Fixture.ReleasePristine();
                 FlushEvidence();
                 RecoveryOperationTimeline.Flush();
             }
@@ -90,7 +91,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckFlowAsync()
         {
-            var fixture = await Fixture.CreateAsync("flow");
+            using var fixture = await Fixture.CreateAsync("flow");
             var syncCompletion = new TaskCompletionSource<CatalogSyncRunResult>();
             var syncCalls = 0;
             var parentProgressWhileRecovery = false;
@@ -179,7 +180,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     fixture.CheckReplacement();
                     var backups = Directory.GetFiles(AppPaths.BackupsDirectory, "before-catalog-recovery-*.db").Except(backupsBefore).ToArray();
                     Require(backups.Length == 1, "double confirm made multiple backups or no verified backup");
-                    var backupFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(backups[0]));
+                    using var backupRead = HarnessSqliteDatabase.ReadExistingSnapshot(backups[0]);
+                    var backupFactory = backupRead.Factory;
                     var validation = await new DbMaintenanceRepository(backupFactory).ValidateAsync();
                     Require(validation.IsValid, "recovery backup was not SQLite-verified");
                     using (var connection = backupFactory.Open())
@@ -231,7 +233,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckDraftReopenAsync()
         {
-            var fixture = await Fixture.CreateAsync("draft-reopen");
+            using var fixture = await Fixture.CreateAsync("draft-reopen");
             using (var host = new CenterHost(fixture))
             {
                 await host.ReadyAsync();
@@ -269,7 +271,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckDraftDiscardAsync()
         {
-            var fixture = await Fixture.CreateAsync("draft-discard");
+            using var fixture = await Fixture.CreateAsync("draft-discard");
             using (var host = new CenterHost(fixture))
             {
                 await host.ReadyAsync();
@@ -310,7 +312,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckFailureAsync()
         {
-            var fixture = await Fixture.CreateAsync("fault");
+            using var fixture = await Fixture.CreateAsync("fault");
             using (var host = new CenterHost(fixture))
             {
                 await host.ReadyAsync();
@@ -339,7 +341,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckCancelAsync()
         {
-            var fixture = await Fixture.CreateAsync("cancel");
+            using var fixture = await Fixture.CreateAsync("cancel");
             using (var host = new CenterHost(fixture))
             {
                 await host.ReadyAsync();
@@ -367,7 +369,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckAuthorizationAsync()
         {
-            var fixture = await Fixture.CreateAsync("auth");
+            using var fixture = await Fixture.CreateAsync("auth");
             var allowed = false;
             using (var host = new CenterHost(fixture, () => allowed))
             {
@@ -405,7 +407,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     RecordPhase("language_switch:" + language + ":begin");
                     PosLocalization.Current.SetLanguage(language);
                     RecordPhase("language_switch:" + language + ":complete");
-                    var fixture = await Fixture.CreateAsync("lang-" + language);
+                    using var fixture = await Fixture.CreateAsync("lang-" + language);
                     using (var host = new CenterHost(fixture))
                     {
                         await host.ReadyAsync();
@@ -441,7 +443,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckOverlayFallbackGeometryAsync()
         {
-            var fixture = await Fixture.CreateAsync("geometry-fallback");
+            using var fixture = await Fixture.CreateAsync("geometry-fallback");
             using (var host = new CenterHost(fixture, forceOwnerOutsideWorkArea: true))
             {
                 await host.ReadyAsync();
@@ -465,7 +467,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckAcceptedReplacementAsync()
         {
-            var fixture = await Fixture.CreateAsync("accepted-race");
+            using var fixture = await Fixture.CreateAsync("accepted-race");
             using (var connection = fixture.Factory.Open())
                 connection.Execute("DELETE FROM catalog_import_recovery WHERE original_id=@id", new { id = fixture.OriginalId });
             var childLookups = 0;
@@ -671,7 +673,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CheckMeasurementsAsync()
         {
-            var fixture = await Fixture.CreateAsync("repeat");
+            using var fixture = await Fixture.CreateAsync("repeat");
             using (var control = new FocusReturnHost())
             {
                 var controlRetained = await CheckControlMeasurementsAsync(control);
@@ -747,7 +749,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             // Setup is outside the observed interval. All legacy rows are retained;
             // each supported local plan is committed once after a verified backup.
             // Authoritative remote reconciliation is qualified by the separate corpus.
-            var fixture = await Fixture.CreateAsync("batch-" + rowCount, rowCount);
+            using var fixture = await Fixture.CreateAsync("batch-" + rowCount, rowCount);
             var before = fixture.Counts();
             var backupsBefore = Directory.GetFiles(AppPaths.BackupsDirectory, "before-catalog-recovery-*.db");
             using (var samples = new Measurement(Dispatcher.CurrentDispatcher, "single-" + rowCount + "row"))
@@ -823,7 +825,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     RecordPhase("large_postcommit:" + rowCount + ":begin");
                     var backups = Directory.GetFiles(AppPaths.BackupsDirectory, "before-catalog-recovery-*.db").Except(backupsBefore).ToArray();
                     Require(backups.Length == 1, "single large recovery made no verified backup or multiple backups");
-                    var backupFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(backups[0]));
+                    using var backupRead = HarnessSqliteDatabase.ReadExistingSnapshot(backups[0]);
+                    var backupFactory = backupRead.Factory;
                     var backupValidation = await Task.Run(() => new DbMaintenanceRepository(backupFactory).ValidateAsync());
                     Require(backupValidation.IsValid, "large recovery backup was not SQLite-verified");
                     RecordPhase("large_backup_validation:" + rowCount + ":complete");
@@ -847,7 +850,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     fixture.CheckReplacement();
                     RecordPhase("large_postcommit:" + rowCount + ":complete");
                 }
-                finally { dialog.Close(); }
+                finally
+                {
+                    dialog.Close();
+                    // Closing the modal resumes Sync Center's async click handler,
+                    // whose finally may still be reading this fixture. Retire those
+                    // actual readers before the exact-file authority is disposed.
+                    await host.CloseAndDrainAsync();
+                }
                 await samples.StopAsync(); samples.Write();
                 fixture.CheckOriginal();
             }
@@ -991,13 +1001,27 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Center.ContentRendered -= _renderedHandler;
                 Center.Close(); Owner.Close();
             }
+            internal async Task CloseAndDrainAsync()
+            {
+                Dispose();
+                var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                var refresh = typeof(SyncCenterDialog).GetField("_refreshRunning", flags);
+                var operation = typeof(SyncCenterDialog).GetField("_operationRunning", flags);
+                Require(refresh != null && operation != null, "Sync Center reader lifecycle is unavailable");
+                await WaitAsync(() => !(bool)refresh.GetValue(Center) && !(bool)operation.GetValue(Center) &&
+                    !Application.Current.Windows.OfType<CatalogImportRecoveryDialog>().Any(), "Sync Center closed reader drain");
+                Require(!Center.IsVisible && !Owner.IsVisible, "Sync Center remained open after reader drain");
+                Evidence.Add("recovery_fixture_cleanup reader_refresh_running=False; reader_operation_running=False; nested_windows=0; owner_disposal_after_drain=True");
+            }
         }
 
-        private sealed class Fixture
+        private sealed class Fixture : IDisposable
         {
             private static string _pristinePath;
             private static string _pristineHash;
+            private static HarnessSqliteDatabase _pristineDatabase;
             internal SqliteConnectionFactory Factory;
+            private HarnessSqliteDatabase _database;
             internal SupplierImportEditableRow[] Rows;
             internal CatalogImportOutboxEntry Original;
             internal long OriginalId;
@@ -1005,7 +1029,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 var setupWatch = Stopwatch.StartNew();
                 RecordPhase("fixture_setup:" + name + ":begin");
-                var fixture = new Fixture { Factory = new SqliteConnectionFactory(PosDbOptions.ForPath(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + name + ".db"))) };
+                var database = HarnessSqliteDatabase.CreateNew(Path.Combine(AppPaths.DataDirectory, "recovery-ui-" + name + ".db"));
+                var fixture = new Fixture { _database = database, Factory = database.Factory };
+                try
+                {
                 CreatePristineSchemaCopy(fixture.Factory, name);
                 using (var connection = fixture.Factory.Open())
                     connection.Execute("INSERT OR REPLACE INTO app_settings(key,value) VALUES(@id,@shop),(@code,@shopCode)", new { id = OutboxShopBinding.OfficialShopIdKey, shop = _session.ShopId, code = OutboxShopBinding.OfficialShopCodeKey, shopCode = _session.ShopCode });
@@ -1027,6 +1054,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 fixture.CheckOriginal();
                 RecordPhase("fixture_setup:" + name + ":complete; elapsed_ms=" + setupWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant));
                 return fixture;
+                }
+                catch { fixture.Dispose(); throw; }
+            }
+            public void Dispose() => _database?.Dispose();
+            internal static void ReleasePristine()
+            {
+                var database = _pristineDatabase; _pristineDatabase = null; _pristinePath = null; _pristineHash = null;
+                database?.Dispose();
             }
             private static void CreatePristineSchemaCopy(SqliteConnectionFactory target, string name)
             {
@@ -1037,12 +1072,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     var initializeWatch = Stopwatch.StartNew();
                     var pristinePath = Path.Combine(AppPaths.DataDirectory, "recovery-ui-pristine-" + Guid.NewGuid().ToString("N") + ".db");
-                    DbInitializer.EnsureCreated(PosDbOptions.ForPath(pristinePath));
-                    VerifyPristine(new SqliteConnectionFactory(PosDbOptions.ForPath(pristinePath)), releasePool: true);
-                    RequireNoSidecars(pristinePath);
-                    var pristineHash = HashFile(pristinePath);
-                    _pristinePath = pristinePath;
-                    _pristineHash = pristineHash;
+                    var pristine = HarnessSqliteDatabase.CreateNew(pristinePath);
+                    try
+                    {
+                        DbInitializer.EnsureCreated(pristine.Options);
+                        VerifyPristine(pristine.Factory, releasePool: true);
+                        RequireNoSidecars(pristinePath);
+                        var pristineHash = HashFile(pristinePath);
+                        _pristinePath = pristinePath;
+                        _pristineHash = pristineHash;
+                        _pristineDatabase = pristine;
+                    }
+                    catch { pristine.Dispose(); throw; }
                     RecordPhase("fixture_pristine_initialized; elapsed_ms=" + initializeWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; sha256=" + _pristineHash);
                 }
                 var copyWatch = Stopwatch.StartNew();
@@ -1053,6 +1094,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 RequireNoSidecars(_pristinePath);
                 Require(HashFile(_pristinePath) == _pristineHash, "pristine schema changed between fixtures");
                 File.Copy(_pristinePath, target.DbPath, false);
+                target.AccessContext.BindCreatedFile();
                 Require(HashFile(target.DbPath) == _pristineHash, "fixture is not an exact pristine schema copy");
                 VerifyPristine(target);
                 RecordPhase("fixture_pristine_copy:" + name + "; elapsed_ms=" + copyWatch.Elapsed.TotalMilliseconds.ToString("F3", Invariant) + "; sha256=" + _pristineHash + "; independent_database=True");
@@ -1073,11 +1115,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         (SELECT count(*) FROM catalog_import_outbox)+(SELECT count(*) FROM catalog_import_plan)+
                         (SELECT count(*) FROM catalog_import_recovery_draft)+(SELECT count(*) FROM catalog_import_prepared_plan)") == 0,
                         "pristine fixture contains economic, outbox, plan or draft state");
-                    // The private source is never used by application services.
-                    // Release only its pool before the immutable file is hashed
-                    // and copied; disposing a pooled connection leaves a handle.
-                    if (releasePool) Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection);
                 }
+                // The initializer's first connection used ReadWriteCreate;
+                // verification uses ReadWrite and therefore a different pool.
+                // This private process has no application consumer of pristine.
+                // Close both pools after disposal, before exclusive hashing/copy.
+                if (releasePool) SqliteConnectionFactory.ClearAllPools();
             }
             private static void RequireNoSidecars(string path)
             {

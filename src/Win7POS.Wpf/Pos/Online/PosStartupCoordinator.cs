@@ -98,6 +98,7 @@ namespace Win7POS.Wpf.Pos.Online
         private int _disposed;
         private int _fullCatalogRepairInProgress;
         private int _maintenanceResumeRequested;
+        private PosDatabaseAuthorityLease _standaloneAuthority;
         private int _recoveryMode;
 
         public PosStartupCoordinator(
@@ -132,6 +133,10 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             var options = PosDbOptions.Default();
+            PosDatabaseAccessContext context;
+            if (!PosDatabaseAccessContext.TryResolve(options, out context))
+            { _standaloneAuthority = PosDatabaseAuthorityLease.AcquireOperational(options); context = _standaloneAuthority.AccessContext; }
+            options = options.WithAccessContext(context);
             _logInfo?.Invoke("Atomic restore recovery start");
             new AtomicRestoreInstaller()
                 .RecoverInterruptedInstallAsync(options.DbPath)
@@ -143,6 +148,7 @@ namespace Win7POS.Wpf.Pos.Online
             _logInfo?.Invoke("DbInitializer done");
 
             var factory = new SqliteConnectionFactory(options);
+            factory.RefreshAuthorityStamp();
             var host = new PosOnlineSyncSupervisorHost(factory);
             IDisposable registration = null;
             try
@@ -527,6 +533,9 @@ namespace Win7POS.Wpf.Pos.Online
                 _host?.Dispose();
                 _host = null;
                 _recoveryFactory = null;
+                SqliteConnectionFactory.ClearAllPools();
+                _standaloneAuthority?.Dispose();
+                _standaloneAuthority = null;
             }
         }
 

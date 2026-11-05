@@ -4,6 +4,9 @@ param([switch]$Runtime)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+Import-Module (Join-Path $repoRoot 'scripts/qa/Win7PosHistoricalSalesValidation.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $repoRoot 'scripts/qa/Win7PosQaPublicEvidence.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $repoRoot 'scripts/qa/Win7PosQaDiagnosticProjection.psm1') -Force -DisableNameChecking
 $source = Join-Path $repoRoot 'scripts/qa/Invoke-Win7PosAutonomousTests.ps1'
 $tokens = $null; $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$parseErrors)
@@ -193,6 +196,13 @@ function Invoke-QaProcess {
     [pscustomobject]@{ status=$(if ($fails) { 'FAIL' } else { 'PASS' }); code='mock_exit'; exitCode=$(if ($fails) { 7 } else { 0 }); identity=$null; elapsedMs=1; workDirectory=(Join-Path $root 'mock-work'); temporaryDirectory=(Join-Path $root 'mock-work/temp'); dataDirectory=(Join-Path $root 'mock-work/data'); cleanupSucceeded=($Executable -ne 'cleanup-failure'); processRemaining=$(if ($Executable -eq 'cleanup-failure') { 1 } else { 0 }); cleanupError=$(if ($Executable -eq 'cleanup-failure') { 'synthetic_job_still_active' } else { $null }) }
 }
 $windows = @(New-QaPlan 'Windows' $root 'synthetic-pwsh')
+foreach ($selection in @(@{mode='All';count=8},@{mode='Smoke';count=6},@{mode='CrashProbe';count=6},@{mode='Load';count=7})) {
+    $selected=@(New-QaPlan 'Windows' $root 'synthetic-pwsh' $selection.mode)
+    $runners=@($selected|Where-Object {$_.depends -contains 'build-harness'})
+    Assert-QaTest ($runners.Count -eq $selection.count) ('Incorrect closed history runner count: '+$selection.mode)
+    foreach ($step in $selected) {foreach ($dependency in $step.depends) {Assert-QaTest (@($selected|Where-Object name -ceq $dependency).Count -eq 1) 'Selected plan has an unreachable dependency'}}
+}
+Assert-QaTest (@($windows|Where-Object {$_.name -ceq 'historical-sales-import-crash' -and $_.timeout -eq 360 -and $_.depends.Count -eq 1 -and $_.depends[0] -ceq 'build-harness'}).Count -eq 1) 'B gate depends on C or lacks the 360 second supervisor budget'
 Assert-QaTest (@($windows | Where-Object { $_.name -eq 'restore' -and $_.arguments -contains '--locked-mode' }).Count -eq 1) 'Locked restore absent'
 Assert-QaTest (@($windows | Where-Object { $_.name -eq 'core' -and $_.timeout -eq 3600 }).Count -eq 1) 'Core timeout must cover the measured 35m56s baseline'
 $smokes = @($windows | Where-Object { $_.name -in @('product-image-profile','functional-completion','authorization-lease','bounded-logging','product-paging-dispatcher') })
@@ -389,4 +399,215 @@ Assert-QaTest $functionalProcess.killed 'Functional owned child stranded after a
 $functionalProcess.HasExited=$false; $functionalProcess.killed=$false
 Must-Fail { Stop-FunctionalChild $functionalProcess ([DateTime]::UtcNow.AddDays(-1).ToString('O')) } 'identity changed'
 Assert-QaTest (-not $functionalProcess.killed) 'Functional cleanup targeted a reused creation identity'
-Write-Output ('WIN7POS_AUTONOMOUS_TESTS=PASS runtime=' + [bool]$Runtime + ' evidence=' + $root)
+
+# Closed historical receipt contracts: safe partial diagnosis is distinct from PASS.
+$historyExpected=[pscustomobject]@{runId='synthetic-history';runNonce=('b'*32);sourceSha=('a'*40);sourceFingerprintSha256=('b'*64);harnessSha256=('c'*64);wpfSha256=('d'*64);fixtureVersion='historical-sales-getnet-v1';fixtureSha256=('e'*64)}
+function New-SyntheticHistoryReceipt([string]$Mode) {
+    $contract=Get-HistoricalSalesQaContract $Mode
+    $results=@(foreach($id in $contract.scenarios.Keys){
+        [pscustomobject]@{id=$id;rawStatus='PASS';completed=$true;durationMs=1;assertionResults=@(foreach($assertion in $contract.scenarios[$id]){[pscustomobject]@{id=$assertion;status='PASS';expected=$true;actual=$true}})}
+    })
+    $receipt=[ordered]@{schemaVersion=$contract.schemaVersion;protocolVersion=$contract.protocolVersion;runId=$historyExpected.runId;runNonce=$historyExpected.runNonce;sourceSha=$historyExpected.sourceSha;sourceFingerprintSha256=$historyExpected.sourceFingerprintSha256;harnessSha256=$historyExpected.harnessSha256;wpfSha256=$historyExpected.wpfSha256;fixtureVersion=$historyExpected.fixtureVersion;fixtureSha256=$historyExpected.fixtureSha256;completed=$true;status='PASS';durationMs=1;process=[pscustomobject]@{pid=123;architecture='x86';clr='4.0.30319';os='6.1.7601'};summary=[pscustomobject]@{expected=$results.Count;executed=$results.Count;passed=$results.Count;failed=0;notRun=0;timedOut=0};results=$results}
+    if($Mode -eq 'CrashProbe'){$receipt.workerRawExitCode=79;$receipt.workerRawStatus='FAIL';$receipt.verifierExitCode=0}
+    return [pscustomobject]$receipt
+}
+$validHistory=New-SyntheticHistoryReceipt Smoke
+Assert-HistoricalSalesQaPass $validHistory Smoke $historyExpected
+$validFoundation=New-SyntheticHistoryReceipt CrashProbe
+Assert-HistoricalSalesQaPass $validFoundation CrashProbe $historyExpected
+$validFoundation.workerRawExitCode=1
+Must-Fail {Assert-HistoricalSalesQaPass $validFoundation CrashProbe $historyExpected} 'qa_history_crash_cause_unproven'
+$partialHistory=New-SyntheticHistoryReceipt Smoke
+$partialHistory.results=@($partialHistory.results|Select-Object -First 3);$partialHistory.summary.executed=3;$partialHistory.summary.passed=3;$partialHistory.completed=$false;$partialHistory.status='TIMEOUT'
+$null=ValidateHistoricalEvidenceStructureAndPrivacy $partialHistory Smoke $historyExpected
+Must-Fail {Assert-HistoricalSalesQaPass $partialHistory Smoke $historyExpected} 'qa_history_incomplete_tests'
+$unsafeHistory=New-SyntheticHistoryReceipt Smoke
+$unsafeHistory|Add-Member NoteProperty rawRows 'PRIVATE_SENTINEL'
+Must-Fail {ValidateHistoricalEvidenceStructureAndPrivacy $unsafeHistory Smoke $historyExpected} 'qa_history_receipt_privacy_rejected'
+$wrongHistory=New-SyntheticHistoryReceipt Smoke;$wrongHistory.runNonce='wrong'
+Must-Fail {ValidateHistoricalEvidenceStructureAndPrivacy $wrongHistory Smoke $historyExpected} 'qa_history_identity_mismatch'
+$missingAssert=New-SyntheticHistoryReceipt Smoke;$missingAssert.results[0].assertionResults=@()
+Must-Fail {Assert-HistoricalSalesQaPass $missingAssert Smoke $historyExpected} 'qa_history_incomplete_assertions'
+$duplicateHistory=New-SyntheticHistoryReceipt Smoke;$duplicateHistory.results[1].id=$duplicateHistory.results[0].id
+Must-Fail {ValidateHistoricalEvidenceStructureAndPrivacy $duplicateHistory Smoke $historyExpected} 'qa_history_scenario_invalid'
+$duplicatesPath=Join-Path $root 'duplicate-history.json'
+[IO.File]::WriteAllText($duplicatesPath,'{"schemaVersion":1,"schemaVersion":2}')
+Must-Fail {Read-HistoricalSalesQaJson $duplicatesPath} 'qa_history_duplicate_json_key'
+$timeReceipt=New-SyntheticHistoryReceipt Smoke
+$timeReceipt|Add-Member NoteProperty startedAtUtc '2026-11-04T23:41:03.0267112+00:00'
+$timeReceipt|Add-Member NoteProperty completedAtUtc '2026-11-04T23:41:04.1267112+00:00'
+$timePath=Join-Path $root 'timestamp-history.json';$timeReceipt|ConvertTo-Json -Depth 16|Set-Content -LiteralPath $timePath
+$timeRoundTrip=Read-HistoricalSalesQaJson $timePath
+Assert-QaTest ($timeRoundTrip.startedAtUtc -is [string] -and $timeRoundTrip.startedAtUtc -ceq '2026-11-04T23:41:03.0267112+00:00') 'Receipt timestamp text or submillisecond process identity changed during JSON parsing'
+$null=ValidateHistoricalEvidenceStructureAndPrivacy $timeRoundTrip Smoke $historyExpected
+# Exercise the exact JsonDocument compatibility path on the current host;
+# this is not a claim that a separate PowerShell 7.4 runtime was executed.
+$compatPath=Join-Path $root 'strict-json-compatibility.json'
+[IO.File]::WriteAllText($compatPath,'{"creationTimeUtc":"2026-11-04T23:41:03.0267112Z","large":9007199254740993,"real":1.25,"empty":[],"one":[null],"nested":[[]],"nothing":null,"flag":true}')
+$compat=Read-HistoricalSalesQaJson $compatPath
+Assert-QaTest ($compat.creationTimeUtc -is [string] -and $compat.creationTimeUtc -ceq '2026-11-04T23:41:03.0267112Z' -and [DateTimeOffset]::Parse($compat.creationTimeUtc).UtcTicks -eq ([DateTime]::new(2026,11,4,23,41,3,[DateTimeKind]::Utc).Ticks+267112L)) 'Strict reader changed exact seven-digit UTC creation timestamp'
+Assert-QaTest ($compat.large -is [long] -and $compat.large -eq 9007199254740993L -and $compat.real -is [double] -and $compat.real -eq 1.25) 'Strict reader lost Int64 precision or real numeric type'
+Assert-QaTest ($compat.empty -is [array] -and $compat.empty.Count -eq 0 -and $compat.one -is [array] -and $compat.one.Count -eq 1 -and $null -eq $compat.one[0] -and $compat.nested -is [array] -and $compat.nested.Count -eq 1 -and $compat.nested[0] -is [array] -and $compat.nested[0].Count -eq 0 -and $null -eq $compat.nothing -and $compat.flag -is [bool] -and $compat.flag) 'Strict reader collapsed arrays/null or changed boolean type'
+[IO.File]::WriteAllText($compatPath,'{"scope":1,"Scope":2}')
+Must-Fail {Read-HistoricalSalesQaJson $compatPath} 'qa_history_duplicate_json_key'
+[IO.File]::WriteAllText($compatPath,'{"scope":1,"scope":2}')
+Must-Fail {Read-HistoricalSalesQaJson $compatPath} 'qa_history_duplicate_json_key'
+[IO.File]::WriteAllText($compatPath,'{"large":9223372036854775808}')
+Must-Fail {Read-HistoricalSalesQaJson $compatPath} 'qa_history_integer_out_of_range'
+[IO.File]::WriteAllText($compatPath,'{"real":1e400}')
+Must-Fail {Read-HistoricalSalesQaJson $compatPath} 'qa_history_invalid_numeric'
+[IO.File]::WriteAllText($compatPath,('['*18)+'0'+(']'*18))
+Must-Fail {Read-HistoricalSalesQaJson $compatPath} 'qa_history_receipt_depth'
+. (Join-Path $PSScriptRoot 'Test-HistoricalSalesMeasurement.ps1') -DefinitionsOnly
+$loadHistory=New-HistoricalSalesMeasurementFixture
+foreach($field in $historyExpected.PSObject.Properties.Name){$loadHistory.$field=$historyExpected.$field}
+Assert-HistoricalSalesQaPass $loadHistory Load $historyExpected
+$loadHistory.samples[3].dueTicks+=10
+Must-Fail {Assert-HistoricalSalesQaPass $loadHistory Load $historyExpected} 'qa_history_sample_gap'
+$loadHistory.samples[3].dueTicks-=10;$loadHistory.environmentValid=$false
+Must-Fail {Assert-HistoricalSalesQaPass $loadHistory Load $historyExpected} 'qa_history_measurement_incomplete'
+$fakePayload=Join-Path $root 'not-a-net48-payload';$null=New-Item -ItemType Directory -Path $fakePayload
+[IO.File]::WriteAllText((Join-Path $fakePayload 'Win7POS.Wpf.exe'),'non-executable synthetic fixture')
+Must-Fail {New-QaNet48PayloadBundle $fakePayload (Join-Path $root 'must-not-publish-payload') ('a'*40)} 'qa_payload_x86_required'
+Assert-QaTest (-not(Test-Path -LiteralPath (Join-Path $root 'must-not-publish-payload'))) 'Invalid target payload was published'
+
+# Current-run-only publication: no raw transcript, paths, command or error object.
+$publicRaw=Join-Path $root 'private-run';$null=New-Item -ItemType Directory -Path $publicRaw
+$publicParent=Join-Path $root 'public-runs'
+$publicReport=[pscustomobject]@{runId='synthetic-public-one';sourceSha=('a'*40);sourceState=[pscustomobject]@{fingerprintSha256=('b'*64)};suite='Windows';status='FAIL';firstError=[pscustomobject]@{name='core';code='mock_exit';path='PRIVATE_SENTINEL';error='PRIVATE_SENTINEL'};results=@([pscustomobject]@{name='core';status='FAIL';code='mock_exit';exitCode=7;elapsedMs=1;error='PRIVATE_SENTINEL';workDirectory='PRIVATE_SENTINEL';tests=@()})}
+$bundle=Publish-QaPublicBundle $publicReport $publicRaw $publicParent
+$null=Test-QaPublicBundle $bundle.directory $publicReport.runId
+$zip=[IO.Compression.ZipFile]::OpenRead($bundle.zipPath)
+try{foreach($entry in $zip.Entries){$reader=[IO.StreamReader]::new($entry.Open());try{Assert-QaTest (-not $reader.ReadToEnd().Contains('PRIVATE_SENTINEL')) 'Public ZIP leaked a raw failure or path'}finally{$reader.Dispose()}}}finally{$zip.Dispose()}
+Must-Fail {Publish-QaPublicBundle $publicReport $publicRaw $publicParent} 'qa_public_collision'
+Must-Fail {Test-QaPublicBundle $bundle.directory 'synthetic-another-run'} 'qa_public_bundle_invalid'
+$secondReport=$publicReport|ConvertTo-Json -Depth 10|ConvertFrom-Json
+$secondReport.runId='synthetic-public-two'
+$unsafeDiagnostic=[pscustomobject]@{stepId='core';code='assertion_failed';expected=$true;actual='PRIVATE_SENTINEL';rawRows='PRIVATE_SENTINEL'}
+Must-Fail {Publish-QaPublicBundle $secondReport $publicRaw $publicParent -Diagnostics @($unsafeDiagnostic)} 'qa_public_diagnostic_privacy_rejected'
+Assert-QaTest (-not(Test-Path -LiteralPath (Join-Path $publicParent $secondReport.runId))) 'Failed second projection published an incomplete pair'
+$null=Test-QaPublicBundle $bundle.directory $publicReport.runId
+$consoleWriter=[IO.StringWriter]::new();$previousError=[Console]::Error
+try{[Console]::SetError($consoleWriter);Write-QaPublicConsoleEvent -RunId 'PRIVATE_SENTINEL' -Suite Windows -StepId 'PRIVATE_SENTINEL' -Code 'PRIVATE_SENTINEL'}finally{[Console]::SetError($previousError)}
+Assert-QaTest (-not$consoleWriter.ToString().Contains('PRIVATE_SENTINEL') -and $consoleWriter.ToString().Contains('qa_unclassified_failure')) 'Public console copied an untrusted fallback field'
+$consoleWriter=[IO.StringWriter]::new();$previousError=[Console]::Error
+try{[Console]::SetError($consoleWriter);Write-QaPublicConsoleEvent -RunId 'synthetic-fail-code' -Suite Windows -StepId public-evidence -Status FAIL -Code none -PublicationStatus FAIL -PublicationCode none}finally{[Console]::SetError($previousError)}
+$consoleDto=$consoleWriter.ToString()|ConvertFrom-Json
+Assert-QaTest ($consoleDto.code -ceq 'qa_step_failed' -and $consoleDto.publicationCode -ceq 'qa_public_bundle_failed') 'FAIL console event carried code none'
+$consoleWriter=[IO.StringWriter]::new();$previousError=[Console]::Error
+try{[Console]::SetError($consoleWriter);Write-QaPublicConsoleEvent -RunId 'synthetic-primary-gates' -Suite Windows -StepId public-evidence -Status FAIL -Code process_exit -PrimaryStepId gates -PublicationStatus PASS}finally{[Console]::SetError($previousError)}
+$consoleDto=$consoleWriter.ToString()|ConvertFrom-Json
+Assert-QaTest ($consoleDto.rawStatus -ceq 'FAIL' -and $consoleDto.code -ceq 'process_exit' -and $consoleDto.primaryStepId -ceq 'gates' -and $consoleDto.publicationStatus -ceq 'PASS' -and $consoleDto.publicationCode -ceq 'none') 'Successful publication hid the suite primary failure or reported publication failure'
+
+# A malformed typed source is withheld as a partial diagnostic; it cannot
+# suppress a usable current-run report or copy its raw sentinel into the ZIP.
+$typedRoot=Join-Path $root 'typed-origin';$null=New-Item -ItemType Directory -Path $typedRoot
+$typedReport=[pscustomobject]@{runId='synthetic-typed-one';sourceSha=('a'*40);sourceState=[pscustomobject]@{fingerprintSha256=('b'*64)};suite='Windows';status='FAIL';firstError=$null;results=@([pscustomobject]@{name='functional-completion';status='FAIL';code='mock_exit';workDirectory=$typedRoot})}
+$harnessPath=Join-Path $repoRoot 'tests/Win7POS.Wpf.UiSmokeHarness/bin/x86/Release/net48/Win7POS.Wpf.UiSmokeHarness.exe'
+$harnessHash=if(Test-Path -LiteralPath $harnessPath){(Get-FileHash -LiteralPath $harnessPath -Algorithm SHA256).Hash.ToLowerInvariant()}else{$null}
+$typedEvent=[pscustomobject]@{sequence=0;stepId='functional-completion';scenarioId='IMPORT_completion';assertionId='QA_FunctionalCompletionSmoke_L1';status='FAIL';expected=2;actual=1;checkpoint='assertion';code='assertion_failed'}
+$typedEnvelope=[pscustomobject]@{schemaVersion='win7pos-qa-diagnostics-v1';runId=$typedReport.runId;sourceFingerprintSha256=('b'*64);harnessSha256=$harnessHash;diagnosticCompleteness='complete';results=@($typedEvent)}
+$typedPath=Join-Path $typedRoot 'qa-diagnostics.json'
+$typedEnvelope|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $typedPath
+$readEvents=@(Get-QaTypedDiagnostics $typedReport $repoRoot)
+Assert-QaTest ($readEvents.Count -eq 1 -and $readEvents[0].expected -eq 2 -and $readEvents[0].actual -eq 1 -and $readEvents[0].diagnosticCompleteness -ceq 'complete') 'Typed expected/actual or checkpoint was discarded'
+$typedEvent|Add-Member NoteProperty rawRows 'PRIVATE_SENTINEL'
+$typedEnvelope|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $typedPath
+$readEvents=@(Get-QaTypedDiagnostics $typedReport $repoRoot)
+Assert-QaTest ($readEvents.Count -eq 1 -and $readEvents[0].status -ceq 'NOT_RUN' -and $readEvents[0].diagnosticCompleteness -ceq 'partial') 'Unsafe producer did not retain an explicit partial diagnostic'
+$typedBundle=Publish-QaPublicBundle $typedReport $publicRaw $publicParent -Diagnostics $readEvents
+$zip=[IO.Compression.ZipFile]::OpenRead($typedBundle.zipPath)
+try{$entry=$zip.GetEntry('diagnostics.public.json');$reader=[IO.StreamReader]::new($entry.Open());try{$projectionText=$reader.ReadToEnd();Assert-QaTest (-not $projectionText.Contains('PRIVATE_SENTINEL') -and $projectionText.Contains('partial')) 'Unsafe typed source leaked or claimed complete'}finally{$reader.Dispose()}}finally{$zip.Dispose()}
+$typedEnvelope.runId='synthetic-stale';$typedEnvelope.results=@($typedEvent|Select-Object * -ExcludeProperty rawRows)
+$typedEnvelope|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $typedPath
+$readEvents=@(Get-QaTypedDiagnostics $typedReport $repoRoot)
+Assert-QaTest ($readEvents[0].diagnosticCompleteness -ceq 'partial' -and $null -eq $readEvents[0].assertionId) 'Stale run typed diagnostics were accepted'
+
+# Visual evidence is a closed registry of actual synthetic view regions. A
+# missing capture remains NOT_RUN; no generated bitmap substitutes for a view.
+$visualPath=Join-Path $publicRaw 'qa-visuals.json'
+function New-SyntheticVisualEnvelope {
+    [pscustomobject]@{schemaVersion='win7pos-qa-visuals-v1';registryVersion='synthetic-history-visuals-v1';runId=$historyExpected.runId;runNonce=$historyExpected.runNonce;sourceFingerprintSha256=$historyExpected.sourceFingerprintSha256;harnessSha256=$historyExpected.harnessSha256;fixtureSha256=$historyExpected.fixtureSha256;captures=@(Get-QaSyntheticVisualCatalog|ForEach-Object {[pscustomobject]@{id=$_.id;scenarioId=$_.scenarioId;capturePoint=$_.capturePoint;textRegistryId=$_.textRegistryId;status='NOT_RUN';code='unavailable';width=0;height=0;nativeFixture=$false}})}
+}
+$visuals=New-SyntheticVisualEnvelope;$visuals|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $visualPath
+$safeVisuals=Read-QaSyntheticVisualEvidence $visualPath $historyExpected $typedRoot
+Assert-QaTest (@($safeVisuals.files).Count -eq 0 -and @($safeVisuals.captures|Where-Object status -ceq 'NOT_RUN').Count -eq 3) 'Unavailable views produced synthetic PASS/image'
+$visuals.runId='synthetic-stale';$visuals|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $visualPath
+Must-Fail {Read-QaSyntheticVisualEvidence $visualPath $historyExpected $typedRoot} 'qa_public_visual_identity_invalid'
+$visuals=New-SyntheticVisualEnvelope;$visuals.captures[0].capturePoint='PRIVATE_SENTINEL';$visuals|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $visualPath
+Must-Fail {Read-QaSyntheticVisualEvidence $visualPath $historyExpected $typedRoot} 'qa_public_visual_registry_invalid'
+$visuals=New-SyntheticVisualEnvelope;$visuals.captures[0]|Add-Member NoteProperty renderedText 'PRIVATE_SENTINEL';$visuals|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $visualPath
+Must-Fail {Read-QaSyntheticVisualEvidence $visualPath $historyExpected $typedRoot} 'qa_public_visual_privacy_rejected'
+$visuals=New-SyntheticVisualEnvelope;$visuals.captures[2].status='PASS';$visuals.captures[2].code='none'
+foreach($binding in @{nativeFixture=$true;shopId='qa-auth-shop';fixtureToken=('a'*32);textSha256=('f'*64);relativePath='qa-visual-import_summary.png';pngSha256=('a'*64);width=100;height=40}.GetEnumerator()){$visuals.captures[2]|Add-Member NoteProperty $binding.Key $binding.Value -Force}
+$visuals|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $visualPath
+Must-Fail {Read-QaSyntheticVisualEvidence $visualPath $historyExpected $typedRoot} 'qa_public_visual_provenance_invalid'
+$visualReport=$publicReport|ConvertTo-Json -Depth 10|ConvertFrom-Json;$visualReport.runId=$historyExpected.runId
+$visualBundle=Publish-QaPublicBundle $visualReport $publicRaw $publicParent -VisualEvidence $safeVisuals
+$zip=[IO.Compression.ZipFile]::OpenRead($visualBundle.zipPath)
+try{Assert-QaTest (@($zip.Entries|Where-Object FullName -like '*.png').Count -eq 0) 'NOT_RUN visual exported an image';$reader=[IO.StreamReader]::new($zip.GetEntry('visuals.public.json').Open());try{$text=$reader.ReadToEnd();Assert-QaTest ($text.Contains('partial') -and -not $text.Contains('PRIVATE_SENTINEL')) 'Visual projection claimed complete or disclosed unknown text'}finally{$reader.Dispose()}}finally{$zip.Dispose()}
+
+# Execute the actual runner finalizer with report/public writers deliberately
+# failing. The primary private error must survive, and stderr must remain DTO-only.
+$outerTry=@($ast.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.TryStatementAst]})[-1]
+$finalizer=[scriptblock]::Create(($outerTry.Finally.Statements|ForEach-Object {$_.Extent.Text}) -join "`n")
+$savedReportWriter=${function:Write-QaReports}
+function Write-QaReports {param($Report,[string]$Directory) throw 'PRIVATE_SENTINEL report write'}
+function Publish-QaPublicBundle {param($Report,$RawDirectory,$PublicParent,$HistoricalEvidence,$Diagnostics) throw 'PRIVATE_SENTINEL projection write'}
+$report=[ordered]@{runId='synthetic-finalizer';sourceSha=('a'*40);sourceState=$null;suite='Windows';status='FAIL';firstError=@{name='core';code='mock_exit';error='PRIVATE_SENTINEL';path='PRIVATE_SENTINEL'};results=@();reportError=$null}
+$locked=$false;$mutex=$null;$runDirectory=$publicRaw;$runId=$report.runId;$Suite='Windows';$plan=@();$exitCode=0
+$consoleWriter=[IO.StringWriter]::new();$previousError=[Console]::Error
+try{[Console]::SetError($consoleWriter);. $finalizer}finally{[Console]::SetError($previousError);${function:Write-QaReports}=$savedReportWriter;Remove-Item Function:Publish-QaPublicBundle}
+Assert-QaTest ($report.firstError.code -ceq 'mock_exit' -and $report.firstError.error -ceq 'PRIVATE_SENTINEL' -and $exitCode -eq 1) 'Report failure replaced the primary error or passed'
+Assert-QaTest (-not $consoleWriter.ToString().Contains('PRIVATE_SENTINEL') -and $consoleWriter.ToString().Contains('qa_report_write_failed') -and $consoleWriter.ToString().Contains('qa_public_bundle_failed')) 'Actual finalizer disclosed raw firstError/path or lost secondary failure'
+$finalizerEvents=@($consoleWriter.ToString() -split '\r?\n'|Where-Object {$_}|ForEach-Object {$_|ConvertFrom-Json})
+Assert-QaTest (@($finalizerEvents|Where-Object {$_.rawStatus -ceq 'FAIL' -and $_.code -ceq 'none'}).Count -eq 0 -and @($finalizerEvents|Where-Object {$_.publicationStatus -ceq 'FAIL' -and $_.primaryStepId -ceq 'core' -and $_.code -ceq 'mock_exit'}).Count -eq 1) 'Actual finalizer replaced the primary diagnosis with a publication error'
+
+# All native WinExe historical children use the retained waited helper with
+# one residual body deadline. No native call operator/LASTEXITCODE path remains.
+$historyWrapper=Join-Path $repoRoot 'scripts/run-historical-sales-import-smoke.ps1'
+$historyAst=[Management.Automation.Language.Parser]::ParseFile($historyWrapper,[ref]$tokens,[ref]$parseErrors)
+Assert-QaTest ($parseErrors.Count -eq 0) 'Historical wrapper syntax errors'
+$historySource=[IO.File]::ReadAllText($historyWrapper)
+Assert-QaTest ($historySource -notmatch '(?m)^\s*&\s*\$harness\b|\$LASTEXITCODE' -and $historySource.Contains('Invoke-HistoryWorker') -and $historySource.Contains('historical-sales-wrapper-error.private.txt')) 'Historical wrapper still races native GUI exit or drops the private cause'
+$historyFunctions=@($historyAst.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
+foreach($name in @('ConvertTo-HistoryProcessArgument','Get-HistoryWorkerPhase','Get-HistoryRemainingMilliseconds','Invoke-HistoryWorker')){. ([scriptblock]::Create(@($historyFunctions|Where-Object Name -ceq $name)[0].Extent.Text))}
+$clock=[Diagnostics.Stopwatch]::StartNew();$contract=@{bodySeconds=60};$harness='C:\synthetic harness.exe';$output=$publicRaw
+$phaseSpent=@{'checkpoint-report'=0L}
+$script:historyWaitedCalls=[Collections.Generic.List[object]]::new()
+$script:historyWaitedDuration=0L
+function Invoke-Win7PosWaitedProcess {param($FilePath,$ArgumentList,$TimeoutMilliseconds,$EvidenceDirectory)$script:historyWaitedCalls.Add(@{file=$FilePath;arguments=$ArgumentList;timeout=$TimeoutMilliseconds});if($script:historyWaitedDuration){$clock.ElapsedMilliseconds+=$script:historyWaitedDuration};[pscustomobject]@{Started=$true;ExitCode=79;TimedOut=$false;Cancelled=$false;LaunchError=$null;CleanupSucceeded=$true;OrphanRemaining=$false}}
+function Write-HistoryCheckpoint {param($Receipt,$Path)}
+try{
+    $observed=Invoke-HistoryWorker -Arguments @('--data-dir','C:\synthetic data\','--nonce','synthetic') -Name crash-probe
+    Assert-QaTest ($observed -eq 79 -and $script:historyWaitedCalls.Count -eq 1 -and $script:historyWaitedCalls[0].timeout -gt 0 -and $script:historyWaitedCalls[0].timeout -le 60000 -and $script:historyWaitedCalls[0].arguments[1] -ceq '"C:\synthetic data\\"') 'Historical worker did not await expected exit with quoted unchanged D and residual budget'
+    $contract.bodySeconds=0
+    Must-Fail {Invoke-HistoryWorker -Arguments @() -Name crash-probe} 'qa_history_worker_deadline_exhausted'
+    Assert-QaTest ($script:historyWaitedCalls.Count -eq 1) 'Expired historical deadline launched a child'
+    $clock=[pscustomobject]@{ElapsedMilliseconds=0L};$contract.bodySeconds=330;$phaseSpent=@{'checkpoint-report'=0L}
+    foreach($phase in @(@{name='crash-probe';limit=90000},@{name='crash-verify';limit=90000},@{name='HIST_B_COMMIT_AUTHORITY';limit=25000},@{name='HIST_B_PROCESS_ADMISSION';limit=30000},@{name='process-preparation';limit=120000},@{name='process-probes';limit=120000},@{name='HIST_B_ENTRYPOINT_AUTHORITY';limit=120000},@{name='HIST_B_BACKUP_RESTORE';limit=45000},@{name='checkpoint-report';limit=20000})){
+        Assert-QaTest ((Get-HistoryRemainingMilliseconds $phase.name) -eq $phase.limit) ('Historical phase budget changed: '+$phase.name)
+    }
+    $script:historyWaitedDuration=60000
+    $null=Invoke-HistoryWorker -Arguments @() -Name crash-probe
+    Assert-QaTest ((Get-HistoryRemainingMilliseconds 'crash-verify') -eq 30000) 'Crash verifier reset the shared ninety-second hot-journal budget'
+    $script:historyWaitedDuration=20000
+    $null=Invoke-HistoryWorker -Arguments @() -Name crash-verify
+    Assert-QaTest ((Get-HistoryRemainingMilliseconds 'crash-probe') -eq 10000) 'Repeated crash phase reset its elapsed allowance'
+    $beforeCalls=$script:historyWaitedCalls.Count;$phaseSpent['commit-authority']=25000
+    Must-Fail {Invoke-HistoryWorker -Arguments @() -Name HIST_B_COMMIT_AUTHORITY} 'qa_history_worker_deadline_exhausted'
+    Assert-QaTest ($script:historyWaitedCalls.Count -eq $beforeCalls) 'Expired commit phase launched a child'
+    $phaseSpent['entrypoint']=100000;$phaseSpent['admission']=10000
+    $script:historyWaitedDuration=10000;$null=Invoke-HistoryWorker -Arguments @() -Name HIST_B_PROCESS_ADMISSION
+    Assert-QaTest ((Get-HistoryRemainingMilliseconds 'HIST_B_ENTRYPOINT_AUTHORITY') -eq 20000) 'Admission consumed or reset the separate entrypoint phase allowance'
+    $phaseSpent['backup-restore']=0;$clock.ElapsedMilliseconds=325000;$script:historyWaitedDuration=6000
+    Must-Fail {Invoke-HistoryWorker -Arguments @() -Name HIST_B_BACKUP_RESTORE} 'qa_history_worker_deadline_exhausted'
+    Assert-QaTest ($script:historyWaitedCalls[$script:historyWaitedCalls.Count-1].timeout -eq 5000) 'Worker ignored the smaller shared 330-second residual deadline'
+    $clock.ElapsedMilliseconds=0;$phaseSpent['hot-journal']=0;$script:historyWaitedDuration=90001
+    Must-Fail {Invoke-HistoryWorker -Arguments @() -Name crash-probe} 'qa_history_worker_deadline_exhausted'
+    Assert-QaTest ($script:historyWaitedCalls[$script:historyWaitedCalls.Count-1].timeout -eq 90000) 'Reserved exit79 was accepted past the hot-journal subbudget'
+    $clock.ElapsedMilliseconds=0;$phaseSpent['checkpoint-report']=20000
+    Must-Fail {Get-HistoryRemainingMilliseconds 'checkpoint-report'} 'qa_history_worker_deadline_exhausted'
+    Must-Fail {Get-HistoryRemainingMilliseconds 'unregistered-phase'} 'qa_history_worker_phase_invalid'
+}finally{Remove-Variable clock,contract,harness,output,phaseSpent -ErrorAction SilentlyContinue;Remove-Item Function:Invoke-Win7PosWaitedProcess;Remove-Item Function:Write-HistoryCheckpoint}
+Write-Output ('WIN7POS_AUTONOMOUS_TESTS=PASS runtime=' + [bool]$Runtime)

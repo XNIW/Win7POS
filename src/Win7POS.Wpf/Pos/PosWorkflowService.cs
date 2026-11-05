@@ -40,7 +40,7 @@ namespace Win7POS.Wpf.Pos
         public bool SyncReviewRequired { get; set; }
     }
 
-    public sealed class PosWorkflowService : IHeldCartWorkflow
+    public sealed partial class PosWorkflowService : IHeldCartWorkflow
     {
         private const string KeyPrinterName = AppSettingKeys.PosPrinterReceiptName;
         private const string KeyPrinterCopies = AppSettingKeys.PosPrinterReceiptCopies;
@@ -138,10 +138,12 @@ namespace Win7POS.Wpf.Pos
 
         public PosWorkflowService() : this(() => DateTimeOffset.UtcNow) { }
 
-        public PosWorkflowService(Func<DateTimeOffset> utcNow)
+        public PosWorkflowService(Func<DateTimeOffset> utcNow) : this(PosDbOptions.Default(), utcNow) { }
+
+        internal PosWorkflowService(PosDbOptions options, Func<DateTimeOffset> utcNow)
         {
             _utcNow = utcNow ?? throw new ArgumentNullException(nameof(utcNow));
-            _options = PosDbOptions.Default();
+            _options = options ?? throw new ArgumentNullException(nameof(options));
             // EnsureCreated spostato in InitializeAsync() per non bloccare il thread UI al primo render
 
             _factory = new SqliteConnectionFactory(_options);
@@ -992,12 +994,14 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> AddByBarcodeAsync(string barcode)
         {
+            DemandHistoricalCartAvailable();
             var measurement = PosScanMeasurement.Current;
             measurement?.ServiceStarted();
             using (PosScanMeasurement.Measure("gate_wait"))
                 await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 var workerWait = PosScanMeasurement.Measure("worker_queue");
                 return await Task.Run(async () =>
@@ -1026,9 +1030,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> AddManualPriceAsync(int unitPriceMinor)
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {
@@ -1223,6 +1229,7 @@ namespace Win7POS.Wpf.Pos
             long? createdAtMs = null,
             ReceiptShopInfo receiptShopSnapshot = null)
         {
+            if (IsHistoricalMaintenanceActive) throw new InvalidOperationException("historical_maintenance_active");
             if (payment == null) throw new ArgumentNullException(nameof(payment));
             if (operatorSession == null)
                 throw new ArgumentNullException(nameof(operatorSession));
@@ -1233,6 +1240,7 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 if (_session.Lines.Count == 0)
                     throw new PosException(PosErrorCode.EmptyCart);
 
@@ -1752,9 +1760,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> RemoveLineAsync(string barcode)
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {
@@ -1772,9 +1782,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> ApplyCartDiscountPercentAsync(int percent)
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {
@@ -1792,9 +1804,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> ApplyLineDiscountPercentAsync(string barcode, int percent)
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {
@@ -1812,9 +1826,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> ApplyLineDiscountAmountAsync(string barcode, int amountMinor)
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {
@@ -1833,9 +1849,11 @@ namespace Win7POS.Wpf.Pos
         /// <summary>Applica sconto riga impostando il prezzo unitario finale desiderato (sempre unitario, non totale riga). 0 = rimuovi sconto.</summary>
         public async Task<PosWorkflowSnapshot> ApplyLineDiscountByFinalPriceAsync(string barcode, long finalUnitPriceMinor)
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {
@@ -1853,9 +1871,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> ClearCartDiscountAsync()
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {
@@ -2269,9 +2289,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> ClearCartAsync()
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {
@@ -2291,9 +2313,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<SuspendCartResult> SuspendCartAsync()
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 return await Task.Run(async () =>
                 {
                     await ReconcilePendingSaleBeforeCartChangeNoLockAsync(true).ConfigureAwait(false);
@@ -2375,9 +2399,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task<PosWorkflowSnapshot> RecoverHeldCartAsync(string holdId)
         {
+            DemandHistoricalCartAvailable();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                DemandHistoricalCartAvailable();
                 // One worker at a time: acquire the workflow gate before scheduling SQLite work.
                 return await Task.Run(async () =>
                 {

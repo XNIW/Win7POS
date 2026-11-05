@@ -1211,9 +1211,11 @@ WHERE remote_price_id = 'remote-price-explicit';"));
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             Root = root;
+            _ownedFile = OwnedSqliteTestFile.Create(Path.Combine(root, "pos.db"));
             Factory = new SqliteConnectionFactory(PosDbOptions.ForPath(Path.Combine(root, "pos.db")));
             DbInitializer.EnsureCreated(PosDbOptions.ForPath(Path.Combine(root, "pos.db")));
             using var conn = Factory.Open();
@@ -1242,6 +1244,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

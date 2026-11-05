@@ -20,6 +20,7 @@ public sealed class RemoteCatalogReferenceTombstoneTests
         var dbPath = Path.Combine(root, "legacy.db");
         try
         {
+            using var ownedFile = OwnedSqliteTestFile.Create(dbPath);
             SQLitePCL.Batteries_V2.Init();
             using (var conn = new SqliteConnection("Data Source=" + dbPath))
             {
@@ -275,10 +276,12 @@ WHERE remote_supplier_id = 'supplier-poisoned';");
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             Root = root;
             var dbPath = Path.Combine(root, "pos.db");
+            _ownedFile = OwnedSqliteTestFile.Create(dbPath);
             Factory = new SqliteConnectionFactory(PosDbOptions.ForPath(dbPath));
             DbInitializer.EnsureCreated(PosDbOptions.ForPath(dbPath));
         }
@@ -294,6 +297,7 @@ WHERE remote_supplier_id = 'supplier-poisoned';");
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

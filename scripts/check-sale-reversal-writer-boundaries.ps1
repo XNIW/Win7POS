@@ -129,6 +129,18 @@ function Assert-CallerOwnedWriterSlice(
     }
 }
 
+function Test-VoidFacadeRoutes([string]$facade, [string]$reversalWriter) {
+    $facades = @(Get-MethodSlices $facade "public" "MarkSaleVoidedAsync")
+    $standalone = @($facades | Where-Object { $_ -notmatch "SqliteConnection conn" })
+    $scoped = @($facades | Where-Object { $_ -match "SqliteConnection conn" -and $_ -match "SqliteTransaction tx" })
+    $writers = @(Get-MethodSlices $reversalWriter "internal" "MarkSaleVoidedAsync")
+    return $facades.Count -eq 2 -and $standalone.Count -eq 1 -and $scoped.Count -eq 1 -and
+        $writers.Count -eq 1 -and $writers[0] -match "SqliteConnection conn" -and
+        $writers[0] -match "SqliteTransaction tx" -and
+        $standalone[0] -match '(?s)=>\s*_transactionWriter\.MarkSaleVoidedAsync\(\s*originalSaleId\s*,\s*refundSaleId\s*,\s*nowMs\s*\)\s*;\s*\z' -and
+        $scoped[0] -match '(?s)=>\s*_reversalWriter\.MarkSaleVoidedAsync\(\s*conn\s*,\s*tx\s*,\s*originalSaleId\s*,\s*refundSaleId\s*,\s*nowMs\s*\)\s*;\s*\z'
+}
+
 $required = @(
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Repositories/SaleReversalWriter.cs",
@@ -175,7 +187,7 @@ $expectedWriterMethods = @{
     "IsReversalDependencyReadyAsync" = 1
     "EvaluateReversalDependencyAsync" = 1
     "ValidateReversalBoundaryAsync" = 1
-    "MarkSaleVoidedAsync" = 2
+    "MarkSaleVoidedAsync" = 1
 }
 $writerMethodPattern = '(?m)^\s*internal\s+(?:static\s+)?(?:async\s+)?Task(?:<[^\r\n]+>)?\s+([A-Za-z0-9_]+)\s*\('
 $actualWriterMethods = @(
@@ -206,12 +218,14 @@ $facadeContracts = @(
     [pscustomobject]@{ Access = "internal"; Facade = "ValidateReversalBoundaryAsync"; Writer = "ValidateReversalBoundaryAsync"; Forwarding = @("conn\s*,\s*tx\s*,\s*sale\s*,\s*lines") },
     [pscustomobject]@{ Access = "public"; Facade = "GetPersistedReversalEconomicsErrorAsync"; Writer = "GetPersistedReversalEconomicsErrorAsync"; Forwarding = @("saleId\s*,\s*request") },
     [pscustomobject]@{ Access = "public"; Facade = "IsReversalDependencyReadyAsync"; Writer = "IsReversalDependencyReadyAsync"; Forwarding = @("saleId") },
-    [pscustomobject]@{ Access = "public"; Facade = "EvaluateReversalDependencyAsync"; Writer = "EvaluateReversalDependencyAsync"; Forwarding = @("saleId") },
-    [pscustomobject]@{ Access = "public"; Facade = "MarkSaleVoidedAsync"; Writer = "MarkSaleVoidedAsync"; Forwarding = @(
-            "originalSaleId\s*,\s*refundSaleId\s*,\s*nowMs",
-            "conn\s*,\s*tx\s*,\s*originalSaleId\s*,\s*refundSaleId\s*,\s*nowMs") }
+    [pscustomobject]@{ Access = "public"; Facade = "EvaluateReversalDependencyAsync"; Writer = "EvaluateReversalDependencyAsync"; Forwarding = @("saleId") }
 )
 Assert-ExactFacadeDelegations $saleRepository $writer $facadeContracts
+if (-not (Test-VoidFacadeRoutes $saleRepository $writer)) {
+    Fail "F5 void facade must route standalone lifecycle to F6 and only the supplied connection/transaction to F5"
+} else {
+    Pass "F5 void facade routes standalone lifecycle to F6 and preserves its scoped semantic writer"
+}
 
 $staleRepositoryImplementationMarkers = @(
     "private static bool IsReversalEconomicsCode",
@@ -323,8 +337,8 @@ if ($validateWriters.Count -ne 1) {
 
 $voidWriters = @(Get-MethodSlices $writer "internal" "MarkSaleVoidedAsync")
 $callerOwnedVoidWriters = @($voidWriters | Where-Object { $_ -match "SqliteConnection conn" -and $_ -match "SqliteTransaction tx" })
-if ($voidWriters.Count -ne 2 -or $callerOwnedVoidWriters.Count -ne 1) {
-    Fail "F5 void marker must retain standalone and caller-owned writer overloads"
+if ($voidWriters.Count -ne 1 -or $callerOwnedVoidWriters.Count -ne 1) {
+    Fail "F5 void marker must retain exactly its caller-owned writer overload"
 } else {
     Assert-CallerOwnedWriterSlice $callerOwnedVoidWriters[0] "F5 MarkSaleVoidedAsync caller-owned overload" @(
         "UPDATE\s+sales",
@@ -342,6 +356,8 @@ $forbiddenWriterOwnership = @(
     "EnqueueSalesSyncOutbox",
     "SalesSyncOutboxRepository",
     "AuditLogRepository",
+    "NativeSalesOwnershipRepository",
+    "SalesReportSnapshotCoordinator",
     "InsertSaleAsync",
     "InsertRefundSaleAsync",
     "InsertRefundOrVoidAsync",
@@ -357,6 +373,18 @@ if ($forbiddenWriterOwnership.Count -gt 0) {
     Fail "SaleReversalWriter must not acquire header/line, stock, outbox, audit or transaction-lifecycle ownership: $($forbiddenWriterOwnership -join ', ')"
 } else {
     Pass "SaleReversalWriter excludes header/line, stock, outbox, audit and transaction-lifecycle ownership"
+}
+
+# Mutations are in-memory only. The ownership prohibitions above remain in force.
+$voidRouteMutations = @(
+    $saleRepository.Replace('_transactionWriter.MarkSaleVoidedAsync(originalSaleId, refundSaleId, nowMs)', '_reversalWriter.MarkSaleVoidedAsync(originalSaleId, refundSaleId, nowMs)'),
+    [regex]::Replace($saleRepository, '(_reversalWriter\.MarkSaleVoidedAsync\(\s*)conn\s*,', '${1}null,'),
+    $saleRepository.Replace('_transactionWriter.MarkSaleVoidedAsync(originalSaleId, refundSaleId, nowMs)', '_transactionWriter.MarkSaleVoidedAsync(refundSaleId, originalSaleId, nowMs)')
+)
+foreach ($mutation in $voidRouteMutations) {
+    if ($mutation -eq $saleRepository -or (Test-VoidFacadeRoutes $mutation $writer)) {
+        Fail "F5 void route negative fixture was not rejected"
+    }
 }
 
 $f4EnqueueWriters = @(Get-MethodSlices $salesSyncOutbox "internal" "EnqueueAsync")

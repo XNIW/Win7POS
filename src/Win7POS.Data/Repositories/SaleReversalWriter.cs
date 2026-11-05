@@ -156,13 +156,6 @@ WHERE id = @saleId;",
             }
         }
 
-        internal async Task MarkSaleVoidedAsync(long originalSaleId, long refundSaleId, long nowMs)
-        {
-            using var conn = _factory.Open();
-            await MarkSaleVoidedAsync(conn, null, originalSaleId, refundSaleId, nowMs)
-                .ConfigureAwait(false);
-        }
-
         internal async Task<bool> IsReversalDependencyReadyAsync(long saleId)
         {
             var decision = await EvaluateReversalDependencyAsync(saleId).ConfigureAwait(false);

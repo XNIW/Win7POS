@@ -179,10 +179,11 @@ ORDER BY migration_id;").ToArray();
                 "0011-product-image-outbox",
                 "0012-customer-order-inbox",
                 "0013-catalog-import-recovery",
-                "0014-catalog-import-plans-and-drafts"
+                "0014-catalog-import-plans-and-drafts",
+                "0015-historical-card-imports"
             },
             appliedIds,
-            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0014.");
+            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0015.");
     }
 
     private static void AssertPostPr7MainWasBootstrappedWithoutReapplying(string databasePath)
@@ -202,10 +203,11 @@ ORDER BY migration_id;").ToArray();
                 "0011-product-image-outbox",
                 "0012-customer-order-inbox",
                 "0013-catalog-import-recovery",
-                "0014-catalog-import-plans-and-drafts"
+                "0014-catalog-import-plans-and-drafts",
+                "0015-historical-card-imports"
             },
             appliedIds,
-            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0014.");
+            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0015.");
         Assert.AreEqual(
             "{\"shopName\":\"Negozio QA Ñ\",\"address\":\"Via Unicode 7\"}",
             connection.ExecuteScalar<string>(@"
@@ -231,10 +233,11 @@ ORDER BY migration_id;").ToArray();
                 "0011-product-image-outbox",
                 "0012-customer-order-inbox",
                 "0013-catalog-import-recovery",
-                "0014-catalog-import-plans-and-drafts"
+                "0014-catalog-import-plans-and-drafts",
+                "0015-historical-card-imports"
             },
             appliedIds,
-            "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009-0014.");
+            "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009-0015.");
         Assert.AreEqual(
             8L,
             connection.ExecuteScalar<long>(@"
@@ -344,7 +347,8 @@ WHERE type = 'index' AND sql IS NOT NULL;")
 
     private static async Task AssertDatabaseValidAsync(string path)
     {
-        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(path));
+        using var source = PosDatabaseAccessContext.SelectedSource(path);
+        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(path).WithAccessContext(source));
         var result = await new DbMaintenanceRepository(factory).ValidateAsync();
         Assert.IsTrue(
             result.IsValid,
@@ -706,11 +710,15 @@ WHERE type = 'table' AND name = @table;", new { table }) == 1;
 
     private sealed class FixtureDatabase : IDisposable
     {
+        private readonly OwnedSqliteTestFile _liveFile;
+        private readonly OwnedSqliteTestFile _freshFile;
         private FixtureDatabase(string root)
         {
             Root = root;
             LivePath = Path.Combine(root, "legacy.db");
             FreshPath = Path.Combine(root, "fresh.db");
+            _liveFile = OwnedSqliteTestFile.Create(LivePath);
+            _freshFile = OwnedSqliteTestFile.Create(FreshPath);
             BackupDirectory = Path.Combine(root, "backups");
         }
 
@@ -732,6 +740,8 @@ WHERE type = 'table' AND name = @table;", new { table }) == 1;
         public void Dispose()
         {
             SqliteConnectionFactory.ClearAllPools();
+            _freshFile.Dispose();
+            _liveFile.Dispose();
             try { Directory.Delete(Root, recursive: true); } catch { }
         }
     }

@@ -102,3 +102,39 @@ Assert-True ($register.Contains('catch [Microsoft.Management.Infrastructure.CimE
     $register.Contains('NativeErrorCode -ne [Microsoft.Management.Infrastructure.NativeErrorCode]::NotFound') -and
     $register.Contains('-not $AllowDepartedDescendant')) 'Only typed CIM NotFound can enter owner-departure tolerance'
 'PASS collector identity/departure synthetic tests; no native/CIM/process sampling executed'
+
+# Definitions only: test the existing waited helper without starting a process.
+$waitedSource=Join-Path $repoRoot 'scripts/qa/Win7PosAcceptanceProcessRunner.psm1'
+$waitedAst=[Management.Automation.Language.Parser]::ParseFile($waitedSource,[ref]$tokens,[ref]$errors)
+Assert-True ($errors.Count -eq 0) 'Waited process module syntax errors'
+$waitedIdentity=@($waitedAst.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-Win7PosAcceptanceProcessIdentity'},$true))[0]
+. ([scriptblock]::Create($waitedIdentity.Extent.Text))
+$stub=[pscustomobject]@{HasExited=$false;Id=42;StartTime=$created;MainModule=[pscustomobject]@{FileName=$path}}
+$stub|Add-Member ScriptMethod Refresh {}
+$owned=@{pid=42;creationTicks=$created.Ticks;executable=$path}
+Assert-True (Test-Win7PosAcceptanceProcessIdentity $stub $owned) 'Waited helper rejected the exact owned process'
+$owned.creationTicks++
+Assert-True (-not (Test-Win7PosAcceptanceProcessIdentity $stub $owned)) 'Waited helper admitted a reused PID'
+$waitedReadIdentity=@($waitedAst.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-Win7PosAcceptanceProcessIdentity'},$true))[0]
+. ([scriptblock]::Create($waitedReadIdentity.Extent.Text))
+function Get-FileHash {param($LiteralPath,$Algorithm) [pscustomobject]@{Hash=('a'*64)}}
+try {
+    $script:waitedImageReads=0
+    $stub|Add-Member ScriptProperty MainModule {
+        $script:waitedImageReads++
+        if($script:waitedImageReads -eq 1){return $null}
+        if($script:waitedImageReads -eq 2){return [pscustomobject]@{FileName='C:\Windows\loader.exe'}}
+        return [pscustomobject]@{FileName=$path}
+    } -Force
+    $accepted=Get-Win7PosAcceptanceProcessIdentity $stub $path
+    Assert-True ($script:waitedImageReads -eq 3 -and $accepted.pid -eq 42 -and $accepted.creationTicks -eq $created.Ticks -and $accepted.exeSha256 -ceq ('a'*64)) 'Transient loader image was accepted or failed before exact image readiness'
+    $stub|Add-Member ScriptProperty MainModule {return [pscustomobject]@{FileName='C:\Windows\foreign.exe'}} -Force
+    $failure='';try{$null=Get-Win7PosAcceptanceProcessIdentity $stub $path -TimeoutMilliseconds 20}catch{$failure=$_.Exception.Message}
+    Assert-True ($failure -ceq 'qa_owned_process_image_mismatch') 'Permanent foreign image became ready'
+    $stub|Add-Member NoteProperty HasExited $true -Force
+    $failure='';try{$null=Get-Win7PosAcceptanceProcessIdentity $stub $path -TimeoutMilliseconds 20}catch{$failure=$_.Exception.Message}
+    Assert-True ($failure -ceq 'qa_owned_process_exited_before_identity') 'Exited process became ready'
+}finally{Remove-Item Function:Get-FileHash}
+$unbounded=@($waitedAst.FindAll({param($n) $n -is [Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Member.Value -eq 'WaitForExit' -and ($null -eq $n.Arguments -or $n.Arguments.Count -eq 0)},$true))
+Assert-True ($unbounded.Count -eq 0) 'Waited helper contains an unbounded wait'
+Write-Output 'PASS waited helper identity/deadline structural contracts; no child launched'

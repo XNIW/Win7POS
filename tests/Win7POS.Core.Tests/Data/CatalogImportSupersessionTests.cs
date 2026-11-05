@@ -469,11 +469,14 @@ VALUES(@owner,@hash,@json,@rowsHash,@shop,'FIXTURE',0,'synthetic-existing-draft'
 
     internal sealed class Fixture : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private readonly string root = Path.Combine(Path.GetTempPath(), "Win7POS.Supersession." + Guid.NewGuid().ToString("N"));
         internal SqliteConnectionFactory Factory { get; private set; }
         internal Fixture()
         {
-            var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db")); DbInitializer.EnsureCreated(options); Factory = new SqliteConnectionFactory(options);
+            var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
+            DbInitializer.EnsureCreated(options); Factory = new SqliteConnectionFactory(options);
             using var conn = Factory.Open(); conn.Execute("INSERT INTO app_settings(key,value) VALUES(@id,@shop),(@code,'FIXTURE')",
                 new { id = OutboxShopBinding.OfficialShopIdKey, shop = Shop, code = OutboxShopBinding.OfficialShopCodeKey });
         }
@@ -483,7 +486,7 @@ VALUES(@owner,@hash,@json,@rowsHash,@shop,'FIXTURE',0,'synthetic-existing-draft'
         internal long Number(string sql, object? args = null) { using var conn = Factory.Open(); return conn.ExecuteScalar<long>(sql, args); }
         internal string Text(string sql, object? args = null) { using var conn = Factory.Open(); return conn.ExecuteScalar<string>(sql, args)!; }
         internal string? NullableText(string sql) { using var conn = Factory.Open(); return conn.ExecuteScalar<string?>(sql); }
-        public void Dispose() { SqliteConnection.ClearAllPools(); try { Directory.Delete(root, true); } catch (IOException) { } }
+        public void Dispose() { SqliteConnection.ClearAllPools(); _ownedFile.Dispose(); try { Directory.Delete(root, true); } catch (IOException) { } }
     }
 
     // Explicitly synthetic protocol peer. Stable receipts model lost responses,

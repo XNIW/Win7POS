@@ -54,6 +54,7 @@ LIMIT 200 OFFSET $offset;";
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
+            using var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             var factory = new SqliteConnectionFactory(options);
             using var connection = factory.Open();

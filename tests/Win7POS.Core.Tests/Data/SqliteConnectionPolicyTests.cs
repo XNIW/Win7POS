@@ -18,6 +18,7 @@ public sealed class SqliteConnectionPolicyTests
         {
             var root = CreateTemporaryRoot();
             var dbPath = Path.Combine(root, "pos.db");
+            var ownedFile = OwnedSqliteTestFile.Create(dbPath);
             try
             {
                 if (legacy)
@@ -76,6 +77,7 @@ public sealed class SqliteConnectionPolicyTests
             finally
             {
                 SqliteConnectionFactory.ClearAllPools();
+                ownedFile.Dispose();
                 Directory.Delete(root, recursive: true);
             }
         }
@@ -88,6 +90,7 @@ public sealed class SqliteConnectionPolicyTests
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
         IDisposable? commitFence = null;
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -187,6 +190,7 @@ public sealed class SqliteConnectionPolicyTests
         {
             commitFence?.Dispose();
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -197,6 +201,7 @@ public sealed class SqliteConnectionPolicyTests
         SQLitePCL.Batteries_V2.Init();
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -239,6 +244,7 @@ public sealed class SqliteConnectionPolicyTests
         finally
         {
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -249,6 +255,7 @@ public sealed class SqliteConnectionPolicyTests
         SQLitePCL.Batteries_V2.Init();
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -272,6 +279,7 @@ public sealed class SqliteConnectionPolicyTests
         finally
         {
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -282,6 +290,7 @@ public sealed class SqliteConnectionPolicyTests
         SQLitePCL.Batteries_V2.Init();
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -304,6 +313,7 @@ public sealed class SqliteConnectionPolicyTests
         finally
         {
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -314,6 +324,7 @@ public sealed class SqliteConnectionPolicyTests
         SQLitePCL.Batteries_V2.Init();
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -328,6 +339,7 @@ public sealed class SqliteConnectionPolicyTests
         finally
         {
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -338,6 +350,7 @@ public sealed class SqliteConnectionPolicyTests
         SQLitePCL.Batteries_V2.Init();
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -380,6 +393,7 @@ public sealed class SqliteConnectionPolicyTests
         finally
         {
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -390,6 +404,7 @@ public sealed class SqliteConnectionPolicyTests
         SQLitePCL.Batteries_V2.Init();
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -423,6 +438,7 @@ public sealed class SqliteConnectionPolicyTests
         finally
         {
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -434,6 +450,7 @@ public sealed class SqliteConnectionPolicyTests
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
         SqliteConnection? active = null;
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -460,6 +477,7 @@ public sealed class SqliteConnectionPolicyTests
         {
             active?.Dispose();
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -471,6 +489,7 @@ public sealed class SqliteConnectionPolicyTests
         var root = CreateTemporaryRoot();
         var dbPath = Path.Combine(root, "pos.db");
         SqliteConnection? leaked = null;
+        var ownedFile = OwnedSqliteTestFile.Create(dbPath);
         try
         {
             var options = PosDbOptions.ForPath(dbPath);
@@ -495,6 +514,7 @@ public sealed class SqliteConnectionPolicyTests
         {
             leaked?.Dispose();
             SqliteConnectionFactory.ClearAllPools();
+            ownedFile.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }

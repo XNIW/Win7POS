@@ -92,26 +92,37 @@ jobs:
           "WIN7POS_QA_TEMP_BASE=$env:RUNNER_TEMP" | Add-Content -LiteralPath $env:GITHUB_ENV
 
       - name: Canonical autonomous Windows QA (net48 x86)
+        id: autonomous_qa
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.authorization_lease_smoke_only != true }}
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/qa" | Out-Null
-          pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -OutputRoot "$env:RUNNER_TEMP/qa"
+          pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -HistoricalSalesMode All -OutputRoot "$env:RUNNER_TEMP/qa" -PublicOutputRoot "$env:RUNNER_TEMP/qa-public"
           if ($LASTEXITCODE -ne 0) { throw 'Canonical QA incomplete; first failure and independent results preserved.' }
 
+      - name: Verify current public QA bundle
+        id: verified_qa
+        if: ${{ always() && steps.autonomous_qa.outputs.public_bundle_verified == 'true' }}
+        shell: pwsh
+        env:
+          QA_CURRENT_RUN: ${{ steps.autonomous_qa.outputs.current_run_id }}
+          QA_PUBLIC_RUN: ${{ steps.autonomous_qa.outputs.public_run_id }}
+        run: |
+          Import-Module ./scripts/qa/Win7PosHistoricalSalesValidation.psm1 -DisableNameChecking
+          Import-Module ./scripts/qa/Win7PosQaPublicEvidence.psm1 -DisableNameChecking
+          if ($env:QA_CURRENT_RUN -cne $env:QA_PUBLIC_RUN -or $env:QA_CURRENT_RUN -cnotmatch '^Win7POS\.QA\.\d{8}T\d{9}Z\.[a-f0-9]{32}$') { throw 'qa_public_current_run_mismatch' }
+          $null = Test-QaPublicBundle -Directory (Join-Path "$env:RUNNER_TEMP/qa-public" $env:QA_CURRENT_RUN) -ExpectedRunId $env:QA_CURRENT_RUN
+          "verified=true" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+
       - name: Preserve autonomous QA evidence
-        if: always()
+        if: ${{ always() && steps.verified_qa.outputs.verified == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Win7POS-Autonomous-QA-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/qa/**/*.json
-            ${{ runner.temp }}/qa/**/*.txt
-            ${{ runner.temp }}/qa/**/*.log
-            ${{ runner.temp }}/qa/**/*.trx
-            ${{ runner.temp }}/qa/**/*.csv
-            ${{ runner.temp }}/qa/**/*.png
-          if-no-files-found: warn
+            ${{ runner.temp }}/qa-public/${{ steps.autonomous_qa.outputs.current_run_id }}/qa-public.zip
+            ${{ runner.temp }}/qa-public/${{ steps.autonomous_qa.outputs.current_run_id }}/upload-manifest.json
+          if-no-files-found: error
           retention-days: 14
 
       - name: Authorization-only restore and harness build

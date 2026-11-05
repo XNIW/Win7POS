@@ -16,7 +16,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 {
     public enum SalesRegisterFilter { Oggi, Ieri, Ultimi7Giorni, Mese, Periodo }
 
-    public sealed class SalesRegisterViewModel : INotifyPropertyChanged, IDisposable
+    public sealed partial class SalesRegisterViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly PosWorkflowService _service;
         private readonly bool _useReceipt42;
@@ -43,7 +43,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _listLoadVersion;
         private bool _disposed;
 
-        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, IPermissionService permissionService, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false, System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null, bool canViewAll = true, int? forceOperatorId = null, IOverrideAuthService overrideAuthService = null)
+        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, IPermissionService permissionService, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false, System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null, bool canViewAll = true, int? forceOperatorId = null, IOverrideAuthService overrideAuthService = null, OperatorSession operatorSession = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _useReceipt42 = useReceipt42;
@@ -65,13 +65,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
-            PrintCommand = new AsyncRelayCommand(PrintAsync, _ => !IsBusy && !IsPreviewLoading && SelectedSale != null && HasReceiptPreview);
-            RefundCommand = new AsyncRelayCommand(RefundAsync, _ => !IsBusy && SelectedSale != null && SelectedSale.Kind == (int)SaleKind.Sale && !SelectedSale.IsVoided);
+            PrintCommand = new AsyncRelayCommand(PrintAsync, _ => !IsBusy && RegisterNumbersVisible && !IsPreviewLoading && SelectedSale != null && HasReceiptPreview);
+            RefundCommand = new AsyncRelayCommand(RefundAsync, _ => !IsBusy && RegisterNumbersVisible && SelectedSale != null && SelectedSale.CanRefundNative && SelectedSale.Kind == (int)SaleKind.Sale && !SelectedSale.IsVoided);
             ToggleFiscalPrintedModeCommand = new AsyncRelayCommand(ToggleFiscalPrintedModeAsync, _ => !IsBusy && _overrideAuthService != null);
 
             _onRequestRefund = onRequestRefund;
 
             PosLocalization.Current.LanguageChanged += OnLanguageChanged;
+            InitializeAnalyticalRegister(operatorSession);
         }
 
         /// <summary>True se sbloccata con auth admin per refresh completo; le vendite stampate restano sempre incluse.</summary>
@@ -94,8 +95,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool IsRefundScanMode => _isRefundScanMode;
         public event Action RequestCloseDialog;
 
-        public ObservableCollection<SaleRow> SalesList { get; }
-        public ObservableCollection<DetailLineRow> DetailLines { get; }
+        public ObservableCollection<SaleRow> SalesList { get; private set; }
+        public ObservableCollection<DetailLineRow> DetailLines { get; private set; }
         public ObservableCollection<OperatorFilterItem> OperatorFilterList { get; }
 
         public OperatorFilterItem SelectedOperator
@@ -288,6 +289,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task LoadAsync()
         {
+            if (!_isRefundScanMode) { await LoadAnalyticalRegisterAsync().ConfigureAwait(true); return; }
             CancelListLoad();
             var cts = new CancellationTokenSource();
             _listLoadCts = cts;
@@ -419,6 +421,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task LoadDetailsAsync(SaleRow selected, int version, CancellationToken cancellationToken)
         {
+            if (!_isRefundScanMode) { await LoadAnalyticalRegisterDetailAsync(selected, version, cancellationToken).ConfigureAwait(true); return; }
             if (selected == null) return;
 
             try
@@ -511,6 +514,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task PrintAsync()
         {
+            if (!_isRefundScanMode) await DemandAnalyticalRegisterCurrentAsync(CancellationToken.None).ConfigureAwait(true);
             var selected = SelectedSale;
             var preview = DetailReceiptPreview;
             if (selected == null || string.IsNullOrWhiteSpace(preview)) return;
@@ -537,11 +541,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        private Task RefundAsync()
+        private async Task RefundAsync()
         {
-            if (SelectedSale == null) return Task.CompletedTask;
+            if (SelectedSale == null || !SelectedSale.CanRefundNative) return;
+            if (!_isRefundScanMode) await DemandAnalyticalRegisterCurrentAsync(CancellationToken.None).ConfigureAwait(true);
             _onRequestRefund?.Invoke(SelectedSale.SaleId, this);
-            return Task.CompletedTask;
         }
 
         private async Task ToggleFiscalPrintedModeAsync()
@@ -588,6 +592,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (_disposed) return;
             _disposed = true;
+            DisposeAnalyticalRegister();
             CancelListLoad();
             CancelSelectedSaleLoad();
             PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
@@ -609,6 +614,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public sealed class SaleRow : INotifyPropertyChanged
         {
+            public Win7POS.Core.Reports.SalesReportEntryKey ReportKey { get; set; }
+            public bool IsHistorical => ReportKey?.Origin == Win7POS.Core.Reports.SalesReportOrigin.Historical;
+            public bool CanRefundNative => !IsHistorical;
+            public string OriginText => PosLocalization.T(IsHistorical ? "historyReport.originGetnet" : "historyReport.originNative");
             public long SaleId { get; set; }
             public string SaleCode { get; set; }
             public int Kind { get; set; }

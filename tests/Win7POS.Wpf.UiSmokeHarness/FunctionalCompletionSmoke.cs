@@ -239,12 +239,16 @@ WHEN NEW.key = 'printer.copies' BEGIN SELECT RAISE(ABORT, 'injected settings fai
         internal static async Task CheckAsync(List<string> results, string name, Func<Task> test)
         {
             if (!string.IsNullOrEmpty(_scenario) && !string.Equals(_scenario, name, StringComparison.Ordinal)) return;
-            try { await test(); results.Add("PASS " + name); }
-            catch (Exception ex) { results.Add("FAIL " + name + " " + ex.Message); }
+            TypedQaDiagnosticWriter.BeginScenario(name, "functional-completion");
+            try { await test(); results.Add("PASS " + name); TypedQaDiagnosticWriter.CompleteScenario(true); }
+            catch (Exception ex) { results.Add("FAIL " + name + " " + ex.Message); TypedQaDiagnosticWriter.CompleteScenario(false, ex); }
         }
 
-        internal static void Require(bool value, string message)
+        internal static void Require(bool value, string message,
+            [System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "",
+            [System.Runtime.CompilerServices.CallerLineNumber] int sourceLine = 0)
         {
+            TypedQaDiagnosticWriter.RecordAssertion(value, sourceFile: sourceFile, sourceLine: sourceLine);
             if (!value) throw new InvalidOperationException(message);
         }
 

@@ -407,12 +407,14 @@ INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _database;
         private TestDb(string root)
         {
             Root = root;
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
-            Factory = new SqliteConnectionFactory(options);
-            DbInitializer.EnsureCreated(options);
+            _database = OwnedSqliteTestFile.Create(options.DbPath);
+            Factory = _database.Factory;
+            DbInitializer.EnsureCreated(_database.Options);
         }
 
         public SqliteConnectionFactory Factory { get; }
@@ -428,12 +430,16 @@ INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _database.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }
 
     private sealed class RestoreFiles : IDisposable
     {
+        private readonly OwnedSqliteTestFile _live;
+        private readonly OwnedSqliteTestFile _source;
+        private readonly OwnedSqliteTestFile _validated;
         private RestoreFiles(string root)
         {
             Root = root;
@@ -441,6 +447,9 @@ INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
             Validated = Path.Combine(root, "validated.db");
             Live = Path.Combine(root, "live.db");
             Rollback = Path.Combine(root, "rollback.db");
+            _live = OwnedSqliteTestFile.Create(Live);
+            _source = OwnedSqliteTestFile.Create(Source);
+            _validated = OwnedSqliteTestFile.Create(Validated);
         }
 
         public string Source { get; }
@@ -458,6 +467,9 @@ INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
 
         public void Dispose()
         {
+            _live.Dispose();
+            _source.Dispose();
+            _validated.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

@@ -20,6 +20,8 @@ namespace Win7POS.Core.Security
 
         public const string RegisterView = "register.view";
         public const string RegisterViewAll = "register.view_all";
+        public const string RegisterImportHistory = "register.import_history";
+        public const string RegisterCancelHistory = "register.cancel_history";
 
         public const string DailyCloseView = "daily_close.view";
         public const string DailyCloseRun = "daily_close.run";

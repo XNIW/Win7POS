@@ -275,17 +275,25 @@ plan_json,plan_hash,created_at,dispatch_started_at) VALUES(@id,@id,@PayloadHash,
         var applied=await applier.ApplyAsync(preview,new SupplierExcelImportApplyOptions { CatalogImportOutboxEntry=entry });
         using(var conn=source.Factory.Open())
         {
+            // This source must be a real contiguous 0013 fixture, including the
+            // absence of additive 0015 tables, not a latest DB with a ledger gap.
+            Assert.AreEqual(0L, conn.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation"));
+            Assert.AreEqual(0L, conn.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions"));
             conn.Execute(@"UPDATE catalog_import_outbox SET status='acked';
+DROP TABLE historical_import_observation; DROP TABLE historical_transactions; DROP TABLE historical_import_file;
+DROP TABLE historical_import_batch; DROP TABLE historical_import_operation;
+DROP TABLE historical_merchant_binding; DROP TABLE historical_merchant_scope;
+DROP TABLE sales_report_native_ownership; DROP TABLE sales_report_native_time_policy; DROP TABLE historical_import_dataset;
 DROP TABLE catalog_import_recovery_draft; DROP TABLE catalog_import_plan_part; DROP TABLE catalog_import_plan;
 DROP TABLE catalog_import_recovery_supersession; DROP TABLE catalog_import_prepared_plan; DROP TABLE catalog_import_correction_proof;
-DELETE FROM schema_migrations WHERE migration_id='0014-catalog-import-plans-and-drafts'; PRAGMA wal_checkpoint(TRUNCATE);");
+DELETE FROM schema_migrations WHERE migration_id IN('0014-catalog-import-plans-and-drafts','0015-historical-card-imports'); PRAGMA wal_checkpoint(TRUNCATE);");
         }
         var restored=await new SqliteRestoreCoordinator(live.Factory,new Win7POS.Data.Backup.SqliteOnlineBackup(live.Factory))
             .RestoreAsync(source.Factory.DbPath,Path.Combine(live.Root,"before-restore.db"),"test-shop-id","TEST-SHOP",binding.Epoch,
                 _=>Task.CompletedTask,CancellationToken.None);
         Assert.IsTrue(restored.LiveValidation.IsValid);
         using var current=live.Factory.Open();using var historical=source.Factory.Open();
-        Assert.AreEqual(14L,current.ExecuteScalar<long>("SELECT COUNT(*) FROM schema_migrations"));
+        Assert.AreEqual(15L,current.ExecuteScalar<long>("SELECT COUNT(*) FROM schema_migrations"));
         Assert.AreEqual(13L,historical.ExecuteScalar<long>("SELECT COUNT(*) FROM schema_migrations"));
         Assert.AreEqual(entry.PayloadJson,current.ExecuteScalar<string>("SELECT payload_json FROM catalog_import_outbox"));
         Assert.AreEqual(entry.PayloadHash,current.ExecuteScalar<string>("SELECT payload_hash FROM catalog_import_outbox"));

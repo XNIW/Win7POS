@@ -1164,11 +1164,14 @@ UPDATE products SET unitPrice=999 WHERE barcode='RECOVERY-1';");
     private sealed class Payload { public long Id {get;set;} public string Json {get;set;}=""; public string Hash {get;set;}=""; }
     private sealed class Fixture : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         internal string Root {get;}=Path.Combine(Path.GetTempPath(),"Win7POS.Recovery.Flow."+Guid.NewGuid().ToString("N"));
         internal SqliteConnectionFactory Factory {get;}
         internal Fixture()
         {
-            var options=PosDbOptions.ForPath(Path.Combine(Root,"pos.db"));DbInitializer.EnsureCreated(options);Factory=new SqliteConnectionFactory(options);
+            var options=PosDbOptions.ForPath(Path.Combine(Root,"pos.db"));
+            _ownedFile=OwnedSqliteTestFile.Create(options.DbPath);
+            DbInitializer.EnsureCreated(options);Factory=new SqliteConnectionFactory(options);
             using var conn=Factory.Open();conn.Execute("INSERT INTO app_settings(key,value) VALUES(@id,'test-shop-id'),(@code,'TEST-SHOP')",
                 new { id=OutboxShopBinding.OfficialShopIdKey,code=OutboxShopBinding.OfficialShopCodeKey });
         }
@@ -1195,7 +1198,7 @@ UPDATE products SET unitPrice=999 WHERE barcode='RECOVERY-1';");
                     SecondProductName=Optional(row.SecondProductName),ItemNumber=Optional(row.ItemNumber),Supplier=Optional(row.Supplier),Category=Optional(row.Category),
                     PurchasePrice=Optional(row.PurchasePrice),RetailPrice=Optional(row.RetailPrice),Quantity=Optional(row.Quantity),ChangeKind="new",Operation="upsert_product" }).ToArray() };
         private static string Optional(string value) => string.IsNullOrWhiteSpace(value) ? null! : value.Trim();
-        public void Dispose() { SqliteConnection.ClearAllPools();try { Directory.Delete(Root,true); } catch {} }
+        public void Dispose() { SqliteConnection.ClearAllPools();_ownedFile.Dispose();try { Directory.Delete(Root,true); } catch {} }
     }
     private sealed class Server : IDisposable
     {

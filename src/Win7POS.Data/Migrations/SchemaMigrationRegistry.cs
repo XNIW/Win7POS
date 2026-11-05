@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Dapper;
 using Win7POS.Data.Online;
+using Win7POS.Data.Import;
 
 namespace Win7POS.Data.Migrations
 {
@@ -263,8 +264,17 @@ postcondition=current-structural-schema",
                     "Additive plan and draft tables; downgrade requires restoring the verified backup.",
                     true,
                     CatalogImportPlanSchema.Apply,
-                    IsCurrentSchemaStructurallyValid,
-                    IsRecognizedCatalogImportPlanBaseline)
+                    IsPostCatalogPlanSchemaStructurallyValid,
+                    IsRecognizedCatalogImportPlanBaseline),
+                new SchemaMigration(
+                    "0015-historical-card-imports",
+                    "Add isolated historical card movements, operation receipts and report revisions.",
+                    "0015-historical-card-imports/v1\n" + HistoricalSalesSchema.Sql,
+                    "9e04be2f76ee6ec7e7bd1eee99c4be59ee93e137277a0314747180274d0d720e",
+                    "1.0.0",
+                    "Additive local history; downgrade requires the verified backup.",
+                    true, HistoricalSalesSchema.Apply, IsCurrentSchemaStructurallyValid,
+                    IsRecognizedHistoricalSalesBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -293,6 +303,31 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+            => IsPostCatalogPlanSchemaStructurallyValid(detector) && HistoricalSalesSchema.IsSatisfied(detector);
+
+        private static bool IsRecognizedHistoricalSalesBaseline(LegacySchemaDetector detector)
+        {
+            if (detector == null) throw new ArgumentNullException(nameof(detector));
+            var tables = new[] { "historical_import_dataset", "historical_merchant_scope", "historical_merchant_binding",
+                "historical_import_operation", "historical_import_batch", "historical_import_file", "historical_transactions",
+                "historical_import_observation", "sales_report_native_ownership", "sales_report_native_time_policy" };
+            if (!tables.Any(detector.TableExists)) return false;
+
+            // This is an additive 0015 baseline. The published 0014 recognizer
+            // remains unchanged and is not allowed to adopt a partial 0015 as
+            // though its historical tables did not exist.
+            if (!IsCurrentSchemaStructurallyValid(detector) ||
+                !IsRecognizedCatalogImportPlanBaseline(detector) ||
+                detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_dataset", transaction: detector.Transaction) != 1 ||
+                !detector.NoRows(@"SELECT 1 FROM historical_import_dataset
+WHERE singleton_id<>1 OR typeof(dataset_id)<>'text' OR length(trim(dataset_id))=0
+OR typeof(data_revision)<>'integer' OR data_revision<0 LIMIT 1;") ||
+                !detector.NoRows("PRAGMA foreign_key_check;"))
+                throw new InvalidDataException("Historical import baseline is incomplete or contains unsafe existing evidence.");
+            return true;
+        }
+
+        private static bool IsPostCatalogPlanSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostCatalogImportRecoverySchemaStructurallyValid(detector) && CatalogImportPlanSchema.IsSatisfied(detector) && HasSafeConvergenceBindings(detector);
 
         private static bool IsPostCatalogImportRecoverySchemaStructurallyValid(LegacySchemaDetector detector)
@@ -844,7 +879,7 @@ OR outbox_id IN (SELECT id FROM catalog_import_outbox WHERE status='recovered')"
 
         private static bool IsRecognizedCatalogImportPlanBaseline(LegacySchemaDetector detector)
         {
-            if (!IsCurrentSchemaStructurallyValid(detector)) return false;
+            if (!IsPostCatalogPlanSchemaStructurallyValid(detector)) return false;
             if (!HasSafePlanBindings(detector) || !HasSafeRecoveryOutboxBindings(detector))
                 throw new InvalidDataException("Catalog import plan database contains unsafe operation evidence.");
             return HasRemotePriceOwnership(detector) && DbInitializer.IsSecuritySeedSatisfied(detector.Connection,detector.Transaction);

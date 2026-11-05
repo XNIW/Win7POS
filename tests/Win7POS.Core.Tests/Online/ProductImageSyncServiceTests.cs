@@ -374,6 +374,7 @@ public sealed class ProductImageSyncServiceTests
 
     private sealed class TestScope : IDisposable
     {
+        private readonly Win7POS.Core.Tests.Data.OwnedSqliteTestFile _database;
         private readonly string _root;
         private readonly SqliteConnectionFactory _factory;
         private readonly ProductImageStagingStore _staging;
@@ -381,8 +382,10 @@ public sealed class ProductImageSyncServiceTests
         private readonly OnlineSyncGeneration _generation;
         private readonly OnlineSyncRequestCredentials _credentials;
 
-        private TestScope(string root, SqliteConnectionFactory factory, long productId)
+        private TestScope(string root, Win7POS.Core.Tests.Data.OwnedSqliteTestFile database, long productId)
         {
+            _database = database;
+            var factory = database.Factory;
             _root = root;
             _factory = factory;
             LocalProductId = productId;
@@ -421,19 +424,25 @@ public sealed class ProductImageSyncServiceTests
                 Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
-            var factory = new SqliteConnectionFactory(options);
-            DbInitializer.EnsureCreated(options);
-            using var connection = factory.Open();
-            await connection.ExecuteAsync(@"
+            var database = Win7POS.Core.Tests.Data.OwnedSqliteTestFile.Create(options.DbPath);
+            TestScope? scope = null;
+            try
+            {
+                var factory = database.Factory;
+                DbInitializer.EnsureCreated(database.Options);
+                using var connection = factory.Open();
+                await connection.ExecuteAsync(@"
 INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
 VALUES('IMG-SYNC-1', 'IMG-SYNC-1', 100, @remoteProductId, 1);",
-                new { remoteProductId = ProductId });
-            var productId = await connection.ExecuteScalarAsync<long>(
-                "SELECT id FROM products WHERE barcode = 'IMG-SYNC-1';");
-            var scope = new TestScope(root, factory, productId);
-            if (enqueueReplace)
-                await scope.EnqueueReplaceAsync();
-            return scope;
+                    new { remoteProductId = ProductId });
+                var productId = await connection.ExecuteScalarAsync<long>(
+                    "SELECT id FROM products WHERE barcode = 'IMG-SYNC-1';");
+                scope = new TestScope(root, database, productId);
+                if (enqueueReplace)
+                    await scope.EnqueueReplaceAsync();
+                return scope;
+            }
+            catch { if (scope != null) scope.Dispose(); else database.Dispose(); throw; }
         }
 
         internal ProductImageSyncService Service(FakeTransport transport) =>
@@ -510,6 +519,7 @@ VALUES('IMG-SYNC-1', 'IMG-SYNC-1', 100, @remoteProductId, 1);",
         {
             _gate.Dispose();
             SqliteConnection.ClearAllPools();
+            _database.Dispose();
             try { Directory.Delete(_root, true); } catch { }
         }
     }

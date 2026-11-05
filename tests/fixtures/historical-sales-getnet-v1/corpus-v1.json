@@ -1,0 +1,16 @@
+{
+  "schema": "historical-sales-getnet-synthetic-v1",
+  "sourceRows": 6,
+  "accepted": 5,
+  "sales": 4,
+  "cancellations": 1,
+  "rejected": 1,
+  "signedGrossClp": 3380,
+  "knownNetClp": 3320,
+  "rejectedRequestedClp": 888,
+  "policy": "synthetic ISO UTC evidence; legacy CLP explicitly confirmed",
+  "files": [
+    "synthetic-legacy.xlsx",
+    "synthetic-modern.xlsx"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "win7pos-historical-sales-fixtures-v1",
+  "fixtureVersion": "historical-sales-getnet-v1",
+  "oracle": "corpus-v1.json",
+  "timePolicyVersion": "synthetic-fixed-offset-v1",
+  "files": [
+    {
+      "name": "corpus-v1.json",
+      "sha256": "741b725b6b0b344d9f0276790a6166504ee83bdc0a6f2d65a95ac14818338e48"
+    },
+    {
+      "name": "synthetic-legacy.xlsx",
+      "sha256": "1abb796cb03f9aafd5dbeb4608cffe3e2bf63ca572925089cd251629330364df"
+    },
+    {
+      "name": "synthetic-modern.xlsx",
+      "sha256": "67f7f313d4630109adf1c3194a6ec53bb90c9bbbbd3ad2e280321fd07f706765"
+    }
+  ]
+}

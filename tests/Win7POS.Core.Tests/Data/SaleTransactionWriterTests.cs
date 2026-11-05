@@ -339,6 +339,71 @@ public sealed class SaleTransactionWriterTests
     }
 
     [TestMethod]
+    public async Task SaleTransactionWriter_AndSaleFacade_StandaloneVoidPublishesChangedOriginalProof()
+    {
+        using var directDb = TestDb.Create();
+        using var facadeDb = TestDb.Create();
+        await VerifyStandaloneVoidProofAsync(new DirectTransactionSurface(directDb.Factory), directDb.Factory, false);
+        await VerifyStandaloneVoidProofAsync(new FacadeTransactionSurface(facadeDb.Factory), facadeDb.Factory, false);
+    }
+
+    [TestMethod]
+    public async Task SaleTransactionWriter_AndSaleFacade_StandaloneVoidProofFailureRollsBackMarkAndRevision()
+    {
+        using var directDb = TestDb.Create();
+        using var facadeDb = TestDb.Create();
+        await VerifyStandaloneVoidProofAsync(new DirectTransactionSurface(directDb.Factory), directDb.Factory, true);
+        await VerifyStandaloneVoidProofAsync(new FacadeTransactionSurface(facadeDb.Factory), facadeDb.Factory, true);
+    }
+
+    private static async Task VerifyStandaloneVoidProofAsync(ITransactionSurface surface, SqliteConnectionFactory factory, bool failProof)
+    {
+        await SaveShopAsync(factory);
+        await SeedStockAsync(factory, "F6-STANDALONE-VOID", 5);
+        var originalId = await surface.InsertSaleAsync(NewOrdinarySale("F6-STANDALONE-VOID", 100),
+            new[] { NewLine("F6-STANDALONE-VOID", 1, 100) });
+        var refundId = await surface.InsertRefundSaleAsync(
+            new RefundCreateRequest { OriginalSaleId = originalId, Reason = "F6 standalone void marker" }, -100, -100, 0, 0);
+        string? beforeFingerprint;
+        long beforeRevision;
+        using (var conn = factory.Open())
+        {
+            beforeFingerprint = await conn.ExecuteScalarAsync<string>("SELECT source_fingerprint FROM sales_report_native_ownership WHERE sale_id=@originalId", new { originalId });
+            Assert.IsNotNull(beforeFingerprint);
+            beforeRevision = await conn.ExecuteScalarAsync<long>("SELECT data_revision FROM historical_import_dataset WHERE singleton_id=1");
+            if (failProof)
+                await conn.ExecuteAsync("CREATE TRIGGER fail_f6_original_proof BEFORE UPDATE ON sales_report_native_ownership " +
+                    "WHEN OLD.sale_id=" + originalId.ToString(CultureInfo.InvariantCulture) + " BEGIN SELECT RAISE(ABORT,'F6 proof failure'); END;");
+        }
+        if (failProof)
+            await Assert.ThrowsExactlyAsync<SqliteException>(() => surface.MarkSaleVoidedAsync(originalId, refundId, CreatedAt + 99));
+        else
+            await surface.MarkSaleVoidedAsync(originalId, refundId, CreatedAt + 99);
+        using var verify = factory.Open();
+        var mark = await verify.ExecuteScalarAsync<long?>("SELECT voided_by_sale_id FROM sales WHERE id=@originalId", new { originalId });
+        var afterFingerprint = await verify.ExecuteScalarAsync<string>("SELECT source_fingerprint FROM sales_report_native_ownership WHERE sale_id=@originalId", new { originalId });
+        Assert.IsNotNull(afterFingerprint);
+        var afterRevision = await verify.ExecuteScalarAsync<long>("SELECT data_revision FROM historical_import_dataset WHERE singleton_id=1");
+        if (failProof)
+        {
+            Assert.IsNull(mark);
+            Assert.AreEqual(beforeFingerprint, afterFingerprint);
+            Assert.AreEqual(beforeRevision, afterRevision);
+        }
+        else
+        {
+            Assert.AreEqual((long?)refundId, mark);
+            Assert.AreNotEqual(beforeFingerprint, afterFingerprint);
+            Assert.IsTrue(afterRevision > beforeRevision);
+        }
+        Assert.AreEqual("Verified", await verify.ExecuteScalarAsync<string>("SELECT state FROM sales_report_native_ownership WHERE sale_id=@originalId", new { originalId }));
+        Assert.AreEqual(100L, await verify.ExecuteScalarAsync<long>("SELECT total FROM sales WHERE id=@originalId", new { originalId }));
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM sales_sync_outbox"));
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM local_stock_movements"));
+        Assert.AreEqual(4L, await verify.ExecuteScalarAsync<long>("SELECT stock_qty FROM product_meta WHERE barcode='F6-STANDALONE-VOID'"));
+    }
+
+    [TestMethod]
     public async Task SaleTransactionWriter_AndSaleFacade_RollBackVoidAuditAndMarkWhenMarkFails()
     {
         using var directDb = TestDb.Create();
@@ -497,6 +562,10 @@ public sealed class SaleTransactionWriterTests
             NewOrdinarySale(codePrefix + "-ORIGINAL", 100),
             new[] { NewLine(barcode, 1, 100) });
         var originalLineId = await LoadOnlyLineIdAsync(factory, originalSaleId);
+        string? originalProof;
+        using (var proofConnection = factory.Open())
+            originalProof = await proofConnection.ExecuteScalarAsync<string>("SELECT source_fingerprint FROM sales_report_native_ownership WHERE sale_id=@originalSaleId", new { originalSaleId });
+        Assert.IsNotNull(originalProof);
         var voidSale = new Sale
         {
             Code = codePrefix + "-VOID",
@@ -528,6 +597,12 @@ public sealed class SaleTransactionWriterTests
             "f6_void",
             saleId => "voided:" + saleId.ToString(CultureInfo.InvariantCulture));
 
+        using (var proofConnection = factory.Open())
+        {
+            var refreshedProof = await proofConnection.ExecuteScalarAsync<string>("SELECT source_fingerprint FROM sales_report_native_ownership WHERE sale_id=@originalSaleId", new { originalSaleId });
+            Assert.IsNotNull(refreshedProof);
+            Assert.AreNotEqual(originalProof, refreshedProof);
+        }
         return await LoadVoidSnapshotAsync(factory, originalSaleId, voidSaleId, barcode);
     }
 
@@ -956,6 +1031,8 @@ WHERE id = @saleId;", new { saleId });
 
         Task MarkPdfPrintedAsync(long saleId);
 
+        Task MarkSaleVoidedAsync(long originalSaleId, long refundSaleId, long nowMs);
+
         Task<long> InsertRefundSaleAsync(
             RefundCreateRequest request,
             long totalMinor,
@@ -1009,6 +1086,9 @@ WHERE id = @saleId;", new { saleId });
             _writer.InsertSaleAsync(sale, lines);
 
         public Task MarkPdfPrintedAsync(long saleId) => _writer.MarkPdfPrintedAsync(saleId);
+
+        public Task MarkSaleVoidedAsync(long originalSaleId, long refundSaleId, long nowMs) =>
+            _writer.MarkSaleVoidedAsync(originalSaleId, refundSaleId, nowMs);
 
         public Task<long> InsertRefundSaleAsync(
             RefundCreateRequest request,
@@ -1079,6 +1159,9 @@ WHERE id = @saleId;", new { saleId });
             _repository.InsertSaleAsync(sale, lines);
 
         public Task MarkPdfPrintedAsync(long saleId) => _repository.MarkPdfPrintedAsync(saleId);
+
+        public Task MarkSaleVoidedAsync(long originalSaleId, long refundSaleId, long nowMs) =>
+            _repository.MarkSaleVoidedAsync(originalSaleId, refundSaleId, nowMs);
 
         public Task<long> InsertRefundSaleAsync(
             RefundCreateRequest request,
@@ -1320,10 +1403,12 @@ WHERE id = @saleId;", new { saleId });
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             Root = root;
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             Factory = new SqliteConnectionFactory(options);
             DbInitializer.EnsureCreated(options);
         }
@@ -1343,6 +1428,7 @@ WHERE id = @saleId;", new { saleId });
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

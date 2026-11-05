@@ -941,7 +941,8 @@ INSERT INTO restore_fk_child(id, parent_id) VALUES(1, 999);");
 
     private static async Task AssertDatabaseValidAndDeleteFullAsync(string path)
     {
-        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(path));
+        using var selected = PosDatabaseAccessContext.SelectedSource(path);
+        var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(path).WithAccessContext(selected));
         var validation = await new DbMaintenanceRepository(factory).ValidateAsync();
         Assert.IsTrue(validation.IsValid, validation.IntegrityCheck + " / " + validation.ForeignKeyCheck);
         using var connection = factory.Open();
@@ -1000,12 +1001,16 @@ INSERT INTO restore_fk_child(id, parent_id) VALUES(1, 999);");
 
     private sealed class RestoreProtocolFiles : IDisposable
     {
+        private readonly OwnedSqliteTestFile _liveOwner;
+        private readonly OwnedSqliteTestFile _sourceOwner;
         private RestoreProtocolFiles(string root)
         {
             Root = root;
             Live = Path.Combine(root, "live.db");
             Source = Path.Combine(root, "source.db");
-            LiveFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(Live));
+            _liveOwner = OwnedSqliteTestFile.Create(Live);
+            _sourceOwner = OwnedSqliteTestFile.Create(Source);
+            LiveFactory = _liveOwner.Factory;
         }
 
         public string Live { get; }
@@ -1033,6 +1038,8 @@ INSERT INTO restore_fk_child(id, parent_id) VALUES(1, 999);");
         public void Dispose()
         {
             SqliteConnectionFactory.ClearAllPools();
+            _sourceOwner.Dispose();
+            _liveOwner.Dispose();
             try
             {
                 if (Directory.Exists(Root))
@@ -1631,15 +1638,20 @@ BEGIN SELECT RAISE(ABORT,'deterministic'); END;");
     private sealed class AutomationFiles : IDisposable
     {
         private readonly List<BackupAutomationService> _services = new List<BackupAutomationService>();
+        private readonly OwnedSqliteTestFile _database;
         public AutomationFiles()
         {
             Root = Path.Combine(Path.GetTempPath(), "Win7POS.AutoTests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Root);
             Live = Path.Combine(Root, "live.db");
             Backups = Path.Combine(Root, "backups");
-            var options = PosDbOptions.ForPath(Live);
-            DbInitializer.EnsureCreated(options);
-            Factory = new SqliteConnectionFactory(options);
+            _database = OwnedSqliteTestFile.Create(Live);
+            try
+            {
+                DbInitializer.EnsureCreated(_database.Options);
+                Factory = _database.Factory;
+            }
+            catch { _database.Dispose(); throw; }
         }
         public string Root { get; }
         public string Live { get; }
@@ -1662,6 +1674,7 @@ BEGIN SELECT RAISE(ABORT,'deterministic'); END;");
         {
             foreach (var service in _services) service.Dispose();
             SqliteConnectionFactory.ClearAllPools();
+            _database.Dispose();
             Directory.Delete(Root, true);
         }
     }

@@ -83,13 +83,12 @@ namespace Win7POS.Wpf.Pos
                     vm?.SetStatus(PosLocalization.T("reports.exportXlsxUnavailable"));
                     return;
                 }
-                var content = await vm.GetExportCsvContentAsync(request).ConfigureAwait(true);
-                File.WriteAllText(dialog.FileName, content, Encoding.UTF8);
-                vm?.SetStatus(PosLocalization.F("reports.fileSaved", dialog.FileName));
+                var result = await vm.ExportToPathAsync(request, dialog.FileName, overwriteAllowed: File.Exists(dialog.FileName), System.Threading.CancellationToken.None).ConfigureAwait(true);
+                vm.SetStatus(PosLocalization.T(result.Outcome == SalesReportPublicationOutcome.Published ? "historyReport.exportPublished" : result.Outcome == SalesReportPublicationOutcome.PublicationOutcomeUnknown ? "historyReport.exportUnknown" : "historyReport.exportFailed"));
             }
-            catch (System.Exception ex)
+            catch (System.Exception)
             {
-                vm?.SetStatus(PosLocalization.F("reports.saveError", ex.Message));
+                vm?.SetStatus(PosLocalization.T("historyReport.exportFailed"));
             }
         }
 

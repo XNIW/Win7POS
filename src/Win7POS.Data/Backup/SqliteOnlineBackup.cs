@@ -54,6 +54,9 @@ namespace Win7POS.Data.Backup
 
             cancellationToken.ThrowIfCancellationRequested();
             var sourcePath = Path.GetFullPath(_sourceFactory.DbPath);
+            var operationId = Guid.NewGuid().ToString("N").Substring(0, 12);
+            var sourceContext = _sourceFactory.AccessContext.ForOperation(operationId);
+            sourceContext.DemandPath(sourcePath);
             var finalPath = Path.GetFullPath(destinationPath);
             if (string.Equals(sourcePath, finalPath, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Backup destination must differ from the live database path.");
@@ -66,10 +69,11 @@ namespace Win7POS.Data.Backup
                 throw new InvalidOperationException("Backup destination directory is invalid.");
             _testHooks?.AtBackup(BackupFailurePoint.UnwritableDestination);
             Directory.CreateDirectory(directory);
+            using var publishContext = PosDatabaseAccessContext.ReservePublishTarget(finalPath, sourceContext);
 
-            var operationId = Guid.NewGuid().ToString("N").Substring(0, 12);
             var inspection = new SqliteSourceInspection();
             var temporaryPath = string.Empty;
+            PosDatabaseAccessContext temporaryContext = null;
             var total = Stopwatch.StartNew();
             try
             {
@@ -80,13 +84,15 @@ namespace Win7POS.Data.Backup
                 {
                     inspection = SqliteSourceInspector.Inspect(sourcePath, requireWalSidecars: true);
                     temporaryPath = AllocateTemporaryPath(finalPath);
+                    temporaryContext = PosDatabaseAccessContext.Allocate(temporaryPath, PosDatabaseAccessRole.BackupPartial, sourceContext);
                     _testHooks?.AtBackup(BackupFailurePoint.BeforeSourceOpen);
                     cancellationToken.ThrowIfCancellationRequested();
                     var snapshot = Stopwatch.StartNew();
                     var busyRetries = await Task.Run(
                             () => CreateNativeSnapshot(
-                                sourcePath,
-                                temporaryPath,
+                                sourceContext,
+                                temporaryContext,
+                                operationId,
                                 cancellationToken))
                         .ConfigureAwait(false);
                     snapshot.Stop();
@@ -105,8 +111,13 @@ namespace Win7POS.Data.Backup
                     cancellationToken.ThrowIfCancellationRequested();
                     _testHooks?.AtBackup(BackupFailurePoint.AfterSnapshotBeforeValidation);
                 }
+                // Native backup can copy the WAL header. Normalize only the owned snapshot;
+                // the source remains read-only and the historical contents/ledger are untouched.
+                using (var preparation = new SqliteConnectionFactory(PosDbOptions.ForPath(temporaryPath)
+                    .WithAccessContext(temporaryContext)).Open()) { }
                 var validationWatch = Stopwatch.StartNew();
-                var validationFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(temporaryPath));
+                var validationFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(temporaryPath)
+                    .WithAccessContext(temporaryContext.Narrow(PosDatabaseAccessRole.BackupValidation)));
                 var validation = await new DbMaintenanceRepository(validationFactory)
                     .ValidateAsync(cancellationToken)
                     .ConfigureAwait(false);
@@ -137,7 +148,9 @@ namespace Win7POS.Data.Backup
                 var publish = Stopwatch.StartNew();
                 _testHooks?.AtBackup(BackupFailurePoint.PublishError);
                 EnsureDestinationIsPublishable(finalPath);
+                publishContext.DemandOperation(operationId, finalPath, PosDatabaseAccessRole.PublishTarget);
                 File.Move(temporaryPath, finalPath);
+                publishContext.BindCreatedFile();
                 publish.Stop();
                 Report(
                     operationId,
@@ -183,19 +196,27 @@ namespace Win7POS.Data.Backup
                     "backup_failed");
                 throw;
             }
+            finally { temporaryContext?.Dispose(); }
         }
 
         private int CreateNativeSnapshot(
-            string sourcePath,
-            string temporaryPath,
+            PosDatabaseAccessContext sourceContext,
+            PosDatabaseAccessContext destinationContext,
+            string operationId,
             CancellationToken cancellationToken)
         {
+            var sourcePath = sourceContext.DbPath;
+            var temporaryPath = destinationContext.DbPath;
             var retryWindow = Stopwatch.StartNew();
             for (var attempt = 1; ; attempt++)
             {
                 try
                 {
+                    sourceContext.DemandOperation(operationId, sourcePath, PosDatabaseAccessRole.Live, PosDatabaseAccessRole.SyntheticFixture, PosDatabaseAccessRole.CandidateMigration);
+                    destinationContext.DemandOperation(operationId, temporaryPath, PosDatabaseAccessRole.BackupPartial);
                     _testHooks?.AtBackup(BackupFailurePoint.SourceRemovedOrLocked);
+                    using (var sourceBorrow = sourceContext.EnterConnection())
+                    using (var destinationBorrow = destinationContext.EnterConnection())
                     using (var source = new SqliteConnection(BuildSourceConnectionString(sourcePath)))
                     using (var destination = new SqliteConnection(BuildDestinationConnectionString(temporaryPath)))
                     {
@@ -216,6 +237,7 @@ namespace Win7POS.Data.Backup
                 {
                     DeleteIfPresent(temporaryPath);
                     DeleteSqliteSidecars(temporaryPath);
+                    destinationContext.RecreateOwnedPartial();
                     cancellationToken.ThrowIfCancellationRequested();
                     var remaining = NativeSnapshotRetryWindowMilliseconds -
                         (int)retryWindow.ElapsedMilliseconds;
@@ -308,7 +330,7 @@ namespace Win7POS.Data.Backup
                 Cache = SqliteCacheMode.Private,
                 DataSource = path,
                 ForeignKeys = true,
-                Mode = SqliteOpenMode.ReadWriteCreate,
+                Mode = SqliteOpenMode.ReadWrite,
                 Pooling = false
             }.ToString();
         }

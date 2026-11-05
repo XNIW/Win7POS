@@ -321,10 +321,12 @@ VALUES(@barcode, 10);",
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             Root = root;
             Options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(Options.DbPath);
             Factory = new SqliteConnectionFactory(Options);
             DbInitializer.EnsureCreated(Options);
         }
@@ -342,6 +344,7 @@ VALUES(@barcode, 10);",
 
         public void Dispose()
         {
+            _ownedFile.Dispose();
             SqliteConnection.ClearAllPools();
             try
             {

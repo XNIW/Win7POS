@@ -56,10 +56,13 @@ namespace Win7POS.Data.Online
 
             var fullLivePath = Path.GetFullPath(liveDatabasePath);
             var candidatePath = AllocateLegacyCandidatePath(fullLivePath);
+            var liveContext = PosDatabaseAccessContext.ResolveRestoreSlot(fullLivePath);
+            var candidateContext = PosDatabaseAccessContext.Allocate(candidatePath, PosDatabaseAccessRole.RestoreCandidate, liveContext.ForOperation(_operationId));
             SealedRestoreCandidate candidate = null;
             try
             {
-                CopyDurable(Path.GetFullPath(validatedRestorePath), candidatePath);
+                using (var sourceContext = PosDatabaseAccessContext.SelectedSource(validatedRestorePath))
+                { sourceContext.DemandPath(validatedRestorePath); CopyDurable(Path.GetFullPath(validatedRestorePath), candidatePath, true); }
                 var seal = new FileStream(
                     candidatePath,
                     FileMode.Open,
@@ -71,7 +74,9 @@ namespace Win7POS.Data.Online
                     candidatePath,
                     seal,
                     seal.Length,
-                    File.GetLastWriteTimeUtc(candidatePath));
+                    File.GetLastWriteTimeUtc(candidatePath),
+                    candidateContext,
+                    _operationId);
                 await InstallAsync(
                         candidate,
                         fullLivePath,
@@ -83,6 +88,7 @@ namespace Win7POS.Data.Online
             finally
             {
                 candidate?.Dispose();
+                if (candidate == null) candidateContext.Dispose();
             }
         }
 
@@ -205,10 +211,11 @@ namespace Win7POS.Data.Online
                 _testHooks?.AtRestore(RestoreFailurePoint.AfterPreparedBeforeSwap);
 
                 var replaceWatch = Stopwatch.StartNew();
-                candidatePath = candidate.ConsumeForAtomicReplace(liveDatabasePath);
+                candidatePath = candidate.ConsumeForAtomicReplace(liveDatabasePath, _operationId);
                 SqliteConnectionFactory.ClearAllPools();
                 DeleteSqliteSidecars(liveDatabasePath);
                 File.Replace(candidatePath, liveDatabasePath, rollbackPath);
+                PosDatabaseAccessContext.ResolveRestoreSlot(liveDatabasePath).RebindAfterRestore();
                 SqliteConnectionFactory.ClearAllPools();
                 replaceWatch.Stop();
                 Report(
@@ -257,6 +264,7 @@ namespace Win7POS.Data.Online
                     string.Empty);
 
                 await postSwapCommit(liveValidation).ConfigureAwait(false);
+                new SqliteConnectionFactory(PosDbOptions.ForPath(liveDatabasePath)).RefreshAuthorityStamp();
                 _testHooks?.AtRestore(RestoreFailurePoint.BeforeCommitted);
                 marker.Phase = PhaseCommitted;
                 var committedWatch = Stopwatch.StartNew();
@@ -428,9 +436,11 @@ namespace Win7POS.Data.Online
             DeleteIfPresent(markerPath);
         }
 
-        private static async Task RestoreRollbackAsync(string rollbackPath, string liveDatabasePath)
+        private async Task RestoreRollbackAsync(string rollbackPath, string liveDatabasePath)
         {
-            if (!await IsDatabaseValidAsync(rollbackPath).ConfigureAwait(false))
+            var liveContext = PosDatabaseAccessContext.ResolveRestoreSlot(liveDatabasePath);
+            using var rollbackContext = PosDatabaseAccessContext.AdoptRollback(rollbackPath, liveContext.ForRestoreOperation(_operationId));
+            if (!await IsDatabaseValidAsync(rollbackPath, rollbackContext).ConfigureAwait(false))
                 throw new InvalidDataException("Atomic rollback failed integrity or foreign-key validation.");
 
             SqliteConnectionFactory.ClearAllPools();
@@ -439,6 +449,7 @@ namespace Win7POS.Data.Online
                 File.Replace(rollbackPath, liveDatabasePath, null);
             else
                 File.Move(rollbackPath, liveDatabasePath);
+            liveContext.RebindAfterRestore();
             SqliteConnectionFactory.ClearAllPools();
             DeleteSqliteSidecars(liveDatabasePath);
 
@@ -447,20 +458,18 @@ namespace Win7POS.Data.Online
             DeleteSqliteSidecars(liveDatabasePath);
         }
 
-        private static async Task<bool> IsDatabaseValidAsync(string databasePath)
+        private static async Task<bool> IsDatabaseValidAsync(string databasePath, PosDatabaseAccessContext context = null)
         {
             try
             {
-                var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(databasePath));
+                context = context ?? PosDatabaseAccessContext.ResolveRestoreSlot(databasePath);
+                var factory = new SqliteConnectionFactory(PosDbOptions.ForPath(databasePath).WithAccessContext(context));
                 var validation = await new DbMaintenanceRepository(factory)
                     .ValidateAsync()
                     .ConfigureAwait(false);
                 return validation.IsValid;
             }
-            catch
-            {
-                return false;
-            }
+            catch (Microsoft.Data.Sqlite.SqliteException error) when (error.SqliteErrorCode == 11 || error.SqliteErrorCode == 26) { return false; }
             finally
             {
                 SqliteConnectionFactory.ClearAllPools();
@@ -710,7 +719,7 @@ namespace Win7POS.Data.Online
             throw new IOException("Unable to allocate a legacy restore candidate.");
         }
 
-        private static void CopyDurable(string sourcePath, string destinationPath)
+        private static void CopyDurable(string sourcePath, string destinationPath, bool reservedDestination = false)
         {
             using (var source = new FileStream(
                 sourcePath,
@@ -721,7 +730,7 @@ namespace Win7POS.Data.Online
                 FileOptions.SequentialScan))
             using (var destination = new FileStream(
                 destinationPath,
-                FileMode.CreateNew,
+                reservedDestination ? FileMode.Truncate : FileMode.CreateNew,
                 FileAccess.Write,
                 FileShare.None,
                 65536,

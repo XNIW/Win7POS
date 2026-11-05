@@ -179,11 +179,13 @@ public sealed class FractionalStockCloseoutTests
     private sealed class Fixture : IDisposable
     {
         private readonly string root = Path.Combine(Path.GetTempPath(), "Win7POS.Closeout.Fraction." + Guid.NewGuid().ToString("N"));
+        private readonly OwnedSqliteTestFile _ownedFile;
         public SqliteConnectionFactory Factory { get; }
         public Fixture()
         {
             Directory.CreateDirectory(root);
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             Factory = new SqliteConnectionFactory(options);
             DbInitializer.EnsureCreated(options);
             using var connection = Factory.Open();
@@ -193,6 +195,7 @@ public sealed class FractionalStockCloseoutTests
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(root, true); } catch (IOException) { }
         }
     }

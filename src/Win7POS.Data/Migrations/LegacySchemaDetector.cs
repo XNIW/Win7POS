@@ -150,6 +150,17 @@ WHERE type = 'index'
             }
         }
 
+        internal bool HasExactHistoricalDefinitions()
+        {
+            using (var expected = new SqliteConnection("Data Source=:memory:"))
+            {
+                expected.Open(); expected.Execute(Import.HistoricalSalesSchema.Sql);
+                foreach (var table in new[] { "historical_import_dataset", "historical_merchant_scope", "historical_merchant_binding", "historical_import_operation", "historical_import_batch", "historical_import_file", "historical_transactions", "historical_import_observation", "sales_report_native_ownership", "sales_report_native_time_policy" })
+                    if (NormalizeRecoveryTableSql(ReadTableSql(expected, null, table)) != NormalizeRecoveryTableSql(ReadTableSql(_connection, _transaction, table))) return false;
+                return true;
+            }
+        }
+
         public bool HasKnownTableDefinitions(
             string requiredSchemaSql,
             string allowedSchemaSql,

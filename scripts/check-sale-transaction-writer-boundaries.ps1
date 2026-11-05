@@ -157,6 +157,106 @@ function Assert-OrderedMarkers(
     }
 }
 
+function Remove-CSharpComments([string]$text) {
+    $result = New-Object System.Text.StringBuilder
+    for ($index = 0; $index -lt $text.Length;) {
+        $end = Get-CSharpTriviaEnd $text $index
+        if ($end -gt $index) {
+            if ($text.Substring($index).StartsWith('//') -or $text.Substring($index).StartsWith('/*')) {
+                [void]$result.Append(' ')
+            } else { [void]$result.Append($text.Substring($index, $end - $index)) }
+            $index = $end
+        } else { [void]$result.Append($text[$index]); $index++ }
+    }
+    return $result.ToString()
+}
+
+function Get-CoordinatorCommitSlice([string]$text) {
+    $declarations = [regex]::Matches($text, '\bpublic\s+void\s+CommitAndPublishReportRevision\s*\(')
+    if ($declarations.Count -ne 1) { return '' }
+    $body = Find-CSharpMethodBodyStart $text $declarations[0].Index
+    if ($null -eq $body -or $body.Kind -ne 'block') { return '' }
+    $end = Find-CSharpMatchingDelimiter $text $body.Index '{' '}'
+    if ($end -lt $body.Index) { return '' }
+    return $text.Substring($declarations[0].Index, $end - $declarations[0].Index + 1)
+}
+
+function Test-PublicationCommitProtocol([string]$helper, [string]$coordinatorCommit) {
+    # Closed method shapes deliberately reject extra commits, demands, catches,
+    # callbacks or early gate disposal. Whitespace/comments do not affect them.
+    $helperPattern = @'
+\A\s*private\s+async\s+Task\s+CommitWithPublicationAsync\s*\(
+\s*SqliteConnection\s+connection\s*,\s*SqliteTransaction\s+transaction\s*,
+\s*SaleAuthorizationCommitGuard\s+guard\s*,\s*Action\s+commit\s*,\s*TimeSpan\s+safety\s*\)\s*\{
+\s*var\s+coordinator\s*=\s*SalesReportSnapshotCoordinator\.ForDatabase\(\s*_factory\.DbPath\s*\)\s*;
+\s*using\s*\(\s*await\s+coordinator\.EnterPublicationAsync\(\s*CancellationToken\.None\s*\)\.ConfigureAwait\(\s*false\s*\)\s*\)\s*\{
+\s*coordinator\.CommitAndPublishReportRevision\(\s*connection\s*,\s*transaction\s*,\s*\(\s*\)\s*=>\s*\{
+\s*if\s*\(\s*guard\s*==\s*null\s*\)\s*commit\(\s*\)\s*;
+\s*else\s+guard\.CommitIfStillValid\(\s*safety\s*,\s*commit\s*\)\s*;
+\s*\}\s*,\s*_factory\.AuthorityStamp\s*\)\s*;\s*\}\s*\}\s*\z
+'@
+    $coordinatorPattern = @'
+\A\s*public\s+void\s+CommitAndPublishReportRevision\s*\(
+\s*SqliteConnection\s+connection\s*,\s*SqliteTransaction\s+transaction\s*,\s*Action\s+commit\s*,\s*SalesReportAuthorityStamp\s+authority\s*\)\s*\{
+\s*if\s*\(\s*connection\s*==\s*null\s*\|\|\s*transaction\s*==\s*null\s*\|\|\s*commit\s*==\s*null\s*\)\s*throw\s+new\s+ArgumentNullException\(\s*\)\s*;
+\s*var\s+row\s*=\s*connection\.QuerySingle<StateRow>\(\s*"SELECT[ ]dataset_id[ ]AS[ ]DatasetId,[ ]data_revision[ ]AS[ ]DataRevision[ ]FROM[ ]historical_import_dataset[ ]WHERE[ ]singleton_id=1"\s*,\s*transaction:\s*transaction\s*\)\s*;
+\s*commit\(\s*\)\s*;
+\s*PublishCommitted\(\s*row\.DatasetId\s*,\s*row\.DataRevision\s*,\s*authority\s*\)\s*;
+\s*\}\s*\z
+'@
+    $options = [System.Text.RegularExpressions.RegexOptions]::IgnorePatternWhitespace
+    return [regex]::IsMatch((Remove-CSharpComments $helper), $helperPattern, $options) -and
+        [regex]::IsMatch((Remove-CSharpComments $coordinatorCommit), $coordinatorPattern, $options)
+}
+
+function Test-GuardedCommitRoute([string]$slice, [switch]$ExactReplay) {
+    $code = Remove-CSharpComments $slice
+    $delegate = 'Action\s+commitTransaction\s*=\s*\(\s*\)\s*=>\s*\{\s*tx\.Commit\(\s*\)\s*;\s*transactionCommitted\s*=\s*true\s*;\s*\}\s*;'
+    $durableCall = 'await\s+CommitWithPublicationAsync\(\s*conn\s*,\s*tx\s*,\s*authorizationCommitGuard\s*,\s*commitTransaction\s*,\s*SqliteConnectionFactory\.DurableCommitSafetyBudget\s*\)\.ConfigureAwait\(false\)\s*;\s*return\s+saleId\s*;'
+    $replayCall = 'if\s*\(replaySaleId\.HasValue\)\s*\{\s*await\s+CommitWithPublicationAsync\(\s*conn\s*,\s*tx\s*,\s*authorizationCommitGuard\s*,\s*commitTransaction\s*,\s*TimeSpan\.Zero\s*\)\.ConfigureAwait\(false\)\s*;\s*return\s+replaySaleId\.Value\s*;\s*\}'
+    $originalVoidProof = 'if\s*\(originalSaleIdToMarkVoided\.HasValue\)\s*\{\s*await\s+_reversalWriter\.MarkSaleVoidedAsync\(\s*conn\s*,\s*tx\s*,\s*originalSaleIdToMarkVoided\.Value\s*,\s*saleId\s*,\s*DateTimeOffset\.UtcNow\.ToUnixTimeMilliseconds\(\)\s*\)\.ConfigureAwait\(false\)\s*;\s*await\s+NativeSalesOwnershipRepository\.RefreshForSaleInTransactionAsync\(\s*conn\s*,\s*tx\s*,\s*originalSaleIdToMarkVoided\.Value\s*,\s*CancellationToken\.None\s*\)\.ConfigureAwait\(false\)\s*;\s*\}'
+    $calls = if ($ExactReplay) { 2 } else { 1 }
+    $demands = if ($ExactReplay) { 2 } else { 1 }
+    $finalCommitIndex = Get-PatternIndex $code $durableCall
+    $outboxIndex = Get-PatternIndex $code '\bawait\s+EnqueueSalesSyncOutboxAsync\('
+    return $code -match 'var\s+transactionCommitted\s*=\s*false\s*;' -and
+        $code -match $delegate -and $code -match $durableCall -and
+        (-not $ExactReplay -or $code -match $replayCall) -and
+        ($ExactReplay -or $code -match $originalVoidProof) -and
+        [regex]::Matches($code, '\b\w+\s*\.\s*Commit\b').Count -eq 1 -and
+        [regex]::Matches($code, '\btransactionCommitted\s*=\s*true\b').Count -eq 1 -and
+        [regex]::Matches($code, '\bcommitTransaction\s*=').Count -eq 1 -and
+        [regex]::Matches($code, '\bcommitTransaction\b').Count -eq ($calls + 1) -and
+        [regex]::Matches($code, '\bCommitWithPublicationAsync\s*\(').Count -eq $calls -and
+        [regex]::Matches($code, '\bCommitIfStillValid\s*\(').Count -eq 0 -and
+        $outboxIndex -ge 0 -and $finalCommitIndex -gt $outboxIndex -and
+        [regex]::Matches($code, 'authorizationCommitGuard\?\.DemandStillValid\(\)').Count -eq $demands -and
+        $code -match 'authorizationCommitGuard\s*==\s*null\s*\?\s*null\s*:\s*SqliteConnectionFactory\.AcquireExclusiveCommitFence\(conn\)' -and
+        $code -match 'catch\s*\{\s*if\s*\(\s*!transactionCommitted\s*\)\s*\{\s*try\s*\{\s*tx\.Rollback\(\)\s*;\s*\}\s*catch\s*\{\s*\}\s*\}\s*throw\s*;\s*\}'
+}
+
+function Test-StandaloneVoidRoute([string]$slice) {
+    $pattern = @'
+\A\s*internal\s+async\s+Task\s+MarkSaleVoidedAsync\(\s*long\s+originalSaleId\s*,\s*long\s+refundSaleId\s*,\s*long\s+nowMs\s*\)\s*\{
+\s*using\s+var\s+conn\s*=\s*_factory\.Open\(\)\s*;
+\s*using\s+var\s+tx\s*=\s*conn\.BeginTransaction\(\)\s*;
+\s*var\s+transactionCommitted\s*=\s*false\s*;
+\s*Action\s+commitTransaction\s*=\s*\(\)\s*=>\s*\{\s*tx\.Commit\(\)\s*;\s*transactionCommitted\s*=\s*true\s*;\s*\}\s*;
+\s*try\s*\{
+\s*await\s+_reversalWriter\.MarkSaleVoidedAsync\(\s*conn\s*,\s*tx\s*,\s*originalSaleId\s*,\s*refundSaleId\s*,\s*nowMs\s*\)\.ConfigureAwait\(false\)\s*;
+\s*await\s+NativeSalesOwnershipRepository\.RefreshForSaleInTransactionAsync\(\s*conn\s*,\s*tx\s*,\s*originalSaleId\s*,\s*CancellationToken\.None\s*\)\.ConfigureAwait\(false\)\s*;
+\s*await\s+CommitWithPublicationAsync\(\s*conn\s*,\s*tx\s*,\s*null\s*,\s*commitTransaction\s*,\s*TimeSpan\.Zero\s*\)\.ConfigureAwait\(false\)\s*;
+\s*\}\s*catch\s*\{\s*if\s*\(\s*!transactionCommitted\s*\)\s*\{\s*try\s*\{\s*tx\.Rollback\(\)\s*;\s*\}\s*catch\s*\{\s*\}\s*\}\s*throw\s*;\s*\}\s*\}\s*\z
+'@
+    return [regex]::IsMatch((Remove-CSharpComments $slice), $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnorePatternWhitespace)
+}
+
+function Assert-RejectedMutation([string]$name, [string]$original, [string]$mutation, [scriptblock]$accept) {
+    if ($original -eq $mutation -or (& $accept $mutation)) {
+        Fail "F6 negative fixture $name must change the source and be rejected"
+    } else { Pass "F6 negative fixture rejects $name" }
+}
+
 $required = @(
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs",
@@ -164,6 +264,7 @@ $required = @(
     "src/Win7POS.Data/Repositories/SaleReversalWriter.cs",
     "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs",
     "src/Win7POS.Data/SqliteConnectionFactory.cs",
+    "src/Win7POS.Data/Reports/SalesReportSnapshotCoordinator.cs",
     "tests/Win7POS.Core.Tests/Data/SaleTransactionWriterTests.cs",
     "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
 )
@@ -184,8 +285,16 @@ $stockWriter = Read-Text "src/Win7POS.Data/Repositories/SaleStockMovementWriter.
 $reversalWriter = Read-Text "src/Win7POS.Data/Repositories/SaleReversalWriter.cs"
 $salesOutbox = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $connectionFactory = Read-Text "src/Win7POS.Data/SqliteConnectionFactory.cs"
+$snapshotCoordinator = Read-Text "src/Win7POS.Data/Reports/SalesReportSnapshotCoordinator.cs"
 $tests = Read-Text "tests/Win7POS.Core.Tests/Data/SaleTransactionWriterTests.cs"
 $connectionPolicyTests = Read-Text "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
+$commitHelpers = @(Get-MethodSlices $writer "private" "CommitWithPublicationAsync")
+$coordinatorCommit = Get-CoordinatorCommitSlice $snapshotCoordinator
+if ($commitHelpers.Count -ne 1 -or -not (Test-PublicationCommitProtocol $commitHelpers[0] $coordinatorCommit)) {
+    Fail "F6 publication helper must hold its one gate around revision read, exact current-guard/callback commit and post-commit stamp publication without other work"
+} else {
+    Pass "F6 publication helper binds revision read, final guard and callback commit to its one publication gate"
+}
 
 $collaboratorMarkers = @(
     "private readonly SaleReadRepository _reads",
@@ -226,10 +335,16 @@ $facadeContracts = @(
     [pscustomobject]@{ Facade = "EnqueueSalesSyncOutboxAsync"; Writer = "EnqueueSalesSyncOutboxAsync"; Forwarding = @("conn\s*,\s*tx\s*,\s*saleId\s*,\s*clientSaleId") }
 )
 Assert-StrictFacadeDelegations $saleRepository $writer $facadeContracts
+$voidFacades = @(Get-MethodSlices $saleRepository "public" "MarkSaleVoidedAsync" | Where-Object { $_ -notmatch 'SqliteConnection conn' })
+if ($voidFacades.Count -ne 1 -or
+    $voidFacades[0] -notmatch '(?s)=>\s*_transactionWriter\.MarkSaleVoidedAsync\(\s*originalSaleId\s*,\s*refundSaleId\s*,\s*nowMs\s*\)\s*;\s*\z') {
+    Fail "F6 standalone void facade must forward its exact arguments only to the transaction writer"
+} else { Pass "F6 standalone void facade delegates its complete transaction lifecycle" }
 
 $expectedWriterMethods = @{
     "InsertSaleAsync" = 1
     "MarkPdfPrintedAsync" = 1
+    "MarkSaleVoidedAsync" = 1
     "InsertRefundSaleAsync" = 2
     "InsertRefundOrVoidAsync" = 1
     "InsertSaleLinesAsync" = 1
@@ -257,6 +372,11 @@ if ($surfaceFailures.Count -gt 0 -or $unexpectedWriterMethods.Count -gt 0) {
     Pass "SaleTransactionWriter exposes exactly the F6 persistence surface"
 }
 
+$standaloneVoidWriters = @(Get-MethodSlices $writer "internal" "MarkSaleVoidedAsync")
+if ($standaloneVoidWriters.Count -ne 1 -or -not (Test-StandaloneVoidRoute $standaloneVoidWriters[0])) {
+    Fail "F6 standalone void must own exactly mark, original proof refresh and one flagged publication commit in the same transaction"
+} else { Pass "F6 standalone void atomically marks, refreshes proof and publishes its flagged transaction" }
+
 $saleWriters = @(Get-MethodSlices $writer "internal" "InsertSaleAsync")
 if ($saleWriters.Count -ne 1) {
     Fail "F6 full-sale writer must have exactly one implementation"
@@ -278,8 +398,13 @@ if ($saleWriters.Count -ne 1) {
         [pscustomobject]@{ Name = "sale line"; Pattern = "InsertSaleLineAsync\(conn\s*,\s*tx\s*,\s*l\.line\)" },
         [pscustomobject]@{ Name = "stock movements"; Pattern = "ApplyLocalStockMovementsAsync\(conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\)" },
         [pscustomobject]@{ Name = "outbox enqueue"; Pattern = "EnqueueSalesSyncOutboxAsync\(conn\s*,\s*tx\s*,\s*saleId\s*,\s*sale\.ClientSaleId\)" },
-        [pscustomobject]@{ Name = "authorized commit"; Pattern = "authorizationCommitGuard\.CommitIfStillValid\([\s\S]{0,180}DurableCommitSafetyBudget[\s\S]{0,120}commitTransaction" }
+        [pscustomobject]@{ Name = "authorized publication commit and budget"; Pattern = "CommitWithPublicationAsync\(\s*conn\s*,\s*tx\s*,\s*authorizationCommitGuard\s*,\s*commitTransaction\s*,\s*SqliteConnectionFactory\.DurableCommitSafetyBudget\s*\)" }
     )
+    if (-not (Test-GuardedCommitRoute $saleWriter -ExactReplay)) {
+        Fail "F6 full-sale writer must retain guarded durable commit, zero-budget exact replay and its single post-commit completion flag"
+    } else {
+        Pass "F6 full-sale writer preserves exact replay and guarded durable publication through its single completion delegate"
+    }
     if ($saleWriter -notmatch "catch\s*\{[\s\S]*if \(!transactionCommitted\)[\s\S]*tx\.Rollback\(\)[\s\S]*throw;\s*\}" -or
         $saleWriter -notmatch "if \(sale\.Kind == \(int\)SaleKind\.Sale\)" -or
         $saleWriter -notmatch "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync" -or
@@ -365,18 +490,10 @@ if ($refundOrVoidWriters.Count -ne 1) {
         [pscustomobject]@{ Name = "outbox enqueue"; Pattern = "EnqueueSalesSyncOutboxAsync\(conn\s*,\s*tx\s*,\s*saleId\s*,\s*refundSale\.ClientSaleId\)" },
         [pscustomobject]@{ Name = "audit"; Pattern = "new\s+AuditLogRepository\(\)" },
         [pscustomobject]@{ Name = "void mark"; Pattern = "_reversalWriter\s*\.\s*MarkSaleVoidedAsync\(\s*conn\s*,\s*tx" },
-        [pscustomobject]@{ Name = "unguarded commit invocation"; Pattern = "\bcommitTransaction\s*\(\s*\)" },
-        [pscustomobject]@{ Name = "authorized commit invocation and budget"; Pattern = "authorizationCommitGuard\.CommitIfStillValid\(\s*SqliteConnectionFactory\s*\.\s*DurableCommitSafetyBudget\s*,\s*commitTransaction\s*\)" }
+        [pscustomobject]@{ Name = "original proof refresh"; Pattern = "NativeSalesOwnershipRepository\.RefreshForSaleInTransactionAsync\(\s*conn\s*,\s*tx\s*,\s*originalSaleIdToMarkVoided\.Value\s*,\s*CancellationToken\.None\s*\)" },
+        [pscustomobject]@{ Name = "authorized publication commit and budget"; Pattern = "CommitWithPublicationAsync\(\s*conn\s*,\s*tx\s*,\s*authorizationCommitGuard\s*,\s*commitTransaction\s*,\s*SqliteConnectionFactory\.DurableCommitSafetyBudget\s*\)" }
     )
-    $commitDelegatePattern = "Action\s+commitTransaction\s*=\s*\(\s*\)\s*=>\s*\{\s*tx\.Commit\(\)\s*;\s*transactionCommitted\s*=\s*true\s*;\s*\}\s*;"
-    $commitDispatchPattern = "if\s*\(authorizationCommitGuard\s*==\s*null\)\s*commitTransaction\(\)\s*;\s*else\s*authorizationCommitGuard\.CommitIfStillValid\(\s*SqliteConnectionFactory\s*\.\s*DurableCommitSafetyBudget\s*,\s*commitTransaction\s*\)\s*;"
-    if ($refundOrVoidWriter -notmatch "var\s+transactionCommitted\s*=\s*false\s*;" -or
-        $refundOrVoidWriter -notmatch $commitDelegatePattern -or
-        $refundOrVoidWriter -notmatch $commitDispatchPattern -or
-        [regex]::Matches($refundOrVoidWriter, "\btx\s*\.\s*Commit\s*\(").Count -ne 1 -or
-        [regex]::Matches($refundOrVoidWriter, "\bcommitTransaction\s*\(").Count -ne 1 -or
-        [regex]::Matches($refundOrVoidWriter, "\bCommitIfStillValid\s*\(").Count -ne 1 -or
-        $refundOrVoidWriter -notmatch "authorizationCommitGuard\s*==\s*null\s*\?\s*null\s*:\s*SqliteConnectionFactory\.AcquireExclusiveCommitFence\(conn\)") {
+    if (-not (Test-GuardedCommitRoute $refundOrVoidWriter)) {
         Fail "F6 refund/void writer must commit only through the conditional authorized delegate, with its fence, headroom budget and durable-completion flag"
     } else {
         Pass "F6 refund/void writer retains the conditional commit fence, guard budget and single durable commit delegate"
@@ -445,7 +562,8 @@ if ($refundSaleWriters.Count -ne 2 -or $standaloneRefund.Count -ne 1 -or $caller
         [pscustomobject]@{ Name = "connection open"; Pattern = "_factory\.Open\(\)" },
         [pscustomobject]@{ Name = "transaction begin"; Pattern = "conn\.BeginTransaction\(\)" },
         [pscustomobject]@{ Name = "caller-owned forward"; Pattern = "InsertRefundSaleAsync\(\s*conn\s*,\s*tx\s*,\s*req" },
-        [pscustomobject]@{ Name = "commit"; Pattern = "tx\.Commit\(\)" }
+        [pscustomobject]@{ Name = "ownership proof"; Pattern = "NativeSalesOwnershipRepository\.RefreshForSaleInTransactionAsync\(conn, tx, saleId, CancellationToken\.None\)" },
+        [pscustomobject]@{ Name = "publication commit"; Pattern = "CommitWithPublicationAsync\(conn, tx, null, tx\.Commit, TimeSpan\.Zero\)" }
     )
     if ($standaloneRefund[0] -notmatch "catch\s*\{\s*tx\.Rollback\(\)\s*;\s*throw;\s*\}") {
         Fail "F6 standalone legacy refund must roll back on failure"
@@ -535,7 +653,66 @@ if ($forbiddenWriterOwnership.Count -gt 0) {
 }
 
 $testFailures = New-Object System.Collections.Generic.List[string]
+
+# Pure source mutations exercise each new boundary without executing a writer,
+# opening SQLite or weakening the existing persistence/caller-ownership checks.
+if ($commitHelpers.Count -eq 1) {
+    $helper = $commitHelpers[0]
+    $acceptHelper = { param($candidate) Test-PublicationCommitProtocol $candidate $coordinatorCommit }
+    foreach ($fixture in @(
+        @{ Name = 'final guard bypass'; From = 'if (guard == null)'; To = 'if (true)' },
+        @{ Name = 'lost safety budget'; From = 'guard.CommitIfStillValid(safety, commit)'; To = 'guard.CommitIfStillValid(TimeSpan.Zero, commit)' },
+        @{ Name = 'swapped commit callback'; From = 'guard.CommitIfStillValid(safety, commit)'; To = 'guard.CommitIfStillValid(safety, () => { })' },
+        @{ Name = 'extra commit before publication gate'; From = 'var coordinator ='; To = 'commit(); var coordinator =' },
+        @{ Name = 'extra pre-demand changes guard contract'; From = 'var coordinator ='; To = 'guard?.DemandStillValid(); var coordinator =' },
+        @{ Name = 'missing publication gate'; From = 'coordinator.EnterPublicationAsync'; To = 'coordinator.EnterOtherGateAsync' }
+    )) {
+        Assert-RejectedMutation $fixture.Name $helper ($helper.Replace($fixture.From, $fixture.To)) $acceptHelper
+    }
+    $acceptCoordinator = { param($candidate) Test-PublicationCommitProtocol $helper $candidate }
+    Assert-RejectedMutation 'commit before revision read' $coordinatorCommit ($coordinatorCommit.Replace('var row =', 'commit(); var row =')) $acceptCoordinator
+    Assert-RejectedMutation 'revision outside supplied transaction' $coordinatorCommit ($coordinatorCommit.Replace('transaction: transaction', 'transaction: null')) $acceptCoordinator
+    $publishBeforeCommit = [regex]::Replace($coordinatorCommit, 'commit\(\);\s*(PublishCommitted\([^;]+;)', '$1 commit();')
+    Assert-RejectedMutation 'stamp published before durable commit' $coordinatorCommit $publishBeforeCommit $acceptCoordinator
+}
+if ($saleWriters.Count -eq 1) {
+    $acceptSale = { param($candidate) Test-GuardedCommitRoute $candidate -ExactReplay }
+    Assert-RejectedMutation 'new sale loses durable headroom' $saleWriter ($saleWriter.Replace('SqliteConnectionFactory.DurableCommitSafetyBudget', 'TimeSpan.Zero')) $acceptSale
+    Assert-RejectedMutation 'exact replay loses zero headroom' $saleWriter ($saleWriter.Replace('commitTransaction, TimeSpan.Zero', 'commitTransaction, SqliteConnectionFactory.DurableCommitSafetyBudget')) $acceptSale
+    Assert-RejectedMutation 'current sale guard omitted' $saleWriter ($saleWriter.Replace('tx, authorizationCommitGuard, commitTransaction', 'tx, null, commitTransaction')) $acceptSale
+}
+if ($refundOrVoidWriters.Count -eq 1) {
+    $acceptReversal = { param($candidate) Test-GuardedCommitRoute $candidate }
+    Assert-RejectedMutation 'reversal callback bypasses completion flag' $refundOrVoidWriter ($refundOrVoidWriter.Replace('authorizationCommitGuard, commitTransaction', 'authorizationCommitGuard, tx.Commit')) $acceptReversal
+    $earlyFlag = [regex]::Replace($refundOrVoidWriter, 'tx\.Commit\(\);\s*transactionCommitted = true;', 'transactionCommitted = true; tx.Commit();')
+    Assert-RejectedMutation 'completion flag precedes durable commit' $refundOrVoidWriter $earlyFlag $acceptReversal
+    Assert-RejectedMutation 'extra reversal durable commit' $refundOrVoidWriter ($refundOrVoidWriter.Replace('tx.Commit();', 'tx.Commit(); tx.Commit();')) $acceptReversal
+    Assert-RejectedMutation 'rollback after successful commit' $refundOrVoidWriter ($refundOrVoidWriter.Replace('if (!transactionCommitted)', 'if (transactionCommitted)')) $acceptReversal
+    Assert-RejectedMutation 'complete void refreshes reversal instead of original proof' $refundOrVoidWriter ($refundOrVoidWriter.Replace('tx, originalSaleIdToMarkVoided.Value, CancellationToken.None', 'tx, saleId, CancellationToken.None')) $acceptReversal
+    $finalStatement = [regex]::Match($refundOrVoidWriter, 'await\s+CommitWithPublicationAsync\([^;]+;\s*return saleId;').Value
+    $earlyCommit = $refundOrVoidWriter.Replace($finalStatement, '').Replace('await EnqueueSalesSyncOutboxAsync(', $finalStatement + ' await EnqueueSalesSyncOutboxAsync(')
+    Assert-RejectedMutation 'commit moved before outbox persistence' $refundOrVoidWriter $earlyCommit $acceptReversal
+}
+if ($standaloneVoidWriters.Count -eq 1) {
+    $standaloneVoid = $standaloneVoidWriters[0]
+    $acceptVoid = { param($candidate) Test-StandaloneVoidRoute $candidate }
+    Assert-RejectedMutation 'standalone void refreshes wrong proof' $standaloneVoid ($standaloneVoid.Replace('tx, originalSaleId, CancellationToken.None', 'tx, refundSaleId, CancellationToken.None')) $acceptVoid
+    Assert-RejectedMutation 'standalone void bypasses publication' $standaloneVoid ($standaloneVoid.Replace('await CommitWithPublicationAsync(conn, tx, null, commitTransaction, TimeSpan.Zero).ConfigureAwait(false);', 'commitTransaction();')) $acceptVoid
+}
+
  $testContracts = @(
+    [pscustomobject]@{
+        Name = "SaleTransactionWriter_AndSaleFacade_StandaloneVoidPublishesChangedOriginalProof"
+        BodyMarkers = @("new DirectTransactionSurface", "new FacadeTransactionSurface", "VerifyStandaloneVoidProofAsync")
+        Helper = "VerifyStandaloneVoidProofAsync"
+        HelperMarkers = @("MarkSaleVoidedAsync", "source_fingerprint", "data_revision", "Assert.AreNotEqual(beforeFingerprint, afterFingerprint)", "afterRevision > beforeRevision")
+    },
+    [pscustomobject]@{
+        Name = "SaleTransactionWriter_AndSaleFacade_StandaloneVoidProofFailureRollsBackMarkAndRevision"
+        BodyMarkers = @("new DirectTransactionSurface", "new FacadeTransactionSurface", "VerifyStandaloneVoidProofAsync")
+        Helper = "VerifyStandaloneVoidProofAsync"
+        HelperMarkers = @("CREATE TRIGGER fail_f6_original_proof", "Assert.ThrowsExactlyAsync<SqliteException>", "Assert.IsNull(mark)", "Assert.AreEqual(beforeRevision, afterRevision)")
+    },
     [pscustomobject]@{
         Name = "SaleTransactionWriter_AndSaleFacade_PreserveFullSalePersistenceStockOutboxAndHash"
         BodyMarkers = @("new DirectTransactionSurface", "new FacadeTransactionSurface", "InsertSaleAsync", "LoadFullSaleSnapshotAsync", "PayloadHash")

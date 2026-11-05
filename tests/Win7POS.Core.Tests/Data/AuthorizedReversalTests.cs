@@ -122,9 +122,11 @@ public sealed class AuthorizedReversalTests
     private sealed class Fixture : IDisposable
     {
         private readonly string _directory;
-        private Fixture(string directory, SqliteConnectionFactory factory, long saleId, long lineId)
+        private readonly OwnedSqliteTestFile _ownedFile;
+        private Fixture(string directory, OwnedSqliteTestFile ownedFile, SqliteConnectionFactory factory, long saleId, long lineId)
         {
             _directory = directory;
+            _ownedFile = ownedFile;
             Factory = factory;
             Repository = new SaleRepository(factory);
             OriginalSaleId = saleId;
@@ -141,6 +143,7 @@ public sealed class AuthorizedReversalTests
             var directory = Path.Combine(Path.GetTempPath(), "win7pos-authorized-reversal-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
             var options = PosDbOptions.ForPath(Path.Combine(directory, "pos.db"));
+            var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             var factory = new SqliteConnectionFactory(options);
             await new ShopOfficialSnapshotRepository(factory).SaveAsync(new OfficialShopSnapshot
@@ -156,7 +159,7 @@ public sealed class AuthorizedReversalTests
             }, new[] { new SaleLine { Barcode = "REVERSAL", Name = "Item", Quantity = quantity, UnitPrice = 100 } });
             using var read = factory.Open();
             var lineId = read.ExecuteScalar<long>("SELECT id FROM sale_lines WHERE saleId=@saleId", new { saleId });
-            return new Fixture(directory, factory, saleId, lineId);
+            return new Fixture(directory, ownedFile, factory, saleId, lineId);
         }
 
         internal Sale NewReversal(SaleKind kind, int operatorId) => new()
@@ -174,6 +177,7 @@ public sealed class AuthorizedReversalTests
         public void Dispose()
         {
             SqliteConnection.ClearAllPools();
+            _ownedFile.Dispose();
             try { Directory.Delete(_directory, true); } catch { }
         }
     }

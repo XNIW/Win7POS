@@ -54,6 +54,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private const string QaOfflineCredential = "2468";
         private const int OfflineSalesSafetyVerifiedExitCode = 73;
         private static string _receiptAlignmentFailure = string.Empty;
+        private static PosDatabaseAuthorityLease _harnessBootstrapAuthority;
 
         private sealed class HarnessPermissionService : IPermissionService
         {
@@ -304,6 +305,37 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", dataDir);
             Environment.SetEnvironmentVariable("WIN7POS_SAFE_START", "1");
+            if (PosDatabaseAuthorityQaProbe.TryRun(args, PosDbOptions.Default(), "harness", out var authorityProbeExit))
+            { Environment.ExitCode = authorityProbeExit; return; }
+            if (HasArg(args, "--historical-sales-import-foundation") || HasArg(args, "--historical-sales-import-crash-probe") ||
+                HasArg(args, "--historical-sales-import-crash-verify") || HasArg(args, "--historical-sales-import-smoke") || HasArg(args, "--historical-sales-import-load"))
+            {
+                if (Application.ResourceAssembly == null) Application.ResourceAssembly = typeof(ProductEditDialog).Assembly;
+                var historicalApplication = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                AddApplicationResources(historicalApplication);
+                historicalApplication.Startup += async (_, __) =>
+                {
+                    var exitCode = 1;
+                    try
+                    {
+                        if (HasArg(args, "--historical-sales-import-smoke")) exitCode = await HistoricalSalesSmokeRunner.RunAsync(args).ConfigureAwait(true);
+                        else if (HasArg(args, "--historical-sales-import-load")) exitCode = await HistoricalSalesLoadRunner.RunAsync(args).ConfigureAwait(true);
+                        else exitCode = await HistoricalSalesFoundationRunner.RunAsync(args).ConfigureAwait(true);
+                    }
+                    catch (Exception error)
+                    {
+                        try { File.WriteAllText(Path.Combine(diagnosticsDir, "historical-sales-worker-error.private.txt"), error.ToString()); } catch { }
+                    }
+                    finally { SqliteConnectionFactory.ClearAllPools(); historicalApplication.Shutdown(exitCode); }
+                };
+                Environment.ExitCode = historicalApplication.Run();
+                return;
+            }
+            var authorityOptions = PosDbOptions.Default();
+            using var databaseAuthority = File.Exists(authorityOptions.DbPath)
+                ? PosDatabaseAuthorityLease.AcquireOperational(authorityOptions)
+                : PosDatabaseAuthorityLease.AcquireSyntheticNew(authorityOptions);
+            _harnessBootstrapAuthority = databaseAuthority;
             if (finalUiUxCloseout)
             {
                 Environment.SetEnvironmentVariable(
@@ -550,6 +582,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (HasArg(args, "--bounded-logging-smoke"))
                     {
                         var result = BoundedLoggingWpfSmoke.Run(dataDir);
+                        TypedQaDiagnosticWriter.RecordResult("bounded-logging", result);
                         File.WriteAllText(
                             Path.Combine(dataDir, "bounded-logging-smoke.txt"),
                             result,
@@ -636,12 +669,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     launcher.Show();
                     if (finalUiUxCloseout)
                     {
+                        TypedQaDiagnosticWriter.BeginScenario("FUNCTIONAL_VISUAL", "functional-completion");
                         var outputDirectory = ValueAfter(args, "--output-dir");
                         if (string.IsNullOrWhiteSpace(outputDirectory))
                             outputDirectory = dataDir;
                         var result = await launcher
                             .CaptureFinalUiUxCloseoutAsync(outputDirectory)
                             .ConfigureAwait(true);
+                        TypedQaDiagnosticWriter.RecordResult("functional-completion", result);
                         File.WriteAllText(
                             Path.Combine(outputDirectory, "ui-ux-final-closeout.txt"),
                             result,
@@ -781,6 +816,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 catch (Exception ex)
                 {
+                    TypedQaDiagnosticWriter.RecordException(ex);
                     var detail = ex.GetType().Name + ": " + ex.Message;
                     try { File.WriteAllText(harnessErrorPath, ex.ToString()); }
                     catch { }
@@ -789,7 +825,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     app.Shutdown(2);
                 }
             };
-            app.Run();
+            try { app.Run(); }
+            finally { SqliteConnectionFactory.ClearAllPools(); }
             RecoveryStartupTimeline.Record("app_run_returned");
         }
 
@@ -919,6 +956,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 ? Directory.EnumerateFileSystemEntries(fullPath)
                     .ToArray()
                 : Array.Empty<string>();
+            if (requireEmpty && _harnessBootstrapAuthority != null &&
+                string.Equals(Path.GetDirectoryName(_harnessBootstrapAuthority.DbPath), fullPath, StringComparison.OrdinalIgnoreCase))
+                entries = entries.Where(path => !_harnessBootstrapAuthority.IsOwnedBootstrapMetadata(path)).ToArray();
             if (requireEmpty && entries.Length > 0)
             {
                 var entryNames = entries
@@ -2181,7 +2221,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Path.Combine(outputDirectory, "runtime-observability-failure-open-1024x768.png"));
 
                     copyButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    var copied = Clipboard.GetText();
+                    var copied = await ReadClipboardTextWhenAvailableAsync().ConfigureAwait(true);
                     if (copied.IndexOf("db_failure", StringComparison.Ordinal) < 0 ||
                         copied.IndexOf("sha256:", StringComparison.Ordinal) < 0 ||
                         copied.IndexOf("qa-server-500", StringComparison.Ordinal) >= 0 ||
@@ -2996,6 +3036,32 @@ WHERE id = @id;",
                     idleDelayMs: 150).ConfigureAwait(true);
 
                 return "PASS: settingsHub=True; settingsHubCompact=True; settingsHubRecovery=True; customerDisplay=True; customerDisplayCompact=True; language=True; shop=True; shopCompact=True; users=True; sync=True; database=True; about=True";
+            }
+
+            private async Task<string> ReadClipboardTextWhenAvailableAsync()
+            {
+                // The copy action is executed exactly once. Only its verification read
+                // waits for the observed Windows clipboard-busy condition to clear.
+                // This subdeadline never extends the enclosing functional scenario budget.
+                var deadline = Stopwatch.StartNew();
+                System.Runtime.InteropServices.COMException firstBusy = null;
+                do
+                {
+                    try
+                    {
+                        var value = Clipboard.GetText();
+                        TypedQaDiagnosticWriter.RecordAssertion(true, true, true);
+                        return value;
+                    }
+                    catch (System.Runtime.InteropServices.COMException busy) when (busy.ErrorCode == unchecked((int)0x800401D0))
+                    {
+                        if (firstBusy == null) firstBusy = busy;
+                        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                } while (deadline.Elapsed < TimeSpan.FromSeconds(1));
+                TypedQaDiagnosticWriter.RecordAssertion(false, true, false);
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(firstBusy).Throw();
+                throw new InvalidOperationException("Clipboard verification did not complete.");
             }
 
             public async Task<string> CaptureFinalUiUxCloseoutAsync(
@@ -6866,7 +6932,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
             }
         }
 
-        private static class QaFixture
+        internal static class QaFixture
         {
             public static async Task VerifyOfflineSalesSandboxSafetyAsync()
             {
@@ -7437,6 +7503,7 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;",
             }
             catch (Exception ex)
             {
+                TypedQaDiagnosticWriter.RecordException(ex);
                 return "FAIL bounded async logging x86: " +
                        ex.GetType().Name + ": " + ex.Message;
             }

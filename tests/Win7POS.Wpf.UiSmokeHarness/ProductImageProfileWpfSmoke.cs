@@ -25,6 +25,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
     {
         internal static string Run()
         {
+            TypedQaDiagnosticWriter.BeginScenario(null, "product-image-profile");
+            try { var result = RunCore(); TypedQaDiagnosticWriter.RecordResult("product-image-profile", result); return result; }
+            catch (Exception error) { TypedQaDiagnosticWriter.RecordException(error); throw; }
+        }
+
+        private static string RunCore()
+        {
             VerifyCode128Rendering();
             VerifyMutationRequestSerialization();
             VerifyStagingDiagnosticArtifact();
@@ -901,11 +908,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var testRoot = Path.Combine(
                 AppPaths.DataDirectory,
-                "product-image-profile-supervisor-" +
+                "P." +
                 Guid.NewGuid().ToString("N"));
+            if (Path.Combine(testRoot, ".win7pos-authority", new string('0', 64) + ".lock").Length >= 260)
+                throw new PathTooLongException("profile_regression_owned_lock_path_too_long");
             var priorBaseUrl = Environment.GetEnvironmentVariable(
                 PosAdminWebOptions.BaseUrlEnvironmentVariable);
             PosOnlineSyncSupervisorHost host = null;
+            PosDatabaseAuthorityLease secondaryOwner = null;
             var regressionCompleted = false;
             try
             {
@@ -916,6 +926,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                 var options = PosDbOptions.ForPath(
                     Path.Combine(testRoot, "pos.db"));
+                secondaryOwner = PosDatabaseAuthorityLease.AcquireSyntheticNew(options);
+                options = options.WithAccessContext(secondaryOwner.AccessContext);
                 DbInitializer.EnsureCreated(options);
                 var factory = new SqliteConnectionFactory(options);
                 var pending = await new SaleRepository(factory)
@@ -1019,6 +1031,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         PosAdminWebOptions.BaseUrlEnvironmentVariable,
                         priorBaseUrl);
                     SqliteConnectionFactory.ClearAllPools();
+                    secondaryOwner?.Dispose();
                     if (Directory.Exists(testRoot))
                         Directory.Delete(testRoot, recursive: true);
                     if (Directory.Exists(testRoot))

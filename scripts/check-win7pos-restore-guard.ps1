@@ -53,6 +53,95 @@ function Index-OrFail([string]$text, [string]$needle, [string]$message) {
     return $index
 }
 
+function Remove-RestoreSourceComments([string]$text) {
+    # Preserve C# regular/verbatim strings and character literals, including SQL.
+    $tokens = '(?s)@"(?:""|[^"])*"|"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|/\*.*?\*/|//[^\r\n]*'
+    return [regex]::Replace($text, $tokens, [Text.RegularExpressions.MatchEvaluator]{ param($match)
+        if ($match.Value.StartsWith('//') -or $match.Value.StartsWith('/*')) { return ($match.Value -replace '[^\r\n]', ' ') }
+        return $match.Value
+    })
+}
+
+function Get-RestoreMethodText([string]$text, [string]$visibility, [string]$name) {
+    $clean = Remove-RestoreSourceComments $text
+    # The shared sales facade helper accepts Task-returning methods only. Restore
+    # also has int/string/void methods; use its delimiter lexer after a typed declaration.
+    $pattern = '(?m)^[\t ]*' + [regex]::Escape($visibility) + '\s+(?:static\s+)?(?:async\s+)?[\w.]+(?:<[^\r\n;{]+>)?(?:\[\])?\s+' + [regex]::Escape($name) + '\s*\('
+    $declarations = @([regex]::Matches($clean, $pattern))
+    if ($declarations.Count -ne 1) { return '' }
+    $body = Find-CSharpMethodBodyStart $clean $declarations[0].Index
+    if ($null -eq $body -or $body.Kind -cne 'block') { return '' }
+    $end = Find-CSharpMatchingDelimiter $clean $body.Index '{' '}'
+    if ($end -lt $body.Index) { return '' }
+    return $clean.Substring($declarations[0].Index, $end - $declarations[0].Index + 1)
+}
+
+function Get-RestorePropertyRoles([string]$text, [string]$name) {
+    $property = [regex]::Match($text, '(?s)internal\s+bool\s+' + [regex]::Escape($name) + '\s*=>\s*(?<body>[^;]+);')
+    if (-not $property.Success) { return '' }
+    return (@([regex]::Matches($property.Groups['body'].Value, '\bRole\s*==\s*PosDatabaseAccessRole\.(?<role>\w+)') |
+        ForEach-Object { $_.Groups['role'].Value } | Sort-Object) -join '|')
+}
+
+# Pure source contracts: the same predicates check the current implementation
+# and in-memory negative fixtures below. No fixture opens or modifies a DB.
+function Test-RestoreAuxContract([hashtable]$source) {
+    $source = $source.Clone()
+    foreach ($key in @($source.Keys)) { $source[$key] = Remove-RestoreSourceComments $source[$key] }
+    $stage = $source.Stage
+    $ordered = @('PosDatabaseAccessContext.Allocate(candidatePath, PosDatabaseAccessRole.RestoreCandidate',
+        'PosDatabaseAccessContext.SelectedSource(sourcePath, operationId)', 'CreateReadOnlySnapshot(',
+        'DbInitializer.EnsureCreated(', 'PosDatabaseAccessRole.CandidateMigration',
+        'PosDatabaseAccessRole.CandidateValidation', '.ValidateAsync(cancellationToken)',
+        '.ValidateCandidateAsync(expectedShopId, expectedShopCode)', 'return new RestoreCandidatePreparation(')
+    $last = -1
+    foreach ($needle in $ordered) {
+        $position = $stage.IndexOf($needle, [StringComparison]::Ordinal)
+        if ($position -le $last) { return $false }
+        $last = $position
+    }
+    if ($stage -notmatch 'DbInitializer\.EnsureCreated\(\s*PosDbOptions\.ForPath\(candidatePath\)\s*\.WithAccessContext\(candidateContext\.Narrow\(PosDatabaseAccessRole\.CandidateMigration\)\)\)' -or
+        $stage -notmatch 'new SqliteConnectionFactory\(PosDbOptions\.ForPath\(candidatePath\)\s*\.WithAccessContext\(candidateContext\.Narrow\(PosDatabaseAccessRole\.CandidateValidation\)\)\)') { return $false }
+    foreach ($table in @('sales_sync_outbox','catalog_import_outbox','catalog_import_prepared_plan','catalog_import_recovery_supersession','article_mutation_outbox','product_image_operation_outbox','customer_order_inbox')) {
+        if ($source.Safety -notmatch ('\bFROM\s+' + [regex]::Escape($table) + '\b')) { return $false }
+    }
+    if ([regex]::Matches($source.Safety, 'OutboxShopBinding\.GetMismatchCode\(').Count -ne 2 -or
+        $source.Safety -notmatch 'restore_shop_mismatch' -or $source.Safety -notmatch 'restore_catalog_shop_mismatch' -or
+        $source.Safety -notmatch "unresolvedOutbox\s*==\s*0" -or $source.Safety -notmatch 'restore_candidate_outbox_unresolved' -or
+        $source.Safety -notmatch "resolved_at IS NULL" -or $source.Safety -notmatch "state <> 'completed'" -or $source.Safety -notmatch "state <> 'acked'") { return $false }
+    if ((Get-RestorePropertyRoles $source.Access 'AllowsCreate') -cne 'Live|SyntheticFixture' -or
+        (Get-RestorePropertyRoles $source.Access 'Pooling') -cne 'Live|SyntheticFixture' -or
+        (Get-RestorePropertyRoles $source.Access 'AppliesRuntimePolicy') -cne 'BackupPartial|CandidateMigration|Live|SyntheticFixture' -or
+        $source.Access -notmatch '_owner\s*!=\s*null\s*&&\s*_owner\.AllowCreate' -or
+        $source.Access -notmatch 'Role == PosDatabaseAccessRole\.SelectedSnapshotSource\s*\|\|\s*Role == PosDatabaseAccessRole\.BackupValidation\s*\|\|\s*Role == PosDatabaseAccessRole\.CandidateValidation\)\s*return SqliteOpenMode\.ReadOnly' -or
+        $source.Access -notmatch 'if\s*\(!File\.Exists\(DbPath\)\)\s*throw new FileNotFoundException' -or
+        $source.Factory -notmatch 'Mode\s*=\s*context\.OpenMode\(existingOnly\)' -or $source.Factory -notmatch 'Pooling\s*=\s*context\.Pooling' -or
+        $source.Factory -notmatch 'if\s*\(!existingOnly\s*&&\s*context\.AppliesRuntimePolicy\)' -or
+        $source.Initializer -notmatch 'PosDatabaseAccessContext\.Resolve\(opt\)\.DemandInitialization\(\)') { return $false }
+    $initialization = Get-RestoreMethodText $source.Access 'public' 'DemandInitialization'
+    $allowedInit = @([regex]::Matches($initialization, 'Role\s*!=\s*PosDatabaseAccessRole\.(?<role>\w+)') |
+        ForEach-Object { $_.Groups['role'].Value } | Sort-Object) -join '|'
+    if ($allowedInit -cne 'CandidateMigration|Live|SyntheticFixture' -or $initialization -notmatch 'database_context_initialization_denied') { return $false }
+    foreach ($builder in @($source.BackupSource, $source.RestoreSource)) {
+        if ($builder -notmatch 'Mode\s*=\s*SqliteOpenMode\.ReadOnly\b' -or $builder -notmatch 'Cache\s*=\s*SqliteCacheMode\.Private' -or $builder -notmatch 'Pooling\s*=\s*false' -or $builder -match 'ReadWriteCreate') { return $false }
+    }
+    foreach ($builder in @($source.BackupDestination, $source.RestoreDestination)) {
+        if ($builder -notmatch 'Mode\s*=\s*SqliteOpenMode\.ReadWrite\b' -or $builder -notmatch 'Pooling\s*=\s*false' -or $builder -match 'ReadWriteCreate') { return $false }
+    }
+    if ($source.BackupSnapshot -notmatch 'destinationContext\.DemandOperation\(operationId, temporaryPath, PosDatabaseAccessRole\.BackupPartial\)' -or
+        $source.RestoreSnapshot -notmatch 'sourceContext\.DemandOperation\(operationId, sourcePath, PosDatabaseAccessRole\.SelectedSnapshotSource\)' -or
+        $source.RestoreSnapshot -notmatch 'candidateContext\.DemandOperation\(operationId, candidatePath, PosDatabaseAccessRole\.RestoreCandidate\)' -or
+        $source.BackupSnapshot -notmatch 'sourceContext\.EnterConnection\(\)' -or $source.BackupSnapshot -notmatch 'destinationContext\.EnterConnection\(\)' -or
+        $source.RestoreSnapshot -notmatch 'sourceContext\.EnterConnection\(\)' -or $source.RestoreSnapshot -notmatch 'candidateContext\.EnterConnection\(\)' -or
+        $source.BackupSnapshot -notmatch 'DeleteIfPresent\(temporaryPath\);\s*DeleteSqliteSidecars\(temporaryPath\);\s*destinationContext\.RecreateOwnedPartial\(\);\s*cancellationToken\.ThrowIfCancellationRequested\(\)' -or
+        $source.RestoreSnapshot -notmatch 'DeleteSqliteFiles\(candidatePath\);\s*candidateContext\.RecreateOwnedPartial\(\);\s*cancellationToken\.ThrowIfCancellationRequested\(\)') { return $false }
+    foreach ($snapshot in @($source.BackupSnapshot, $source.RestoreSnapshot)) {
+        if ($snapshot -notmatch 'IsNativeSnapshotBusy\(exception\)\s*&&\s*attempt < NativeSnapshotMaximumAttempts\s*&&\s*retryWindow\.ElapsedMilliseconds < NativeSnapshotRetryWindowMilliseconds' -or
+            $snapshot -notmatch 'source\.BackupDatabase\(destination\)') { return $false }
+    }
+    return $true
+}
+
 $required = @(
     "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
@@ -80,6 +169,8 @@ $required = @(
     "src/Win7POS.Core/Backup/BackupSchedulePolicy.cs",
     "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs",
     "src/Win7POS.Data/SqliteConnectionFactory.cs",
+    "src/Win7POS.Data/PosDatabaseAccessContext.cs",
+    "src/Win7POS.Data/DbInitializer.cs",
     "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs",
     "tests/Win7POS.Core.Tests/Data/PersistenceFoundationHardeningTests.cs",
     "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs",
@@ -118,6 +209,8 @@ $backupStore = Read-Text "src/Win7POS.Data/Backup/BackupAutomationStore.cs"
 $backupRetention = Read-Text "src/Win7POS.Data/Backup/BackupAutomationRetention.cs"
 $backupSchedulePolicy = Read-Text "src/Win7POS.Core/Backup/BackupSchedulePolicy.cs"
 $connectionFactory = Read-Text "src/Win7POS.Data/SqliteConnectionFactory.cs"
+$accessContext = Read-Text "src/Win7POS.Data/PosDatabaseAccessContext.cs"
+$initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $persistenceTests = Read-Text "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs"
 $persistenceHardeningTests = Read-Text "tests/Win7POS.Core.Tests/Data/PersistenceFoundationHardeningTests.cs"
 $connectionPolicyTests = Read-Text "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
@@ -364,12 +457,14 @@ $stageStart = Index-OrFail $restoreCoordinator "private async Task<RestoreCandid
 $stageEnd = Index-OrFail $restoreCoordinator "private string AllocateCandidatePath" "candidate staging end marker missing"
 $stageBody = $restoreCoordinator.Substring($stageStart, $stageEnd - $stageStart)
 $sourceSnapshot = Index-OrFail $stageBody "CreateReadOnlySnapshot(" "restore must create a SQLite snapshot"
-$candidateMigration = Index-OrFail $stageBody "DbInitializer.EnsureCreated(PosDbOptions.ForPath(candidatePath))" "candidate migration missing"
+$candidateMigration = Index-OrFail $stageBody "DbInitializer.EnsureCreated(PosDbOptions.ForPath(candidatePath)" "candidate migration missing"
 $candidateIntegrity = Index-OrFail $stageBody ".ValidateAsync(cancellationToken)" "candidate integrity/foreign-key validation missing"
 $candidateValidation = Index-OrFail $stageBody ".ValidateCandidateAsync(expectedShopId, expectedShopCode)" "candidate shop/outbox validation missing"
 if ($sourceSnapshot -gt $candidateMigration -or
     $candidateMigration -gt $candidateIntegrity -or
     $candidateIntegrity -gt $candidateValidation -or
+    $stageBody -notmatch 'WithAccessContext\(candidateContext\.Narrow\(PosDatabaseAccessRole\.CandidateMigration\)\)' -or
+    $stageBody -notmatch 'WithAccessContext\(candidateContext\.Narrow\(PosDatabaseAccessRole\.CandidateValidation\)\)' -or
     $restoreSafety -notmatch "restore_shop_mismatch" -or
     $restoreSafety -notmatch "restore_catalog_shop_mismatch" -or
     $restoreSafety -notmatch "restore_candidate_outbox_unresolved" -or
@@ -623,14 +718,43 @@ if ($onlineBackup -notmatch "NativeSnapshotMaximumAttempts\s*=\s*5" -or
     $restoreCoordinator -notmatch "NativeSnapshotRetryWindowMilliseconds\s*=\s*5000" -or
     $restoreCoordinator -notmatch "IsNativeSnapshotBusy" -or
     $restoreCoordinator -notmatch "DeleteSqliteFiles\(candidatePath\)" -or
-    $onlineBackup -notmatch "DeleteSqliteSidecars\(temporaryPath\);\s*cancellationToken\.ThrowIfCancellationRequested\(\)" -or
-    $restoreCoordinator -notmatch "DeleteSqliteFiles\(candidatePath\);\s*cancellationToken\.ThrowIfCancellationRequested\(\)" -or
+    $onlineBackup -notmatch "DeleteSqliteSidecars\(temporaryPath\);\s*destinationContext\.RecreateOwnedPartial\(\);\s*cancellationToken\.ThrowIfCancellationRequested\(\)" -or
+    $restoreCoordinator -notmatch "DeleteSqliteFiles\(candidatePath\);\s*candidateContext\.RecreateOwnedPartial\(\);\s*cancellationToken\.ThrowIfCancellationRequested\(\)" -or
     $persistenceHardeningTests -notmatch "TransientNativeBusy_RetriesFromCleanPartialSnapshot" -or
     $persistenceHardeningTests -notmatch "PersistentBusyFailsClosedAndCleanRetryPasses" -or
     $persistenceHardeningTests -notmatch "CancellationAfterBusyStopsBeforeRetryAndCleansPartial") {
     Fail "native backup/restore snapshot BUSY retry must be bounded, clean partial state and remain tested"
 } else {
     Pass "native backup/restore snapshot BUSY retry is bounded and fail-closed"
+}
+
+$auxSource = @{
+    Stage=$stageBody; Safety=(Get-RestoreMethodText $restoreSafety 'public' 'ValidateCandidateAsync'); Access=$accessContext; Initializer=$initializer; Factory=$connectionFactory
+    BackupSnapshot=(Get-RestoreMethodText $onlineBackup 'private' 'CreateNativeSnapshot'); RestoreSnapshot=(Get-RestoreMethodText $restoreCoordinator 'private' 'CreateReadOnlySnapshot')
+    BackupSource=(Get-RestoreMethodText $onlineBackup 'private' 'BuildSourceConnectionString'); RestoreSource=(Get-RestoreMethodText $restoreCoordinator 'private' 'BuildSourceConnectionString')
+    BackupDestination=(Get-RestoreMethodText $onlineBackup 'private' 'BuildDestinationConnectionString'); RestoreDestination=(Get-RestoreMethodText $restoreCoordinator 'private' 'BuildCandidateConnectionString')
+}
+if (-not (Test-RestoreAuxContract $auxSource)) { Fail 'AUX restore migration, read-only validation, ownership and retry source contract violated' }
+else { Pass 'AUX restore uses exact migration/validation roles and owned existing-only native destinations' }
+foreach ($negative in @(
+    @{Name='migration-role'; Key='Stage'; Old='PosDatabaseAccessRole.CandidateMigration'; New='PosDatabaseAccessRole.CandidateValidation'},
+    @{Name='validation-promoted'; Key='Stage'; Old='PosDatabaseAccessRole.CandidateValidation'; New='PosDatabaseAccessRole.CandidateMigration'},
+    @{Name='candidate-safety-skipped'; Key='Stage'; Old='.ValidateCandidateAsync(expectedShopId, expectedShopCode)'; New='.SkippedCandidateAsync(expectedShopId, expectedShopCode)'},
+    @{Name='factory-create-bypass'; Key='Factory'; Old='Mode = context.OpenMode(existingOnly)'; New='Mode = SqliteOpenMode.ReadWriteCreate'},
+    @{Name='source-create'; Key='RestoreSource'; Old='SqliteOpenMode.ReadOnly'; New='SqliteOpenMode.ReadWriteCreate'},
+    @{Name='destination-create'; Key='BackupDestination'; Old='SqliteOpenMode.ReadWrite'; New='SqliteOpenMode.ReadWriteCreate'},
+    @{Name='missing-customer-order-check'; Key='Safety'; Old='FROM customer_order_inbox'; New='FROM omitted_inbox'},
+    @{Name='missing-catalog-plan-check'; Key='Safety'; Old='FROM catalog_import_prepared_plan'; New='FROM omitted_plan'},
+    @{Name='candidate-init-allowed'; Key='Access'; Old='Role != PosDatabaseAccessRole.CandidateMigration'; New='Role != PosDatabaseAccessRole.CandidateValidation'},
+    @{Name='missing-backup-recreation'; Key='BackupSnapshot'; Old='destinationContext.RecreateOwnedPartial();'; New=''},
+    @{Name='missing-candidate-recreation'; Key='RestoreSnapshot'; Old='candidateContext.RecreateOwnedPartial();'; New=''},
+    @{Name='missing-retry-cancellation'; Key='RestoreSnapshot'; Old='cancellationToken.ThrowIfCancellationRequested();'; New=''}
+)) {
+    $fixture = $auxSource.Clone()
+    $fixture[$negative.Key] = $fixture[$negative.Key].Replace($negative.Old, $negative.New)
+    if ($fixture[$negative.Key] -ceq $auxSource[$negative.Key]) { Fail ('AUX negative fixture did not mutate its scoped method: ' + $negative.Name) }
+    elseif (Test-RestoreAuxContract $fixture) { Fail ('AUX source gate accepted unsafe negative fixture: ' + $negative.Name) }
+    else { Pass ('AUX source gate rejects unsafe fixture: ' + $negative.Name) }
 }
 
 if ($startOfDay -notmatch "RestoreNeedsReviewSettingKey" -or

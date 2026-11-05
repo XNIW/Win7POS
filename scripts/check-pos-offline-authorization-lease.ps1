@@ -41,6 +41,11 @@ $operatorSessionContract = Read-Text "src/Win7POS.Wpf/Infrastructure/Security/IO
 $session = Read-Text "src/Win7POS.Wpf/Infrastructure/Security/OperatorSession.cs"
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $saleWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
+. (Join-Path $PSScriptRoot "sales-sync-outbox-gate-helpers.ps1")
+$ordinarySaleWriters = @(Get-CSharpMethodSlices $saleWriter "internal" "InsertSaleAsync")
+$publicationHelpers = @(Get-CSharpMethodSlices $saleWriter "private" "CommitWithPublicationAsync")
+$ordinarySaleWriter = if ($ordinarySaleWriters.Count -eq 1) { $ordinarySaleWriters[0].Text } else { '' }
+$publicationHelper = if ($publicationHelpers.Count -eq 1) { $publicationHelpers[0].Text } else { '' }
 $connectionFactory = Read-Text "src/Win7POS.Data/SqliteConnectionFactory.cs"
 $workflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $dataProject = Read-Text "src/Win7POS.Data/Win7POS.Data.csproj"
@@ -261,9 +266,13 @@ if ($workflow -match '\.PayCashAsync\(') {
 else {
     Pass "workflow cannot reach the legacy PayCashAsync sale boundary"
 }
-Require-Pattern "sale writer drains readers before its provider transaction and guarded durable commit" $saleWriter 'OpenAsync\(\)[\s\S]{0,300}AcquireExclusiveCommitFence\(conn\)[\s\S]{0,180}conn\.BeginTransaction\(\)[\s\S]*authorizationCommitGuard\?\.DemandStillValid\(\)[\s\S]*INSERT INTO sales\([\s\S]*authorizationCommitGuard\.CommitIfStillValid\([\s\S]{0,180}DurableCommitSafetyBudget[\s\S]{0,120}commitTransaction'
+Require-Pattern "sale writer drains readers before its provider transaction and guarded durable commit" $ordinarySaleWriter 'OpenAsync\(\)[\s\S]{0,300}AcquireExclusiveCommitFence\(conn\)[\s\S]{0,180}conn\.BeginTransaction\(\)[\s\S]*authorizationCommitGuard\?\.DemandStillValid\(\)[\s\S]*INSERT INTO sales\([\s\S]*CommitWithPublicationAsync\(\s*conn\s*,\s*tx\s*,\s*authorizationCommitGuard\s*,\s*commitTransaction\s*,\s*SqliteConnectionFactory\.DurableCommitSafetyBudget\s*\)'
 Require-Pattern "writer preserves ambiguous COMMIT failures for exact replay" $saleWriter 'transactionCommitted\s*=\s*false[\s\S]*tx\.Commit\(\)[\s\S]*transactionCommitted\s*=\s*true[\s\S]*if \(!transactionCommitted\)[\s\S]*tx\.Rollback\(\)'
-Require-Pattern "exact replay keeps a zero-headroom guarded commit" $saleWriter 'replaySaleId\.HasValue[\s\S]{0,700}authorizationCommitGuard\.CommitIfStillValid\(\s*\(\)\s*=>\s*CommitExactSaleReplay'
+Require-Pattern "exact replay keeps a zero-headroom guarded commit" $ordinarySaleWriter 'if\s*\(replaySaleId\.HasValue\)\s*\{\s*await\s+CommitWithPublicationAsync\(\s*conn\s*,\s*tx\s*,\s*authorizationCommitGuard\s*,\s*commitTransaction\s*,\s*TimeSpan\.Zero\s*\)\.ConfigureAwait\(false\);\s*return replaySaleId\.Value;\s*\}'
+# The F6 boundary gate additionally validates the complete helper/coordinator
+# bodies and rejects bypass/budget/callback/order mutations. This gate retains
+# its independent effective-permission, expiry and revocation-latch assertions.
+Require-Pattern "publication helper carries the same final guard, budget and commit callback inside its gate" $publicationHelper 'using\s*\(await\s+coordinator\.EnterPublicationAsync\(CancellationToken\.None\)\.ConfigureAwait\(false\)\)\s*\{\s*coordinator\.CommitAndPublishReportRevision\(connection,\s*transaction,\s*\(\)\s*=>\s*\{\s*if\s*\(guard\s*==\s*null\)\s*commit\(\);\s*else\s+guard\.CommitIfStillValid\(safety,\s*commit\);\s*\},\s*_factory\.AuthorityStamp\);\s*\}'
 Require-Pattern "SQLite factory establishes a bounded EXCLUSIVE commit fence" $connectionFactory 'ExpectedLockingMode\s*=\s*"normal"[\s\S]*DurableCommitSafetyBudget\s*=[\s\S]{0,120}TimeSpan\.FromSeconds\(10\)[\s\S]*AcquireExclusiveCommitFence[\s\S]*SetLockingMode\(connection,\s*"EXCLUSIVE"\)[\s\S]*BEGIN EXCLUSIVE;[\s\S]*COMMIT;'
 Require-Pattern "SQLite fence restores NORMAL through a real main-database access" $connectionFactory 'EnsureNormalLockingMode\([\s\S]{0,600}SetLockingMode\(connection,\s*"NORMAL"\)[\s\S]{0,300}TouchMainDatabase\(connection\)[\s\S]*SELECT 1 FROM main\.sqlite_schema'
 Require-Pattern "SQLite fence quarantines a pooled connection when cleanup cannot be proven" $connectionFactory 'TryRestoreNormalLockingMode[\s\S]{0,800}ClearPool\(connection\)[\s\S]{0,180}ClearAllPools\(\)'

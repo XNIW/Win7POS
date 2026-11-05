@@ -943,10 +943,12 @@ VALUES(
 
     private sealed class TestDb : IDisposable
     {
+        private readonly OwnedSqliteTestFile _ownedFile;
         private TestDb(string root)
         {
             Root = root;
             Options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(Options.DbPath);
             Factory = new SqliteConnectionFactory(Options);
             DbInitializer.EnsureCreated(Options);
         }
@@ -964,6 +966,7 @@ VALUES(
 
         public void Dispose()
         {
+            _ownedFile.Dispose();
             try { Directory.Delete(Root, true); } catch { }
         }
     }

@@ -202,6 +202,7 @@ public sealed class ProductRepositoryPagingPerformanceTests
     private sealed class Fixture : IDisposable
     {
         private readonly string _root;
+        private readonly OwnedSqliteTestFile _ownedFile;
         private readonly SqliteConnectionFactory _factory;
 
         internal Fixture(int rows)
@@ -213,6 +214,7 @@ public sealed class ProductRepositoryPagingPerformanceTests
                 Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_root);
             var options = PosDbOptions.ForPath(Path.Combine(_root, "pos.db"));
+            _ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             _factory = new SqliteConnectionFactory(options);
             Repository = new ProductRepository(_factory);
@@ -224,6 +226,7 @@ public sealed class ProductRepositoryPagingPerformanceTests
         public void Dispose()
         {
             SqliteConnectionFactory.ClearAllPools();
+            _ownedFile.Dispose();
             Directory.Delete(_root, recursive: true);
         }
 

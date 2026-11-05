@@ -17,6 +17,7 @@ public sealed class SettingsAtomicTests
         try
         {
             var options = PosDbOptions.ForPath(Path.Combine(root, "pos.db"));
+            using var ownedFile = OwnedSqliteTestFile.Create(options.DbPath);
             DbInitializer.EnsureCreated(options);
             var factory = new SqliteConnectionFactory(options);
             var repository = new SettingsRepository(factory);
