@@ -11,25 +11,25 @@ index and worklog edits preserved. No reset, stash or clean.
 | Repo sync | PASS read-only | GitHub GET main and local Git; same baseline, eight recent commits recorded in PLAN | Recheck before delivery |
 | Toolchain | PASS SDK / PowerShell | SDK 10.0.301 from pinned local installation; PowerShell 7.6.9 | No dependency upgrade |
 | Original input availability/integrity | PASS independent audit | Read-only ZIP/OOXML private manifest outside checkout; all expected controls matched; source hashes unchanged | Not a product parser PASS |
-| A parser / pure rules | FOCUSED_PASS | Product preview on original corpus also PASS on run02 net48/x86 binaries; independent controls and source hashes preserved | Final candidate recheck after currency/time audit correction; real apply still gated |
+| A parser / pure rules | PASS software | Final CI and reader on downloaded5c3327b net48/x86 DLLs;7/7 inputs/independent controls unchanged | Real time/binding remain gated |
 | B persistence / authority / recovery | FOCUSED_PASS | Five real foundation scenarios PASS in focused run015030831; prior failures retained | Exact-final code SHA/CI qualification pending |
 | C reports / UI / export | FOCUSED_PASS | Latest focused Smoke8/8,44/44 assertions; actual Load11/11 | Full Windows run03 remains FAIL; exact-final CI pending |
 | QA automation/public privacy | FOCUSED_PASS / FINAL_CI_PENDING | Closed receipts validated, current focused jobs cleanup=true/remaining0; run03 public publication PASS separate | No overall Windows PASS inferred from focused evidence |
 | Real time semantics | BLOCKED_EXTERNAL | Modern timestamp markers alone do not prove provider semantics | Authoritative provider/voucher evidence |
 | Real shop/overlap | BLOCKED_EXTERNAL | No authoritative real-shop mapping/start date supplied | Binding, permissions and overlap proof |
-| Physical Windows 7 | NOT_RUN | Build host cannot substitute physical qualification | Candidate package and owner card |
-| Main/CI/security/package | NOT_RUN | No implementation commit yet | Complete functional candidate first |
+| Physical Windows 7 | BLOCKED_EXTERNAL / NOT_RUN | Exact candidate package/QA and owner card ready; host unavailable | Owner assigns physical Win7 SP1 and peripherals |
+| Main/CI/security/package | PASS software | Code5c3327b, four exact-SHA workflows, product/QA download verification PASS | Final documentation-only closeout; external qualification remains |
 
 Build/restore/test writer: root agent only. Delegated component file ownership is
 nonoverlapping. All raw diagnostics and real financial controls stay private.
 Previous FAIL/TIMEOUT evidence must remain available; no result is inferred from
 static inspection, missing prerequisite, or a receipt schema alone.
 
-Current resume point: main77427d1 first hosted CI41955182242 retains FAIL on
-real shortpath alias and apply18014ms/15000ms. Core/functional20/20/smoke8/8
-passed. Root coordinates two minimal fixes; only root builds/tests. Security and
-WPF/QA payload passed on77427d1; Release41955182205 cancellation was requested
-because that candidate is superseded. New exact-SHA workflows remain required.
+Current resume point: SOFTWARE_DELIVERED at code5c3327bd320293ad48edc7d9cc01ad2466e591b4.
+CI41959769748 All, Security41959769752, Release41959769763 and WPF41959770648 PASS.
+Canonical downloads and final packaged reader PASS; external Shop/time and physical
+Win7 remain BLOCKED_EXTERNAL. Final commit is documentation only; next action is
+the owner qualification card, not another implementation tranche.
 Earlier process/next-command notes below are historical checkpoints; this pointer
 and the newest run section are authoritative.
 
@@ -449,3 +449,75 @@ main correction commit, new exact-SHA workflows/artifacts. No real apply/Win7.
 
 Required-gates29:50/50 PASS after the prepared-apply/alias correction. Only the
 seven task source/docs plus worklog are staged for the correction commit.
+
+## Final software delivery, exact code5c3327b (2026-11-05 UTC)
+
+Code/main5c3327bd320293ad48edc7d9cc01ad2466e591b4, clean source fingerprint
+72d047e1665b2dce5308a7d5f68540e5f603cef2da74e8ba090a8e4388e251e9.
+CI41959769748 All PASS, runWin7POS.QA.20261105T031014179Z.733127f7e27545a6aac98da382290591:
+15/15 steps; Core gate1051290ms; functional20/20, foundation5/37, smoke8/44,
+Load1/11. No empty checks or residual Job processes qualify. Load flags alltrue,
+analysis2537.2931ms/apply3783.8476ms/service4031.5146ms/backup192.5817ms,
+ownershipcold6928.9462ms/warm365.9836ms;506/506 dispatcher+253/253 memory,
+zero pending/drop/overflow/suspend, p95 .2572ms/max9.8629ms, peak89022464bytes.
+Current public artifact13386211267 downloaded/digest-checked; inner two-file
+pair Test-QaPublicBundle PASS, correct run/source/fingerprint. No receipt-derived
+Expected context was constructed to manufacture a qualification.
+
+Security41959769752 PASS including CodeQL/dependency/secret/SBOM/reproducibility.
+Release41959769763 PASS: Core1715/1715, zero skipped,38m01; gates50/50, CLI,
+packaged x86/ValueTuple/provider-consumer closure and integrity/provenance gates.
+Version1.0.0-dev.5c3327bd3202. Existing canonical verifier reused:
+pwsh -NoProfile -File scripts/win7pos/windows/test-downloaded-release-pack.ps1
+-RunId41959769763 -ExpectedCommitSha5c3327bd320293ad48edc7d9cc01ad2466e591b4
+-OutputDirectory(new private delivery root)/release-download. Actual argv used
+separate parameter/value arguments; this ledger is a sanitized command summary.
+PASS:41 product files/110 checksummed, setup/dist/payload correspondence,
+SBOM/provenance/attestation, development-unsigned,0 signing phases;
+installation NOT_EXECUTED. Artifacts: ReleasePack13386956585, Setup13387265413,
+dist13386866791. ZIP SHA256c5dbaa380378d382f5c6a29178e081d444a3c9f57a1864cec8af3e80e53f558c;
+installer SHA256f0897aab5a9d33ecdc6a411d1c367c81a8885268d20deca5324e08dc5683394d.
+
+WPF41959770648 PASS with historical_qa_payload=true. QA artifact13385071104,
+39 files, closure/manifest/fixture hashes verified after download. Fresh actual
+foreign-empty-CWD runWin7POS.QA.20261105T031330057Z.3557fff79f954e9cbe82fa4a1eed9907
+PASS8/8+44, source/hash/context bound to downloaded bundle, cleanuptrue/residual0.
+Product and QA share33 byte-identical files including Core/Data/WPF. Operational
+payload contains no harness, XLSX, database or TRX. QA remains separate.
+
+Actual final product net48/x86 reader: new private console probe references only
+the downloaded verified Core/Data DLLs (runtime hashes match product), new
+receipt and input hashes independently checked before/after. PASS7/7 unchanged,
+private independent financial controls matched, NeedsEvidence=true, CanApply=false,
+HasErrors=false, exit0/4313ms. No DB/apply or credentials. Earlier run02 result
+remains intact and was not substituted for this actual final reader run.
+
+Correction to earlier cancellation annotation: first Release774 Core1715/1715
+actually completed SUCCESS at03:00:46 and CLI began03:00:50, before cancellation
+in Inno03:01:15. Thus Core was individually PASS; overall first Release remains
+CANCELLED and its incomplete package was never qualified. First CI41955182242
+remains FAIL, as do all recorded historical FAIL/TIMEOUT/NOT_RUN checkpoints.
+Different hosted Core durations have no established single cause; no timeout,
+assertion, permission or filesystem-global setting was relaxed.
+
+All local QA Jobs confirmed cleanup/zero descendants; final reader exited and
+MSBuild/C# build servers shut down via the dedicated SDK's standard command.
+Private failure roots, W7Q mappings and W7Q83 synthetic copies/provenance are
+retained intentionally. No recursive cleanup, unrelated process termination or
+original/operational-data mutation. Final documentation delta consists only of
+AI_WORKLOG, CODEX_ASUS_TASKS, PLAN, EXECUTION, result and external qualification.
+It uses a documentation-only commit with [skip ci] to avoid duplicate full suites;
+no required branch protections are bypassed. Tests/packages remain attributed
+to code5c3327b; final documentation SHA is reported in the delivery message and
+private closeout metadata, and git diff code5c3327b..HEAD verifies this split.
+
+Software delivery is complete. Overall task remains BLOCKED_EXTERNAL for real
+Shop/mapping/start/overlap/provider-time evidence and physical Win7 SP1/peripherals.
+No prior owner-defer is inherited. Owner card now supplies exact product/QA hashes;
+next work requires those external prerequisites, not another implementation tranche.
+
+Final privacy:216 distinct task files,222 content versions including all6 finaldocs,
+10 OOXML parts/2 synthetic workbooks; zero actionable privacy findings. Only3 PEM
+headers are preexisting synthetic test vectors. Final6-doc delta has0 broken
+relative Markdown links and git diff --check PASS, with no runtime/source/config
+changes after qualified code5c3327b.

@@ -1396,3 +1396,21 @@ commands within the transaction. Targeted113/113, clean net48/x86 build and
 canonical focused foundation5/5, Smoke8/8, measuredLoad PASS; local apply2.184s.
 Budgets/permissions unchanged. A new exact-SHA delivery qualification follows;
 first-candidate successes and failures retain their original attribution.
+
+### 2026-11-05 UTC — ASUS-W7POS-019 software delivered; external qualification pending
+
+Code/package5c3327bd320293ad48edc7d9cc01ad2466e591b4 on main. Exact-SHA CI41959769748
+All15/15, Security41959769752, Release41959769763 and WPF41959770648 PASS.
+Core1715/1715 zero skipped, gates50/50, foundation5/37, historicalSmoke8/44 and
+measuredLoad1/11; hosted apply3.784s versus the previous18.014s, unchanged15s limit.
+Canonical downloaded Release verifier PASS:41 payload/110 checksummed files,
+setup/dist/ZIP/SBOM/provenance/attestation, development-unsigned (not installed).
+Separate39-file net48/x86 QA verified and executed from foreign empty CWD;33 shared
+product/QA files byte-identical. Final packaged reader privately matched7/7
+originals/independent controls with hashes unchanged and NeedsEvidence=true;
+no real apply. All earlier failures/cancelled package remain recorded honestly.
+Final docs-only delta preserves the qualified code SHA. Real Shop/time evidence
+and physical Win7/peripherals remain BLOCKED_EXTERNAL; no inherited hardware defer.
+Exact identities, hashes, measurements and operator actions are in the
+[result](reports/ASUS_W7POS_019_EXECUTION_RESULT.md) and
+[owner card](reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md).
