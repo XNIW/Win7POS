@@ -11,6 +11,8 @@
     <AssemblyName>Win7POS.Wpf.UiSmokeHarness</AssemblyName>
     <RootNamespace>Win7POS.Wpf.UiSmokeHarness</RootNamespace>
     <StartupObject>Win7POS.Wpf.UiSmokeHarness.Program</StartupObject>
+    <!-- Share the product's reviewed ValueTuple redirect with the QA host. -->
+    <AppConfig>..\..\src\Win7POS.Wpf\App.config</AppConfig>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,6 +29,12 @@
     <Reference Include="System.Security" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The WPF AfterBuild copy is not propagated through ProjectReference.
+         Keep the separately packaged QA host's app-local runtime closure. -->
+    <Content Include="$(NuGetPackageRoot)system.valuetuple/4.6.2/lib/net47/System.ValueTuple.dll">
+      <Link>System.ValueTuple.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\fixtures\historical-sales-getnet-v1\*">
       <Link>fixtures\historical-sales-getnet-v1\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -349,6 +349,25 @@ function Publish-QaPublicBundle {
     return @{runId=$Report.runId;directory=$final;zipPath=(Join-Path $final 'qa-public.zip');manifestPath=(Join-Path $final 'upload-manifest.json');verified=$true}
 }
 
+function Get-QaNet48PayloadRequiredFiles {
+    # Runtime files shared by the app and the separate QA host, plus the
+    # independently hashed synthetic corpus. Presence is distinct from runtime
+    # qualification; a digest-consistent but incomplete archive is never ready.
+    return @(
+        'Win7POS.Wpf.exe','Win7POS.Wpf.exe.config','Win7POS.Wpf.UiSmokeHarness.exe','Win7POS.Wpf.UiSmokeHarness.exe.config',
+        'Win7POS.Core.dll','Win7POS.Data.dll','ClosedXML.dll','ClosedXML.Parser.dll','Dapper.dll',
+        'DocumentFormat.OpenXml.dll','DocumentFormat.OpenXml.Framework.dll','ExcelDataReader.dll','ExcelDataReader.DataSet.dll',
+        'ExcelNumberFormat.dll','Microsoft.Bcl.AsyncInterfaces.dll','Microsoft.Bcl.HashCode.dll','Microsoft.Data.Sqlite.dll',
+        'RBush.dll','SixLabors.Fonts.dll','System.Buffers.dll','System.Drawing.Common.dll','System.IO.Packaging.dll',
+        'System.Memory.dll','System.Numerics.Vectors.dll','System.Runtime.CompilerServices.Unsafe.dll',
+        'System.Text.Encoding.CodePages.dll','System.Threading.Tasks.Extensions.dll','System.ValueTuple.dll',
+        'e_sqlite3.dll','SQLitePCLRaw.batteries_v2.dll','SQLitePCLRaw.core.dll','SQLitePCLRaw.provider.e_sqlite3.dll',
+        'zxing.dll','zxing.presentation.dll','ZXing.Windows.Compatibility.dll','Assets/sii_qrcode.png',
+        'fixtures/historical-sales-getnet-v1/manifest.json','fixtures/historical-sales-getnet-v1/synthetic-legacy.xlsx',
+        'fixtures/historical-sales-getnet-v1/synthetic-modern.xlsx','fixtures/historical-sales-getnet-v1/corpus-v1.json'
+    )
+}
+
 function Test-QaNet48PayloadBundle {
     param([Parameter(Mandatory)][string]$Directory,[Parameter(Mandatory)][string]$SourceSha)
     $root=Assert-QaPublicPath $Directory
@@ -366,7 +385,24 @@ function Test-QaNet48PayloadBundle {
             $stream=$entry.Open();try{$hash=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream)).ToLowerInvariant()}finally{$stream.Dispose()}
             if ($hash -cne $binding[0].sha256) {throw 'qa_payload_entry_invalid'}
         }
-        foreach ($required in @('Win7POS.Wpf.exe','Win7POS.Wpf.UiSmokeHarness.exe','fixtures/historical-sales-getnet-v1/manifest.json','fixtures/historical-sales-getnet-v1/synthetic-legacy.xlsx','fixtures/historical-sales-getnet-v1/synthetic-modern.xlsx','fixtures/historical-sales-getnet-v1/corpus-v1.json')) {if (-not $seen.Contains($required)) {throw 'qa_payload_required_file_missing'}}
+        foreach ($required in (Get-QaNet48PayloadRequiredFiles)) {
+            $requiredEntry=$archive.GetEntry($required)
+            if ($null -eq $requiredEntry -or $requiredEntry.Length -eq 0) {throw 'qa_payload_required_file_missing'}
+        }
+        foreach ($configName in @('Win7POS.Wpf.exe.config','Win7POS.Wpf.UiSmokeHarness.exe.config')) {
+            $settings=[Xml.XmlReaderSettings]::new();$settings.DtdProcessing=[Xml.DtdProcessing]::Prohibit;$settings.XmlResolver=$null
+            $stream=$archive.GetEntry($configName).Open();$reader=$null
+            try {
+                $reader=[Xml.XmlReader]::Create($stream,$settings)
+                $xml=[Xml.XmlDocument]::new();$xml.XmlResolver=$null;$xml.Load($reader)
+                $ns=[Xml.XmlNamespaceManager]::new($xml.NameTable);$ns.AddNamespace('a','urn:schemas-microsoft-com:asm.v1')
+                $nodes=@($xml.SelectNodes('/configuration/runtime/a:assemblyBinding/a:dependentAssembly[a:assemblyIdentity/@name="System.ValueTuple"]',$ns))
+                if ($nodes.Count -ne 1) {throw 'qa_payload_valuetuple_redirect_invalid'}
+                $identity=$nodes[0].SelectSingleNode('a:assemblyIdentity',$ns)
+                $redirect=$nodes[0].SelectSingleNode('a:bindingRedirect',$ns)
+                if ($identity.GetAttribute('publicKeyToken') -cne 'cc7b13ffcd2ddd51' -or $identity.GetAttribute('culture') -cne 'neutral' -or $null -eq $redirect -or $redirect.GetAttribute('oldVersion') -cne '0.0.0.0-4.0.5.0' -or $redirect.GetAttribute('newVersion') -cne '4.0.5.0') {throw 'qa_payload_valuetuple_redirect_invalid'}
+            } finally {if ($null -ne $reader) {$reader.Dispose()};$stream.Dispose()}
+        }
         $fixtureEntry=$archive.GetEntry('fixtures/historical-sales-getnet-v1/manifest.json')
         $reader=[IO.StreamReader]::new($fixtureEntry.Open());try{$fixture=$reader.ReadToEnd()|ConvertFrom-Json -ErrorAction Stop}finally{$reader.Dispose()}
         if($fixture.schemaVersion -cne 'win7pos-historical-sales-fixtures-v1' -or $fixture.fixtureVersion -cne 'historical-sales-getnet-v1' -or @($fixture.files).Count -ne 3){throw 'qa_payload_fixture_manifest_invalid'}
@@ -391,6 +427,10 @@ function New-QaNet48PayloadBundle {
         if ($bytes.Length -lt 256 -or [BitConverter]::ToUInt16($bytes,0) -ne 0x5a4d) {throw 'qa_payload_x86_required'}
         $pe=[BitConverter]::ToInt32($bytes,0x3c)
         if ($pe -lt 0 -or $pe+6 -gt $bytes.Length -or [BitConverter]::ToInt32($bytes,$pe) -ne 0x4550 -or [BitConverter]::ToUInt16($bytes,$pe+4) -ne 0x14c -or -not [Text.Encoding]::UTF8.GetString($bytes).Contains('.NETFramework,Version=v4.8')) {throw 'qa_payload_net48_x86_required'}
+    }
+    foreach ($required in (Get-QaNet48PayloadRequiredFiles)) {
+        $path=Assert-QaPublicPath (Join-Path $source $required) $source
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0) {throw 'qa_payload_required_file_missing'}
     }
     $null=New-Item -ItemType Directory -Path $target
     $bindings=[Collections.Generic.List[object]]::new()

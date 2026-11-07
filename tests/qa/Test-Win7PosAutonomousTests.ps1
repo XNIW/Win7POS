@@ -471,6 +471,71 @@ $fakePayload=Join-Path $root 'not-a-net48-payload';$null=New-Item -ItemType Dire
 Must-Fail {New-QaNet48PayloadBundle $fakePayload (Join-Path $root 'must-not-publish-payload') ('a'*40)} 'qa_payload_x86_required'
 Assert-QaTest (-not(Test-Path -LiteralPath (Join-Path $root 'must-not-publish-payload'))) 'Invalid target payload was published'
 
+# Packaging-only synthetic PE markers and opaque DLL bytes; this fixture does
+# not claim runtime qualification. Negatives recompute all archive digests, so
+# an internally consistent manifest cannot conceal the original missing facade.
+$completePayload=Join-Path $root 'synthetic-net48-payload';$null=New-Item -ItemType Directory -Path $completePayload
+$runtimePayloadFiles=@(
+    'Win7POS.Core.dll','Win7POS.Data.dll','ClosedXML.dll','ClosedXML.Parser.dll','Dapper.dll',
+    'DocumentFormat.OpenXml.dll','DocumentFormat.OpenXml.Framework.dll','ExcelDataReader.dll','ExcelDataReader.DataSet.dll',
+    'ExcelNumberFormat.dll','Microsoft.Bcl.AsyncInterfaces.dll','Microsoft.Bcl.HashCode.dll','Microsoft.Data.Sqlite.dll',
+    'RBush.dll','SixLabors.Fonts.dll','System.Buffers.dll','System.Drawing.Common.dll','System.IO.Packaging.dll',
+    'System.Memory.dll','System.Numerics.Vectors.dll','System.Runtime.CompilerServices.Unsafe.dll',
+    'System.Text.Encoding.CodePages.dll','System.Threading.Tasks.Extensions.dll','System.ValueTuple.dll',
+    'e_sqlite3.dll','SQLitePCLRaw.batteries_v2.dll','SQLitePCLRaw.core.dll','SQLitePCLRaw.provider.e_sqlite3.dll',
+    'zxing.dll','zxing.presentation.dll','ZXing.Windows.Compatibility.dll'
+)
+foreach($name in $runtimePayloadFiles){[IO.File]::WriteAllText((Join-Path $completePayload $name),'synthetic runtime packaging fixture')}
+$peBytes=[byte[]]::new(512);$peBytes[0]=0x4d;$peBytes[1]=0x5a
+[BitConverter]::GetBytes([int]64).CopyTo($peBytes,0x3c)
+[BitConverter]::GetBytes([int]0x4550).CopyTo($peBytes,64)
+[BitConverter]::GetBytes([uint16]0x14c).CopyTo($peBytes,68)
+[Text.Encoding]::UTF8.GetBytes('.NETFramework,Version=v4.8').CopyTo($peBytes,128)
+foreach($name in @('Win7POS.Wpf.exe','Win7POS.Wpf.UiSmokeHarness.exe')){
+    [IO.File]::WriteAllBytes((Join-Path $completePayload $name),$peBytes)
+    [IO.File]::Copy((Join-Path $repoRoot 'src/Win7POS.Wpf/App.config'),(Join-Path $completePayload ($name+'.config')))
+}
+$null=New-Item -ItemType Directory -Path (Join-Path $completePayload 'Assets')
+[IO.File]::WriteAllText((Join-Path $completePayload 'Assets/sii_qrcode.png'),'synthetic packaging fixture')
+$null=New-Item -ItemType Directory -Path (Join-Path $completePayload 'fixtures')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'tests/fixtures/historical-sales-getnet-v1') -Destination (Join-Path $completePayload 'fixtures') -Recurse
+$payloadPositive=Join-Path $root 'payload-complete'
+$positiveManifest=New-QaNet48PayloadBundle $completePayload $payloadPositive ('a'*40)
+Assert-QaTest (@($positiveManifest.files|Where-Object path -ceq 'System.ValueTuple.dll').Count -eq 1) 'Complete QA payload omitted the facade'
+$null=Test-QaNet48PayloadBundle $payloadPositive ('a'*40)
+function Set-SyntheticQaPayloadEntry([string]$Directory,[string]$EntryName,[AllowNull()][object]$Replacement){
+    $manifestPath=Join-Path $Directory 'payload-manifest.json'
+    $manifest=Read-HistoricalSalesQaJson $manifestPath
+    $zipPath=Join-Path $Directory 'Win7POS.QA-net48-x86.zip'
+    $archive=[IO.Compression.ZipFile]::Open($zipPath,[IO.Compression.ZipArchiveMode]::Update)
+    try{
+        $archive.GetEntry($EntryName).Delete()
+        $manifest.files=@($manifest.files|Where-Object path -cne $EntryName)
+        if($null -ne $Replacement){
+            $entry=$archive.CreateEntry($EntryName);$stream=$entry.Open();$bytes=[Text.Encoding]::UTF8.GetBytes($Replacement)
+            try{$stream.Write($bytes,0,$bytes.Length)}finally{$stream.Dispose()}
+            $hash=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+            $manifest.files+=@{path=$EntryName;bytes=$bytes.Length;sha256=$hash}
+        }
+    }finally{$archive.Dispose()}
+    $manifest.zipBytes=(Get-Item -LiteralPath $zipPath).Length
+    $manifest.zipSha256=(Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $manifest|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $manifestPath
+}
+$payloadMissing=Join-Path $root 'payload-missing-facade';$null=New-QaNet48PayloadBundle $completePayload $payloadMissing ('a'*40)
+Set-SyntheticQaPayloadEntry $payloadMissing 'System.ValueTuple.dll' $null
+Must-Fail {Test-QaNet48PayloadBundle $payloadMissing ('a'*40)} 'qa_payload_required_file_missing'
+foreach($configName in @('Win7POS.Wpf.exe.config','Win7POS.Wpf.UiSmokeHarness.exe.config')){
+    $payloadRedirect=Join-Path $root ('payload-missing-redirect-'+$configName)
+    $null=New-QaNet48PayloadBundle $completePayload $payloadRedirect ('a'*40)
+    Set-SyntheticQaPayloadEntry $payloadRedirect $configName '<configuration />'
+    Must-Fail {Test-QaNet48PayloadBundle $payloadRedirect ('a'*40)} 'qa_payload_valuetuple_redirect_invalid'
+}
+[IO.File]::Delete((Join-Path $completePayload 'System.ValueTuple.dll'))
+$missingOutput=Join-Path $root 'must-not-publish-missing-facade'
+Must-Fail {New-QaNet48PayloadBundle $completePayload $missingOutput ('a'*40)} 'qa_payload_required_file_missing'
+Assert-QaTest (-not(Test-Path -LiteralPath $missingOutput)) 'Incomplete QA source was published'
+
 # Current-run-only publication: no raw transcript, paths, command or error object.
 $publicRaw=Join-Path $root 'private-run';$null=New-Item -ItemType Directory -Path $publicRaw
 $publicParent=Join-Path $root 'public-runs'
