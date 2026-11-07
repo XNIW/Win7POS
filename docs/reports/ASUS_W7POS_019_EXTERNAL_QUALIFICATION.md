@@ -3,9 +3,16 @@
 Aggiornamento consegna: 2026-11-05 UTC. I risultati software e gli artifact
 osservati sono indicati sotto; questa scheda non attesta una corsa fisica Win7.
 L'host di sviluppo corrente è
-Windows 11; non è il target fisico Windows 7 SP1. La nuova Shop/account non è
-ancora stata creata dall'operatore. Binding reale, inizio uso POS e semantica
-temporale Getnet restano prerequisiti esterni.
+Windows 11; non è il target fisico Windows 7 SP1. Aggiornamento onboarding
+2026-11-07: `NEW_SHOP_019` creata e login console riuscito secondo dichiarazione
+utente; identità, deployment e login POS da verificare separatamente. Binding reale,
+inizio uso POS e semantica temporale Getnet restano prerequisiti esterni.
+La prosecuzione è registrata nel [risultato onboarding](ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md);
+gli hash sotto identificano ancora la consegna precedente, non le patch in sviluppo.
+Il companion WPF del precedente bundle QA ha ora una failure startup verificata
+per `System.ValueTuple` mancante; non usare quel bundle per attestare l'avvio
+del prodotto su Win7. Il payload prodotto contiene la dipendenza e ha raggiunto
+il normale login. Il bundle QA corretto richiede nuova consegna/verifica.
 
 | Identità del candidato da qualificare | Valore corrente |
 | --- | --- |

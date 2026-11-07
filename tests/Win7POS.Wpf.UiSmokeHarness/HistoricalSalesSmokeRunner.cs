@@ -14,10 +14,12 @@ using System.Windows.Threading;
 using Dapper;
 using Win7POS.Core.Import;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Reports;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Import;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Data.Reports;
 using Win7POS.Wpf.Chrome;
@@ -385,6 +387,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
         private static async Task UiAsync(string data, HistoricalSalesQaCase test, SyntheticQaVisualWriter visuals)
         {
+            var onboardingVerified = await VerifyEmptyOnboardingAsync(data, test);
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             {
                 var plan = await f.PlanAsync(); var applied = await f.ApplyAsync(plan); var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
@@ -396,7 +399,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 try
                 {
                     dialog.Show(); await PumpAsync(); dialog.MoveFocus(new TraversalRequest(FocusNavigationDirection.First)); await PumpAsync();
-                    test.Check("keyboard_focus", await VerifyHistoricalKeyboardAsync(service, f.Operator));
+                    test.Check("keyboard_focus", await VerifyHistoricalKeyboardAsync(service, f.Operator) && onboardingVerified);
                     dialog.Activate(); await PumpAsync();
                     test.Check("dialog_standard", dialog is DialogShellWindow && dialog.WindowStartupLocation == WindowStartupLocation.CenterOwner && dialog.MinWidth >= 720 && dialog.Owner == owner && Descendants<Button>(dialog).Any(button => ReferenceEquals(button.Style, dialog.FindResource("DialogActionButtonStyle"))));
                     test.Check("nonblocking_dispatcher", await VerifyAnalysisHeartbeatAsync(f, service));
@@ -438,6 +441,137 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 finally { dialog.Close(); owner.Close(); model.Dispose(); model.Dispose(); Thread.CurrentThread.CurrentCulture = oldCulture; Win7POS.Wpf.Localization.PosLocalization.Current.SetLanguage(oldLanguage); }
             }
         }
+        private static async Task<bool> VerifyEmptyOnboardingAsync(string data, HistoricalSalesQaCase test)
+        {
+            test.PrivateDiagnostic("history_onboarding;subcase=real_bootstrap_loopback;state=starting");
+            if (!await ArticleMutationLoopbackHarness.VerifyEmptyShopBootstrapAsync(data)) return false;
+            test.PrivateDiagnostic("history_onboarding;subcase=no_proof_and_empty;state=starting");
+            using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
+            {
+                await new OnlineSyncGenerationRepository(f.Factory).ActivateAndRecoverAsync(f.Generation, 1);
+                var noProofDenied = false;
+                try { await HistoricalOnboardingAccess.CreateAsync(f.Factory, f.Operator, f.Generation, CancellationToken.None); }
+                catch (InvalidOperationException) { noProofDenied = true; }
+                if (!noProofDenied || !await ConfirmEmptyForOnboardingAsync(f)) return false;
+                var access = await HistoricalOnboardingAccess.CreateAsync(f.Factory, f.Operator, f.Generation, CancellationToken.None);
+                var outcome = PosCatalogPullOutcome.AuthoritativelyEmpty(1);
+                var bootstrap = PosOnlineBootstrapResult.CatalogIncomplete("catalog_authoritatively_empty", "synthetic", false, false, outcome);
+                if (!bootstrap.CanPrepareEmptyShopHistory || bootstrap.CanOpenPos || bootstrap.CatalogSaleSafe ||
+                    !bootstrap.CatalogCompleted || !bootstrap.FirstLoginSucceeded || !bootstrap.TrustedSessionPersisted ||
+                    PosOnlineBootstrapResult.CatalogIncomplete("partial", "synthetic", false, true,
+                        PosCatalogPullOutcome.Failure("partial", false, true, 1)).CanPrepareEmptyShopHistory ||
+                    PosOnlineBootstrapResult.CatalogIncomplete("catalog_authoritatively_empty", "synthetic", true, false, outcome).CanPrepareEmptyShopHistory ||
+                    PosOnlineBootstrapResult.Failure("catalog_authoritatively_empty", "synthetic", false,
+                        firstLoginSucceeded: false, trustedSessionPersisted: false, catalogStarted: true).CanPrepareEmptyShopHistory ||
+                    await new CatalogShopStateRepository(f.Factory).IsSaleSafeForOfficialShopAsync()) return false;
+                test.PrivateDiagnostic("history_onboarding;subcase=dialog_keyboard_and_no_print;state=starting");
+                var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                // Keep this viewport fully on screen. The standard modal host
+                // intentionally uses the monitor work area if a cascaded owner
+                // extends outside it; that fallback is not a content-size failure.
+                var owner = new Window { Width = 1024, Height = 768, ShowInTaskbar = false,
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen };
+                var dialog = new HistoricalOnboardingDialog(access, service);
+                try
+                {
+                    owner.Show(); dialog.Owner = owner ?? DialogOwnerHelper.GetSafeOwner();
+                    dialog.Show(); await PumpAsync(); dialog.MoveFocus(new TraversalRequest(FocusNavigationDirection.First)); await PumpAsync();
+                    var buttons = Descendants<Button>(dialog).Where(button => button.IsVisible && button.IsEnabled).ToArray();
+                    test.PrivateDiagnostic("history_onboarding;subcase=dialog_state;buttons=" + buttons.Length +
+                        ";focus=" + buttons.Any(button => button.IsKeyboardFocusWithin) +
+                        ";width=" + dialog.ActualWidth.ToString(CultureInfo.InvariantCulture) +
+                        ";height=" + dialog.ActualHeight.ToString(CultureInfo.InvariantCulture));
+                    if (buttons.Length != 3 || !buttons.Any(button => button.IsKeyboardFocusWithin) ||
+                        dialog.WindowStartupLocation != WindowStartupLocation.CenterOwner || dialog.Owner != owner ||
+                        dialog.ActualWidth > 1024 || dialog.ActualHeight > 768) return false;
+                    // The standalone service/view model can import and export, but its
+                    // report command cannot send even a synthetic job to a printer.
+                    using (var report = new DailyReportViewModel(service, permissions: new PermissionService(f.Operator),
+                        session: f.Operator, allowPrinting: false))
+                    {
+                        if (report.PrintSummaryCommand.CanExecute(null) || report.PrintSelectedHistoryCommand.CanExecute(null)) return false;
+                    }
+                    f.Expire();
+                    test.PrivateDiagnostic("history_onboarding;subcase=lease_expiry;state=starting");
+                    var expiredDenied = false;
+                    try { await access.DemandAsync(CancellationToken.None); } catch (InvalidOperationException) { expiredDenied = true; }
+                    await Task.Delay(550); await PumpAsync();
+                    if (!expiredDenied || access.IsCurrentInMemory || buttons.Take(2).Any(button => button.IsEnabled)) return false;
+                }
+                finally { dialog.Close(); owner.Close(); }
+            }
+            using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
+            {
+                test.PrivateDiagnostic("history_onboarding;subcase=permission_denied;state=starting");
+                await new OnlineSyncGenerationRepository(f.Factory).ActivateAndRecoverAsync(f.Generation, 1);
+                if (!await ConfirmEmptyForOnboardingAsync(f)) return false;
+                f.Operator.CurrentUser.PermissionCodes = Array.Empty<string>();
+                var denied = false;
+                try { await HistoricalOnboardingAccess.CreateAsync(f.Factory, f.Operator, f.Generation, CancellationToken.None); }
+                catch (InvalidOperationException) { denied = true; }
+                if (!denied) return false;
+            }
+            using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
+            {
+                test.PrivateDiagnostic("history_onboarding;subcase=session_A_proof_B_generation;state=starting");
+                var a = f.Generation;
+                f.Generation = new OnlineSyncGeneration(OnlineSyncGeneration.CreateGenerationId(), a.PosSessionId,
+                    a.ShopDeviceId, a.ShopId, a.ShopCode, a.StaffId, a.StaffCredentialVersion);
+                await new OnlineSyncGenerationRepository(f.Factory).ActivateAndRecoverAsync(f.Generation, 1);
+                if (!await ConfirmEmptyForOnboardingAsync(f)) return false;
+                // Both the lease A and DB proof B are valid independently. The
+                // capability must bind their full fingerprint, including generation.
+                var denied = false;
+                try { await HistoricalOnboardingAccess.CreateAsync(f.Factory, f.Operator, f.Generation, CancellationToken.None); }
+                catch (InvalidOperationException) { denied = true; }
+                if (!denied) return false;
+            }
+            using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
+            {
+                test.PrivateDiagnostic("history_onboarding;subcase=scope_and_revocation;state=starting");
+                await new OnlineSyncGenerationRepository(f.Factory).ActivateAndRecoverAsync(f.Generation, 1);
+                if (!await ConfirmEmptyForOnboardingAsync(f)) return false;
+                var wrong = new OnlineSyncGeneration(f.Generation.GenerationId, f.Generation.PosSessionId, f.Generation.ShopDeviceId,
+                    "synthetic-other-shop", "OTHER", f.Generation.StaffId, f.Generation.StaffCredentialVersion);
+                var scopeDenied = false;
+                try { await HistoricalOnboardingAccess.CreateAsync(f.Factory, f.Operator, wrong, CancellationToken.None); }
+                catch (InvalidOperationException) { scopeDenied = true; }
+                var access = await HistoricalOnboardingAccess.CreateAsync(f.Factory, f.Operator, f.Generation, CancellationToken.None);
+                PosOnlineSyncRevocationLatch.Revoke(f.Generation);
+                var revokedDenied = false;
+                try { await access.DemandAsync(CancellationToken.None); } catch (InvalidOperationException) { revokedDenied = true; }
+                var passed = scopeDenied && revokedDenied && !access.IsCurrentInMemory;
+                test.PrivateDiagnostic("history_onboarding;subcase=completed;passed=" + passed);
+                return passed;
+            }
+        }
+
+        private static async Task<bool> ConfirmEmptyForOnboardingAsync(HistoricalSalesFoundationRunner.Fixture f)
+        {
+            var generation = f.Generation;
+            var state = new CatalogShopStateRepository(f.Factory);
+            var binding = await state.EnsureAndLoadCursorAsync(generation.ShopId, generation.ShopCode, generation);
+            var fence = new RemoteCatalogCommitFence
+            {
+                ShopId = generation.ShopId, ShopCode = generation.ShopCode, GenerationId = generation.GenerationId,
+                GenerationFingerprint = generation.Fingerprint, PosSessionId = generation.PosSessionId,
+                ShopDeviceId = generation.ShopDeviceId, ExpectedEpoch = binding.Epoch,
+                ExpectedPreviousCursor = binding.Cursor, ExpectedPreviousMode = binding.Mode
+            };
+            var run = Guid.NewGuid().ToString("N");
+            await new RemoteCatalogBatchRepository(f.Factory).StageAuthoritativePageAsync(new RemoteCatalogBatch
+            {
+                AuthoritativeFullRefresh = true,
+                AuthoritativeStagePage = new CatalogAuthoritativeStagePage { FullRunId = run, PageNumber = 1, HasMore = false }
+            }, CancellationToken.None, fence);
+            var code = await new CatalogFullRefreshReconciler(f.Factory).ConfirmAuthoritativeEmptyAsync(run,
+                new PosCatalogSummaryResponse { Products = 0, ActiveProducts = 0, Categories = 0, Suppliers = 0, Prices = 0 },
+                new CatalogExactnessRunContext { CatalogVersion = "synthetic-empty-v1", SyncCursor = "synthetic-empty-cursor",
+                    SyncMode = "full_refresh", Pages = 1, HasMore = false, ProductRowsReceived = 0,
+                    CategoryRowsReceived = 0, SupplierRowsReceived = 0, PriceRowsReceived = 0, PriceRowsAccepted = 0 }, fence);
+            return code.Length == 0 && await state.IsAuthoritativelyEmptyAsync(generation);
+        }
+
         private static async Task<bool> VerifyHistoricalKeyboardAsync(PosWorkflowService service, OperatorSession session)
         {
             var ownerInput = new TextBox { Text = "Synthetic keyboard owner", Margin = new Thickness(20) };

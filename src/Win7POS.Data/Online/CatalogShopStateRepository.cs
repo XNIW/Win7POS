@@ -11,7 +11,7 @@ using Win7POS.Core.Online;
 
 namespace Win7POS.Data.Online
 {
-    public sealed class CatalogShopStateRepository
+    public sealed partial class CatalogShopStateRepository
     {
         public const string BoundShopCodeKey = "pos.catalog.bound_shop_code";
         public const string BoundShopIdKey = "pos.catalog.bound_shop_id";
@@ -220,6 +220,7 @@ WHERE key IN (
                     expectedEpoch,
                     expectedPreviousCursor,
                     expectedPreviousMode).ConfigureAwait(false);
+                await ClearAuthoritativeEmptyWithinTransactionAsync(conn, tx).ConfigureAwait(false);
                 await SetAsync(conn, tx, LastSyncAtKey, value).ConfigureAwait(false);
                 await SetAsync(conn, tx, LastSyncCursorKey, cursor).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(syncMode))
@@ -316,6 +317,7 @@ WHERE key IN (
                     expectedPreviousCursor,
                     expectedPreviousMode).ConfigureAwait(false);
                 await SetAsync(conn, tx, LastSyncAtKey, deltaValue).ConfigureAwait(false);
+                await ClearAuthoritativeEmptyWithinTransactionAsync(conn, tx).ConfigureAwait(false);
                 await SetAsync(conn, tx, LastSyncCursorKey, deltaCursor).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(syncMode))
                 {
@@ -1251,6 +1253,7 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
                     tx,
                     trustedShopId,
                     trustedShopCode).ConfigureAwait(false);
+                await ClearAuthoritativeEmptyWithinTransactionAsync(conn, tx).ConfigureAwait(false);
                 await SetAsync(conn, tx, SaleSafeAtKey, value).ConfigureAwait(false);
                 var initialCompleted = await GetAsync(conn, tx, InitialCompletedAtKey).ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(initialCompleted))

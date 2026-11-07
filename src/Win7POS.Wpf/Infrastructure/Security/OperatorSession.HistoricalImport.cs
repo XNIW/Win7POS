@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Import;
+using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Pos.Online;
 
@@ -22,14 +23,14 @@ namespace Win7POS.Wpf.Infrastructure.Security
         // File analysis can precede the DB shop binding; the trusted generation
         // and requested permission remain mandatory. Passive checks reuse this
         // one frozen expiry guard, never the lease/store evaluator.
-        internal HistoricalReadAuthority CaptureHistoricalUiReadAuthority(string permission)
+        internal HistoricalReadAuthority CaptureHistoricalUiReadAuthority(string permission, OnlineSyncGeneration expectedGeneration = null)
         {
             if (permission != PermissionCodes.RegisterImportHistory && permission != PermissionCodes.RegisterCancelHistory && permission != PermissionCodes.RegisterViewAll)
                 throw new InvalidOperationException("historical_permission_invalid");
-            return CaptureHistoricalReadAuthorityCore(permission, null);
+            return CaptureHistoricalReadAuthorityCore(permission, null, expectedGeneration?.Fingerprint);
         }
 
-        private HistoricalReadAuthority CaptureHistoricalReadAuthorityCore(string permission, string expectedShopId)
+        private HistoricalReadAuthority CaptureHistoricalReadAuthorityCore(string permission, string expectedShopId, string expectedGenerationFingerprint = null)
         {
             var version = Interlocked.Read(ref _operatorAuthorityVersion);
             var user = _currentUser;
@@ -37,7 +38,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
             if (!decision.Allowed || session == null || expiry == null || user == null ||
                 !PosOnlineSyncSupervisorHost.TryCreateGeneration(session, out var generation) ||
                 !PosOnlineSyncRevocationLatch.TryCaptureAuthorizationEpoch(out var epoch) ||
-                (expectedShopId != null && !string.Equals(generation.ShopId, expectedShopId, StringComparison.Ordinal)))
+                (expectedShopId != null && !string.Equals(generation.ShopId, expectedShopId, StringComparison.Ordinal)) ||
+                (expectedGenerationFingerprint != null && !string.Equals(generation.Fingerprint, expectedGenerationFingerprint, StringComparison.Ordinal)))
                 throw new InvalidOperationException("historical_authorization_binding_mismatch");
             Action demand = () => DemandAuthorizationUseStillValid(user.Id, permission, permission, epoch, generation, expiry, version, TimeSpan.Zero, null);
             demand();

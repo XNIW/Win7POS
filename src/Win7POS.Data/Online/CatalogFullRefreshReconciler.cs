@@ -291,6 +291,79 @@ namespace Win7POS.Data.Online
             }
         }
 
+        /// <summary>
+        /// Records a complete, scoped zero snapshot without publishing a live
+        /// catalog, advancing its cursor, or granting sale readiness. Any previous
+        /// sale-safe marker is invalidated atomically. An empty
+        /// successful result is only an observation; callers still require their
+        /// own current online lease and operation permissions.
+        /// </summary>
+        public async Task<string> ConfirmAuthoritativeEmptyAsync(
+            string fullRunId,
+            PosCatalogSummaryResponse summary,
+            CatalogExactnessRunContext context,
+            RemoteCatalogCommitFence commitFence,
+            CancellationToken cancellationToken = default)
+        {
+            if (commitFence == null) throw new ArgumentNullException(nameof(commitFence));
+            var normalizedRunId = RequireStageScopeValue(fullRunId, nameof(fullRunId));
+            if (normalizedRunId.Length > 64 ||
+                !string.Equals(normalizedRunId, fullRunId, StringComparison.Ordinal))
+                throw new ArgumentException("Authoritative catalog full run identity is invalid.", nameof(fullRunId));
+            var runContext = context ?? new CatalogExactnessRunContext();
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var conn = _factory.Open();
+                using var tx = conn.BeginTransaction(deferred: false);
+                await RemoteCatalogBatchRepository.RequireCommitFenceAsync(conn, tx, commitFence)
+                    .ConfigureAwait(false);
+                if (!await CatalogShopStateRepository.HasAuthoritativeEmptyScopeAsync(conn, tx, commitFence)
+                        .ConfigureAwait(false))
+                    throw new InvalidOperationException("Catalog authoritative empty scope mismatch.");
+
+                // A newer attempt replaces the observation even when it fails.
+                await CatalogShopStateRepository.ClearAuthoritativeEmptyWithinTransactionAsync(conn, tx)
+                    .ConfigureAwait(false);
+                var code = PosOnlineCompatibilityValidator.ValidateCatalogSummary(summary);
+                if (string.IsNullOrWhiteSpace(code) &&
+                    !CatalogPaginationSafetyPolicy.HasCompleteValidSummary(summary))
+                    code = "catalog_summary_incomplete";
+                if (string.IsNullOrWhiteSpace(code) &&
+                    (summary.Products != 0 || summary.ActiveProducts != 0 ||
+                     summary.Categories != 0 || summary.Suppliers != 0 || summary.Prices != 0))
+                    code = "catalog_authoritative_empty_requires_zero_summary";
+
+                if (string.IsNullOrWhiteSpace(code))
+                {
+                    await PrepareStagedAuthoritativeTablesAsync(conn, tx, normalizedRunId, commitFence)
+                        .ConfigureAwait(false);
+                    var evidence = await LoadStagedEvidenceAsync(conn, tx, normalizedRunId, commitFence)
+                        .ConfigureAwait(false);
+                    code = FindStagedPreflightError(
+                        evidence, summary, runContext,
+                        requireAppliedEvidence: true, allowAuthoritativeEmpty: true);
+                    if (code.Length == 0 && evidence.ReceivedTombstones != 0)
+                        code = "catalog_authoritative_empty_has_tombstones";
+                    if (code.Length == 0)
+                    {
+                        await CatalogShopStateRepository.StoreAuthoritativeEmptyWithinTransactionAsync(
+                            conn, tx, commitFence, normalizedRunId, runContext.CatalogVersion)
+                            .ConfigureAwait(false);
+                    }
+                }
+                tx.Commit();
+                return code ?? string.Empty;
+            }
+            finally
+            {
+                CatalogMutationGate.Instance.Release();
+            }
+        }
+
         public async Task<int> ClearStaleAuthoritativeStagesAsync(
             string shopId,
             string shopCode,
@@ -735,7 +808,8 @@ FROM scoped;",
             CatalogStagedEvidence evidence,
             PosCatalogSummaryResponse summary,
             CatalogExactnessRunContext context,
-            bool requireAppliedEvidence = true)
+            bool requireAppliedEvidence = true,
+            bool allowAuthoritativeEmpty = false)
         {
             if (context.Pages <= 0 ||
                 evidence.PageMarkers != context.Pages ||
@@ -830,7 +904,7 @@ FROM scoped;",
 
             if (summary.Products != evidence.DistinctProducts)
                 return "catalog_products_count_mismatch";
-            if (summary.ActiveProducts.GetValueOrDefault() <= 0)
+            if (!allowAuthoritativeEmpty && summary.ActiveProducts.GetValueOrDefault() <= 0)
                 return "full_refresh_no_active_products";
             if (summary.ActiveProducts != evidence.DistinctProducts)
                 return "catalog_active_products_count_mismatch";

@@ -25,11 +25,16 @@ nonoverlapping. All raw diagnostics and real financial controls stay private.
 Previous FAIL/TIMEOUT evidence must remain available; no result is inferred from
 static inspection, missing prerequisite, or a receipt schema alone.
 
-Current resume point: SOFTWARE_DELIVERED at code5c3327bd320293ad48edc7d9cc01ad2466e591b4.
+Current resume point: onboarding execution of 2026-11-07 IN_PROGRESS; see
+[onboarding result](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md).
+NEW_SHOP_019 created according to user declaration; identity/deployment/login,
+merchant mapping/start/overlap/provider-time and physical Win7 remain separate gates.
+Previous delivery: SOFTWARE_DELIVERED at code5c3327bd320293ad48edc7d9cc01ad2466e591b4.
 CI41959769748 All, Security41959769752, Release41959769763 and WPF41959770648 PASS.
 Canonical downloads and final packaged reader PASS; external Shop/time and physical
 Win7 remain BLOCKED_EXTERNAL. Final commit is documentation only; next action is
-the owner qualification card, not another implementation tranche.
+the owner qualification card. The new explicit onboarding mandate additionally
+authorizes the scoped empty-shop history correction and relevant qualification.
 Earlier process/next-command notes below are historical checkpoints; this pointer
 and the newest run section are authoritative.
 

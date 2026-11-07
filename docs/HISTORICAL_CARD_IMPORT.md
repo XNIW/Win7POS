@@ -7,6 +7,21 @@ l'applicazione ne verifica nuovamente l'integrità.
 
 ## Preparazione e preview
 
+Per un nuovo negozio senza catalogo operativo, il primo accesso online può
+mostrare **Storico disponibile, vendite non pronte** e il pulsante di accesso
+allo storico. Serve una risposta catalogo completa con totale zero, riferita
+allo shop e alla generation correnti: errori, timeout e risposte parziali non
+abilitano questo percorso. Il login, la lease e i permessi dedicati devono
+essere validi. Il workbench consente import e riepilogo/grafico/CSV, senza
+aprire cassa, pagamento o stampa. Non è la modalità recovery locale.
+
+La prova di catalogo vuoto non rende il catalogo sale-safe. I dati precedenti
+sono conservati e le vendite rimangono bloccate finché una successiva
+sincronizzazione completa non qualifica un catalogo operativo. Una nuova
+richiesta invalida la precedente prova empty; un errore non riattiva le vendite.
+La scadenza o revoca dell'autorizzazione invalida lo storico e i suoi dati visibili.
+Il percorso non sostituisce le prove esercente, tempo e overlap richieste sotto.
+
 Dal riepilogo aprire **Importazione storico**. Il permesso
 `register.import_history` abilita l'importazione; `register.cancel_history` abilita
 l'annullamento. La consultazione dei lotti richiede anche la visibilità di tutti

@@ -52,6 +52,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private PosAccessRecoveryDecision _recoveryDecision;
         private PosUserBootstrapState _bootstrapState = new PosUserBootstrapState();
         private PosAdminWebOptions _lastOptions;
+        private HistoricalOnboardingAccess _historyAccess;
 
         public PosAuthenticatedAccessMode AccessMode { get; private set; } = PosAuthenticatedAccessMode.Normal;
 
@@ -88,6 +89,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             Loaded += OnLoaded;
             Closed += (_, __) =>
             {
+                ClearHistoricalPreparation();
                 _networkStatusTimer.Stop();
                 _activeCts?.Cancel();
                 if (_ownsSyncHost)
@@ -398,6 +400,46 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "online", "local_login_or_catalog_blocked");
                         EndBusyAllowFreshLogin();
                         return;
+                    }
+
+                    if (result.CanPrepareEmptyShopHistory && !App.IsSafeStart)
+                    {
+                        var username = await FindLeaseBoundRemoteStaffUsernameAsync(shopCode, staffCode).ConfigureAwait(true);
+                        if (!string.IsNullOrWhiteSpace(username) &&
+                            await LoginLocalUsernameAsync(username, credential, attemptId, "history_onboarding").ConfigureAwait(true))
+                        {
+                            var historySession = OperatorSessionHolder.Current;
+                            var historyRetained = false;
+                            try
+                            {
+                                _historyAccess = await HistoricalOnboardingAccess.CreateAsync(_factory,
+                                    historySession as OperatorSession, _syncHost.CurrentGeneration, _activeCts.Token).ConfigureAwait(true);
+                                await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
+                                EndBusyKeepPreparation(retryVisible: false);
+                                ProgressPanel.Visibility = Visibility.Collapsed;
+                                ShowInfo(PosLocalization.T("history.onboardingAvailable"));
+                                HistoryButton.Visibility = Visibility.Visible;
+                                HistoryButton.IsEnabled = true;
+                                HistoryButton.Focus();
+                                FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer,
+                                    "success", "history_onboarding", "sales_not_ready");
+                                historyRetained = true;
+                                return;
+                            }
+                            catch (InvalidOperationException)
+                            {
+                                ClearHistoricalPreparation();
+                                OperatorSessionHolder.Current?.LogoutForced();
+                            }
+                            finally
+                            {
+                                if (!historyRetained)
+                                {
+                                    ClearHistoricalPreparation();
+                                    historySession?.LogoutForced();
+                                }
+                            }
+                        }
                     }
 
                     if (result.Success && !result.CanOpenPos)
@@ -1335,6 +1377,47 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        private void ClearHistoricalPreparation()
+        {
+            if (_historyAccess != null) _historyAccess.Session.LogoutForced();
+            _historyAccess = null;
+            if (HistoryButton != null) { HistoryButton.Visibility = Visibility.Collapsed; HistoryButton.IsEnabled = false; }
+        }
+
+        private async void OnHistoryClick(object sender, RoutedEventArgs e)
+        {
+            var access = _historyAccess;
+            if (_busy || access == null || App.IsSafeStart) return;
+            _busy = true; HistoryButton.IsEnabled = false;
+            try
+            {
+                await access.DemandAsync(CancellationToken.None).ConfigureAwait(true);
+                var options = new PosDbOptions(_factory.DbPath, accessContext: _factory.AccessContext);
+                var service = new PosWorkflowService(options, () => DateTimeOffset.UtcNow);
+                var dialog = new HistoricalOnboardingDialog(access, service)
+                { Owner = DialogOwnerHelper.GetSafeOwner(this) };
+                dialog.ShowDialog();
+            }
+            catch (InvalidOperationException)
+            {
+                ClearHistoricalPreparation();
+                ShowError(PosLocalization.T("history.authorizationChanged"));
+                EndBusyAllowFreshLogin();
+            }
+            catch (Exception ex)
+            {
+                LogAccessWarning(null, "history_open", "result=failed exceptionType=" + SafeAuditValue(ex.GetType().Name));
+                ClearHistoricalPreparation();
+                ShowError(PosLocalization.T("history.onboardingOpenFailed"));
+                EndBusyAllowFreshLogin();
+            }
+            finally
+            {
+                _busy = false;
+                if (_historyAccess != null) HistoryButton.IsEnabled = _historyAccess.IsCurrentInMemory;
+            }
+        }
+
         private static string GetAppVersion()
         {
             return PosApplicationVersion.GetCurrent();
@@ -1386,6 +1469,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void BeginBusySetup(string message)
         {
+            ClearHistoricalPreparation();
             _busy = true;
             _activeSetupStep = "access";
             SetInputEnabled(false);
@@ -1404,6 +1488,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void BeginBusySignIn(string message)
         {
+            ClearHistoricalPreparation();
             _busy = true;
             SetInputEnabled(false);
             RetryDownloadButton.Visibility = Visibility.Collapsed;
@@ -1873,6 +1958,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 " cfRay=" + PosTechnicalIdentifier.Redact(result?.CfRay) +
                 " catalogStatus=" + SafeAuditValue(result?.CatalogStatus) +
                 " catalogSaleSafe=" + BoolText(result != null && result.CatalogSaleSafe) +
+                " firstLoginSucceeded=" + BoolText(result != null && result.FirstLoginSucceeded) +
+                " trustedSessionPersisted=" + BoolText(result != null && result.TrustedSessionPersisted) +
+                " catalogStarted=" + BoolText(result != null && result.CatalogStarted) +
+                " catalogCompleted=" + BoolText(result != null && result.CatalogCompleted) +
+                " canOpenPos=" + BoolText(result != null && result.CanOpenPos) +
+                " canPrepareEmptyShopHistory=" + BoolText(result != null && result.CanPrepareEmptyShopHistory) +
+                " failureStage=" + SafeAuditValue(result?.FailureStage) +
+                " rootCode=" + SafeAuditValue(result?.RootCode) +
                 " requiresRetry=" + BoolText(result != null && result.RequiresRetry) +
                 " diagnosticOperation=" + SafeAuditValue(result?.Diagnostic?.Operation) +
                 " diagnosticStage=" + SafeAuditValue(result?.Diagnostic?.Stage) +

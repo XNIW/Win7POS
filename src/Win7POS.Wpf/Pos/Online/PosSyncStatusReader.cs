@@ -129,6 +129,10 @@ namespace Win7POS.Wpf.Pos.Online
             var catalogCommittedRevision = await settings.GetStringAsync(
                 CatalogShopStateRepository.CommittedRevisionKey).ConfigureAwait(false);
             var catalogState = new CatalogShopStateRepository(_factory);
+            var emptyVerified = string.Equals(catalogBootstrapStatus, "empty_verified", StringComparison.Ordinal) &&
+                PosOnlineSyncSupervisorHost.TryCreateGeneration(trustedSession, out var emptyGeneration) &&
+                await catalogState.IsAuthoritativelyEmptyAsync(emptyGeneration).ConfigureAwait(false);
+            var emptyCatalogText = T("history.catalogEmptyVerified");
             var catalogExactness = await catalogState.LoadExactnessAsync().ConfigureAwait(false);
             var catalogDisplayWarnings = await new CatalogDisplayWarningRepository(_factory)
                 .LoadAsync().ConfigureAwait(false);
@@ -178,7 +182,8 @@ namespace Win7POS.Wpf.Pos.Online
                 lastSalesError,
                 catalogExactness,
                 catalogSaleSafety,
-                productImageDrain);
+                productImageDrain,
+                emptyVerified);
             var articleUnresolved = articleOutbox.WaitingDependency +
                 articleOutbox.Pending +
                 articleOutbox.InProgress +
@@ -213,13 +218,13 @@ namespace Win7POS.Wpf.Pos.Online
                 ArticleStatusText = ArticleStatusText(
                     articleOutbox,
                     articleCompletedSinceLastView),
-                CatalogBootstrapText = CatalogBootstrapText(
+                CatalogBootstrapText = emptyVerified ? emptyCatalogText : CatalogBootstrapText(
                     catalogBootstrapStatus,
                     lastCatalogHasMore,
                     lastCatalogError,
                     catalogSaleSafeAt,
                     catalogSaleSafety),
-                CatalogCompletenessText = CatalogCompletenessText(catalogExactness),
+                CatalogCompletenessText = emptyVerified ? emptyCatalogText : CatalogCompletenessText(catalogExactness),
                 CatalogCountsText = CatalogCountsText(catalogExactness),
                 CatalogDisplayWarningCount = catalogDisplayWarnings.WarningCount,
                 CatalogDisplayWarningText = CatalogDisplayWarningText(catalogDisplayWarnings),
@@ -250,9 +255,9 @@ namespace Win7POS.Wpf.Pos.Online
                 CatalogErrorPagesProcessed = ParseNonNegativeLong(lastCatalogPagesProcessed),
                 CatalogErrorRowsApplied = ParseNonNegativeLong(lastCatalogRowsApplied),
                 CatalogErrorRetryable = lastCatalogRetryable,
-                CatalogRepairRequired = catalogExactness.RepairRequired || catalogExactness.Status != CatalogCompletenessStatus.Verified,
-                CatalogRepairText = CatalogRepairText(catalogExactness, catalogSaleSafety),
-                CatalogReadinessText = CatalogReadinessText(
+                CatalogRepairRequired = !emptyVerified && (catalogExactness.RepairRequired || catalogExactness.Status != CatalogCompletenessStatus.Verified),
+                CatalogRepairText = emptyVerified ? T("history.catalogEmptyNextStep") : CatalogRepairText(catalogExactness, catalogSaleSafety),
+                CatalogReadinessText = emptyVerified ? emptyCatalogText : CatalogReadinessText(
                     catalogSaleSafeAt,
                     catalogBootstrapStatus,
                     catalogSaleSafety),
@@ -424,7 +429,8 @@ namespace Win7POS.Wpf.Pos.Online
             string lastSalesError,
             CatalogExactnessState catalogExactness,
             CatalogSaleSafetyEvaluation catalogSaleSafety,
-            ProductImageOutboxDrainState productImageDrain)
+            ProductImageOutboxDrainState productImageDrain,
+            bool emptyVerified)
         {
             if (string.Equals((catalogBootstrapStatus ?? string.Empty).Trim(), "failed_auth_denied", StringComparison.OrdinalIgnoreCase))
             {
@@ -488,6 +494,11 @@ namespace Win7POS.Wpf.Pos.Online
                 return CatalogAttentionText(catalogBootstrapStatus, lastCatalogHasMore) +
                     " | " + ConnectivityText(connectivityState) +
                     " | " + T("sync.lastCatalogError") + ": " + SafeCode(lastCatalogError);
+            }
+
+            if (emptyVerified)
+            {
+                return T("history.catalogEmptyVerified") + " | " + ConnectivityText(connectivityState);
             }
 
             if (catalogSaleSafety == null || !catalogSaleSafety.IsSaleSafe)

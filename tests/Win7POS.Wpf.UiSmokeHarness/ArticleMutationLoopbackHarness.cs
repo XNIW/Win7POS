@@ -16,6 +16,8 @@ using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Online;
+using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Pos.Online;
 using Win7POS.Wpf.Products;
 
@@ -28,6 +30,93 @@ namespace Win7POS.Wpf.UiSmokeHarness
     /// </summary>
     internal static class ArticleMutationLoopbackHarness
     {
+        internal static async Task<bool> VerifyEmptyShopBootstrapAsync(string data)
+        {
+            // The real bootstrap also reconciles the process-wide image cache,
+            // whose scope store belongs to the current product profile. Own that
+            // same fresh QA profile, rather than creating an unrelated second DB.
+            var options = PosDbOptions.Default();
+            if (!string.Equals(Path.GetFullPath(options.DbPath), Path.GetFullPath(Path.Combine(data, "pos.db")),
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("empty_history_loopback_profile_scope_mismatch");
+            using (var authority = PosDatabaseAuthorityLease.AcquireSyntheticNew(options))
+            {
+                options = options.WithAccessContext(authority.AccessContext);
+                DbInitializer.EnsureCreated(options);
+                var factory = new SqliteConnectionFactory(options);
+                var store = new PosTrustedDeviceStore();
+                store.Clear();
+                using (var server = new ArticleLoopbackServer(authoritativelyEmptyCatalog: true))
+                using (var host = new PosOnlineSyncSupervisorHost(factory))
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                {
+                    // The canonical worker deliberately inherits a closed loopback
+                    // endpoint. Scope this synthetic server's explicit endpoint to
+                    // this serial scenario because the real supervisor reloads the
+                    // configured endpoint for each lane; restore it even on failure.
+                    var previousBaseUrl = Environment.GetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable);
+                    try
+                    {
+                    Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, server.BaseUrl);
+                    PosAdminWebOptions.SaveBaseUrl(new Uri(server.BaseUrl));
+                    var result = await new PosOnlineBootstrapService(factory, store, host).BootstrapAsync(
+                        new PosAdminWebOptions(new Uri(server.BaseUrl)), new PosFirstLoginRequest
+                        {
+                            Credential = "synthetic-loopback-credential", ShopCode = ShopCode, StaffCode = "ARTICLEPOS",
+                            Device = new PosFirstLoginDevice { AppVersion = "empty-history-loopback", DeviceIdentifier = "synthetic-empty-history-device", DisplayName = "Synthetic empty history" }
+                        }, "2468", timeout.Token).ConfigureAwait(true);
+                    if (!result.CanPrepareEmptyShopHistory || result.CanOpenPos || result.CatalogSaleSafe ||
+                        !result.FirstLoginSucceeded || !result.TrustedSessionPersisted || !result.CatalogCompleted ||
+                        server.CatalogRequestCount != 1 || !store.TryRead(out var trusted))
+                        throw new InvalidOperationException("empty_history_loopback_bootstrap_" + result.Code + "_catalog_requests_" + server.CatalogRequestCount);
+                    var users = new UserRepository(factory);
+                    var username = await users.FindTrustedRemoteStaffUsernameAsync(trusted.ShopId, trusted.ShopCode,
+                        trusted.StaffId, trusted.StaffCode, trusted.StaffCredentialVersion);
+                    var session = new OperatorSession(users, new SecurityRepository(factory),
+                        new PosOfflineAuthorizationLeaseGuard(store, () => DateTimeOffset.UtcNow, async current =>
+                            PosOnlineSyncSupervisorHost.TryCreateGeneration(current, out var currentGeneration) &&
+                            await new OnlineSyncGenerationRepository(factory).IsCurrentAndActiveAsync(currentGeneration)));
+                    try
+                    {
+                        if (await session.LoginAsync(username, "2468") != LoginResult.Success || !session.CurrentUser.IsAdmin)
+                            throw new InvalidOperationException("empty_history_loopback_mirror_login_denied");
+                        var access = await HistoricalOnboardingAccess.CreateAsync(factory, session, host.CurrentGeneration, timeout.Token);
+                        await access.DemandAsync(timeout.Token);
+                        if (!access.IsCurrentInMemory || await PosCatalogPullService.IsCatalogSaleSafeAsync(factory) || server.ArticleRequestCount != 0)
+                            throw new InvalidOperationException("empty_history_loopback_sales_guard_failed");
+                        var reader = new PosSyncStatusReader(factory, store);
+                        var snapshot = await reader.ReadAsync();
+                        var emptyText = Win7POS.Wpf.Localization.PosLocalization.T("history.catalogEmptyVerified");
+                        if (snapshot.CatalogSaleSafe || !snapshot.RequiresAttention || snapshot.CatalogHasError ||
+                            snapshot.CatalogErrorRetryable || snapshot.CatalogRepairRequired || snapshot.CatalogHasMore ||
+                            snapshot.CatalogBootstrapText != emptyText || snapshot.CatalogReadinessText != emptyText ||
+                            snapshot.CatalogCompletenessText != emptyText || !snapshot.SummaryText.StartsWith(emptyText, StringComparison.Ordinal))
+                            throw new InvalidOperationException("empty_history_loopback_truthful_status_failed" +
+                                ";saleSafe=" + snapshot.CatalogSaleSafe + ";attention=" + snapshot.RequiresAttention +
+                                ";hasError=" + snapshot.CatalogHasError + ";retry=" + snapshot.CatalogErrorRetryable +
+                                ";repair=" + snapshot.CatalogRepairRequired + ";hasMore=" + snapshot.CatalogHasMore +
+                                ";bootstrapMatches=" + (snapshot.CatalogBootstrapText == emptyText) +
+                                ";readinessMatches=" + (snapshot.CatalogReadinessText == emptyText) +
+                                ";completenessMatches=" + (snapshot.CatalogCompletenessText == emptyText) +
+                                ";summaryMatches=" + snapshot.SummaryText.StartsWith(emptyText, StringComparison.Ordinal));
+                        // A status string cannot replace the scoped observation.
+                        await new CatalogShopStateRepository(factory).ClearAuthoritativeEmptyAsync(host.CurrentGeneration);
+                        var stale = await reader.ReadAsync();
+                        if (stale.CatalogBootstrapText == emptyText || stale.CatalogSaleSafe || !stale.CatalogRepairRequired)
+                            throw new InvalidOperationException("empty_history_loopback_stale_status_promoted");
+                        return true;
+                    }
+                    finally { session.LogoutForced(); store.Clear(); }
+                    }
+                    finally
+                    {
+                        Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, previousBaseUrl);
+                        store.Clear();
+                    }
+                }
+            }
+        }
+
         private const string ShopCode = "ARTICLELOOP";
         private const string ShopId =
             "10000000-0000-4000-8000-000000000245";
@@ -1091,13 +1180,15 @@ GROUP BY mutation_kind;")).ToDictionary(
             private int _lostResponseCount;
             private bool _lostCreateResponse;
             private readonly bool _holdFirstCatalogResponse;
+            private readonly bool _authoritativelyEmptyCatalog;
             private int _catalogResponseHeld;
 
             internal ArticleLoopbackServer(
-                bool holdFirstCatalogResponse = false)
+                bool holdFirstCatalogResponse = false, bool authoritativelyEmptyCatalog = false)
             {
                 _holdFirstCatalogResponse =
                     holdFirstCatalogResponse;
+                _authoritativelyEmptyCatalog = authoritativelyEmptyCatalog;
                 var revision =
                     "2026-07-28T12:00:00.123456Z";
                 _products.Add(
@@ -1746,7 +1837,7 @@ GROUP BY mutation_kind;")).ToDictionary(
                             item => item.RemoteProductId,
                             StringComparer.Ordinal)
                         .ToArray();
-                    return new PosCatalogPullResponse
+                    var response = new PosCatalogPullResponse
                     {
                         Catalog = new PosCatalogPayload
                         {
@@ -1835,6 +1926,21 @@ GROUP BY mutation_kind;")).ToDictionary(
                                 CultureInfo.InvariantCulture),
                         SyncMode = "full_refresh"
                     };
+                    if (_authoritativelyEmptyCatalog)
+                    {
+                        response.Catalog = new PosCatalogPayload
+                        {
+                            Categories = Array.Empty<PosCatalogCategoryResponse>(), Suppliers = Array.Empty<PosCatalogSupplierResponse>(),
+                            Products = Array.Empty<PosCatalogProductResponse>(), Prices = Array.Empty<PosCatalogPriceResponse>(),
+                            Tombstones = new PosCatalogTombstonesResponse
+                            {
+                                Categories = Array.Empty<PosCatalogCategoryTombstoneResponse>(), Suppliers = Array.Empty<PosCatalogSupplierTombstoneResponse>(),
+                                Products = Array.Empty<PosCatalogProductTombstoneResponse>()
+                            }
+                        };
+                        response.CatalogSummary = new PosCatalogSummaryResponse { Products = 0, ActiveProducts = 0, Categories = 0, Suppliers = 0, Prices = 0 };
+                    }
+                    return response;
                 }
             }
 

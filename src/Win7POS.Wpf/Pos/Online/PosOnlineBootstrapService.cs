@@ -521,6 +521,18 @@ namespace Win7POS.Wpf.Pos.Online
                         .ConfigureAwait(false);
                     var catalogSaleSafe = await PosCatalogPullService
                         .IsCatalogSaleSafeAsync(_factory).ConfigureAwait(false);
+                    var authoritativeEmpty = catalogLane.Success && !catalogLane.CatalogHasMore &&
+                        catalogLane.Code == "catalog_authoritatively_empty" &&
+                        await new CatalogShopStateRepository(_factory)
+                            .IsAuthoritativelyEmptyAsync(_syncHost.CurrentGeneration).ConfigureAwait(false);
+                    if (authoritativeEmpty)
+                    {
+                        return PosOnlineBootstrapResult.CatalogIncomplete(
+                            "catalog_authoritatively_empty", PosLocalization.T("history.onboardingAvailable"),
+                            false, false, PosCatalogPullOutcome.AuthoritativelyEmpty(catalogLane.CatalogPagesProcessed),
+                            result.ClientRequestId, result.ServerRequestId, result.CfRay, result.HttpStatus,
+                            result.RequestReachedServer);
+                    }
                     var catalogOutcome = catalogLane.Success &&
                         !catalogLane.CatalogHasMore &&
                         catalogSaleSafe
@@ -880,6 +892,9 @@ namespace Win7POS.Wpf.Pos.Online
         public bool FirstLoginSucceeded { get; }
         public bool TrustedSessionPersisted { get; }
         public bool CatalogStarted { get; }
+        public bool CanPrepareEmptyShopHistory => Success && !Denied && FirstLoginSucceeded &&
+            TrustedSessionPersisted && CatalogCompleted && !CatalogSaleSafe && !CanOpenPos &&
+            CatalogStatus == "catalog_authoritatively_empty";
 
         public static PosOnlineBootstrapResult Ok(
             PosCatalogPullOutcome catalogOutcome,

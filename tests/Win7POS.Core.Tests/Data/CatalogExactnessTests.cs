@@ -11,7 +11,7 @@ using Win7POS.Data.Repositories;
 namespace Win7POS.Core.Tests.Data;
 
 [TestClass]
-public sealed class CatalogExactnessTests
+public sealed partial class CatalogExactnessTests
 {
     [TestMethod]
     public void CatalogSummaryContract_IsOptionalAndRoundTripsAuthoritativeEvidence()

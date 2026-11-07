@@ -4,15 +4,15 @@
 
 | Campo | Valore |
 | --- | --- |
-| Fase | EXECUTION A+B+C: consegna software conclusa; qualifica reale/fisica pendente |
+| Fase | EXECUTION A+B+C consegnata; prosecuzione onboarding nuovo negozio del 2026-11-07 in corso |
 | Revisione/data | R3 — 2026-11-04, America/Santiago |
-| Stato del piano | SOFTWARE_DELIVERED; BLOCKED_EXTERNAL per Shop/tempo/Win7; specifica R3 congelata |
+| Stato del piano | SOFTWARE_DELIVERED precedente; onboarding IN_PROGRESS; mapping/tempo/Win7 BLOCKED_EXTERNAL; specifica R3 conservata |
 | Implementazione | A+B+C completa nel codice `5c3327bd320293ad48edc7d9cc01ad2466e591b4` |
 | Build, test, harness e qualifica runtime | PASS software: CI All15/15, Core1715/1715, gate50/50, foundation5/5, smoke8/8 e Load misurato; Win7 fisico NOT_RUN |
 | Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
 | Branch e stato iniziale R3 | main; PLAN R2 untracked e modifiche locali di indice/worklog preservate |
 | Persistenza | Codice su main; CI/Security/Release/QA dello stesso SHA PASS, download verificati; chiusura documentale distinta dai binari |
-| Prossimo passo consentito | Owner: Shop/mapping/inizioPOS/prova temporale e Win7 fisico secondo la [scheda esterna](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md); [risultato software](../../reports/ASUS_W7POS_019_EXECUTION_RESULT.md) |
+| Prossimo passo consentito | Prosecuzione [onboarding](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md): NEW_SHOP_019 creata secondo dichiarazione utente; identità/ambiente, login, catalogo vuoto, mapping/inizioPOS/tempo e Win7 verificati separatamente |
 
 Questo e il solo piano canonico. Lo stato corrente risiede qui; la sola voce
 ASUS-W7POS-019 nell'[indice](../../CODEX_ASUS_TASKS.md) ne e il collegamento.

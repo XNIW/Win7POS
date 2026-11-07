@@ -4,6 +4,14 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-11-07 – Prosecuzione onboarding nuovo negozio (ASUS-W7POS-019)
+
+- Ripresa da main locale/remoto pulito `e924a295`, consegna precedente `5c3327bd`; Admin remoto `d021a4af`, checkout Admin Windows preesistente preservato. Nessun reset/stash/branch automatico.
+- NEW_SHOP_019 creata secondo dichiarazione utente; host console staging coincidente con default POS. Causa statica fallback overview staff compatibile; deployment non verificato e handoff Mac PENDING.
+- Avviata correzione accesso storico circoscritto per catalogo autorevolmente vuoto, senza promuovere sale-safe o recovery. Primo avvio companion QA precedente FAIL per ValueTuple assente; payload prodotto raggiunge primo accesso su profilo nuovo isolato. Failure/log privati conservati.
+- [Risultato onboarding](reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md) conserva gate separati, ownership e ripresa; verifiche candidato in corso, apply reale e Win7 non attestati.
+- Login POS reale del prodotto precedente riuscito tramite input mascherato utente: trust, snapshot ufficiale, generation e mirror pos_admin corrispondono allo scope. Catalogo HTTP409 unmapped, non empty autorevole; processo posseduto fermato, profilo/log conservati. Il resolver server statico blocca assenza righe shop-scoped/mapping: handoff Mac aggiornato, deployment ancora da verificare. L'utente conferma assenza prove esercente/inizioPOS/tempo.
+
 ## 2026-11-04 – Revisione conclusiva R3 storico Getnet (ASUS-W7POS-019)
 
 - Aggiornato lo stesso [PLAN canonico](plans/ASUS-W7POS-019_GETNET_HISTORY/PLAN.md): R2 locale uguale allo SHA-256 ricevuto, main/HEAD invariati `32618249fc01f29e86c6774d2b2c9262a90f226f`; lavoro locale e audit precedenti preservati.

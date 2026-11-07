@@ -36,6 +36,7 @@ namespace Win7POS.Wpf.Pos.Online
         private const string CatalogSaleSafeAtSettingKey = "pos.catalog.sale_safe_at";
         private const string BootstrapStatusCompleted = "completed";
         private const string BootstrapStatusCompletedWithWarnings = "completed_with_warnings";
+        private const string BootstrapStatusEmptyVerified = "empty_verified";
         private const string BootstrapStatusFailedAuthDenied = "failed_auth_denied";
         private const string BootstrapStatusFailedRetryable = "failed_retryable";
         private const string BootstrapStatusInProgress = "in_progress";
@@ -288,6 +289,8 @@ namespace Win7POS.Wpf.Pos.Online
                     .ConfigureAwait(false))
                 {
                 var catalogState = new CatalogShopStateRepository(_factory);
+                // A previous successful empty read must never qualify a failed new pull.
+                await catalogState.ClearAuthoritativeEmptyAsync(generation).ConfigureAwait(false);
                 var capturedSessionError = await catalogState.ValidateCapturedSessionAsync(
                     trustedSession.ShopId,
                     trustedSession.ShopCode).ConfigureAwait(false);
@@ -1492,6 +1495,43 @@ namespace Win7POS.Wpf.Pos.Online
                             .ConfigureAwait(false);
                         if (stagedPreflightCode.Length > 0)
                         {
+                            if (stagedPreflightCode == "full_refresh_no_active_products")
+                            {
+                                var emptyCode = await catalogReconciler.ConfirmAuthoritativeEmptyAsync(
+                                    fullStageGeneration, snapshotSummary,
+                                    new CatalogExactnessRunContext
+                                    {
+                                        CatalogVersion = FirstNonEmpty(snapshotCatalogVersion, lastResponse.CatalogVersion),
+                                        DurationMilliseconds = syncTimer.ElapsedMilliseconds,
+                                        HasMore = lastResponse.HasMore,
+                                        Pages = pagesProcessed,
+                                        ProductRowsReceived = receivedFullLanes.Products,
+                                        CategoryRowsReceived = receivedFullLanes.Categories,
+                                        SupplierRowsReceived = receivedFullLanes.Suppliers,
+                                        PriceRowsReceived = receivedFullLanes.Prices,
+                                        PriceRowsAccepted = checked(totalStats.PriceRowsApplied + totalStats.PriceRowsQueued),
+                                        TombstonesReceived = checked(checked(receivedFullLanes.ProductTombstones +
+                                            receivedFullLanes.CategoryTombstones) + receivedFullLanes.SupplierTombstones),
+                                        SyncCursor = lastResponse.SyncCursor,
+                                        SyncMode = lastResponse.SyncMode
+                                    },
+                                    CreateCommitFence(trustedSession, binding.Epoch, committedCursor, committedMode, generation),
+                                    cancellationToken).ConfigureAwait(false);
+                                if (emptyCode.Length == 0)
+                                {
+                                    var emptySettings = new SettingsRepository(_factory);
+                                    await emptySettings.SetStringIfGenerationCurrentAsync(
+                                        LastCatalogErrorSettingKey, string.Empty, generation).ConfigureAwait(false);
+                                    await ClearCatalogRuntimeDiagnosticAsync(emptySettings, generation).ConfigureAwait(false);
+                                    await emptySettings.SetBoolIfGenerationCurrentAsync(LastCatalogHasMoreSettingKey, false, generation).ConfigureAwait(false);
+                                    await StoreCatalogBootstrapStatusAsync(BootstrapStatusEmptyVerified).ConfigureAwait(false);
+                                    return PosCatalogPullOutcome.AuthoritativelyEmpty(pagesProcessed);
+                                }
+                                // Preserve the precise failed qualification guard;
+                                // a zero active count alone is not its cause.
+                                stagedPreflightCode = emptyCode;
+                                _logger.LogWarning("Catalog empty confirmation rejected: category=catalog.pull code=" + SafeCode(emptyCode));
+                            }
                             await StoreCatalogFailureAsync(stagedPreflightCode).ConfigureAwait(false);
                             await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
                                 .ConfigureAwait(false);
@@ -2850,6 +2890,12 @@ namespace Win7POS.Wpf.Pos.Online
                 pendingPricesApplied,
                 displayWarningCount,
                 diagnostic);
+        }
+
+        public static PosCatalogPullOutcome AuthoritativelyEmpty(long pagesProcessed)
+        {
+            return new PosCatalogPullOutcome(true, "catalog_authoritatively_empty", false, false,
+                pagesProcessed, false, 0, 0, 0, 0, 0, null);
         }
 
         public static PosCatalogPullOutcome Failure(

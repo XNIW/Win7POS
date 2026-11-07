@@ -21,6 +21,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private readonly Pos.PosWorkflowService _service;
         private readonly IOverrideAuthService _overrideAuthService;
+        private readonly bool _allowPrinting;
 
         private string _dateText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         private bool _isUnlocked;
@@ -59,14 +60,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private long _periodCardAmount;
         private int _periodSalesCount;
 
-        public DailyReportViewModel(Pos.PosWorkflowService service, IOverrideAuthService overrideAuthService = null, IPermissionService permissions = null, OperatorSession session = null, Func<Task> importHistoryAction = null)
+        public DailyReportViewModel(Pos.PosWorkflowService service, IOverrideAuthService overrideAuthService = null, IPermissionService permissions = null, OperatorSession session = null, Func<Task> importHistoryAction = null, bool allowPrinting = true)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _overrideAuthService = overrideAuthService;
+            _allowPrinting = allowPrinting;
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             ToggleFiscalPrintedModeCommand = new AsyncRelayCommand(ToggleFiscalPrintedModeAsync, _ => !IsBusy && _overrideAuthService != null);
-            PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && ReportNumbersVisible && !string.IsNullOrEmpty(SummaryReceiptPreview));
-            PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintStampaRiepilogoAsync, _ => !IsBusy && CanPrintStampaRiepilogo());
+            PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => _allowPrinting && !IsBusy && ReportNumbersVisible && !string.IsNullOrEmpty(SummaryReceiptPreview));
+            PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintStampaRiepilogoAsync, _ => _allowPrinting && !IsBusy && CanPrintStampaRiepilogo());
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy && CanLoadHistory());
             ExportCommand = new AsyncRelayCommand(ExportAsync, _ => !IsBusy && CanExport());
             FilterOggiCommand = new AsyncRelayCommand(ApplyFilterOggiAsync, _ => !IsBusy);
@@ -603,6 +605,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task PrintSummaryAsync()
         {
+            if (!_allowPrinting) return;
             await DemandAnalyticalCurrentAsync(CancellationToken.None).ConfigureAwait(true);
             if (string.IsNullOrEmpty(SummaryReceiptPreview)) return;
             IsBusy = true;
@@ -637,6 +640,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task PrintStampaRiepilogoAsync()
         {
+            if (!_allowPrinting) return;
             await DemandAnalyticalCurrentAsync(CancellationToken.None).ConfigureAwait(true);
             string textToPrint = null;
             if (SelectedTabIndex == 0)

@@ -179,7 +179,11 @@
         </Border>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+        <StackPanel Grid.Row="2" Margin="{StaticResource DialogFooterMargin}">
+          <Button x:Name="HistoryButton" Content="{loc:Loc history.onboardingOpen}" Height="44" Margin="0,0,0,10"
+                  Click="OnHistoryClick" Style="{StaticResource DialogActionButtonStyle}" Visibility="Collapsed"
+                  AutomationProperties.AutomationId="PosAccess.History" AutomationProperties.Name="{loc:Loc history.onboardingOpen}"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <Button x:Name="CopyDiagnosticsButton" MinWidth="128" Height="42" Margin="0,0,10,0" Click="OnCopyDiagnosticsClick" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed" AutomationProperties.AutomationId="PosAccess.CopyDiagnostics" AutomationProperties.Name="{loc:Loc onlineFirstLogin.copyDiagnostics}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
@@ -213,6 +217,7 @@
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
+          </StackPanel>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>
