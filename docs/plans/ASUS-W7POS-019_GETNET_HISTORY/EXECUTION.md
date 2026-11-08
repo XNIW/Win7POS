@@ -8,32 +8,38 @@ index and worklog edits preserved. No reset, stash or clean.
 
 | Requirement/gate | Status | Candidate / command / evidence | Dependency / next step |
 | --- | --- | --- | --- |
-| Repo sync | PASS read-only | GitHub GET main and local Git; same baseline, eight recent commits recorded in PLAN | Recheck before delivery |
+| Repo sync | PASS read-only | Initial R3 baseline above; onboarding baseline e924a295; qualified code d262ccd on local/remote main | Documentation-only closeout after code qualification |
 | Toolchain | PASS SDK / PowerShell | SDK 10.0.301 from pinned local installation; PowerShell 7.6.9 | No dependency upgrade |
 | Original input availability/integrity | PASS independent audit | Read-only ZIP/OOXML private manifest outside checkout; all expected controls matched; source hashes unchanged | Not a product parser PASS |
-| A parser / pure rules | PASS software | Final CI and reader on downloaded5c3327b net48/x86 DLLs;7/7 inputs/independent controls unchanged | Real time/binding remain gated |
-| B persistence / authority / recovery | FOCUSED_PASS | Five real foundation scenarios PASS in focused run015030831; prior failures retained | Exact-final code SHA/CI qualification pending |
-| C reports / UI / export | FOCUSED_PASS | Latest focused Smoke8/8,44/44 assertions; actual Load11/11 | Full Windows run03 remains FAIL; exact-final CI pending |
-| QA automation/public privacy | FOCUSED_PASS / FINAL_CI_PENDING | Closed receipts validated, current focused jobs cleanup=true/remaining0; run03 public publication PASS separate | No overall Windows PASS inferred from focused evidence |
+| A parser / pure rules | PASS software | Final d262ccd CI and net48/x86 reader7/7; independent controls/files unchanged, QA DLLs verified identical to product | Real time/binding remain gated |
+| B persistence / authority / recovery | PASS software | Final CI foundation5/37, Core/Data1734/1734; original failures and empty-delta red retained | Real onboarding requires authoritative catalog response |
+| C reports / UI / export | PASS software | Final CI Smoke8/44 and Load11/11; two charts PASS | import_summary diagnostic NOT_RUN; real export and Win7 remain gated |
+| QA automation/public privacy | PASS software | Canonical15/15 and public bundle/receipts verified; four explicit cleanup assertions PASS | Per-Job hosted residual counts are not exposed or inferred |
 | Real time semantics | BLOCKED_EXTERNAL | Modern timestamp markers alone do not prove provider semantics | Authoritative provider/voucher evidence |
 | Real shop/overlap | BLOCKED_EXTERNAL | No authoritative real-shop mapping/start date supplied | Binding, permissions and overlap proof |
 | Physical Windows 7 | BLOCKED_EXTERNAL / NOT_RUN | Exact candidate package/QA and owner card ready; host unavailable | Owner assigns physical Win7 SP1 and peripherals |
-| Main/CI/security/package | PASS software | Code5c3327b, four exact-SHA workflows, product/QA download verification PASS | Final documentation-only closeout; external qualification remains |
+| Main/CI/security/package | PASS software | Code d262ccd, four exact-SHA workflows, product/QA download verification and34 shared-file byte binding PASS | Final documentation-only closeout; external qualification remains |
 
 Build/restore/test writer: root agent only. Delegated component file ownership is
 nonoverlapping. All raw diagnostics and real financial controls stay private.
 Previous FAIL/TIMEOUT evidence must remain available; no result is inferred from
 static inspection, missing prerequisite, or a receipt schema alone.
 
-Current resume point: final empty→delta safety correction IN_PROGRESS after
-reproduced regression on e832d6a. Old Core1/1 RED and real loopback7/8 RED are
-preserved. The durable full-required fence now passes focused Core116/116, real loopback8/44
-and local50/50gates. The corrective commit still needs exact-SHA workflows; do not use the
-four green e832d6a workflows as the qualification of this correction. Root is
-single build/test writer. Next: focused green, corrective main commit, exact-SHA
-CI/Security/Release/WPF and new package/reader verification, then final docs.
-Live409/Mac, real evidence and physical Win7 remain BLOCKED_EXTERNAL.
-All earlier resume pointers, green e832d6a sections and Esc notes are history.
+Current resume point: SOFTWARE_DELIVERED for onboarding Windows at code/package
+`d262ccd979db8e3407118ffa7275861f12fdb5e2`; see
+[onboarding result](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md).
+CI42432623358, Security42432623359, Release42432623356 and WPF42432636966 PASS.
+Core/Data1734/1734, canonical15/15, gates50/50, functional20,
+foundation5/37, smoke8/44 and load11. Downloaded product/QA, external-CWD smoke,
+ordinary QA startup and reader7/7 PASS; NeedsEvidence remains true and apply denied.
+The e832d6a empty→delta regression remains RED history; d262ccd requires a new
+verified nonempty Full before restoring sale safety. Focused116/116 and8/44 PASS.
+Live409/Mac, merchant/time/overlap and physical Win7 remain BLOCKED_EXTERNAL.
+Visual diagnostic import_summary remains NOT_RUN, separate from UI contract PASS.
+Next: Mac deployment/principal/scope handoff and external evidence; no rerun of
+completed workflows. Documentation-only closeout differs from the binary SHA.
+All earlier resume pointers, e832d6a greens, FINAL_CI_PENDING/FOCUSED_PASS and
+Esc sections below are history; this pointer and newest verification are current.
 
 ## Intermediate execution evidence (2026-11-04)
 
@@ -574,3 +580,26 @@ Win7 promossa, Mac PENDING e prove esercente/tempo/overlap assenti.
 Focused fence green: Core116/116; real loopback8/44 with immutable red case and
 fullpositive recovery; localgates50/50. Source frozen. NextexactSHA workflows,
 new artifact verification/reader and document-only closeout.
+
+
+## Verifica finale correttivo d262ccd — 2026-11-07
+
+- Core/Data1734/1734 e gate50/50 dal log Release42432623356;
+  CI42432623358 canonica15/15, functional20/20, foundation5/37, smoke8/44,
+  load11 con measurementCompleted/environmentValid/thresholdsPassed true.
+- Fingerprint6ae00d6f8b1aa6f76a81b97804066a1e5ece2e76a6e419a276ea5a7cd98dff93;
+  runCI Win7POS.QA.20261108T010513694Z.48d7f3fff9ca4cbf93dcf90d91296025, artifact13599430953, digestab8822be70a2c71144272486781d0fda080c3d9d91b787c346b654d7ac15b0e0.
+  Test-QaPublicBundle e tre validator storici PASS; cleanup quattro assertion PASS,
+  nessun conteggio hosted inventato. Security42432623359 e WPF42432636966 PASS.
+- Release scaricato41file/110checksum, QA40file e34 comuni identici; stadio
+  development-unsigned, installation NOT_EXECUTED. Smoke scaricato8/44 e avvio
+  ordinario WPF senza login PASS, processo posseduto chiuso. Reader DLL QA
+  verificate uguali al prodotto:7/7 originali/oracolo,4588ms, file invariati,
+  NeedsEvidence=true/CanApply=false. Nessun apply reale.
+- Il rosso Core1/1 e loopback7/8 e832d6a resta conservato. Nuovo fence persistente
+  fino full nonempty atomica, focused Core116/116, loopback8/44 e gate50/50 PASS.
+  Nessun cambio alle assertion/budget originari, recovery o contratti cloud.
+- import_summary NOT_RUN/unavailable; due chart PASS e contratto UI5/5 distinti.
+  Mac invio/risposta PENDING, console/catalog409, prove reali e Win7 aperti.
+  Tutti i processi locali posseduti chiusi; profili/log/fixture conservati con owner.
+  Aggiornamento documentale separato da d262ccd, nessuna suite software duplicata.

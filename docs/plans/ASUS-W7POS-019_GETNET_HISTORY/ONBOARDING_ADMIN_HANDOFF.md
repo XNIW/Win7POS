@@ -1,26 +1,25 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
-Aggiornamento successivo: e832d6a sotto è un candidato intermedio. Una nuova
-regressione Core/loopback empty→delta ha riprodotto riattivazione dei vecchi dati;
-la correzione con fence durevole richiede nuovo SHA/CI/pacchetti. Non usare
-questa identità come candidato finale fisico/live finché la qualifica non è aggiornata.
-
 ## Ritorno Windows verificato — 2026-11-07
 
-Client/pacchetto finale: `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`
-(feature959396b, closureQAe832d6a). CI42418832135, Security42418832124,
-Release42418832168 e WPF42418868960 tutti PASS. Canonica15/15,
-Core/Data1728/1728 e gate50/50 (contatori esatti dal Release dello stesso SHA),
+Client/pacchetto finale: `d262ccd979db8e3407118ffa7275861f12fdb5e2`
+(feature959396b, closureQAe832d6a, fence conclusivo d262ccd). CI42432623358, Security42432623359,
+Release42432623356 e WPF42432636966 tutti PASS. Canonica15/15,
+Core/Data1734/1734 e gate50/50 (contatori esatti dal Release dello stesso SHA),
 functional20/20, foundation5/37, smoke8/44 e load11/11. Prodotto/installer,
 SBOM/provenance verificati come development-unsigned; installazione NOT_EXECUTED.
 QA scaricato40file, smoke esterno8/44 e avvio ordinario su profilo vuoto PASS;
-34 file comuni QA/prodotto identici. Reader prodotto net48/x86 riconcilia7/7
+34 file comuni QA/prodotto identici. Reader net48/x86 con DLL QA byte-identiche al prodotto riconcilia7/7
 originali invariati, NeedsEvidence=true/CanApply=false; nessun apply reale.
 
 Il login reale precedente5c3327bd resta valido come evidence del proprio
 tentativo: policy/trust/scope/mirrorpos_admin accettati, catalog pull409unmapped.
 Il nuovo percorso storico passa solo su risposta completa zero qualificata;
 non converte il409 in catalogo vuoto, non apre vendite e non modifica recovery.
+Il correttivo d262ccd aggiunge inoltre un vincolo persistente dopo full empty:
+nessun delta o approvazione generica può riabilitare il vecchio catalogo; solo
+una nuova full verificata non vuota lo rimuove nel commit atomico. Regressione
+Core/loopback rossa su e832d6a conservata, poi Core116/116 e loopback8/44 verdi.
 Nessun nuovo tentativo live dopo il409. Identificativi per la correlazione sono
 nel manifest privato Windows, non in questo file. Host staging coincide con
 quello indicato dall'utente; deployment/installato Supabase resta da attestare.

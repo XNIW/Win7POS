@@ -6,6 +6,12 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ## 2026-11-07 – Prosecuzione onboarding nuovo negozio (ASUS-W7POS-019)
 
+- Chiusura software sul correttivo d262ccd979db: CI42432623358, Security42432623359, Release42432623356 e WPF42432636966 PASS. Core/Data1734/1734, gate50/50, canonica15/15, functional20, foundation5/37, smoke8/44 e load11 con tre flag true. I verdi e832d6a sotto sono intermedi: la regressione successiva è conservata.
+- Prodotto scaricato41file/110checksum, QA40file e34 comuni identici; smoke CWD esterna8/44 e avvio ordinario senza login PASS. Reader DLL QA verificate identiche al prodotto7/7, attesi indipendenti/file invariati,4588ms, NeedsEvidence=true/CanApply=false. Nessun apply reale; development-unsigned, installation NOT_EXECUTED.
+- Fence persistente fino full nonempty verificata: Core116/116, loopback8/44 e gate50/50 locali PASS dopo rosso immutato. import_summary capture NOT_RUN distinta da UI PASS; Mac PENDING, catalog409/prove reali/Win7 BLOCKED_EXTERNAL. Tutti i processi locali posseduti chiusi, risorse conservate con owner; chiusura solo docs, nessuna suite duplicata e nessun retry live.
+
+Checkpoint precedenti della stessa sessione, conservati come storia:
+
 - Fix fence ora focusedgreen: Core116/116, loopback8/44 e gate50/50. Blocca delta/approvazioni generiche; fullnonempty valida recupera, rollback conserva blocco. Nuovo commit/CI/pacchetti necessari, nessun riuso improprio dei verdi e832d6a.
 
 

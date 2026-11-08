@@ -6,9 +6,9 @@
 | --- | --- |
 | Fase | Execution A+B+C e onboarding Windows: software consegnato; qualifica reale/fisica aperta |
 | Revisione/data | R3 — 2026-11-04, America/Santiago |
-| Stato del piano | Correzione finale empty→delta IN_PROGRESS: regressione e832d6a riprodotta; nuovo fence in qualifica. Gate reali/Win7 BLOCKED_EXTERNAL |
-| Implementazione | Onboarding959396b + closureQA `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`; precedente consegna5c3327bd conservata |
-| Build, test, harness e qualifica runtime | PASS CI15/15, Core1728/1728, gate50/50, functional20, foundation5/37, smoke8/44 e load11; Win7 fisico NOT_RUN; cattura import_summary NOT_RUN distinta |
+| Stato del piano | SOFTWARE_DELIVERED d262ccd; BLOCKED_EXTERNAL catalogscope/Mac, merchant/tempo e Win7; specifica R3 conservata |
+| Implementazione | Onboarding959396b + closureQAe832d6a + fence conclusivo `d262ccd979db8e3407118ffa7275861f12fdb5e2`; consegne precedenti conservate come storia |
+| Build, test, harness e qualifica runtime | PASS CI15/15, Core1734/1734, gate50/50, functional20, foundation5/37, smoke8/44 e load11; Win7 fisico NOT_RUN; cattura import_summary NOT_RUN distinta |
 | Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
 | Branch e stato iniziale R3 | main; PLAN R2 untracked e modifiche locali di indice/worklog preservate |
 | Persistenza | Codice su main; quattro workflow exact-SHA PASS, prodotto/QA scaricati e verificati; reader7/7 PASS con NeedsEvidence; documenti finali separati dai binari |
@@ -2013,3 +2013,18 @@ Regressione nuova riprodotta su Core e loopback prima del fix: un delta poteva
 riattivare i vecchi prodotti dopo empty confermato. Il codice e832d6a e i verdi
 sopra sono intermedi. Qualificare il fence durevole fino full nonempty, poi
 nuovo SHA/pacchetto e documenti. Nessuna soglia/guard/oracolo rilassati.
+
+
+## Verifica conclusiva del correttivo onboarding — 2026-11-07
+
+Candidato codice/pacchetto d262ccd979db8e3407118ffa7275861f12fdb5e2,
+quattro workflow exact-SHA PASS. Core/Data1734, gate50, canonica15,
+functional20, foundation5/37, smoke8/44 e load11; download prodotto/QA,
+smoke scaricato e avvio ordinario PASS. Reader7/7 originale/oracolo indipendente,
+NeedsEvidence=true/CanApply=false; DLL QA byte-identiche al prodotto.
+Il rosso e832d6a old-full→empty→delta è conservato. Il vincolo durevole
+impone nuova full nonempty verificata prima di vendere; focused116/116 e8/44.
+Gli stati pendenti precedenti sono checkpoint storici. Chiusura solo documentale
+successiva a d262ccd, nessun nuovo retry live. Mac PENDING, catalog409 e prove
+reali/Win7 BLOCKED_EXTERNAL; nessun DONE. Identità e card correnti nel
+[risultato onboarding](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md).

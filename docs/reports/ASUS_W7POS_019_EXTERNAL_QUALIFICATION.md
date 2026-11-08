@@ -1,10 +1,5 @@
 # ASUS-W7POS-019 — qualifica esterna e scheda operatore Win7
 
-Aggiornamento successivo: e832d6a sotto è un candidato intermedio. Una nuova
-regressione Core/loopback empty→delta ha riprodotto riattivazione dei vecchi dati;
-la correzione con fence durevole richiede nuovo SHA/CI/pacchetti. Non usare
-questa identità come candidato finale fisico/live finché la qualifica non è aggiornata.
-
 Aggiornamento consegna: 2026-11-07. Software Windows consegnato e verificato;
 onboarding reale/Win7 BLOCKED_EXTERNAL. Host prove Windows11, non Win7 fisico.
 NEW_SHOP_019 creata secondo dichiarazione utente; primo login reale precedente5c
@@ -19,21 +14,21 @@ installation=NOT_EXECUTED. I verdi non certificano Win7 o un apply reale.
 
 | Identità del candidato da qualificare | Valore corrente |
 | --- | --- |
-| Source SHA codice/pacchetto | `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd` |
-| Fingerprint checkout pulito | `c2e98ce089d0b8e4d0b1f4a8a5c5d2bb93ec53fb6be0fc92e91cdbab361d6944` |
-| ZIP Release x86 / installer SHA256 | ZIP `dd5e0b444d16e89c61df8e4471e4da88e926a4c0a08113a3ab269be156e74249`; setup `9a936078f0d8f5250b141985aaee4a4a9105d864b25f044b0880d8878daccb59` |
-| ZIP QA net48/x86 SHA256 | `c2aafd01d93d48cea0adac7f180af6b11a8a3e8f612993c522dc90256d39e224` |
-| payload-manifest.json SHA256 | `fe95c4f90cf093587fff1347594101705cfea7f6cb24ed9101c3aee33b652b2e` |
+| Source SHA codice/pacchetto | `d262ccd979db8e3407118ffa7275861f12fdb5e2` |
+| Fingerprint checkout pulito | `6ae00d6f8b1aa6f76a81b97804066a1e5ece2e76a6e419a276ea5a7cd98dff93` |
+| ZIP Release x86 / installer SHA256 | ZIP `bee7c288096d57234f087eb63fe4bc85b128f8953eccebf710acc5b383e14716`; setup `27537a857ee7f88f30fc81f4dca664960b072e84ca76f6e876abb03989735f20` |
+| ZIP QA net48/x86 SHA256 | `4595610fb0cc3f5084b6157155dc932cc76d8e931f89347a775de5c5f3c76b2e` |
+| payload-manifest.json SHA256 | `2fde8d2452b41135dadf7c5629b31f68c44da68a31521d57e9f223b995357014` |
 | Manifest fixture SHA256 | `72cd6f0afc82e418d5676fc329f61761d224e8aade30da98ada4ad30ee64620e` |
-| Harness QA SHA256 | `93f80deae869d0de0c356ba987200fcaa04870c6502365544af7c9db453d4bc4` |
-| WPF QA/prodotto SHA256 | `3996aa96883d76ec0ca51686456567ccf2f1a68b622d233de472b5d797d68d54` |
-| Run Release / QA | [Release42418832168](https://github.com/XNIW/Win7POS/actions/runs/42418832168) / [WPF42418868960](https://github.com/XNIW/Win7POS/actions/runs/42418868960), PASS |
-| CI/Security | [CI42418832135](https://github.com/XNIW/Win7POS/actions/runs/42418832135) / [Security42418832124](https://github.com/XNIW/Win7POS/actions/runs/42418832124), PASS |
+| Harness QA SHA256 | `2e70201c6679d5888ec0b007e575eed8828d1e44d9bef9d64caf123ce009fc9e` |
+| WPF QA/prodotto SHA256 | `933739dd0912c098dda0237d0df67148de433cb17feca6d535d0b1e8848a9940` |
+| Run Release / QA | [Release42432623356](https://github.com/XNIW/Win7POS/actions/runs/42432623356) / [WPF42432636966](https://github.com/XNIW/Win7POS/actions/runs/42432636966), PASS |
+| CI/Security | [CI42432623358](https://github.com/XNIW/Win7POS/actions/runs/42432623358) / [Security42432623359](https://github.com/XNIW/Win7POS/actions/runs/42432623359), PASS |
 | Win7 fisico / periferiche | NOT_RUN / BLOCKED_EXTERNAL |
 
 Download verificati:41 file prodotto,110 checksum, QA40 file e34 comuni
 byte-identici. QA scaricato smoke8/44 da CWD esterna, run
-Win7POS.QA.20261107T220911950Z.d2c7761c1e1e495da1bc398a7e2de26f,
+Win7POS.QA.20261108T011023899Z.bd7caca208574ff0b1ba247840e1522b,
 exit0/fingerprint stabile/cleanup confermato. Avvio ordinario QA alla ripresa PASS
 su profilo vuoto senza login; primo tentativo Esc rimane NOT_RUN storico.
 La cattura diagnostica import_summary resta NOT_RUN/unavailable, separata dal
@@ -47,15 +42,15 @@ distingue codice, documenti, pacchetto e qualifica esterna.
 
 | Superficie | Applicabilità e stato | Evidenza osservata / sblocco |
 | --- | --- | --- |
-| Import/undo storico → cloud commerciale | `NOT_APPLICABLE` come trasporto V1; isolamento da verificare sul candidato | `HistoricalSalesImportService` mantiene un ledger locale. Apply/Undo scrivono mapping, batch, file, transazioni, osservazioni e receipt storici; non chiamano writer vendite, stock, fiscale o outbox. Vedere [service](../../src/Win7POS.Data/Import/HistoricalSalesImportService.cs#L127), Apply/Undo e [regressione](../../tests/Win7POS.Core.Tests/Persistence/HistoricalLedgerTests.cs#L15). La review statica non sostituisce B-D11. |
-| Route, schema, RLS, funzioni e Storage Supabase nuovi per lo storico | `NOT_APPLICABLE` nella V1 locale | Nessuna route storica è aggiunta al client. Nessuna modifica server/deployment o accesso a un progetto Supabase è richiesto da questa qualifica. Il backend distribuito non è stato ispezionato o attestato live. |
+| Import/undo storico → cloud commerciale | `NOT_APPLICABLE` come trasporto V1; isolamento sintetico PASS | `HistoricalSalesImportService` mantiene un ledger locale. Apply/Undo scrivono mapping, batch, file, transazioni, osservazioni e receipt storici; non chiamano writer vendite, stock, fiscale o outbox. Vedere [service](../../src/Win7POS.Data/Import/HistoricalSalesImportService.cs#L127), Apply/Undo e [regressione](../../tests/Win7POS.Core.Tests/Persistence/HistoricalLedgerTests.cs#L15). B-D11 è coperto dalle receipt sintetiche del candidato; nessun apply reale. |
+| Route, schema, RLS, funzioni e Storage Supabase nuovi per lo storico | `NOT_APPLICABLE` nella V1 locale | Nessuna route storica è aggiunta al client. La V1 locale non introduce questi oggetti. Il problema onboarding409 richiede invece diagnosi Mac sul deployment; il backend installato non è attestato live. |
 | Prima autenticazione e heartbeat esistenti | APPLICABLE_EXISTING; primo login reale5c PASS, nuovo retest live BLOCKED dal catalog409 | Shop/policy/trust/generation e mirror verificati nel tentativo reale precedente. Route POS first-login e heartbeat restano separate da Supabase Auth e sessione web; contratto installato/heartbeat live da attestare al Mac. Nessuna readiness articoli richiesta per il normale accesso. |
-| Autorizzazione import/undo | APPLICABLE_LOCAL; sintetico e832d6a PASS, uso storico reale BLOCKED | Lease, permessi e fingerprint generation vincolati fino al commit. Prova empty distinta da sale-safe/recovery; catalog409 non la produce. Nessun grant automatico a ruoli senza permesso. |
+| Autorizzazione import/undo | APPLICABLE_LOCAL; sintetico d262ccd PASS, uso storico reale BLOCKED | Lease, permessi e fingerprint generation vincolati fino al commit. Prova empty distinta da sale-safe/recovery; catalog409 non la produce. Nessun grant automatico a ruoli senza permesso. |
 | Binding esercente Getnet → Shop | `APPLICABLE`; reale `BLOCKED_EXTERNAL` | [Workflow](../../src/Win7POS.Wpf/Pos/PosWorkflowService.HistoricalImport.cs#L50), [mapping locale](../../src/Win7POS.Data/Import/HistoricalSalesImportService.cs#L332). Richiede ShopId autorevole, alias/esercente e inizio uso POS provati. La preview dei file non crea una Shop né risolve questi vincoli. |
 | Sync vendite/catalogo/ordini esistenti | `APPLICABLE_REGRESSION`, nessuna estensione storica | Le route esistenti restano nel [client](../../src/Win7POS.Data/Online/PosAdminWebClient.cs#L17). [OutboxShopBinding](../../src/Win7POS.Data/Online/OutboxShopBinding.cs#L70) e [sales sync](../../src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs#L161) verificano origine/trust. Import e undo non devono aggiungere eventi a questi canali. I sintetici locali/loopback non attestano il server remoto. |
 | Semantica oraria esportazione Getnet e report nativi | `APPLICABLE`; reale `BLOCKED_EXTERNAL` | Servono prova privata del significato di Z+offset e delle transizioni, più policy nativa canonica con provenienza/copertura. La policy sintetica `synthetic-fixed-offset-v1` non autorizza dati reali; nessun fallback al fuso del PC. |
-| Originali privati | Reader prodotto e832d6a PASS7/7 | Originali/oracolo indipendente e hash invariati prima/dopo, DLL prodotto net48/x86. NeedsEvidence=true/CanApply=false; nessun apply reale o prova della semantica provider dedotta dal parser. |
-| Staging/live QA | `BLOCKED_EXTERNAL` se richiesta; non necessaria per import storico locale | Vale esclusivamente [QA_AUTOMATION_AUTHORIZATION](../QA_AUTOMATION_AUTHORIZATION.md#staging-e-autorizzazione-operativa): profilo DPAPI, scope autorizzato, nuova readiness e Release Pack dello stesso candidato. La readiness articoli con `salesAllowed=false` non autorizza vendite remote. Nessuna chiamata live è stata eseguita da questa review. |
+| Originali privati | Reader runtime prodotto d262ccd PASS7/7 | Originali/oracolo indipendente e hash invariati prima/dopo, DLL QA net48/x86 verificate byte-identiche al prodotto. NeedsEvidence=true/CanApply=false; nessun apply reale o prova della semantica provider dedotta dal parser. |
+| Staging/live QA | `BLOCKED_EXTERNAL` se richiesta; non necessaria per import storico locale | Vale esclusivamente [QA_AUTOMATION_AUTHORIZATION](../QA_AUTOMATION_AUTHORIZATION.md#staging-e-autorizzazione-operativa): profilo DPAPI, scope autorizzato, nuova readiness e Release Pack dello stesso candidato. La readiness articoli con `salesAllowed=false` non autorizza vendite remote. Nessuna suite Staging o mutazione live eseguita; normale primo accesso5c descritto separatamente. |
 | Hardware e sistema operativo target | `APPLICABLE`; `BLOCKED_EXTERNAL` | Richiede il medesimo pacchetto x86 su macchina fisica Win7 SP1 identificata, net48 e periferiche reali nello scope della scheda sotto. Un PASS su Windows 11 non soddisfa W7-01. |
 
 Nota storica della review precedente: la skill `supabase:supabase` del plugin Supabase
@@ -90,9 +85,9 @@ pagamenti reali, invio fiscale, reset outbox o modifiche di produzione.
 | Macchina fisica | Identificativo privato host; Windows 7 SP1, edizione/build, CPU, RAM, storage libero/tipo, net48 e runtime VC++ x86 richiesti dal pacchetto |
 | Display e input | Risoluzione effettiva, DPI 100% e 125%, numero monitor, tastiera/layout, modello scanner e modalità input |
 | Stampante/periferiche | Modello/driver/porta; tipo prova ordinaria autorizzata; indicare `BLOCKED_EXTERNAL` per periferica mancante |
-| Candidato sorgente | `candidate_source_sha=e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`; fingerprint del checkout pulito nella tabella sopra |
-| Pacchetto prodotto | `candidate_package_run_id=42418832168`; nome artifact e riferimento download; `candidate_package_sha256=dd5e0b444d16e89c61df8e4471e4da88e926a4c0a08113a3ab269be156e74249`; `candidate_installer_sha256=9a936078f0d8f5250b141985aaee4a4a9105d864b25f044b0880d8878daccb59` se distinto |
-| QA separata dello stesso SHA | Artifact `Win7POS-QA-net48-x86-e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`; file `Win7POS.QA-net48-x86.zip`; SHA256 nella tabella sopra |
+| Candidato sorgente | `candidate_source_sha=d262ccd979db8e3407118ffa7275861f12fdb5e2`; fingerprint del checkout pulito nella tabella sopra |
+| Pacchetto prodotto | `candidate_package_run_id=42432623356`; nome artifact e riferimento download; `candidate_package_sha256=bee7c288096d57234f087eb63fe4bc85b128f8953eccebf710acc5b383e14716`; `candidate_installer_sha256=27537a857ee7f88f30fc81f4dca664960b072e84ca76f6e876abb03989735f20` se distinto |
+| QA separata dello stesso SHA | Artifact `Win7POS-QA-net48-x86-d262ccd979db8e3407118ffa7275861f12fdb5e2`; file `Win7POS.QA-net48-x86.zip`; SHA256 nella tabella sopra |
 | Manifest QA | SHA256 nella tabella sopra; `schemaVersion=win7pos-net48-qa-payload-v1`; sourceSha uguale al candidato, architecture x86, targetFramework net48;40 file verificati con path/bytes/sha256 coerenti |
 | Manifest fixture | SHA256 nella tabella sopra; `fixtureVersion=historical-sales-getnet-v1`; hash di oracle e di entrambi i workbook sintetici verificati nel bundle scaricato |
 | Ambiente prova | Directory QA nuova, breve e posseduta fuori da dati POS/checkout; dati di prova distinti da evidence; percorso privato e mappatura conservati dall'owner |
@@ -204,36 +199,24 @@ struttura di inventario, mentre [QA_AUTOMATION_AUTHORIZATION](../QA_AUTOMATION_A
 regola l'autorizzazione corrente. Non ereditare dalla richiesta storica SHA,
 run, package, endpoint staging o scope operativo.
 
-Consegna software verificata: CI41959769748 All, Security41959769752,
-Release42418832168 e WPF42418868960 PASS sullo stesso SHA. Il verificatore canonico
-Release scaricato conferma41 file payload,110 file checksummed, SBOM/provenance/
-attestation e corrispondenza setup/dist/ZIP. Artifact ReleasePack13386956585,
-Setup13387265413 e dist13386866791; versione1.0.0-dev.5c3327bd3202.
-33/33 file condivisi con la QA sono byte-identici; il payload operativo non contiene
-harness, XLSX, DB o TRX. Stadio development-unsigned, installazione NOT_EXECUTED.
-Il reader finale net48/x86 ha verificato privatamente tutti i7 originali con
-attesi indipendenti e hash prima/dopo invariati; NeedsEvidence=true/CanApply=false,
-nessun apply reale. La documentazione finale è un delta composto solo da docs;
-le identità sorgente/fingerprint/binari di questa scheda restano quelle di5c3327b.
+## Esito software e limiti della consegna
 
+CI42432623358, Security42432623359, Release42432623356 e WPF42432636966
+PASS sullo stesso SHA d262ccd. Core/Data1734/1734, gate50/50,
+canonica15/15, functional20, foundation5/37, smoke8/44 e load11.
+Il correttivo include il vincolo persistente che impedisce a un delta di
+riabilitare vendite su un vecchio catalogo dopo una full empty confermata;
+solo una nuova full verificata non vuota rimuove il blocco atomicamente.
+La regressione e832d6a resta conservata come rosso e non è il candidato fisico.
 
-## Checkpoint storico onboarding 2026-11-07 dopo Esc
+Download canonico:41 file payload,110 checksum, SBOM/provenance/attestation e
+corrispondenza setup/dist/ZIP. ReleasePack13599432637, Setup13599033504
+e dist13599302984; versione1.0.0-dev.d262ccd979db. QA40 file,34 comuni byte-identici;
+nessun harness, XLSX, DB o TRX nel payload operativo. Stadio development-unsigned,
+installazione NOT_EXECUTED. Ricalcolare gli hash della tabella dopo il trasferimento.
 
-Main candidato `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`, feature959396b,
-pubblicati. Security42418832124 e WPF42418868960 PASS; QA scaricato40file
-con pin forwarder e smoke esterno8/44 PASS. CI42418832135/Release42418832168
-ancora in corso al checkpoint: leggere gli stessi run, senza rilanciarli.
-Avvio ordinario QA interrotto dall'utente prima dell'osservazione, NOT_RUN.
-Nuovo prodotto/reader reale e chiusura documentale restano da completare.
-Tutti i processi locali posseduti chiusi; profili/log/prime failure conservati.
-Il report onboarding contiene la ripresa precisa; nessuna qualifica reale o
-Win7 promossa, Mac PENDING e prove esercente/tempo/overlap assenti.
-
-
-## Esito della ripresa Windows
-
-I run sopra sono tutti completati PASS; il checkpoint Esc precedente è storico.
-Reader e832d6a riconciliato7/7, NeedsEvidence/apply negato; non eseguito import
-reale. La prossima prova fisica usa questa identità e un nuovo context/hardware
-autorizzato, non i receipt Windows11. Mac resta PENDING sul catalog409/console;
-nessun nuovo retry live, grant, migrazione o deployment Windows.
+Reader net48/x86:7/7 originali, attesi indipendenti e file invariati,4588ms sul
+build host. Esegue DLL QA coincidenti con quelle prodotto; NeedsEvidence=true,
+CanApply=false e nessun apply reale. Lo stesso esito non qualifica né i tempi
+Win7 né la semantica provider. Il primo Esc e le failure precedenti sono storia
+conservata; nessun retry live dopo409. Handoff Mac invio/risposta PENDING.
