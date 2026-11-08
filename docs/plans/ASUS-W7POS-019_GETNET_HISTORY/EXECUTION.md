@@ -1,5 +1,45 @@
 # ASUS-W7POS-019 execution ledger
 
+## Latest residual checkpoint — 2026-11-08
+
+Windows1823697 reused unchanged on Windows11 build26300 x64, net48/x86.
+One newly requested ordinary launch of the installed EXE succeeded on the
+retained isolated profile; user entered the masked credential. First-login
+and trusted-session persistence observed PASS; local operator completion and
+history remain blocked by catalog HTTP500. Same-shop server audit identifies
+catalog_v2_empty_manifest. Previous tool denials are retained as history.
+
+Admin PR144 merged919d100 with post-merge checks PASS. HTTP fix PR145,
+code3e56a322,33 targeted checks and CI42522680653/Cloudflare42522680527 PASS;
+1156foundation/14skip,67files/4375pgTAP. Mergedfdb30f4. Its post-merge database
+failed twice at prefix startup before bind/apply/tests; no cause inferred.
+Closed diagnostics PR146, codef344918, CI42525515132/Cloudflare42525515054
+PASS,1157foundation/14skip; mergedf57afa6. Its post-merge CI42526220441
+database/Verify and Cloudflare42526220439 PASS; live E2E/deploy SKIPPED.
+No new Admin TASK146. No Windows rebuild, SQL apply, Worker deploy or
+generic CI dispatch.
+
+Concrete release dependency: reconcile immutable source equivalent to current
+Worker399720d2 including TASK140F, and build/config/DB compatibility for the
+chosen unit. Current target and project metadata verified; exact rollback
+prepared. Receipt/correction RPC presence observed independently of migration
+history; do not equate missing history rows to missing functions or consent.
+
+Original preview UI remains NOT_RUN; reader7/7 is reused, not relabeled UI.
+Private Getnet card:3exported groups/8timestamp samples, A/B/C MISSING after
+manifest/mail/provider review. User delegated judgment without new facts.
+Full synthetic client EN/IT rendered and observed at192DPI; no100/125 or
+native keyboard PASS. Settings/input surface blocked, no scale changed.
+Win7 target explicitly unavailable; existing kit hash unchanged.
+
+Real DB integrity/FK PASS, sales/outboxes/history transactions0, no apply.
+Session/trust updates after login do not imply byte-unchanged DB. Only owned
+POS/observer processes stopped by verified identity; trust/backup/input/failures
+retained. Test bytecode removal rejected by tool policy; retained, no bypass.
+See [current report and closure matrix](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+## Previous checkpoints retained as history
+
 ## Current checkpoint — 2026-11-08, qualified successor
 
 Windows code/package `1823697f1f0c965fb8fd9d85259a862160f12c59` is

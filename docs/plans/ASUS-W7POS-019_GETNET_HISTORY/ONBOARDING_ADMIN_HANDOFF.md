@@ -1,5 +1,50 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
+## Raccordo più recente — residui reali dell'8 novembre
+
+Autorizzazione già valida; su nuova richiesta esplicita il normale avvio
+dell'installato Windows1823697 è riuscito, senza cambiare launcher o protezioni.
+Prima autenticazione reale PASS e trust persistito; catalogo500/db_failure,
+auditcatalog_v2_empty_manifest. Il processo posseduto è stato fermato dopo
+raccolta evidence per interrompere richieste di background; profilo/trust integri.
+Nessuna cassa, preview UI degli originali o import reale completati.
+
+Admin PR144 integrata919d100, post-merge CI/Cloudflare PASS; il fallback vecchio
+è osservato sulla console staff realmente autenticata, non ancora distribuito.
+Nuovo difetto HTTP dimostrato e corretto con PR145 codice3e56a322/mergefdb30f4:
+33mirati, CI42522680653/Cloudflare42522680527 PASS,1156foundation+14skip,
+67file/4375pgTAP. Ammessa soltanto full fresca terminale shop_scoped zero;
+publication fence, delta/legacy/parziali negati e SQL invariati.
+
+Post-merge database fdb fallito due volte in prefix bootstrap prima dei test;
+nessun esito SQL dedotto, causa precisa UNKNOWN. Diagnostica CI chiusa PR146
+(non una nuova TASK146 Admin), codicef344918/mergef57afa6, CI42525515132/
+Cloudflare42525515054 PASS,1157foundation+14skip. Nessun Worker runtime modificato
+da questa sola diagnostica. Post-merge f57afa6: CI42526220441 database/Verify
+e Cloudflare42526220439 PASS, live E2E e deploy SKIPPED. Nessun nuovo
+grant/SQL/secret o deploy.
+
+**Unica azione owner Admin per il rilascio:** riconciliare e pubblicare il
+riferimento immutabile dell'albero equivalente al Worker399720d2 del15ottobre,
+incluse correzioni TASK140F e configurazione build/staging. Va bene una sorgente
+equivalente attestata se lo SHA originale è irrecuperabile. Su quella base
+qualificare l'unità minima dei quattro percorsi prodotto PR144+145, oppure
+documentare compatibilità della main completa. Target/progetto verificati e
+rollback verso399720d2 pronti; nessuna nuova autorizzazione generica richiesta.
+Il vecchio albero1f0679b2 non attesta la versione15ottobre. Le RPC U2 sono
+presenti anche senza le due righe history isolate: nessun apply SQL dedotto.
+
+Windows riprende HTTP→storico→preview dopo rollout compatibile, senza riusare
+una continuazione password scaduta o il vault dell'altro negozio. Getnet A/B/C
+restano MISSING nella scheda privata3gruppi/8campioni; l'utente delega il giudizio
+senza fornire attestazioni. Policy POS nativa separata. Win7 dichiarato non
+disponibile; kit pronto invariato, DPI100/125 e input nativo ancora da attestare.
+
+La nota unica PR29 è riusata, riscontro di questa unità release PENDING;
+head137afa5e OPEN/ACTIVE osservata, nessun lavoro mobile eseguito.
+[Esiti e responsabilità correnti](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+I raccordi successivi sotto sono storia, inclusi review/consenso pendenti.
+
 ## Raccordo corrente — 8 novembre 2026
 
 Windows `1823697f1f0c965fb8fd9d85259a862160f12c59` consegnato e installato

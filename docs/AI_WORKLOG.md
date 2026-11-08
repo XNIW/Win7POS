@@ -4,6 +4,15 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-11-08 — Residui reali ASUS019, stessa task
+
+- Windows1823697 invariato, nessuna reinstallazione o suite completa ripetuta. Su nuova richiesta utente avvio normale dell'installato PASS; password solo nella PasswordBox, autenticazione verificata. Catalogo reale500/db_failure, auditcatalog_v2_empty_manifest; prima failure preservata, nessuna full o cassa aperta.
+- Admin PR144 merge919d100 e post-merge CI/Cloudflare PASS. Nuovo fix HTTP PR145 codice3e56a322,33mirati e CI42522680653/Cloudflare42522680527 PASS,1156foundation+14SKIP,67/4375pgTAP; mergefdb30f4. Full fresca terminale shop_scoped zero ammessa, delta/legacy/parziali e publication fence preservati; nessuna SQL.
+- Post-merge database42523315476 FAIL prefix bootstrap due volte prima dei test, Verify/Cloudflare PASS. Nuova diagnostica chiusa PR146 codicef344918, unit privacy/security/lint e CI42525515132/Cloudflare42525515054 PASS,1157foundation+14SKIP; mergef57afa6 e post-merge CI42526220441/Cloudflare42526220439 PASS (live E2E/deploy SKIPPED). Nessuna nuova TASK146 Admin, nessun generic CI dispatch o import live.
+- Worker399720d2 invariato: target/progetto/rollback verificati, sorgente equivalente corrente e unità release ancora da riconciliare con owner. Console staff realmente autenticata mostra il vecchio fallback; nessun deploy o grant inventato.
+- Scheda Getnet privata con3gruppi/8campioni, originali invariati. A/B/C MISSING dopo ricerca manifest/mail/provider; OneGMR UTC riguarda CSV/SFTP, applicabilità XLSX non provata. L'utente delega il giudizio senza nuovi fatti e conferma Win7 assente. Apply negato; policy nativa separata.
+- Render client completo sintetico EN/IT a192DPI osservato; no prova100/125 o tastiera nativa per limiti superficie/input. Nessuna scala cambiata. DB reale integrity/FK PASS, vendite/outbox/transazioni storiche0. Processi posseduti fermati, trust/backup conservati; rimozione bytecode test negata da policy, file trattenuto. [Report corrente](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
 ## 2026-11-08 – Retry e qualifica1823697 (stessa ASUS-W7POS-019)
 
 - Riprodotto il Retry Connect409→empty sul prodotto d262ccd:1auth/2catalog, storico nascosto. Fix comune Connect/Retry con SecureString readonly5min, proof readonly dall'unico guard esistente, busy prima degli await e riesame authority post-risposta/finale. Nessun secondo first-login HTTP o cache priming.

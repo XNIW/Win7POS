@@ -1,5 +1,92 @@
 # ASUS-W7POS-019 — Retry, qualifica software e gate end-to-end
 
+## Residui verificati — prosecuzione dell'8 novembre 2026
+
+Windows resta sul codice/pacchetto1823697; nessuna modifica applicativa o
+reinstallazione nuova. Le qualifiche1734/50/15/52 e i pacchetti sotto sono
+riusati con la loro provenienza. Host riconfermato Windows11 Home Single
+Language10.0.26300 x64; prodotto net48/x86, scope pubblico NEW_SHOP_019.
+
+Su esplicita richiesta utente è riuscito un solo nuovo normale Start-Process
+dell'EXE installato, sullo stesso profilo isolato verificato. PID/creationTime/
+path conservati privatamente. Non sono cambiati launcher, policy, UAC o
+protezioni. I precedenti rifiuti rimangono storici, senza attribuirne una causa
+a Smart App Control, antivirus o password. La documentazione ufficiale
+[Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox)
+descrive diagnosi generali, non prova la causa del precedente blocked by policy.
+
+L'utente ha inserito la password solo nel campo mascherato. Un tentativo
+correlato nel log POS: firstLoginSucceeded=yes, trustedSessionPersisted=yes,
+Access verified/device linked/operator configured osservati. Catalogo invece
+HTTP500/db_failure, pagina1/rows0 e nessuna full committata. Audit remoto dello
+stesso shop: reason=catalog_v2_empty_manifest, stage=manifest. Il resolver409
+corretto non è stato riapplicato: la nuova causa è il guard HTTP che scarta lo
+zero completo. Nessuna cassa o sessione operatore locale conclusa.
+
+| Residuo / expected | Stato osservato | Prerequisito, owner e azione esatta | Criterio di chiusura |
+| --- | --- | --- | --- |
+| Admin stato pagina: review/merge | PASS PR144, merge919d100; CI42519626751/Cloudflare42519626731 PASS | Review indipendente root del diff preparato, continuità f8ac2fd6→tre file docs19e0b6f→merge verificata; nessun nuovo consenso obbligatorio | Merge e controlli verificati; deploy distinto |
+| HTTP: full autorevole vuota | FAIL reale500 preservato; fix PR145 codice3e56a322 qualificato e mergefdb30f4 | Mirati33/33, CI42522680653/Cloudflare42522680527 PASS,1156foundation+14SKIP,67file/4375pgTAP. Solo full fresca terminale shop_scoped senza owner, righe/nove contatori zero; delta/legacy/parziali negati, publication fence intatto | Stesso percorso HTTP200 dopo rollout compatibile; quindi storico, cassa bloccata |
+| CI post-merge e diagnostica | f57afa6: CI42526220441 database/Verify e Cloudflare42526220439 PASS, live E2E/deploy SKIPPED | PR146 di sola diagnostica CI: codicef344918, CI42525515132/Cloudflare42525515054 PASS,1157foundation+14SKIP; mergef57afa6. Precedente fdb30f4: prefix bootstrap FAIL due volte prima di bind/apply/test, causa nativa UNKNOWN; un solo rerun mirato, nessun terzo retry invariato. Nessuna nuova TASK146 Admin | Qualifica software chiusa; failure precedenti conservate e rollout distinto |
+| Rollout staging | BLOCKED_RELEASE_UNIT; Worker399720d2 del15ottobre invariato | Owner Admin: fornire/riconciliare albero immutabile equivalente alla versione servita, inclusa TASK140F, oppure prova di compatibilità della main completa. Target/progetto/binding metadata verificati, rollback399720d2 pronto. Non manca l'autorizzazione utente | Unità release definita, build/config staging coerenti, pubblicazione Worker attestata, check pubblico e console autenticata |
+| Console autenticata | PASS accesso staff; vecchio fallback non autorizzato/righe0/scrittureOff osservato realmente | Non interpretato come incassi zero. PR144 è integrata ma non distribuita | Dopo deploy: indisponibile/deny/errore/zero autorizzato distinti sulla console corretta |
+| Avvio e autenticazione POS | PASS nuovo avvio1823697 e prima autenticazione; bootstrap non completo | Profilo/DB/trust/eseguibile verificati, vault dell'altro negozio intatto; niente ulteriori richieste della stessa autorizzazione | Avvio già chiuso; storico operativo dipende dal catalogo |
+| Preview sette originali nell'app | NOT_RUN, dipende dal catalogo HTTP | Reader prodotto7/7 precedente riusato; non equivale al passaggio nel POS | Aprire gli stessi originali nella UI autorizzata dopo bootstrap riuscito |
+| Prove Getnet A/B/C | MISSING tutte e tre; scheda privata pronta | Tre gruppi esportati e otto campioni con file/riga/timestamp/identificativo privati. Fonte mapping→Shop, prima data effettiva POS/overlap e semantica provider per formati/periodi mancanti. Richiesta unica effettuata; l'utente delega il giudizio ma non fornisce nuovi fatti | Fonti pertinenti VERIFIED, senza deduzioni da nomi, login o data account |
+| Apply/cronologia/CSV/idempotenza/undo reali | BLOCKED_EVIDENCE, nessun apply | NeedsEvidence=true/CanApply=false. Esercente/owner documenti completa la scheda privata; backup prodotto e flusso di prova già descritti | Apply autorizzato e confronto con oracolo, reopen/CSV/dedup/undo nel perimetro previsto |
+| UI Windows11 | Render dell'intero client sintetico EN/IT osservati a192DPI; campi/summary/footer leggibili nella renderizzazione | Host osservatore privato con40file QA invariati, nuovo DB sintetico, nessun avvio App POS operativo. Screenshot nativa ritagliata e input senza cambi verificabili: nessun PASS di interazione desktop. Impostazioni non espone finestra controllabile; nessuna scala modificata | DPI100/125 effettivi, full form sullo schermo, tastiera/assistività/clipping da completare con operatore |
+| Win7/periferiche | BLOCKED: utente conferma target non disponibile | Kit1823697 invariato, SHA256d8544ed496521815bb37187a9dada065d3fa978ff535acf59e955a8b1764410f. Nessun nuovo hardware hash/run assegnato | Owner/macchina SP1/periferiche e sessione; receipt nuove validate sul build host |
+
+La diagnostica CI proietta soltanto sette categorie chiuse nel campo category
+esistente. Non pubblica output nativo, argv, path o messaggi eccezione; timeout,
+tentativo unico, cleanup e SQL invariati. Test privacy con sentinelle PASS.
+La prima prova Windows sul writer Linux O_DIRECTORY resta FAIL di setup test;
+corretto il test usando un sink in memoria, senza cambiare il writer Linux.
+Chiusura documentale Admin separata6173964, senza delta runtime:
+[ricevuta immutabile e handoff](https://github.com/XNIW/merchandise-control-admin-web/blob/617396414cb87c71ab24da7f7cd03b360b0a9701/docs/TASKS/EVIDENCE/TASK-139/asus-019-staff-overview-20261108.md).
+
+Unità di rilascio: il precedente albero equivalente1f0679b2 non attesta il
+Worker15ottobre; la main differisce su28 percorsi runtime da quel solo albero
+storico. Le quattro RPC U2 risultano presenti anche se le due versioni isolate
+non figurano nella migration history: non se ne deduce assenza o compatibilità
+di tutto il contratto. Nessun train SQL, generic workflow_dispatch, import
+catalogo live, secret put o deploy eseguito in questa prosecuzione.
+
+Le prove disponibili sono state cercate nel manifest, negli originali immutati,
+nel messaggio Getnet con sette allegati e nelle fonti provider. Identità fiscale
+ufficiale presente/bloccata dalla piattaforma verificata come fatto separato;
+non risolve da sola l'associazione degli esportati. La fonte ufficiale
+[OneGMR](https://docs.globalgetnet.com/en/products/business-operations/global-merchant-reports)
+indica UTC per CSV/SFTP e include il Cile: l'applicabilità a questi XLSX del
+portale non è provata, quindi la policy non viene trasferita. Portale Getnet
+osservato senza sessione autenticata; nessuna credenziale POS riusata lì.
+La policy temporale POS resta un gate separato per report misti, non un
+prerequisito universale dell'Apply Getnet.
+
+DB reale dopo il tentativo: quick_check PASS, foreign_key_check0, vendite/righe
+vendita e tutte le outbox0, transazioni/batch/file/operazioni storiche0. Dataset
+iniziale1 non è un import. Nessuna immutabilità byte dopo il login viene
+affermata: sessione/trust possono essere aggiornati dal normale accesso.
+Originali7/7 e kit invariati, backup e prime failure conservati. Processi POS
+e osservatore EN fermati solo tramite PID/creationTime/path verificati; dispose
+della fixture EN non osservato, nessun suo PASS di cleanup interno inventato.
+Osservatore IT termina exit0, fixture disposed/holder restored veri e40file
+qualificati ricontrollati. Queste osservazioni non sostituiscono QA canonica.
+Rimozione del solo bytecode test nel worktree privato rifiutata dallo strumento
+con blocked by policy: file trattenuto, nessun altro metodo di cancellazione.
+
+Nota PR29 unica riusata; risposta sull'unità di rilascio ancora PENDING.
+TASK146 iOS osservata OPEN/head137afa5e, nessuna build o pulizia mobile.
+Stato complessivo ACTIVE con blocchi operativi distinti sopra; nessun DONE.
+Evidence corrente dal pointer residual-current-root.private.txt sotto la root
+privata ASUS019; gli altri pointer e la consegna1823697 sono preservati.
+
+## Qualifica Windows1823697 riusata — checkpoint precedente
+
+Le sezioni seguenti conservano le prove della prima consegna a1dccdb. I vecchi
+stati avvio BLOCKED_POLICY e PR144 in attesa sono superati dai fatti sopra;
+ogni altra prova mantiene la propria attribuzione originale.
+
 Aggiornamento 8 novembre 2026. Codice Windows:
 `1823697f1f0c965fb8fd9d85259a862160f12c59`, pubblicato normalmente su main.
 Scope pubblico NEW_SHOP_019; binding e identificativi effettivi nel manifest privato.

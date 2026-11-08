@@ -6,13 +6,14 @@
 | --- | --- |
 | Fase | Execution A+B+C e onboarding Windows: software consegnato; qualifica reale/fisica aperta |
 | Revisione/data | R3 normativo congelato; stato Execution aggiornato2026-11-08, America/Santiago |
-| Stato del piano | SOFTWARE_DELIVERED Windows1823697 installato; globale BLOCKED_EXTERNAL. Fix catalogo Admin1a35034a applicato/RPC PASS; nuova UI Admin PR144 REVIEW; normale UI reale BLOCKED_POLICY, prove Getnet/Win7 aperte |
+| Stato del piano | SOFTWARE_DELIVERED Windows1823697 invariato; ACTIVE con gate rollout/prove/fisico. Avvio e prima autenticazione reali PASS; HTTP500 catalog_v2_empty_manifest. Admin PR144/145/146 integrate, fix e diagnostica qualificati; rollout dell'unità compatibile ancora da attestare |
 | Implementazione | Ultimo codice `1823697f1f0c965fb8fd9d85259a862160f12c59`: Retry comune, continuazione protetta bounded, rollback/final authority e cattura reale. Onboarding959396b, closureQAe832d6a e fence d262ccd preservati |
 | Build, test, harness e qualifica runtime | Quattro workflow1823697 PASS: CI15/15, Core1734/1734, gate50/50, functional20, foundation5/37, smoke8/52 e load11(M/E/S=true). Prodotto installato41/41,34comuni QA identici, reader7/7, import_summary leggibile osservato. Win7 fisico ancora NOT_RUN |
+| Nuove prove della prosecuzione | Login reale verificato, failure HTTP500 conservata e corretta lato Admin; nessuna nuova SQL. Render client intero EN/IT sintetici a192DPI osservati;100/125 e input nativo non qualificati. Utente conferma Win7 non disponibile; kit invariato, A/B/C Getnet ancora MISSING |
 | Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
 | Branch e stato iniziale R3 | main; PLAN R2 untracked e modifiche locali di indice/worklog preservate |
 | Persistenza | Codice su main; quattro workflow exact-SHA PASS, prodotto/QA scaricati e verificati; reader7/7 PASS con NeedsEvidence; documenti finali separati dai binari |
-| Prossimo passo consentito | Owner ambiente/policy: normale avvio del profilo corretto quando consentito, senza ripetere l'autorizzazione già concessa o cambiare launcher. Admin: review PR144 e rollout separato. Esercente: prove mapping/inizioPOS/overlap/tempo; owner fisico: [scheda Win7](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md). [Risultato corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md) e handoff aggiornati; nessun DONE |
+| Prossimo passo consentito | Owner Admin: riconciliare sorgente/build/contratto della versione Worker corrente e distribuire unità compatibile con rollback predisposto; poi HTTP/storico/preview reali. Esercente: completare fonti della scheda privata Getnet, senza deduzioni. Operatore: DPI100/125 e input; owner fisico: [scheda Win7](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md) quando disponibile. [Risultato corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md); nessuna nuova domanda equivalente di autorizzazione, nessun DONE |
 
 Questo e il solo piano canonico. Lo stato corrente risiede qui; la sola voce
 ASUS-W7POS-019 nell'[indice](../../CODEX_ASUS_TASKS.md) ne e il collegamento.

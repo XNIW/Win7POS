@@ -1,20 +1,25 @@
 # ASUS-W7POS-019 — qualifica esterna e scheda operatore Win7
 
-Aggiornamento consegna: 2026-11-08. Codice1823697 SOFTWARE_DELIVERED,
-installato e verificato su Windows11; stato complessivo BLOCKED_EXTERNAL.
-Il server409 è corretto con Admin1a35034a e migration applicata; RPC reale
-v3 completo zero PASS, distinto da HTTP/UI. Autorizzazione al normale accesso
-già concessa, nuovo avvio respinto dallo strumento con `blocked by policy`:
-BLOCKED_POLICY, nessun processo o nuovo pull, nessun launcher alternativo.
-L'installazione non ha avviato automaticamente il POS. Mapping Getnet,
-inizio POS/overlap, semantica provider e Win7 fisico restano gate separati.
+Aggiornamento consegna: 2026-11-08. Codice1823697 SOFTWARE_DELIVERED e
+invariato, installato/verificato su Windows11; stato complessivo ACTIVE con
+gate rollout/evidence/fisico. Il nuovo normale avvio richiesto dall'utente e
+la prima autenticazione sono PASS osservati sul profilo isolato; il catalogo
+HTTP500 fallisce con catalog_v2_empty_manifest. I precedenti rifiuti dello
+strumento restano storici. Resolver409 corretto; fix HTTP e stato console
+integrati nelle PR Admin144/145, rollout dell'unità compatibile da attestare.
+L'installazione non aveva auto-avviato il POS. Mapping Getnet, inizio POS/overlap,
+semantica provider e Win7 fisico restano gate separati; utente conferma target
+Win7 non disponibile, nessun owner/hardware/run fisico assegnato.
 [Risultato corrente e prime failure](ASUS_W7POS_019_RETRY_E2E_RESULT.md).
 
 Il bundle QA precedente5c privo del forwarder e la prima cattura vuota restano
 failure storiche. Il candidato corrente ha closure e smoke scaricato PASS;
 tre regioni sintetiche realmente osservate sono leggibili. Rimane
-development-unsigned. Nessun avvio/login ordinario del nuovo candidato è
-attestato; i verdi software non certificano Win7 o un apply reale.
+development-unsigned. Avvio e autenticazione ordinari del candidato ora
+attestati; bootstrap non completo. I verdi software non certificano Win7 o
+un apply reale. Il kit già trasferibile non viene ricostruito: hash invariato,
+istruzioni/versione binaria restano valide; questo stato corrente supera la
+nota storica di blocco launcher contenuta nel README congelato del kit.
 
 | Identità del candidato da qualificare | Valore corrente |
 | --- | --- |
@@ -29,7 +34,7 @@ attestato; i verdi software non certificano Win7 o un apply reale.
 | Run Release / QA | [Release42497670533](https://github.com/XNIW/Win7POS/actions/runs/42497670533) / [WPF42497682626](https://github.com/XNIW/Win7POS/actions/runs/42497682626), PASS |
 | CI/Security | [CI42497670447](https://github.com/XNIW/Win7POS/actions/runs/42497670447) / [Security42497670514](https://github.com/XNIW/Win7POS/actions/runs/42497670514), PASS |
 | Installazione Windows11 | PASS41/41; versione1.0.0-dev.1823697f1f0c; nessun POS auto-start |
-| Win7 fisico / periferiche | NOT_RUN / BLOCKED_EXTERNAL |
+| Win7 fisico / periferiche | NOT_RUN; utente conferma target non disponibile |
 
 Download verificati:41 file prodotto,110 checksum, QA40 file e34 comuni
 byte-identici. QA scaricato smoke8/52 da CWD esterna, run
@@ -43,6 +48,15 @@ al proprio vecchio candidato, senza trasferire un PASS al nuovo prodotto.
 Non sostituire questi hash con HEAD documentale, binari intermedi o contesti di
 vecchie corse. Il [registro Execution](../plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md)
 distingue codice, documenti, pacchetto e qualifica esterna.
+
+Osservazione supplementare Windows11: host privato sintetico con i40file QA
+invariati e solo fixture pubblicate, render dell'intero client EN/IT a192DPI
+osservati leggibili. Non è esecuzione del POS operativo o misura100/125.
+Native capture ritagliata e input senza esito verificabile non certificano
+clipping/focus/tastiera desktop. Impostazioni non espone una finestra
+controllabile; nessuna scala modificata. Le prove100/125/assistività restano
+NOT_RUN; completarle con operatore e UI effettiva. Nessun nuovo difetto prodotto
+attribuito al solo limite del provider o dell'host osservatore.
 
 ## Applicabilità V1 e confine server
 
