@@ -1,5 +1,18 @@
 # ASUS_W7POS_019_EXECUTION_RESULT
 
+## Riferimento corrente — 8 novembre 2026
+
+Windows `1823697f1f0c965fb8fd9d85259a862160f12c59` qualificato e installato:
+quattro workflow PASS,1734Core/Data,50gate, smoke8/52, foundation5/37,
+load11 e tre flag true,41file installati identici, reader originale7/7.
+Riepilogo sintetico osservato e CSV50000 misurato separatamente.
+Il [report corrente](ASUS_W7POS_019_RETRY_E2E_RESULT.md) riporta prove,
+prime failure, backup, cleanup e blocker. Le sezioni seguenti conservano
+le consegne storiche5c/e832/d262; i loro verdi non sono trasferiti al successore.
+Globale BLOCKED_EXTERNAL per avvio reale dopo rifiuto della policy, prove
+Getnet mancanti, review Admin e Win7 fisico. Autorizzazione già concessa,
+nessuna nuova domanda equivalente e nessun DONE.
+
 Stato: **SOFTWARE_DELIVERED; BLOCKED_EXTERNAL per qualifica reale e Win7**. Le prove sono attribuite al relativo SHA;
 i gate esterni ancora non eseguiti restano espliciti. Nessun esito di qualifica reale
 o fisica viene dedotto dalle prove sintetiche.

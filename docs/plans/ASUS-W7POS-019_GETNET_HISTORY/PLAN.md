@@ -5,14 +5,14 @@
 | Campo | Valore |
 | --- | --- |
 | Fase | Execution A+B+C e onboarding Windows: software consegnato; qualifica reale/fisica aperta |
-| Revisione/data | R3 — 2026-11-04, America/Santiago |
-| Stato del piano | SOFTWARE_DELIVERED Windows d262ccd; fix catalogo Admin1a35034a applicato/RPC PASS; normale UI NOT_RUN_POLICY, console/Getnet/Win7 aperti |
-| Implementazione | Onboarding959396b + closureQAe832d6a + fence conclusivo `d262ccd979db8e3407118ffa7275861f12fdb5e2`; consegne precedenti conservate come storia |
-| Build, test, harness e qualifica runtime | PASS CI15/15, Core1734/1734, gate50/50, functional20, foundation5/37, smoke8/44 e load11; Win7 fisico NOT_RUN; cattura import_summary NOT_RUN distinta |
+| Revisione/data | R3 normativo congelato; stato Execution aggiornato2026-11-08, America/Santiago |
+| Stato del piano | SOFTWARE_DELIVERED Windows1823697 installato; globale BLOCKED_EXTERNAL. Fix catalogo Admin1a35034a applicato/RPC PASS; nuova UI Admin PR144 REVIEW; normale UI reale BLOCKED_POLICY, prove Getnet/Win7 aperte |
+| Implementazione | Ultimo codice `1823697f1f0c965fb8fd9d85259a862160f12c59`: Retry comune, continuazione protetta bounded, rollback/final authority e cattura reale. Onboarding959396b, closureQAe832d6a e fence d262ccd preservati |
+| Build, test, harness e qualifica runtime | Quattro workflow1823697 PASS: CI15/15, Core1734/1734, gate50/50, functional20, foundation5/37, smoke8/52 e load11(M/E/S=true). Prodotto installato41/41,34comuni QA identici, reader7/7, import_summary leggibile osservato. Win7 fisico ancora NOT_RUN |
 | Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
 | Branch e stato iniziale R3 | main; PLAN R2 untracked e modifiche locali di indice/worklog preservate |
 | Persistenza | Codice su main; quattro workflow exact-SHA PASS, prodotto/QA scaricati e verificati; reader7/7 PASS con NeedsEvidence; documenti finali separati dai binari |
-| Prossimo passo consentito | Mac: attestare/correggere console staff e catalog409; prove esercente/inizioPOS/tempo; Win7 secondo [scheda esterna](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md). [Risultato onboarding](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md) e handoff PENDING |
+| Prossimo passo consentito | Owner ambiente/policy: normale avvio del profilo corretto quando consentito, senza ripetere l'autorizzazione già concessa o cambiare launcher. Admin: review PR144 e rollout separato. Esercente: prove mapping/inizioPOS/overlap/tempo; owner fisico: [scheda Win7](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md). [Risultato corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md) e handoff aggiornati; nessun DONE |
 
 Questo e il solo piano canonico. Lo stato corrente risiede qui; la sola voce
 ASUS-W7POS-019 nell'[indice](../../CODEX_ASUS_TASKS.md) ne e il collegamento.
@@ -1247,7 +1247,7 @@ Scenari/assertion obbligatori preservati e completati:
 | HIST05_ATOMIC_CANCEL_RECOVERY | cancel_rollback, precommit_fault_rollback, disk_fault_safe, lost_response_reconciled |
 | HIST06_BATCH_CANCEL_REIMPORT | owner_only_undo, duplicate_batch_not_owner, three_cycles, audit_retained |
 | HIST07_REPORTS_EXPORT | signed_totals, hourly_parity, operator_scope, tenant_scope, detail_routing, csv_contract, native_ticket_average, snapshot_invalidation, export_publication_authorization, export_publication_outcome, coverage_state_no_disclosure, hourly_signed_geometry |
-| HIST08_UI_LIFECYCLE | keyboard_focus, dialog_standard, nonblocking_dispatcher, stale_result_ignored, reopened_receipt |
+| HIST08_UI_LIFECYCLE | keyboard_focus, dialog_standard, nonblocking_dispatcher, stale_result_ignored, reopened_receipt, retry_empty_ui, retry_expiry_ui, retry_revocation_ui, retry_generation_ui, retry_cancel_ui, retry_normal_late_authority_ui, retry_normal_finalization_fault_ui, retry_normal_ready_ui |
 
 HIST05 failpoint controllati non sono un vero crash: B-D07 e separato.
 Envelope chiuso: runId/sourceSha/sourceFingerprintSha256, hash harness/WPF/

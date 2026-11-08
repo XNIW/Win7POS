@@ -1,5 +1,34 @@
 # ASUS-W7POS-019 execution ledger
 
+## Current checkpoint — 2026-11-08, qualified successor
+
+Windows code/package `1823697f1f0c965fb8fd9d85259a862160f12c59` is
+SOFTWARE_DELIVERED; overall BLOCKED_EXTERNAL. The documentation commit is
+separate. The older tables and resume pointers below are dated history,
+including pending authorization, installation NOT_EXECUTED and blank capture.
+Authorization has been granted; the subsequent ordinary launch was rejected
+by the tool (`blocked by policy`). No alternate launcher or second attempt.
+
+| Gate | Current result / identity | Remaining dependency |
+| --- | --- | --- |
+| Retry real dialog wiring | PASS: initial d262ccd red retained; bounded continuation, authoritative empty history, normal full and authority rollback verified | Real HTTP/UI is separately blocked |
+| Exact-SHA workflows | CI42497670447, Security42497670514, Release42497670533, WPF42497682626 SUCCESS | No software rerun for documentation-only closeout |
+| Canonical validation | Core/Data1734/1734, required gates50/50, canonical15/15, functional20, foundation5/37, smoke8/52, load11/11 with all three measurement flags true | Windows11/reference qualification only |
+| Download/install | Product41 files/110 checksums, QA40 files,34 common byte-identical; installed41/41 and registry version1.0.0-dev.1823697f1f0c verified | No automatic POS start; development-unsigned |
+| Downloaded QA | Run Win7POS.QA.20261108T161042928Z.4be7680489dc43809a1a8461c9815ef9, exit0,8/52, external CWD, stable fingerprint; three actual synthetic captures readable | Full-form DPI100/125 and physical peripherals remain open |
+| Original reader | Product-equivalent1823697 DLLs,7/7 controls and unchanged input hashes, exit0 | UI preview of originals and real apply remain blocked |
+| CSV supplementary observation |50000 historical-only synthetic rows; query365.7015ms, CSV5656.8755ms, destination IO12.6125ms within original1000ms; Published/token/rows PASS | Separate from CI F-MIXED load; no total CSV budget invented |
+| Live/real evidence | BLOCKED_POLICY after authorization; NeedsEvidence=true/CanApply=false | Environment owner restores ordinary launch; merchant owner supplies mapping, POS-start/overlap and provider Z/offset evidence |
+| Admin/iOS | PR144 REVIEW, exact-code CI/Cloudflare PASS; existing PR29 note reused, previous server handoff observed in RESUME_STATUS | Admin owner review/rollout and ACK of new handoff pending; TASK146 ACTIVE/EXECUTION, PR29 open |
+| Physical Win7 | BLOCKED_EXTERNAL; matching installer, QA, contexts and operator card prepared | Owner assigns real Win7 SP1/hardware and fresh run identity |
+
+Detailed hashes, first failures, commands, observations and limitations:
+[current E2E report](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md) and
+[current Win7 operator card](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md).
+Backup/profile/trust/originals and all failure evidence are retained. No real
+apply, fiscal sale, outbox reset or account revocation was performed. Native
+time policy gates mixed POS reporting separately from Getnet apply evidence.
+
 Mandate: explicit Execution A+B+C request of 2026-11-04. Normative R3 input SHA-256
 `47b9de5c4ced21f6deaa139717b153d8ea0d57ada761dfd3607f6bd193bfcf28`.
 Baseline local HEAD, origin/main and GitHub main:

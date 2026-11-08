@@ -1,5 +1,21 @@
 # ASUS-W7POS-019 — onboarding execution result
 
+## Consegna corrente — 8 novembre 2026
+
+Client/pacchetto `1823697f1f0c965fb8fd9d85259a862160f12c59`, software
+qualificato e installato41/41file. Retry empty abilita lo storico senza cassa;
+Retry full nonempty ammette l'accesso normale, con una sola autenticazione HTTP,
+continuazione protetta5min e rollback dell'autorità posseduta sui fallimenti.
+CI15/15,1734Core/Data,50gate,52assert smoke, foundation5/37 e load11 PASS;
+QA/prodotto34file comuni identici, reader7/7 e osservazione import_summary PASS.
+[Provenienza e gate attuali](ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+L'autorizzazione all'avvio reale è stata concessa: il nuovo comando è stato
+comunque rifiutato con `blocked by policy`, senza avvio o nuovi pull osservati.
+Resta BLOCKED_POLICY, non una richiesta della stessa autorizzazione pendente.
+Admin PR144 è candidato REVIEW, non deploy; mapping/tempo/overlap e Win7 restano
+BLOCKED_EXTERNAL. Il testo successivo è storia delle consegne precedenti.
+
 Aggiornamento: 2026-11-07, America/Santiago. Correlation ID
 `ASUS-W7POS-019-ONBOARDING-20261107`; scope pubblico `NEW_SHOP_019`.
 

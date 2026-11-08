@@ -4,6 +4,15 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-11-08 – Retry e qualifica1823697 (stessa ASUS-W7POS-019)
+
+- Riprodotto il Retry Connect409→empty sul prodotto d262ccd:1auth/2catalog, storico nascosto. Fix comune Connect/Retry con SecureString readonly5min, proof readonly dall'unico guard esistente, busy prima degli await e riesame authority post-risposta/finale. Nessun secondo first-login HTTP o cache priming.
+- Due rossi validi dopo review: normal completion tardiva e sessione rimasta autenticata dopo fault. Ora rollback della sola versione posseduta tramite CAS. Fence d262ccd intatto; gate/allowlist/budget invariati.
+- Codice1823697 su main, CI42497670447/Security42497670514/Release42497670533/WPF42497682626 PASS. Core1734/1734, gate50/50, canonica15/15, functional20, foundation5/37, smoke8/52 e load11 con tre flag misura true. Prime failure conservate.
+- Release41file/110checksum, QA40/34comuni byte-identici, development-unsigned. Installato1823697 e registry/versione verificati,41/41file identici, nessun POS auto-start. Backup online verificato e DB invariato; nessun import reale.
+- Reader con nuove DLL prodotto7/7 PASS,4487ms, driver binario/oracolo/originali invariati, NeedsEvidence=true/CanApply=false. Tre regioni visive sintetiche osservate, import_summary leggibile. CSV50000 righe/snapshot:5656.8755ms totale,12.6125ms IO finale<=1000; query365.7015ms, cleanup0residui. Nessuna qualifica Win7 dedotta.
+- Admin PR144 codicef8ac2fd6 qualificato4375pgTAP/1144foundation+14SKIP/UI48, draft REVIEW senza merge/deploy. Mac PR29 head137afa5e OPEN/ACTIVE; ACK server documentato nel RESUME_STATUS, nuovo ritorno Windows distinto. Avvio reale rifiutato dopo autorizzazione, prove esercenti e Win7/DPI/periferiche aperte; task non DONE. [Report corrente](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
 ## 2026-11-08 – Fix server del catalog409 (stessa ASUS-W7POS-019)
 
 - Causa reale dimostrata con sole letture: shop active/lease valida pos_admin, zero righe e nessuna storia mapping; resolver old body9ef09cf7 restituisce legacy_owner_bridge/null/blocked e audit manifest/unmapped.

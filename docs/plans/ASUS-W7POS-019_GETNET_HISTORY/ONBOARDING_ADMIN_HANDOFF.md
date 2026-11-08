@@ -1,5 +1,44 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
+## Raccordo corrente — 8 novembre 2026
+
+Windows `1823697f1f0c965fb8fd9d85259a862160f12c59` consegnato e installato
+su Windows11,41/41 file identici e versione registro verificata. Retry ora
+prepara lo stesso storico del login diretto su full autoritativa vuota e
+mantiene la cassa bloccata; continuazione protetta e autorità controllate fino
+al completamento. CI42497670447, Security42497670514, Release42497670533 e
+WPF42497682626 PASS:1734 Core/Data,50 gate,15 righe canoniche,20 functional,
+foundation5/37, smoke8/52, load11/11. Reader originali7/7, riepilogo sintetico
+visivo effettivo e CSV50000 verificati. [Evidence corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+L'autorizzazione al normale accesso è già concessa. Il nuovo avvio normale è
+stato respinto dallo strumento con `blocked by policy`, senza processo o nuovi
+pull: BLOCKED_POLICY, nessuna ulteriore domanda identica o launcher alternativo.
+Installazione riuscita non significa autenticazione/HTTP/UI riusciti. Apply
+reale BLOCKED_EVIDENCE: mapping esercente, inizio POS/overlap e prova provider
+Z/offset assenti. Policy temporale POS separata per report misti. Win7 fisico
+BLOCKED_EXTERNAL; pacchetto e scheda pronti, nessuna qualifica hardware dedotta.
+
+Admin server PR143/1a35034a e migration applicata restano qualificati; nessuna
+nuova SQL o modifica live. Il residuo console ha candidato minimo separato:
+[PR144](https://github.com/XNIW/merchandise-control-admin-web/pull/144),
+codicef8ac2fd6beda0e20d2fa4060c2dad45e78bdc001 e docs19e0b6f,
+CI42493312883/Cloudflare42493312831 PASS. Stato REVIEW/ACK owner PENDING,
+nessun merge/deploy. Distingue superficie staff indisponibile, deny, errore e
+zero autorizzato; non introduce query staff, reader o grant. Owner Admin:
+review/rollout e osservazione della console realmente pubblicata.
+
+La [nota unica PR29](https://github.com/XNIW/iOSMerchandiseControl/pull/29#issuecomment-6722613449)
+è riusata. RESUME_STATUS pubblicato riconcilia il precedente handoff server409
+alle15:10Z; head137afa5e mantiene TASK146 ACTIVE/EXECUTION e PR29 OPEN.
+Questo ACK precedente non vale per PR144 o per il nuovo pacchetto Windows.
+ACK del nuovo raccordo PENDING. Nessun canale sessione Mac disponibile,
+nessuna build/cleanup mobile; Getnet V1 locale separato da mobile_sales_read_v1.
+
+Le sezioni seguenti conservano gli stati e i mandati precedenti. I passaggi
+"autorizzazione pendente", "installation NOT_EXECUTED" e diagnosi409 da svolgere
+sono superati esclusivamente dalle prove correnti sopra.
+
 
 ## Prosecuzione8novembre — fix resolver applicato da root, REVIEW
 

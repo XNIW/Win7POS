@@ -1,5 +1,12 @@
 # ASUS-W7POS-019 — correzione del catalogo HTTP 409 unmapped
 
+> Prosecuzione corrente8novembre: Windows1823697 è qualificato e installato,
+> Retry completo verificato su fixture; [report end-to-end](ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+> L'autorizzazione al normale avvio era già concessa, ma il nuovo tentativo è
+> stato nuovamente rifiutato dalla policy dello strumento. Non è più una
+> richiesta di autorizzazione pendente. Nessun nuovo apply SQL o deploy in
+> questa prosecuzione; la prova RPC sotto mantiene la propria attribuzione.
+
 Aggiornamento: 8 novembre 2026, America/Santiago. Scope pubblico NEW_SHOP_019.
 Stato: FIX_APPLIED_RPC_VERIFIED. NORMAL_POS_ACCESS_NOT_RUN_POLICY.
 La correzione server è pubblicata e applicata; il percorso HTTP/UI normale
