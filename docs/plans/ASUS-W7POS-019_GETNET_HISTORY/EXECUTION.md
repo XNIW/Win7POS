@@ -25,7 +25,12 @@ nonoverlapping. All raw diagnostics and real financial controls stay private.
 Previous FAIL/TIMEOUT evidence must remain available; no result is inferred from
 static inspection, missing prerequisite, or a receipt schema alone.
 
-Current resume point: SOFTWARE_DELIVERED for onboarding Windows at code/package
+Current resume point8Nov: catalog server fix Admin1a35034a applied, real lease-bound
+manifest zero PASS; normal HTTP/UI NOT_RUN_POLICY (tool blocked process launch,
+no process or new pull). Specific authorization pending; do not switch launchers.
+See [409 fix](../../reports/ASUS_W7POS_019_CATALOG_409_FIX_RESULT.md).
+
+Windows delivery remains SOFTWARE_DELIVERED at code/package
 `d262ccd979db8e3407118ffa7275861f12fdb5e2`; see
 [onboarding result](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md).
 CI42432623358, Security42432623359, Release42432623356 and WPF42432636966 PASS.
@@ -34,7 +39,8 @@ foundation5/37, smoke8/44 and load11. Downloaded product/QA, external-CWD smoke,
 ordinary QA startup and reader7/7 PASS; NeedsEvidence remains true and apply denied.
 The e832d6a empty→delta regression remains RED history; d262ccd requires a new
 verified nonempty Full before restoring sale safety. Focused116/116 and8/44 PASS.
-Live409/Mac, merchant/time/overlap and physical Win7 remain BLOCKED_EXTERNAL.
+The historical409 is corrected at the resolver/RPC; console Mac, normal UI,
+merchant/time/overlap and physical Win7 remain separately gated.
 Visual diagnostic import_summary remains NOT_RUN, separate from UI contract PASS.
 Next: Mac deployment/principal/scope handoff and external evidence; no rerun of
 completed workflows. Documentation-only closeout differs from the binary SHA.
@@ -603,3 +609,16 @@ new artifact verification/reader and document-only closeout.
   Mac invio/risposta PENDING, console/catalog409, prove reali e Win7 aperti.
   Tutti i processi locali posseduti chiusi; profili/log/fixture conservati con owner.
   Aggiornamento documentale separato da d262ccd, nessuna suite software duplicata.
+
+
+## 8Nov2026 — server409 fix applied, HTTP/UI pending policy
+
+Admin candidate d864c740 / normal merge1a35034a, CI42451262145/CF42451262142 PASS.
+67 file / 4.375 test pgTAP, foundation1.131 PASS / 14 SKIP / 0 FAIL, UI48/pairing2. First555f502
+preparation hash failure preserved; canonical LF pin fixed without changing SQL/tests.
+Migration source20261108051044 applied once; own generated ledger record aligned
+atomically, final statement hash byte-identical. Actual pg_proc metadata except
+body unchanged. V3 with current real lease returns ok/shop_scoped/done/0counts.
+No Worker or Windows code change. App launch rejected by tool policy, no process
+and no new pull verified; explicit authorization pending, no alternative launcher.
+No Getnet apply/sale/reset/revocation. New report holds evidence and next step.

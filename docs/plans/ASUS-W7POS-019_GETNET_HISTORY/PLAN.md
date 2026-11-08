@@ -6,7 +6,7 @@
 | --- | --- |
 | Fase | Execution A+B+C e onboarding Windows: software consegnato; qualifica reale/fisica aperta |
 | Revisione/data | R3 — 2026-11-04, America/Santiago |
-| Stato del piano | SOFTWARE_DELIVERED d262ccd; BLOCKED_EXTERNAL catalogscope/Mac, merchant/tempo e Win7; specifica R3 conservata |
+| Stato del piano | SOFTWARE_DELIVERED Windows d262ccd; fix catalogo Admin1a35034a applicato/RPC PASS; normale UI NOT_RUN_POLICY, console/Getnet/Win7 aperti |
 | Implementazione | Onboarding959396b + closureQAe832d6a + fence conclusivo `d262ccd979db8e3407118ffa7275861f12fdb5e2`; consegne precedenti conservate come storia |
 | Build, test, harness e qualifica runtime | PASS CI15/15, Core1734/1734, gate50/50, functional20, foundation5/37, smoke8/44 e load11; Win7 fisico NOT_RUN; cattura import_summary NOT_RUN distinta |
 | Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
@@ -2028,3 +2028,15 @@ Gli stati pendenti precedenti sono checkpoint storici. Chiusura solo documentale
 successiva a d262ccd, nessun nuovo retry live. Mac PENDING, catalog409 e prove
 reali/Win7 BLOCKED_EXTERNAL; nessun DONE. Identità e card correnti nel
 [risultato onboarding](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md).
+
+
+## Prosecuzione8novembre2026 — causa catalog409 corretta
+
+AdminPR #143 integrata in1a35034a, post-merge CI/Cloudflare PASS,67 file / 4.375 test pgTAP.
+Migration unica applicata, body9622c4d3a4c793a7803d730b8a8c51d4 e tutto il restante
+metadata pg_proc invariato; nuova voce history allineata ai byte/versione sorgenti.
+Lease reale ora manifest canonico zero e terminale. HTTP/UI normale NOT_RUN_POLICY
+per avvio respinto prima di creare processo/pull; autorizzazione specifica pendente.
+Windows d262ccd invariato e qualifiche riusate. Nessun import/vendita/nuovo grant,
+nessun DONE. Console staff e Getnet/Win7 restano separati.
+[Report circoscritto](../../reports/ASUS_W7POS_019_CATALOG_409_FIX_RESULT.md).

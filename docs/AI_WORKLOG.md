@@ -4,6 +4,15 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-11-08 – Fix server del catalog409 (stessa ASUS-W7POS-019)
+
+- Causa reale dimostrata con sole letture: shop active/lease valida pos_admin, zero righe e nessuna storia mapping; resolver old body9ef09cf7 restituisce legacy_owner_bridge/null/blocked e audit manifest/unmapped.
+- AdminPR #143 integrata normalmente in1a35034a; nuova migration body9622c4d3, OID/owner/ACL e tutto pg_proc eccetto prosrc invariati. Primo CI555f502 bloccato dal pin CRLF; corretto solo pin canonico LF su d864c740, primo errore conservato.
+- Post-merge CI42451262145/CF42451262142 PASS:67 file / 4.375 test pgTAP, foundation1.131 PASS / 14 SKIP / 0 FAIL, UI48/pairing2, nessun deploy Worker. Windows d262ccd invariato, suite pregresse riusate.
+- Apply reale unico, versione sorgente20261108051044 e statementSHA canonico; allineato soltanto il nuovo record history generato dal connettore. V3 reale ora manifest shop_scoped completo zero, terminale, scope-key corretta; nessun articolo/grant/nuova tabella o dato commerciale alterato.
+- Verifica normale HTTP/UI NOT_RUN_POLICY: avvio respinto con blocked by policy, processo non nato e nuovi pull0. Autorizzazione specifica pendente; nessun launcher alternativo/retry. Backup/inversa/log/prime failure/worktree conservati; nessun import Getnet/vendita/reset/revoca.
+- [Risultato circoscritto](reports/ASUS_W7POS_019_CATALOG_409_FIX_RESULT.md); console staff, prove Getnet e Win7 restano distinti, nessun DONE.
+
 ## 2026-11-07 – Prosecuzione onboarding nuovo negozio (ASUS-W7POS-019)
 
 - Chiusura software sul correttivo d262ccd979db: CI42432623358, Security42432623359, Release42432623356 e WPF42432636966 PASS. Core/Data1734/1734, gate50/50, canonica15/15, functional20, foundation5/37, smoke8/44 e load11 con tre flag true. I verdi e832d6a sotto sono intermedi: la regressione successiva è conservata.

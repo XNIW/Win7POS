@@ -6,7 +6,19 @@ Aggiornamento: 2026-11-07, America/Santiago. Correlation ID
 **SOFTWARE_DELIVERED** per il delta Windows e i pacchetti verificati.
 **BLOCKED_EXTERNAL** per onboarding live completo, import reale e Win7 fisico.
 Nessuna chiusura DONE: il login riuscito e i verdi software non sostituiscono
-questi gate. Il ritorno Mac è PENDING.
+questi gate. Il ritorno Mac sulla console resta PENDING; il fix catalogo server è descritto sotto.
+
+## Prosecuzione8novembre2026 — causa409 corretta sul server
+
+PR Admin143 integrata in1a35034a e migration singola applicata sul progetto
+verificato: la lease reale ora riceve un manifest canonico completo zero.
+OID/owner/ACL e tutti gli altri metadata sono invariati. CI post-merge e4375
+pgTAP PASS; nessun nuovo Worker o client. HTTP/UI normale resta NOT_RUN_POLICY
+per il rifiuto di avvio, nessun processo o nuovo pull. Autorizzazione specifica
+pendente; nessun altro launcher. Il409 del7novembre sotto è la prima failure
+storica conservata, non lo stato attuale del resolver.
+[Risultato circoscritto](ASUS_W7POS_019_CATALOG_409_FIX_RESULT.md).
+Console staff, prove Getnet e Win7 restano separati; nessun DONE.
 
 ## Candidato, repository e ambiente
 
@@ -142,7 +154,7 @@ errori inattesi degli handler hanno messaggio localizzato e log del solo tipo.
 | CONSOLE_READ_SCOPE | BLOCKED_EXTERNAL | Causa statica compatibile d021a4af; superficie staff/deployment da correggere o chiarire |
 | POS_FIRST_LOGIN | PASS | Tentativo reale5c3327bd accettato; nessun retest live d262ccd dopo il409 |
 | POS_LEASE_BINDING | PASS bootstrap | Scope/trust/policy/mirror verificati nel tentativo5c; contratto installato/heartbeat live restano da attestare al Mac |
-| EMPTY_SHOP_HISTORY | BLOCKED_EXTERNAL live | Sintetico d262ccd PASS; server reale409 non ha fornito lo zero autorevole |
+| EMPTY_SHOP_HISTORY | PASS RPC server / UI NOT_RUN_POLICY | Sintetico d262ccd PASS; dopo fix Admin1a35034a il wrapper v3 reale fornisce zero autorevole. Accesso UI normale ancora da osservare |
 | GETNET_PREVIEW | PASS | Reader del prodotto d262ccd net48/x86:7/7 originali/oracolo, integri, NeedsEvidence=true, CanApply=false |
 | REAL_IMPORT | BLOCKED_EXTERNAL | Utente conferma assenti mapping documentato, inizioPOS/overlap e prova temporale provider; nessun apply sul DB operativo o di prova reale |
 | REPORT_EXPORT | PASS sintetico | d262ccd report/CSV inclusi nello smoke; report/export reali restano BLOCKED con apply |
@@ -270,8 +282,8 @@ identità reale o controllo finanziario è introdotto nei documenti finali/pacch
 
 | Gate aperto | Owner e prossimo passo concreto |
 | --- | --- |
-| Console staff e catalog scope409 | Mac: verificare deployment/progetto, principal/lease, mapping e resolver installati; correggere provisioning empty-scope/overview senza grant globali o dati fittizi, regressioni e rollout del repo, poi handoff REVIEW |
-| Retest live d262ccd | Windows dopo handoff Mac: stesso host/contratto/scope, normale UI mascherata su profilo identificato; nessuna nuova readiness articoli usata per aggirare il409 |
+| Console staff | Mac: verificare la superficie overview/principal e il suo stato veritiero. Il resolver catalogo è stato corretto e verificato separatamente nella prosecuzione8novembre |
+| Retest normale d262ccd | Windows dopo autorizzazione pertinente: un solo avvio del medesimo profilo/prodotto, verificando prima gli esiti incerti del comando negato. Server RPC già PASS; nessun launcher alternativo |
 | Mapping/tempo/overlap Getnet | Utente/responsabile: fonte autorevole stesso esercente/periodo, avvioPOS e overlap. Poi backup/preview/apply su DB di prova vincolato, riapertura/dedup/undo/reimport/report/CSV; mai DB operativo come effetto collaterale |
 | Verifica visiva import_summary | Diagnostica NOT_RUN: nessun PNG fittizio o soglia rilassata. Registrare separatamente un'eventuale futura osservazione qualificata |
 | Win7 SP1/periferiche | Responsabile fisico: usare il nuovo pacchetto x86 e la scheda esterna con hash/contesto corretti; installazione, DPI/tastiera, scanner/stampa sintetici autorizzati, niente SDK moderno o pwsh sul POS |

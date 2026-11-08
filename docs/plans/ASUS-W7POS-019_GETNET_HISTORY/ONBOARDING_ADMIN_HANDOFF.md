@@ -1,5 +1,23 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
+
+## Prosecuzione8novembre — fix resolver applicato da root, REVIEW
+
+Il nuovo mandato ha autorizzato il fix del409: AdminPR #143 è integrata in1a35034a,
+migration20261108051044 applicata sul progetto collegato al Worker staging reale.
+Shop attivo, lease valida pos_admin, zero righe e zero storia mapping: causa
+dimostrata, body prima/dopo pinned e tutto pg_proc eccetto prosrc invariato.
+V3 reale ora ok/shop_scoped/done, summary/window0,rows0 e scope-key corretta.
+Nessun grant/bridge/articolo/tabelle nuove o nuovo Worker. CI post-merge67/4375PASS.
+
+HTTP/UI normale resta NOT_RUN_POLICY: avvio del prodotto d262ccd respinto con
+blocked by policy, processo non nato e nuovi pull0 verificati. Autorizzazione
+specifica pendente, nessun altro launcher o retry. Il vecchio409 sotto è storia.
+Il canale Mac non è stato trovato; nessun invio/ritorno remoto viene inventato.
+La superficie console staff resta distinta e pendente, non corretta da questa SQL.
+[Risultato e ripresa](../../reports/ASUS_W7POS_019_CATALOG_409_FIX_RESULT.md).
+
+
 ## Ritorno Windows verificato — 2026-11-07
 
 Client/pacchetto finale: `d262ccd979db8e3407118ffa7275861f12fdb5e2`
@@ -264,8 +282,8 @@ task. Riconciliare il contesto col coordinatore e collegare questa task019.
 | CONSOLE_READ_SCOPE | BLOCKED_EXTERNAL | Verificare host/deployment/principal e causa effettiva, poi patch minima/regressione | Mac |
 | POS_FIRST_LOGIN | PASS sul prodotto `5c3327bd`, evidence Windows | Accesso normale riuscito e trust persistito; non chiude policy/lease corrente o catalogo | Windows |
 | Server POS policy/lease live | BLOCKED_EXTERNAL per qualifica completa | Primo accesso riuscito; verificare contratto installato, binding/heartbeat ed expiry sul proprio scope | Mac + Windows |
-| POS catalog scope live | BLOCKED_EXTERNAL | HTTP409 `unmapped` osservato; diagnosi resolver/provisioning e retest coordinato sopra | Mac |
-| EMPTY_SHOP_HISTORY live | BLOCKED_EXTERNAL | Il409 non è catalogo vuoto; occorre scope autorizzato e risposta completa autorevole | Mac + Windows |
+| POS catalog scope live | PASS RPC / HTTP-UI NOT_RUN_POLICY | Causa corretta con Admin1a35034a e migration applicata; v3 reale ora manifest zero. Un solo normale avvio pendente dopo rifiuto policy | Windows root |
+| EMPTY_SHOP_HISTORY live | PASS server / UI NOT_RUN_POLICY | Manifest completo zero fornito dal wrapper v3 dopo fix; il409 originale resta failure storica. Percorso UI ancora da osservare | Windows root |
 | Regressioni Admin | NOT_RUN | Nessun delta Admin prodotto da questa analisi; mirate foundation/UI e pgTAP se SQL cambia | Mac |
 | Deploy/apply | NOT_RUN | Solo dopo patch reviewable e gate previsti; annotare SHA live e rollback | Unico owner Mac |
 | Risposta Mac | PENDING | Handoff pronto da incollare; nessuna consegna/ricezione Mac dichiarata | Coordinatore |

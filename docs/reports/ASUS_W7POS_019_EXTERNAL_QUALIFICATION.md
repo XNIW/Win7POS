@@ -6,6 +6,10 @@ NEW_SHOP_019 creata secondo dichiarazione utente; primo login reale precedente5c
 accettato e binding verificato, poi catalog pull409unmapped. Mac/deployment,
 mapping Getnet, inizioPOS/overlap e semantica temporale restano gate separati.
 Vedere il [risultato onboarding](ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md).
+Prosecuzione8novembre: causa409 corretta con Admin1a35034a e migration applicata;
+manifest v3 reale completo zero PASS. Normale HTTP/UI NOT_RUN_POLICY per avvio
+respinto, autorizzazione specifica pendente. Identità Windows/card sotto invariate.
+[Esito del fix409](ASUS_W7POS_019_CATALOG_409_FIX_RESULT.md).
 
 Il bundle QA precedente5c aveva il companion WPF privo del forwarder: failure
 conservata, non riutilizzarlo per l'avvio. La consegna corrente sotto ha closure,
@@ -44,8 +48,8 @@ distingue codice, documenti, pacchetto e qualifica esterna.
 | --- | --- | --- |
 | Import/undo storico → cloud commerciale | `NOT_APPLICABLE` come trasporto V1; isolamento sintetico PASS | `HistoricalSalesImportService` mantiene un ledger locale. Apply/Undo scrivono mapping, batch, file, transazioni, osservazioni e receipt storici; non chiamano writer vendite, stock, fiscale o outbox. Vedere [service](../../src/Win7POS.Data/Import/HistoricalSalesImportService.cs#L127), Apply/Undo e [regressione](../../tests/Win7POS.Core.Tests/Persistence/HistoricalLedgerTests.cs#L15). B-D11 è coperto dalle receipt sintetiche del candidato; nessun apply reale. |
 | Route, schema, RLS, funzioni e Storage Supabase nuovi per lo storico | `NOT_APPLICABLE` nella V1 locale | Nessuna route storica è aggiunta al client. La V1 locale non introduce questi oggetti. Il problema onboarding409 richiede invece diagnosi Mac sul deployment; il backend installato non è attestato live. |
-| Prima autenticazione e heartbeat esistenti | APPLICABLE_EXISTING; primo login reale5c PASS, nuovo retest live BLOCKED dal catalog409 | Shop/policy/trust/generation e mirror verificati nel tentativo reale precedente. Route POS first-login e heartbeat restano separate da Supabase Auth e sessione web; contratto installato/heartbeat live da attestare al Mac. Nessuna readiness articoli richiesta per il normale accesso. |
-| Autorizzazione import/undo | APPLICABLE_LOCAL; sintetico d262ccd PASS, uso storico reale BLOCKED | Lease, permessi e fingerprint generation vincolati fino al commit. Prova empty distinta da sale-safe/recovery; catalog409 non la produce. Nessun grant automatico a ruoli senza permesso. |
+| Prima autenticazione e heartbeat esistenti | APPLICABLE_EXISTING; primo login reale5c PASS, manifest reale v3 PASS dopo fix, normale UI NOT_RUN_POLICY | Shop/policy/trust/generation e mirror verificati nel tentativo reale precedente. Route POS first-login e heartbeat restano separate da Supabase Auth e sessione web; contratto installato/heartbeat live da attestare al Mac. Nessuna readiness articoli richiesta per il normale accesso. |
+| Autorizzazione import/undo | APPLICABLE_LOCAL; sintetico d262ccd PASS, uso storico reale BLOCKED | Lease, permessi e fingerprint generation vincolati fino al commit. Prova empty distinta da sale-safe/recovery; il409 storico non la produceva; il nuovo manifest RPC la fornisce, uso UI non ancora osservato. Nessun grant automatico a ruoli senza permesso. |
 | Binding esercente Getnet → Shop | `APPLICABLE`; reale `BLOCKED_EXTERNAL` | [Workflow](../../src/Win7POS.Wpf/Pos/PosWorkflowService.HistoricalImport.cs#L50), [mapping locale](../../src/Win7POS.Data/Import/HistoricalSalesImportService.cs#L332). Richiede ShopId autorevole, alias/esercente e inizio uso POS provati. La preview dei file non crea una Shop né risolve questi vincoli. |
 | Sync vendite/catalogo/ordini esistenti | `APPLICABLE_REGRESSION`, nessuna estensione storica | Le route esistenti restano nel [client](../../src/Win7POS.Data/Online/PosAdminWebClient.cs#L17). [OutboxShopBinding](../../src/Win7POS.Data/Online/OutboxShopBinding.cs#L70) e [sales sync](../../src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs#L161) verificano origine/trust. Import e undo non devono aggiungere eventi a questi canali. I sintetici locali/loopback non attestano il server remoto. |
 | Semantica oraria esportazione Getnet e report nativi | `APPLICABLE`; reale `BLOCKED_EXTERNAL` | Servono prova privata del significato di Z+offset e delle transizioni, più policy nativa canonica con provenienza/copertura. La policy sintetica `synthetic-fixed-offset-v1` non autorizza dati reali; nessun fallback al fuso del PC. |
@@ -219,4 +223,4 @@ Reader net48/x86:7/7 originali, attesi indipendenti e file invariati,4588ms sul
 build host. Esegue DLL QA coincidenti con quelle prodotto; NeedsEvidence=true,
 CanApply=false e nessun apply reale. Lo stesso esito non qualifica né i tempi
 Win7 né la semantica provider. Il primo Esc e le failure precedenti sono storia
-conservata; nessun retry live dopo409. Handoff Mac invio/risposta PENDING.
+conservata; nessun retry HTTP dopo409. Fix server/RPC qualificato separatamente l'8novembre; console Mac PENDING.
