@@ -41,6 +41,32 @@ namespace Win7POS.Wpf.Infrastructure.Security
         }
 
         internal long CurrentOperatorAuthorityVersion => Interlocked.Read(ref _operatorAuthorityVersion);
+
+        // A continuation proof is not a logged-in operator or a permission
+        // grant. Use the one composed guard and its injected clock providers.
+        internal async Task<PendingOnlineLoginProof> CapturePendingOnlineLoginProofAsync(
+            OnlineSyncGeneration expectedGeneration, CancellationToken cancellationToken)
+        {
+            if (expectedGeneration == null) throw new InvalidOperationException("pending_online_login_unavailable");
+            var evaluation = await _authorizationLeaseGuard.PreflightAsync().ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!evaluation.Decision.Allowed || evaluation.Token == null || evaluation.TrustedSession == null ||
+                evaluation.Token.GenerationFingerprint != expectedGeneration.Fingerprint)
+                throw new InvalidOperationException("pending_online_login_authority_changed");
+            var expiry = _authorizationLeaseGuard.CapturePreflightExpiryGuard(evaluation);
+            if (!PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(evaluation.Token.AuthorizationEpoch))
+                throw new InvalidOperationException("pending_online_login_authority_changed");
+            return new PendingOnlineLoginProof(evaluation.TrustedSession.StaffCode, evaluation.Token.AuthorizationEpoch, expiry);
+        }
+
+        internal sealed class PendingOnlineLoginProof
+        {
+            internal PendingOnlineLoginProof(string staffCode, long epoch, PosAuthorizationCommitExpiryGuard expiry)
+            { StaffCode = staffCode; AuthorizationEpoch = epoch; Expiry = expiry; }
+            internal string StaffCode { get; }
+            internal long AuthorizationEpoch { get; }
+            internal PosAuthorizationCommitExpiryGuard Expiry { get; }
+        }
         public UserAccount CurrentUser => _currentUser;
         public bool IsLoggedIn => _currentUser != null && _currentUser.IsActive;
         public bool CurrentUserIsAdmin => _currentUser?.IsAdmin ?? false;
@@ -578,19 +604,34 @@ namespace Win7POS.Wpf.Infrastructure.Security
             LogoutInternal(forced: true);
         }
 
+        internal void LogoutForcedIfAuthorityVersion(long expectedAuthorityVersion)
+        {
+            UserAccount loggedOutUser = null;
+            if (PosOnlineSyncRevocationLatch.TryChangeOperatorAuthorityIf(
+                () => Interlocked.Read(ref _operatorAuthorityVersion) == expectedAuthorityVersion,
+                () => loggedOutUser = ClearOperatorAuthority(), invalidateAuthorization: true))
+                AuditLogout(loggedOutUser, forced: true);
+        }
+
         private void LogoutInternal(bool forced)
         {
             UserAccount loggedOutUser = null;
             PosOnlineSyncRevocationLatch.ChangeOperatorAuthority(
-                () =>
-                {
-                    loggedOutUser = _currentUser;
-                    _currentUser = null;
-                    _currentUserCanUsePosAuthorization = false;
-                    Interlocked.Increment(
-                        ref _operatorAuthorityVersion);
-                },
-                invalidateAuthorization: true);
+                () => loggedOutUser = ClearOperatorAuthority(), invalidateAuthorization: true);
+            AuditLogout(loggedOutUser, forced);
+        }
+
+        private UserAccount ClearOperatorAuthority()
+        {
+            var user = _currentUser;
+            _currentUser = null;
+            _currentUserCanUsePosAuthorization = false;
+            Interlocked.Increment(ref _operatorAuthorityVersion);
+            return user;
+        }
+
+        private void AuditLogout(UserAccount loggedOutUser, bool forced)
+        {
             if (loggedOutUser != null)
             {
                 if (forced)

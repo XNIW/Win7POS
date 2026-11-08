@@ -62,7 +62,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     !descendants.OfType<Border>().Any(item => (item.Name == "PositiveBar" || item.Name == "NegativeBar") && item.ActualHeight > 0))
                     throw new InvalidOperationException("qa_visual_content_withheld");
                 var width = (int)Math.Ceiling(region.ActualWidth); var height = (int)Math.Ceiling(region.ActualHeight);
-                var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(region);
+                // Sample the validated, realized region in local coordinates. A
+                // child TextBlock's layout offset can otherwise place its ink
+                // outside a bitmap sized to only that child's actual bounds.
+                var localVisual = new DrawingVisual();
+                using (var drawing = localVisual.RenderOpen())
+                {
+                    // Child visuals omit their ancestor's surface. Composite
+                    // against that actual opaque surface so the registered
+                    // text remains readable in a standalone PNG.
+                    drawing.DrawRectangle(FindOpaqueBackground(region), null, new Rect(0, 0, region.ActualWidth, region.ActualHeight));
+                    drawing.DrawRectangle(new VisualBrush(region), null, new Rect(0, 0, region.ActualWidth, region.ActualHeight));
+                }
+                var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(localVisual);
                 var pixels = new byte[width * height * 4]; bitmap.CopyPixels(pixels, width * 4, 0);
                 var first = BitConverter.ToInt32(pixels, 0); var varied = false;
                 for (var offset = 4; offset < pixels.Length; offset += 4) if (BitConverter.ToInt32(pixels, offset) != first) { varied = true; break; }
@@ -87,6 +99,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
         { for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); yield return child; foreach (var nested in Descendants(child)) yield return nested; } }
         private static IEnumerable<DependencyObject> Ancestors(DependencyObject item)
         { while ((item = VisualTreeHelper.GetParent(item)) != null) yield return item; }
+        private static Brush FindOpaqueBackground(FrameworkElement region)
+        {
+            foreach (var item in new[] { (DependencyObject)region }.Concat(Ancestors(region)))
+            {
+                Brush brush = (item as TextBlock)?.Background ?? (item as Border)?.Background ??
+                    (item as Panel)?.Background ?? (item as Control)?.Background;
+                if (brush == null) continue;
+                if (brush is SolidColorBrush transparent && (transparent.Color.A == 0 || transparent.Opacity == 0)) continue;
+                if (brush is SolidColorBrush solid && solid.Color.A == 255 && solid.Opacity == 1) return solid;
+                throw new InvalidOperationException("qa_visual_surface_withheld");
+            }
+            throw new InvalidOperationException("qa_visual_surface_unavailable");
+        }
         private void Flush() => HistoricalSalesQaReceipt.WriteJson(Path.Combine(_output, "qa-visuals.json"), _envelope);
         private static string Hash(byte[] data) { using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(data)).Replace("-", "").ToLowerInvariant(); }
         [DataContract] private sealed class Envelope

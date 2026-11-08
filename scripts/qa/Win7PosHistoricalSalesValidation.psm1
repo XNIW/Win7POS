@@ -10,7 +10,7 @@ function Get-HistoricalSalesQaContract {
         HIST05_ATOMIC_CANCEL_RECOVERY=@('cancel_rollback','precommit_fault_rollback','disk_fault_safe','lost_response_reconciled')
         HIST06_BATCH_CANCEL_REIMPORT=@('owner_only_undo','duplicate_batch_not_owner','three_cycles','audit_retained')
         HIST07_REPORTS_EXPORT=@('signed_totals','hourly_parity','operator_scope','tenant_scope','detail_routing','csv_contract','native_ticket_average','snapshot_invalidation','export_publication_authorization','export_publication_outcome','coverage_state_no_disclosure','hourly_signed_geometry')
-        HIST08_UI_LIFECYCLE=@('keyboard_focus','dialog_standard','nonblocking_dispatcher','stale_result_ignored','reopened_receipt')
+        HIST08_UI_LIFECYCLE=@('keyboard_focus','dialog_standard','nonblocking_dispatcher','stale_result_ignored','reopened_receipt','retry_empty_ui','retry_expiry_ui','retry_revocation_ui','retry_generation_ui','retry_cancel_ui','retry_normal_late_authority_ui','retry_normal_finalization_fault_ui','retry_normal_ready_ui')
     }
     $foundation = [ordered]@{
         HIST_CRASH_HOT_JOURNAL=@('same_existing_database','prepared_sentinel','reached_after_spill','expected_abrupt_exit','journal_recovery_completed','atomic_data_and_revision','operational_invariants','owned_process_cleanup')

@@ -314,7 +314,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 ["HIST05_ATOMIC_CANCEL_RECOVERY"] = new[] { "cancel_rollback", "precommit_fault_rollback", "disk_fault_safe", "lost_response_reconciled" },
                 ["HIST06_BATCH_CANCEL_REIMPORT"] = new[] { "owner_only_undo", "duplicate_batch_not_owner", "three_cycles", "audit_retained" },
                 ["HIST07_REPORTS_EXPORT"] = new[] { "signed_totals", "hourly_parity", "operator_scope", "tenant_scope", "detail_routing", "csv_contract", "native_ticket_average", "snapshot_invalidation", "export_publication_authorization", "export_publication_outcome", "coverage_state_no_disclosure", "hourly_signed_geometry" },
-                ["HIST08_UI_LIFECYCLE"] = new[] { "keyboard_focus", "dialog_standard", "nonblocking_dispatcher", "stale_result_ignored", "reopened_receipt" }
+                ["HIST08_UI_LIFECYCLE"] = new[] { "keyboard_focus", "dialog_standard", "nonblocking_dispatcher", "stale_result_ignored", "reopened_receipt",
+                    "retry_empty_ui", "retry_expiry_ui", "retry_revocation_ui", "retry_generation_ui", "retry_cancel_ui",
+                    "retry_normal_late_authority_ui", "retry_normal_finalization_fault_ui", "retry_normal_ready_ui" }
             };
             if (mode == "Load") return new Dictionary<string, string[]>(StringComparer.Ordinal) { ["HIST_LOAD_50K"] = new[] { "fixture_identity", "exact_counters", "phase_measurements", "memory_budget", "dispatcher_budget", "cancellation_budget", "mixed_query_budget", "ownership_cold_warm", "snapshot_invalidation", "maintenance_writer_exclusion", "environment_identity" } };
             if (mode != "CrashProbe") throw new ArgumentException("qa_history_mode_invalid");

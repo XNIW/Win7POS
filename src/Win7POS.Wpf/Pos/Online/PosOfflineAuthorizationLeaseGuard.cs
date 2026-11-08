@@ -408,6 +408,28 @@ namespace Win7POS.Wpf.Pos.Online
             }
         }
 
+        // Freeze a successful read-only preflight without priming the reusable
+        // authenticated cache. The pending sign-in still requires mirror login.
+        internal PosAuthorizationCommitExpiryGuard CapturePreflightExpiryGuard(PosOfflineAuthorizationLeaseEvaluation evaluation)
+        {
+            lock (_sync)
+            {
+                if (evaluation?.Decision.Allowed != true || evaluation.Token == null || evaluation.TrustedSession == null ||
+                    !PosOnlineSyncSupervisorHost.TryCreateGeneration(evaluation.TrustedSession, out var generation) ||
+                    evaluation.Token.GenerationFingerprint != generation.Fingerprint ||
+                    !PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(evaluation.Token.AuthorizationEpoch) ||
+                    PosOnlineSyncRevocationLatch.IsRevoked(generation) ||
+                    !_store.TryReadGeneration(generation, out _, out _) ||
+                    !TryCaptureMonotonicTimestamp(out var now) || now < evaluation.Token.MonotonicTimestamp)
+                    throw new InvalidOperationException("pending_online_login_authority_changed");
+                var expiry = new PosAuthorizationCommitExpiryGuard(evaluation.TrustedSession, evaluation.Decision,
+                    evaluation.Token.MonotonicTimestamp, _monotonicTimestamp, _monotonicFrequency, _utcNow);
+                if (!expiry.Evaluate(TimeSpan.Zero).Allowed)
+                    throw new InvalidOperationException("pending_online_login_expired");
+                return expiry;
+            }
+        }
+
         /// <summary>
         /// Atomically commits a successful authentication only when both
         /// preflights still describe the same active lease generation.

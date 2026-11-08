@@ -406,7 +406,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var summarySource = WriteModern(f.Root, "visual-summary", new[] { HistoricalSalesFixtureWriter.ModernRow("synthetic-visual-only", 1000) });
                     model.LegacyClpConfirmed = true; model.TimeChoice = 1; model.TemporalEvidence = "synthetic-explicit-UTC-evidence";
                     await model.AnalyzeFilesForTestingAsync(new[] { summarySource }); await PumpAsync(); dialog.UpdateLayout();
-                    visuals.Capture("import_summary", Descendants<TextBlock>(dialog).FirstOrDefault(item => item.Text == model.Summary && !string.IsNullOrEmpty(model.Summary)), f);
+                    var summaryRegion = Descendants<TextBlock>(dialog).FirstOrDefault(item => item.Text == model.Summary && !string.IsNullOrEmpty(model.Summary));
+                    summaryRegion?.BringIntoView(); await PumpAsync(); dialog.UpdateLayout();
+                    visuals.Capture("import_summary", summaryRegion, f);
                     using (var report = new DailyReportViewModel(service, permissions: new PermissionService(f.Operator), session: f.Operator))
                     {
                         report.DateText = "2000-01-02"; report.ReportOriginIndex = 2; await report.ReloadAnalyticalAsync();
@@ -444,7 +446,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static async Task<bool> VerifyEmptyOnboardingAsync(string data, HistoricalSalesQaCase test)
         {
             test.PrivateDiagnostic("history_onboarding;subcase=real_bootstrap_loopback;state=starting");
-            if (!await ArticleMutationLoopbackHarness.VerifyEmptyShopBootstrapAsync(data)) return false;
+            if (!await ArticleMutationLoopbackHarness.VerifyEmptyShopBootstrapAsync(data, test)) return false;
             test.PrivateDiagnostic("history_onboarding;subcase=no_proof_and_empty;state=starting");
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             {

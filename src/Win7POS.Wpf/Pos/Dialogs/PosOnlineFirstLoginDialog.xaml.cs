@@ -34,6 +34,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly PosOnlineSyncSupervisorHost _syncHost;
         private readonly PosTrustedDeviceStore _trustedDeviceStore = new PosTrustedDeviceStore();
         private readonly DispatcherTimer _networkStatusTimer;
+        private readonly DispatcherTimer _pendingLoginTimer;
+        private PendingPosOnlineLogin _pendingAuthenticatedLogin;
         private CancellationTokenSource _activeCts;
         private bool _baseUrlEditedByUser;
         private bool _busy;
@@ -86,10 +88,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Interval = TimeSpan.FromSeconds(20)
             };
             _networkStatusTimer.Tick += (_, __) => UpdateNetworkStatusBadge();
+            _pendingLoginTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _pendingLoginTimer.Tick += OnPendingLoginTimerTick;
+            PosOnlineSyncRevocationLatch.AuthorizationStateChanged += OnPendingLoginAuthorityChanged;
             Loaded += OnLoaded;
             Closed += (_, __) =>
             {
                 ClearHistoricalPreparation();
+                ClearPendingOnlineLogin();
+                PosOnlineSyncRevocationLatch.AuthorizationStateChanged -= OnPendingLoginAuthorityChanged;
                 _networkStatusTimer.Stop();
                 _activeCts?.Cancel();
                 if (_ownsSyncHost)
@@ -258,6 +265,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
+            ClearPendingOnlineLogin();
             ResetRemoteRecoveryPreparation();
 
             var attemptId = CreateAccessAttemptId();
@@ -391,7 +399,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     LogAccessBootstrapResult(attemptId, result);
                     if (result.CanOpenPos)
                     {
-                        if (await CompleteOnlineSignInAsync(shopCode, staffCode, credential, attemptId, "online").ConfigureAwait(true))
+                        if (await CompleteOnlineSignInAsync(shopCode, staffCode, credential, attemptId, "online", _activeCts.Token).ConfigureAwait(true))
                         {
                             FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "success", "online", string.Empty);
                             return;
@@ -402,44 +410,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         return;
                     }
 
-                    if (result.CanPrepareEmptyShopHistory && !App.IsSafeStart)
+                    if (result.Success && result.FirstLoginSucceeded && result.TrustedSessionPersisted && !result.CanOpenPos &&
+                        !await CapturePendingOnlineLoginAsync(_activeCts.Token).ConfigureAwait(true))
                     {
-                        var username = await FindLeaseBoundRemoteStaffUsernameAsync(shopCode, staffCode).ConfigureAwait(true);
-                        if (!string.IsNullOrWhiteSpace(username) &&
-                            await LoginLocalUsernameAsync(username, credential, attemptId, "history_onboarding").ConfigureAwait(true))
-                        {
-                            var historySession = OperatorSessionHolder.Current;
-                            var historyRetained = false;
-                            try
-                            {
-                                _historyAccess = await HistoricalOnboardingAccess.CreateAsync(_factory,
-                                    historySession as OperatorSession, _syncHost.CurrentGeneration, _activeCts.Token).ConfigureAwait(true);
-                                await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
-                                EndBusyKeepPreparation(retryVisible: false);
-                                ProgressPanel.Visibility = Visibility.Collapsed;
-                                ShowInfo(PosLocalization.T("history.onboardingAvailable"));
-                                HistoryButton.Visibility = Visibility.Visible;
-                                HistoryButton.IsEnabled = true;
-                                HistoryButton.Focus();
-                                FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer,
-                                    "success", "history_onboarding", "sales_not_ready");
-                                historyRetained = true;
-                                return;
-                            }
-                            catch (InvalidOperationException)
-                            {
-                                ClearHistoricalPreparation();
-                                OperatorSessionHolder.Current?.LogoutForced();
-                            }
-                            finally
-                            {
-                                if (!historyRetained)
-                                {
-                                    ClearHistoricalPreparation();
-                                    historySession?.LogoutForced();
-                                }
-                            }
-                        }
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "online", "pending_authorization_unavailable");
+                        EndBusyAllowFreshLogin();
+                        return;
+                    }
+
+                    if (result.CanPrepareEmptyShopHistory && !App.IsSafeStart &&
+                        await TryPrepareHistoricalSignInAsync(attemptId, _activeCts.Token).ConfigureAwait(true))
+                    {
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer,
+                            "success", "history_onboarding", "sales_not_ready");
+                        return;
                     }
 
                     if (result.Success && !result.CanOpenPos)
@@ -617,7 +601,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             string staffCode,
             string credential,
             string attemptId,
-            string mode)
+            string mode,
+            CancellationToken cancellationToken = default,
+            Func<CancellationToken, Task> demandFinalAuthority = null)
         {
             LogAccessInfo(attemptId, "offline_mirror_start", "mode=" + SafeAuditValue(mode));
             var username = await FindLeaseBoundRemoteStaffUsernameAsync(shopCode, staffCode)
@@ -630,23 +616,55 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             LogAccessInfo(attemptId, "offline_mirror_result", "result=success mode=" + SafeAuditValue(mode));
-            if (!await LoginLocalUsernameAsync(username, credential, attemptId, mode).ConfigureAwait(true))
+            var candidateSession = OperatorSessionHolder.Current as OperatorSession;
+            if (candidateSession == null) return false;
+            var initialAuthorityVersion = candidateSession.CurrentOperatorAuthorityVersion;
+            var expectedGeneration = _syncHost.CurrentGeneration;
+            var retained = false;
+            try
             {
-                return false;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!await LoginLocalUsernameAsync(username, credential, attemptId, mode).ConfigureAwait(true)) return false;
+                credential = string.Empty;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!ReferenceEquals(OperatorSessionHolder.Current, candidateSession) ||
+                    initialAuthorityVersion == long.MaxValue || candidateSession.CurrentOperatorAuthorityVersion != initialAuthorityVersion + 1 ||
+                    !candidateSession.IsLoggedIn || candidateSession.CurrentUser.Username != username)
+                    throw new InvalidOperationException("online_completion_operator_changed");
+                if (!await EnsureCatalogSaleSafeForAccessAsync(logoutOnBlock: false, attemptId: attemptId, mode: mode).ConfigureAwait(true)) return false;
+                await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
+                MarkSetupReady();
+                await Task.Delay(450, cancellationToken).ConfigureAwait(true);
+                if (demandFinalAuthority != null)
+                    await demandFinalAuthority(cancellationToken).ConfigureAwait(true);
+                else if (expectedGeneration == null ||
+                    !_trustedDeviceStore.TryReadGeneration(expectedGeneration, out _, out _) ||
+                    !await Task.Run(() => new OnlineSyncGenerationRepository(_factory)
+                        .IsCurrentAndActiveAsync(expectedGeneration), cancellationToken).ConfigureAwait(true))
+                    throw new InvalidOperationException("online_completion_generation_changed");
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsVisible) throw new OperationCanceledException();
+                if (!ReferenceEquals(OperatorSessionHolder.Current, candidateSession) ||
+                    candidateSession.CurrentOperatorAuthorityVersion != initialAuthorityVersion + 1 ||
+                    !candidateSession.IsLoggedIn || candidateSession.CurrentUser.Username != username ||
+                    !candidateSession.EnsureAuthorizationValid())
+                    throw new InvalidOperationException("online_completion_authorization_changed");
+                AccessMode = PosAuthenticatedAccessMode.Normal;
+                DialogResult = true;
+                Close();
+                retained = true;
+                return true;
             }
-
-            if (!await EnsureCatalogSaleSafeForAccessAsync(logoutOnBlock: true, attemptId: attemptId, mode: mode).ConfigureAwait(true))
+            finally
             {
-                return false;
+                credential = string.Empty;
+                // Clear only the operator committed by this login attempt. A
+                // later operator/holder replacement retains its own authority.
+                if (!retained && initialAuthorityVersion != long.MaxValue &&
+                    candidateSession.CurrentOperatorAuthorityVersion == initialAuthorityVersion + 1 &&
+                    candidateSession.CurrentUser?.Username == username)
+                    candidateSession.LogoutForcedIfAuthorityVersion(initialAuthorityVersion + 1);
             }
-
-            await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
-            MarkSetupReady();
-            await Task.Delay(450).ConfigureAwait(true);
-            AccessMode = PosAuthenticatedAccessMode.Normal;
-            DialogResult = true;
-            Close();
-            return true;
         }
 
         private async Task<bool> TryOfflineSignInAsync(
@@ -1096,6 +1114,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void PrepareRemoteRecoveryChallenge()
         {
+            ClearPendingOnlineLogin();
             if (!_remoteRecoveryAvailable)
             {
                 return;
@@ -1258,20 +1277,51 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 using (_activeCts = new CancellationTokenSource(
                     TimeSpan.FromMinutes(InitialCatalogTimeoutMinutes)))
                 {
+                    if (!_resumeCatalogOnly)
+                    {
+                        try
+                        {
+                            var pending = _pendingAuthenticatedLogin ?? throw new InvalidOperationException("pending_online_login_unavailable");
+                            await pending.DemandCurrentAsync(_activeCts.Token).ConfigureAwait(true);
+                        }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex)
+                        {
+                            LogCatalogRetryWarning(catalogRetryId, "pending_authority", "result=denied exceptionType=" + SafeAuditValue(ex.GetType().Name));
+                            FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "blocked", "fresh_login_required");
+                            ShowError(PosLocalization.T("access.login.authorizationExpired"));
+                            EndBusyAllowFreshLogin();
+                            return;
+                        }
+                    }
                     IProgress<PosCatalogPullProgress> progress = new Progress<PosCatalogPullProgress>(UpdateSetupProgress);
                     progress.Report(PosCatalogPullProgress.ForPhase("catalog"));
                     var generation = await _syncHost
                         .AttachCurrentTrustAsync(_activeCts.Token)
                         .ConfigureAwait(true);
+                    if (!_resumeCatalogOnly && (generation == null || _pendingAuthenticatedLogin == null ||
+                        generation.Fingerprint != _pendingAuthenticatedLogin.Generation.Fingerprint))
+                        throw new InvalidOperationException("pending_online_login_authority_changed");
                     var lane = generation == null
                         ? new OnlineSyncLaneOutcome(false, "trusted_session_missing")
                         : await _syncHost.TriggerAsync(
                             OnlineSyncLane.CatalogDelta,
                             OnlineSyncLaneTrigger.Manual,
                             _activeCts.Token).ConfigureAwait(true);
+                    // A request may finish after a concurrent relink/revocation.
+                    // Revalidate the captured sign-in before publishing any state
+                    // or deciding that a transient failure may retain its secret.
+                    if (!_resumeCatalogOnly)
+                    {
+                        var pending = _pendingAuthenticatedLogin ?? throw new InvalidOperationException("pending_online_login_unavailable");
+                        await pending.DemandCurrentAsync(_activeCts.Token).ConfigureAwait(true);
+                    }
                     var catalogSaleSafe = await PosCatalogPullService
                         .IsCatalogSaleSafeAsync(_factory).ConfigureAwait(true);
-                    var outcome = lane.Success &&
+                    var authoritativeEmpty = lane.Success && !lane.CatalogHasMore && !lane.AuthenticationDenied &&
+                        lane.Code == "catalog_authoritatively_empty" &&
+                        await new CatalogShopStateRepository(_factory).IsAuthoritativelyEmptyAsync(generation).ConfigureAwait(true);
+                    var outcome = authoritativeEmpty ? PosCatalogPullOutcome.AuthoritativelyEmpty(lane.CatalogPagesProcessed) : lane.Success &&
                         !lane.CatalogHasMore &&
                         catalogSaleSafe
                         ? PosCatalogPullOutcome.CompletedOk(
@@ -1292,6 +1342,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         " code=" + SafeAuditValue(outcome.StatusCode) +
                         " authDenied=" + BoolText(outcome.AuthDenied) +
                         " catalogSaleSafe=" + BoolText(outcome.CatalogSaleSafe));
+                    if (authoritativeEmpty && !_resumeCatalogOnly && !App.IsSafeStart)
+                    {
+                        if (await TryPrepareHistoricalSignInAsync(catalogRetryId, _activeCts.Token).ConfigureAwait(true))
+                        {
+                            FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "success", "history_onboarding_sales_not_ready");
+                            return;
+                        }
+                        FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "blocked", "historical_authorization_denied");
+                        EndBusyAllowFreshLogin();
+                        return;
+                    }
                     if (outcome.Completed && outcome.CatalogSaleSafe)
                     {
                         UpdateSetupProgress(PosCatalogPullProgress.ForPhase("finalizing"));
@@ -1303,13 +1364,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                             return;
                         }
 
-                        var credential = CredentialBox.Password ?? string.Empty;
-                        if (await CompleteOnlineSignInAsync(
-                                NormalizeCode(ShopCodeBox.Text),
-                                NormalizeCode(StaffCodeBox.Text),
-                                credential,
-                                catalogRetryId,
-                                "catalog_retry").ConfigureAwait(true))
+                        if (await CompletePendingOnlineSignInAsync(catalogRetryId, _activeCts.Token).ConfigureAwait(true))
                         {
                             CredentialBox.Clear();
                             FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "success", string.Empty);
@@ -1349,11 +1404,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (OperationCanceledException)
             {
+                ClearPendingOnlineLogin();
                 if (IsVisible)
                 {
                     FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "failed", "timeout");
                     ShowError(PosLocalization.T("onlineFirstLogin.timeout"));
-                    EndBusyKeepPreparation(retryVisible: true);
+                    EndBusyAllowFreshLogin();
                 }
             }
             catch (Exception ex)
@@ -1365,7 +1421,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     ex);
                 FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "failed", "exception");
                 ShowError(PosLocalization.T("onlineFirstLogin.connectionFailed"));
-                EndBusyKeepPreparation(retryVisible: true);
+                EndBusyAllowFreshLogin();
             }
             finally
             {
@@ -1374,6 +1430,149 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 {
                     FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "cancelled", "retry_exited");
                 }
+            }
+        }
+
+        private void ClearPendingOnlineLogin()
+        {
+            _pendingLoginTimer?.Stop();
+            var pending = _pendingAuthenticatedLogin;
+            _pendingAuthenticatedLogin = null;
+            pending?.Dispose();
+        }
+
+        private async Task<bool> CapturePendingOnlineLoginAsync(CancellationToken cancellationToken)
+        {
+            ClearPendingOnlineLogin();
+            try
+            {
+                using (var credential = CredentialBox.SecurePassword)
+                {
+                    var pending = await PendingPosOnlineLogin.CreateAsync(_factory, _trustedDeviceStore,
+                        _syncHost.CurrentGeneration, OperatorSessionHolder.Current as OperatorSession, credential, cancellationToken).ConfigureAwait(true);
+                    if (!IsVisible || cancellationToken.IsCancellationRequested)
+                    { pending.Dispose(); cancellationToken.ThrowIfCancellationRequested(); return false; }
+                    _pendingAuthenticatedLogin = pending;
+                    _pendingLoginTimer.Start();
+                    return true;
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                LogAccessWarning(null, "pending_online_login", "result=denied exceptionType=" + SafeAuditValue(ex.GetType().Name));
+                ClearPendingOnlineLogin();
+                ShowError(PosLocalization.T("access.login.authorizationExpired"));
+                return false;
+            }
+        }
+
+        private void OnPendingLoginAuthorityChanged()
+        {
+            if (Dispatcher.HasShutdownStarted) return;
+            Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
+            {
+                if (_pendingAuthenticatedLogin != null && !_pendingAuthenticatedLogin.IsCurrentInMemory)
+                    InvalidatePendingOnlineLogin();
+            }));
+        }
+
+        private void InvalidatePendingOnlineLogin()
+        {
+            ClearPendingOnlineLogin();
+            _activeCts?.Cancel();
+            if (!IsVisible || _busy) return;
+            ShowError(PosLocalization.T("access.login.authorizationExpired"));
+            EndBusyAllowFreshLogin();
+        }
+
+        private void OnPendingLoginTimerTick(object sender, EventArgs e)
+        {
+            var pending = _pendingAuthenticatedLogin;
+            if (pending == null) { _pendingLoginTimer.Stop(); return; }
+            try
+            {
+                if (!pending.IsCurrentInMemory ||
+                    !_trustedDeviceStore.TryReadGeneration(pending.Generation, out _, out _))
+                    InvalidatePendingOnlineLogin();
+            }
+            catch (Exception)
+            {
+                if (ReferenceEquals(pending, _pendingAuthenticatedLogin)) InvalidatePendingOnlineLogin();
+            }
+        }
+
+        private async Task<bool> TryPrepareHistoricalSignInAsync(string attemptId, CancellationToken cancellationToken)
+        {
+            var pending = _pendingAuthenticatedLogin;
+            IOperatorSession historySession = null;
+            var retained = false;
+            string credential = null;
+            try
+            {
+                if (pending == null || App.IsSafeStart) throw new InvalidOperationException("pending_online_login_unavailable");
+                await pending.DemandCurrentAsync(cancellationToken).ConfigureAwait(true);
+                if (!await Task.Run(() => new CatalogShopStateRepository(_factory).IsAuthoritativelyEmptyAsync(pending.Generation),
+                        cancellationToken).ConfigureAwait(true))
+                    throw new InvalidOperationException("historical_onboarding_empty_evidence_required");
+                var username = await FindLeaseBoundRemoteStaffUsernameAsync(pending.Generation.ShopCode, pending.StaffCode).ConfigureAwait(true);
+                if (string.IsNullOrWhiteSpace(username)) throw new InvalidOperationException("pending_online_login_mirror_missing");
+                credential = pending.ReadCredentialForMirrorLogin();
+                if (!await LoginLocalUsernameAsync(username, credential, attemptId, "history_onboarding").ConfigureAwait(true)) return false;
+                historySession = OperatorSessionHolder.Current;
+                credential = null;
+                await pending.DemandCurrentAsync(cancellationToken).ConfigureAwait(true);
+                var access = await HistoricalOnboardingAccess.CreateAsync(_factory, historySession as OperatorSession,
+                    pending.Generation, cancellationToken).ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsVisible) throw new OperationCanceledException();
+                _historyAccess = access;
+                await SaveLastShopCodeAsync(pending.Generation.ShopCode).ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsVisible || !access.IsCurrentInMemory) throw new InvalidOperationException("historical_authorization_denied");
+                EndBusyKeepPreparation(retryVisible: false);
+                ProgressPanel.Visibility = Visibility.Collapsed;
+                ShowInfo(PosLocalization.T("history.onboardingAvailable"));
+                HistoryButton.Visibility = Visibility.Visible; HistoryButton.IsEnabled = true; HistoryButton.Focus();
+                retained = true;
+                return true;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (InvalidOperationException) { ShowError(PosLocalization.T("history.authorizationChanged")); return false; }
+            catch (Exception ex)
+            {
+                LogAccessWarning(attemptId, "history_prepare", "result=failed exceptionType=" + SafeAuditValue(ex.GetType().Name));
+                ShowError(PosLocalization.T("history.onboardingOpenFailed"));
+                return false;
+            }
+            finally
+            {
+                credential = null;
+                if (ReferenceEquals(pending, _pendingAuthenticatedLogin)) ClearPendingOnlineLogin();
+                pending?.Dispose();
+                if (!retained) { ClearHistoricalPreparation(); historySession?.LogoutForced(); }
+            }
+        }
+
+        private async Task<bool> CompletePendingOnlineSignInAsync(string attemptId, CancellationToken cancellationToken)
+        {
+            var pending = _pendingAuthenticatedLogin;
+            string credential = null;
+            try
+            {
+                if (pending == null) throw new InvalidOperationException("pending_online_login_unavailable");
+                await pending.DemandCurrentAsync(cancellationToken).ConfigureAwait(true);
+                credential = pending.ReadCredentialForMirrorLogin();
+                var completion = CompleteOnlineSignInAsync(pending.Generation.ShopCode, pending.StaffCode, credential,
+                    attemptId, "catalog_retry", cancellationToken, pending.DemandCurrentAsync);
+                credential = null;
+                return await completion.ConfigureAwait(true);
+            }
+            finally
+            {
+                credential = null;
+                if (ReferenceEquals(pending, _pendingAuthenticatedLogin)) ClearPendingOnlineLogin();
+                pending?.Dispose();
             }
         }
 
@@ -1432,6 +1631,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             _activeCts?.Cancel();
             CredentialBox.Clear();
+            ClearPendingOnlineLogin();
             DialogResult = false;
             Close();
         }
@@ -1488,6 +1688,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void BeginBusySignIn(string message)
         {
+            ClearPendingOnlineLogin();
             ClearHistoricalPreparation();
             _busy = true;
             SetInputEnabled(false);
@@ -1500,6 +1701,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void EndBusyAllowFreshLogin()
         {
+            ClearPendingOnlineLogin();
             _busy = false;
             SetInputEnabled(true);
             SetPrimaryInputFieldsVisible(true);
