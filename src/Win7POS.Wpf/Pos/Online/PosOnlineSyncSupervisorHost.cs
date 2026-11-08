@@ -1395,12 +1395,15 @@ namespace Win7POS.Wpf.Pos.Online
                 .ConfigureAwait(false) == true;
             var exactness = await stateRepository.LoadExactnessAsync()
                 .ConfigureAwait(false);
+            var emptyRequiresFullRefresh = await stateRepository.RequiresFullRefreshAfterEmptyAsync()
+                .ConfigureAwait(false);
             var delta = await stateRepository.LoadDeltaChainAsync(
                 trustedSession.ShopId,
                 trustedSession.ShopCode,
                 binding.Epoch).ConfigureAwait(false);
             var exactnessRepair = exactness.RepairRequired ||
-                exactness.Status != CatalogCompletenessStatus.Verified;
+                exactness.Status != CatalogCompletenessStatus.Verified ||
+                emptyRequiresFullRefresh;
 
             var trigger = requestedTrigger;
             if (requestedTrigger == CatalogSyncTrigger.AdministratorRepair)

@@ -13,6 +13,28 @@ namespace Win7POS.Data.Online
         // An observation, never a sale-safety or authentication capability. Keeping
         // it under exactness also invalidates it on repair, relink and restore.
         public const string AuthoritativeEmptyPrefix = ExactnessPrefix + "empty.";
+        // Unlike the transient observation, this safety fence survives a new
+        // pull, repair, restore, relink and generation change. Only an atomic
+        // verified nonempty full replacement can remove it.
+        public const string FullRefreshRequiredAfterEmptyKey = "pos.catalog.full_refresh_required_after_empty";
+        public const string FullRefreshRequiredAfterEmptyCode = "catalog_full_refresh_required_after_empty";
+
+        public async Task<bool> RequiresFullRefreshAfterEmptyAsync()
+        {
+            using var conn = _factory.Open();
+            return await HasFullRefreshRequiredAfterEmptyWithinTransactionAsync(conn, null)
+                .ConfigureAwait(false);
+        }
+
+        private static async Task<bool> HasFullRefreshRequiredAfterEmptyWithinTransactionAsync(
+            SqliteConnection conn, SqliteTransaction tx)
+        {
+            // The only valid stored state is presence. Malformed/empty values
+            // must not silently remove a previously established safety fence.
+            return await conn.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM app_settings WHERE key = @key;",
+                new { key = FullRefreshRequiredAfterEmptyKey }, tx).ConfigureAwait(false) != 0;
+        }
 
         public async Task ClearAuthoritativeEmptyAsync(OnlineSyncGeneration generation)
         {
@@ -108,6 +130,7 @@ WHERE current.singleton_id = 1 AND current.active = 1
             // even if a later failed pull invalidates the observation itself.
             await conn.ExecuteAsync("DELETE FROM app_settings WHERE key = @key;",
                 new { key = SaleSafeAtKey }, tx).ConfigureAwait(false);
+            await SetAsync(conn, tx, FullRefreshRequiredAfterEmptyKey, "1").ConfigureAwait(false);
             var prefix = AuthoritativeEmptyPrefix;
             await SetAsync(conn, tx, prefix + "generation_id", fence.GenerationId).ConfigureAwait(false);
             await SetAsync(conn, tx, prefix + "generation_fingerprint", fence.GenerationFingerprint).ConfigureAwait(false);

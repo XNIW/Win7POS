@@ -56,6 +56,180 @@ WHERE key IN (@safe, @completed) AND TRIM(value) <> '';",
     }
 
     [TestMethod]
+    public async Task AuthoritativeEmpty_DeltaCannotRestoreSaleSafeFromPreviousVerifiedSnapshot()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        var stage = await CreateAuthoritativeStageAsync(db, "empty-delta-revival");
+        var state = new CatalogShopStateRepository(db.Factory);
+        await CatalogExactnessTestFixture.SeedVerifiedAsync(db.Factory, stage.ShopId, stage.ShopCode);
+        await state.StoreLastSyncAsync(stage.ShopId, stage.ShopCode,
+            "previous-full-cursor", "2026-11-07T01:00:00Z", stage.Fence.ExpectedEpoch,
+            "full_refresh", stage.Fence.ExpectedPreviousCursor, stage.Fence.ExpectedPreviousMode,
+            stage.Generation);
+        stage.Fence.ExpectedPreviousCursor = "previous-full-cursor";
+        stage.Fence.ExpectedPreviousMode = "full_refresh";
+        await state.StoreSaleSafeAsync(stage.ShopId, stage.ShopCode, "2026-11-07T01:00:00Z",
+            stage.Fence.ExpectedEpoch, "previous-full-cursor", "full_refresh", generation: stage.Generation);
+        Assert.IsTrue(await state.IsSaleSafeForOfficialShopAsync(), "The retained catalog must start verified and sale-safe.");
+        await new RemoteCatalogBatchRepository(db.Factory).StageAuthoritativePageAsync(
+            new RemoteCatalogBatch
+            {
+                AuthoritativeFullRefresh = true,
+                AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                { FullRunId = stage.FullRunId, PageNumber = 1, HasMore = false }
+            }, CancellationToken.None, stage.Fence);
+
+        Assert.AreEqual(string.Empty, await ConfirmEmptySnapshotAsync(db, stage));
+        Assert.IsFalse(await state.IsSaleSafeForOfficialShopAsync());
+        Assert.AreEqual(CatalogCompletenessStatus.Verified, (await state.LoadExactnessAsync()).Status,
+            "The old exactness evidence is retained, not replaced by a false empty sale-safe snapshot.");
+        await state.ClearAuthoritativeEmptyAsync(stage.Generation);
+        Assert.IsFalse(await state.IsAuthoritativelyEmptyAsync(stage.Generation));
+
+        // A later terminal delta may advance the cursor, but cannot republish the
+        // retained pre-empty snapshot as sale-safe without a new verified full.
+        await state.StoreLastSyncAsync(stage.ShopId, stage.ShopCode,
+            "delta-cursor-after-empty", "2026-11-07T01:01:00Z", stage.Fence.ExpectedEpoch,
+            "delta", "previous-full-cursor", "full_refresh", stage.Generation);
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            state.StoreSaleSafeAsync(stage.ShopId, stage.ShopCode, "2026-11-07T01:01:00Z",
+                stage.Fence.ExpectedEpoch, "delta-cursor-after-empty", "delta", generation: stage.Generation));
+        StringAssert.Contains(exception.Message, "catalog_full_refresh_required_after_empty");
+        Assert.IsFalse(await new CatalogShopStateRepository(db.Factory).IsSaleSafeForOfficialShopAsync());
+        using var conn = db.Factory.Open();
+        Assert.AreEqual(2L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM products WHERE is_active = 1;"));
+    }
+
+    [TestMethod]
+    public async Task AuthoritativeEmpty_ManualExactnessAndFullCursorApprovalCannotClearFence()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        var stage = await StageEmptySnapshotAsync(db, "empty-manual-approval");
+        Assert.AreEqual(string.Empty, await ConfirmEmptySnapshotAsync(db, stage));
+        var state = new CatalogShopStateRepository(db.Factory);
+        var audit = await new CatalogFullRefreshReconciler(db.Factory).AuditCurrentAsync();
+        var verified = CatalogExactnessVerifier.Evaluate(Summary(2, 1, 1, 0), audit, CompleteContext(2, 1, 1, 0));
+        Assert.AreEqual(CatalogCompletenessStatus.Verified, verified.Status);
+
+        await state.StoreExactnessAsync(stage.ShopId, stage.ShopCode, verified,
+            stage.Fence.ExpectedEpoch, generation: stage.Generation);
+        Assert.IsTrue(await state.RequiresFullRefreshAfterEmptyAsync());
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            state.StorePullCursorAsync(stage.ShopId, stage.ShopCode, "manually-approved-full-cursor",
+                "2026-11-07T01:02:00Z", stage.Fence.ExpectedEpoch, "full_refresh",
+                authoritativeSnapshotCommitted: true, generation: stage.Generation));
+        StringAssert.Contains(exception.Message, CatalogShopStateRepository.FullRefreshRequiredAfterEmptyCode);
+        await state.StoreLastSyncAsync(stage.ShopId, stage.ShopCode, "generic-full-label",
+            "2026-11-07T01:03:00Z", stage.Fence.ExpectedEpoch, "full_refresh", generation: stage.Generation);
+        Assert.IsTrue(await new CatalogShopStateRepository(db.Factory).RequiresFullRefreshAfterEmptyAsync());
+        Assert.IsFalse(await state.IsSaleSafeForOfficialShopAsync());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task AuthoritativeEmpty_VerifiedNonemptyAtomicFullClearsFenceOnlyOnCommit(bool rejectFinalization)
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        var stage = await StageEmptySnapshotAsync(db, "empty-full-commit");
+        Assert.AreEqual(string.Empty, await ConfirmEmptySnapshotAsync(db, stage));
+        var state = new CatalogShopStateRepository(db.Factory);
+        await state.RequestFullRepairAsync(stage.ShopId, stage.ShopCode, stage.Fence.ExpectedEpoch, stage.Generation);
+        Assert.IsTrue(await state.RequiresFullRefreshAfterEmptyAsync());
+        var binding = await state.EnsureAndLoadCursorAsync(stage.ShopId, stage.ShopCode, stage.Generation);
+        stage.Fence.ExpectedEpoch = binding.Epoch;
+        stage.Fence.ExpectedPreviousCursor = binding.Cursor;
+        stage.Fence.ExpectedPreviousMode = binding.Mode;
+        var fullRunId = "nonempty-full-replacement";
+        var batch = StageBatch(fullRunId, 1, false, "product-after-empty", "AFTER-EMPTY", "price-after-empty");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        await repository.StageAuthoritativePageAsync(batch, CancellationToken.None, stage.Fence);
+        using (var run = repository.CreateRunContext())
+        {
+            await run.BeginAtomicFullRefreshAsync();
+            batch.ReuseValidatedAuthoritativeStagePage = true;
+            await run.ApplyAsync(batch, CancellationToken.None, stage.Fence);
+            var exactness = await new CatalogFullRefreshReconciler(db.Factory).ReconcileAndVerifyWithinAtomicApplyAsync(
+                run, fullRunId, "2026-11-07T01:04:00Z", Summary(1, 1, 1, 1), CompleteContext(1, 1, 1, 1), stage.Fence);
+            Assert.AreEqual(CatalogCompletenessStatus.Verified, exactness.Status);
+            Func<Task> commit = () => run.CommitAtomicFullRefreshAsync((connection, transaction) =>
+                state.FinalizeVerifiedFullRefreshWithinTransactionAsync(connection, transaction,
+                    stage.ShopId, stage.ShopCode, exactness, "full-after-empty", "2026-11-07T01:04:00Z",
+                    binding.Epoch, binding.Cursor, binding.Mode, "catalog-version-1",
+                    rejectFinalization ? 1 : 0, stage.Generation));
+            if (rejectFinalization)
+            {
+                // This check occurs after the finalizer deletes the fence and
+                // writes sale-safe, proving its later failure rolls both back.
+                var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(commit);
+                StringAssert.Contains(exception.Message, "catalog_import_ack_generation_invalid");
+            }
+            else
+            {
+                await commit();
+            }
+        }
+
+        state = new CatalogShopStateRepository(db.Factory);
+        Assert.AreEqual(rejectFinalization, await state.RequiresFullRefreshAfterEmptyAsync());
+        Assert.AreEqual(!rejectFinalization, await state.IsSaleSafeForOfficialShopAsync());
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(rejectFinalization ? 0L : 1L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM products WHERE remote_product_id = 'product-after-empty' AND is_active = 1;"));
+        Assert.AreEqual(rejectFinalization ? 2L : 0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM products WHERE remote_product_id IN ('product-1', 'product-2') AND is_active = 1;"));
+    }
+
+    [TestMethod]
+    public async Task AuthoritativeEmpty_FinalizerRejectsCanonicalZeroAndRetainsFence()
+    {
+        using var db = TestDb.Create();
+        var stage = await StageEmptySnapshotAsync(db, "empty-finalizer-zero");
+        Assert.AreEqual(string.Empty, await ConfirmEmptySnapshotAsync(db, stage));
+        var state = new CatalogShopStateRepository(db.Factory);
+        var audit = await new CatalogFullRefreshReconciler(db.Factory).AuditCurrentAsync();
+        var zero = CatalogExactnessVerifier.Evaluate(Summary(0, 0, 0, 0), audit, CompleteContext(0, 0, 0, 0));
+        Assert.AreEqual(CatalogCompletenessStatus.Verified, zero.Status);
+        using (var conn = db.Factory.Open())
+        using (var tx = conn.BeginTransaction())
+        {
+            var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                state.FinalizeVerifiedFullRefreshWithinTransactionAsync(conn, tx, stage.ShopId, stage.ShopCode,
+                    zero, "not-a-nonempty-full", "2026-11-07T01:05:00Z", stage.Fence.ExpectedEpoch,
+                    stage.Fence.ExpectedPreviousCursor, stage.Fence.ExpectedPreviousMode, "catalog-version-1", 0, stage.Generation));
+            StringAssert.Contains(exception.Message, "catalog_exactness_not_verified");
+        }
+        Assert.IsTrue(await state.RequiresFullRefreshAfterEmptyAsync());
+        Assert.IsFalse(await state.IsSaleSafeForOfficialShopAsync());
+    }
+
+    [TestMethod]
+    public async Task AuthoritativeEmpty_FenceSurvivesGenerationRestoreAndMalformedValue()
+    {
+        using var db = TestDb.Create();
+        var stage = await StageEmptySnapshotAsync(db, "empty-fence-lifetime");
+        Assert.AreEqual(string.Empty, await ConfirmEmptySnapshotAsync(db, stage));
+        var state = new CatalogShopStateRepository(db.Factory);
+        await new OnlineSyncGenerationRepository(db.Factory).StopIfCurrentAsync(stage.Generation, "restore_review", 2);
+        await state.ResetForRestoreReviewAsync(stage.ShopId, stage.ShopCode);
+        var replacement = new OnlineSyncGeneration("replacement-generation", "replacement-session", "replacement-device", stage.ShopId, stage.ShopCode);
+        await new OnlineSyncGenerationRepository(db.Factory).ActivateAndRecoverAsync(replacement, 3);
+        Assert.IsFalse(await state.IsAuthoritativelyEmptyAsync(replacement));
+        Assert.IsTrue(await new CatalogShopStateRepository(db.Factory).RequiresFullRefreshAfterEmptyAsync());
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync("UPDATE app_settings SET value = '' WHERE key = @key;",
+                new { key = CatalogShopStateRepository.FullRefreshRequiredAfterEmptyKey });
+        }
+        Assert.IsTrue(await state.RequiresFullRefreshAfterEmptyAsync());
+        Assert.AreEqual(CatalogShopStateRepository.FullRefreshRequiredAfterEmptyCode,
+            (await state.EvaluateSaleSafetyForOfficialShopAsync()).ReasonCode);
+    }
+
+    [TestMethod]
     public async Task AuthoritativeEmpty_IncompleteNewAttemptInvalidatesPreviousObservation()
     {
         using var db = TestDb.Create();

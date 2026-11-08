@@ -1064,7 +1064,10 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
                 exactness.Audit,
                 exactness.Context);
             if (canonical.Status != CatalogCompletenessStatus.Verified ||
-                canonical.RepairRequired)
+                canonical.RepairRequired ||
+                canonical.Expected == null || canonical.Expected.ActiveProducts.GetValueOrDefault() <= 0 ||
+                canonical.Audit == null || canonical.Audit.ActiveRemoteProducts <= 0 ||
+                !string.Equals(canonical.Context?.SyncMode, "full_refresh", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("catalog_exactness_not_verified");
             }
@@ -1098,6 +1101,11 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
                 expectedEpoch,
                 expectedPreviousCursor,
                 expectedPreviousMode).ConfigureAwait(false);
+            // This is the sole clearing boundary: the caller's transaction also
+            // owns the verified nonempty full live replacement. Any later error
+            // rolls this deletion back together with catalog and sale-safety.
+            await conn.ExecuteAsync("DELETE FROM app_settings WHERE key = @key;",
+                new { key = FullRefreshRequiredAfterEmptyKey }, tx).ConfigureAwait(false);
             await RequireExactnessSaleSafetyAsync(
                 conn,
                 tx,
@@ -1348,7 +1356,8 @@ WHERE key IN (
     @SaleSafeAtKey,
     @CompletenessStatusKey,
     @ExactnessShopIdKey,
-    @ExactnessShopCodeKey
+    @ExactnessShopCodeKey,
+    @FullRefreshRequiredAfterEmptyKey
 );",
                 new
                 {
@@ -1357,6 +1366,7 @@ WHERE key IN (
                     CompletenessStatusKey,
                     ExactnessShopCodeKey,
                     ExactnessShopIdKey,
+                    FullRefreshRequiredAfterEmptyKey,
                     OfficialShopCodeKey = OutboxShopBinding.OfficialShopCodeKey,
                     OfficialShopIdKey = OutboxShopBinding.OfficialShopIdKey,
                     RepairRequiredKey,
@@ -1384,6 +1394,9 @@ WHERE key IN (
                 Normalize(Read(ExactnessShopIdKey)),
                 OutboxShopBinding.NormalizeCode(Read(ExactnessShopCodeKey)));
             var decision = CatalogSaleSafetyPolicy.Evaluate(snapshot, allowLegacyUnbound);
+
+            if (values.ContainsKey(FullRefreshRequiredAfterEmptyKey))
+                return CatalogSaleSafetyEvaluation.Blocked(decision.IsCatalogBound, FullRefreshRequiredAfterEmptyCode);
 
             return decision.IsSaleSafe
                 ? CatalogSaleSafetyEvaluation.Safe(decision.IsCatalogBound, decision.ReasonCode)
@@ -1570,6 +1583,8 @@ WHERE key IN (
             string trustedShopCode,
             bool requireEvidence = false)
         {
+            if (await HasFullRefreshRequiredAfterEmptyWithinTransactionAsync(conn, tx).ConfigureAwait(false))
+                throw new InvalidOperationException(FullRefreshRequiredAfterEmptyCode);
             var rawRepairRequired = await GetAsync(conn, tx, RepairRequiredKey).ConfigureAwait(false);
             if (!TryParseOptionalBinaryFlag(rawRepairRequired, out var repairRequired))
             {

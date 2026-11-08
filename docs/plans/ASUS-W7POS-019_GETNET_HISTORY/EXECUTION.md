@@ -25,18 +25,15 @@ nonoverlapping. All raw diagnostics and real financial controls stay private.
 Previous FAIL/TIMEOUT evidence must remain available; no result is inferred from
 static inspection, missing prerequisite, or a receipt schema alone.
 
-Current resume point: onboarding execution of 2026-11-07 IN_PROGRESS; see
-[onboarding result](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md).
-NEW_SHOP_019 created according to user declaration; identity/deployment/login,
-merchant mapping/start/overlap/provider-time and physical Win7 remain separate gates.
-Previous delivery: SOFTWARE_DELIVERED at code5c3327bd320293ad48edc7d9cc01ad2466e591b4.
-CI41959769748 All, Security41959769752, Release41959769763 and WPF41959770648 PASS.
-Canonical downloads and final packaged reader PASS; external Shop/time and physical
-Win7 remain BLOCKED_EXTERNAL. Final commit is documentation only; next action is
-the owner qualification card. The new explicit onboarding mandate additionally
-authorizes the scoped empty-shop history correction and relevant qualification.
-Earlier process/next-command notes below are historical checkpoints; this pointer
-and the newest run section are authoritative.
+Current resume point: final empty→delta safety correction IN_PROGRESS after
+reproduced regression on e832d6a. Old Core1/1 RED and real loopback7/8 RED are
+preserved. The durable full-required fence now passes focused Core116/116, real loopback8/44
+and local50/50gates. The corrective commit still needs exact-SHA workflows; do not use the
+four green e832d6a workflows as the qualification of this correction. Root is
+single build/test writer. Next: focused green, corrective main commit, exact-SHA
+CI/Security/Release/WPF and new package/reader verification, then final docs.
+Live409/Mac, real evidence and physical Win7 remain BLOCKED_EXTERNAL.
+All earlier resume pointers, green e832d6a sections and Esc notes are history.
 
 ## Intermediate execution evidence (2026-11-04)
 
@@ -526,3 +523,54 @@ Final privacy:216 distinct task files,222 content versions including all6 finald
 headers are preexisting synthetic test vectors. Final6-doc delta has0 broken
 relative Markdown links and git diff --check PASS, with no runtime/source/config
 changes after qualified code5c3327b.
+
+
+## Checkpoint storico onboarding 2026-11-07 dopo Esc
+
+Main candidato `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`, feature959396b,
+pubblicati. Security42418832124 e WPF42418868960 PASS; QA scaricato40file
+con pin forwarder e smoke esterno8/44 PASS. CI42418832135/Release42418832168
+ancora in corso al checkpoint: leggere gli stessi run, senza rilanciarli.
+Avvio ordinario QA interrotto dall'utente prima dell'osservazione, NOT_RUN.
+Nuovo prodotto/reader reale e chiusura documentale restano da completare.
+Tutti i processi locali posseduti chiusi; profili/log/prime failure conservati.
+Il report onboarding contiene la ripresa precisa; nessuna qualifica reale o
+Win7 promossa, Mac PENDING e prove esercente/tempo/overlap assenti.
+
+
+## Verifica conclusiva onboarding e832d6a — 2026-11-07
+
+- Main pubblicato: feature959396b + closureQAe832d6a, nessuna branch/PR/force push.
+  Admin main resta d021a4af, deployment non verificato, handoff invio/risposta PENDING.
+- Canonica CI15/15 exit0, functional20/20, foundation5/37, smoke8/44 e load11/11.
+  Core/Data1728/1728 e gate50/50 dal log Release dello stesso SHA; la proiezione
+  CI espone1653 nomi e non il totale parametrizzato. Load: measurementCompleted,
+  environmentValid e thresholdsPassed tutti true, limiti invariati.
+- Fingerprint clean c2e98ce089d0b8e4d0b1f4a8a5c5d2bb93ec53fb6be0fc92e91cdbab361d6944.
+  RunCI Win7POS.QA.20261107T220502828Z.7c1c98cb41734822b300eccbcdd9e949;
+  artifact13593925422 digest ff7058c2be606caf13440d0a89ba886ba74f1e6b57d1d4419eb1a96325795a3e
+  verificato, Test-QaPublicBundle e tre validator storici PASS.
+- Prodotto scaricato:41file,110checksum,development-unsigned,installation NOT_EXECUTED.
+  QA40file/forwarder pinned,34file comuni byte-identici, smoke CWD esterna8/44 PASS
+  runWin7POS.QA.20261107T220911950Z.d2c7761c1e1e495da1bc398a7e2de26f.
+- Avvio ordinario QA alla ripresa: PASS su profilo vuoto senza credenziali/sessioni,
+  osservazione Computer Use e processo posseduto chiuso. Primo NOT_RUN da Esc
+  resta distinto e conservato. Nessun bypass o retry live.
+- Reader solo DLL prodotto net48/x86:7/7 originali/oracolo integri,exit0,4551ms,
+  NeedsEvidence=true/CanApply=false; nessun DB/apply reale. Prove reali mancanti
+  confermate dall'utente; login reale5c PASS resta evidence del proprio tentativo409.
+- Catture hourly2PASS; import_summary NOT_RUN qa_visual_blank_withheld, nessun PNG.
+  Contratto UI5/5 PASS distinto da quella verifica visiva non disponibile.
+- Prime failure e checkpoint Esc conservati; correzioni di fixture/contatori/focus,
+  stato e ramo generic unsafe documentate nel report, nessun gate/soglia rilassato.
+  Root privata onboarding-20261107T212334Z.7cb660d9f0ee487eb524ef62ed9b5767;
+  tutti i processi locali posseduti chiusi, dati/log/backup sintetici intenzionalmente
+  conservati con mapping, nessuna revoca/cancellazione utente. Hosted cleanup:
+  quattro assertion PASS, conteggi per Job non pubblicati, nessuno zero inventato.
+- Chiusura solo documentale dopo e832d6a; non richiede suite software duplicate.
+  Gate reali/Win7 restano BLOCKED_EXTERNAL e la task non è DONE.
+
+
+Focused fence green: Core116/116; real loopback8/44 with immutable red case and
+fullpositive recovery; localgates50/50. Source frozen. NextexactSHA workflows,
+new artifact verification/reader and document-only closeout.

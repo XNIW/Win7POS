@@ -104,6 +104,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         var stale = await reader.ReadAsync();
                         if (stale.CatalogBootstrapText == emptyText || stale.CatalogSaleSafe || !stale.CatalogRepairRequired)
                             throw new InvalidOperationException("empty_history_loopback_stale_status_promoted");
+                        await VerifyPreservedCatalogCannotResurrectAsync(factory, host, server, timeout.Token);
                         return true;
                     }
                     finally { session.LogoutForced(); store.Clear(); }
@@ -115,6 +116,49 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                 }
             }
+        }
+
+        private static async Task VerifyPreservedCatalogCannotResurrectAsync(SqliteConnectionFactory factory,
+            PosOnlineSyncSupervisorHost host, ArticleLoopbackServer server, CancellationToken cancellationToken)
+        {
+            var state = new CatalogShopStateRepository(factory);
+            server.UseCatalogSnapshot(empty: false);
+            var nonempty = await host.TriggerAsync(OnlineSyncLane.CatalogDelta, OnlineSyncLaneTrigger.Manual, cancellationToken);
+            var generation = host.CurrentGeneration;
+            var original = await state.EnsureAndLoadCursorAsync(generation.ShopId, generation.ShopCode, generation);
+            var exactness = await state.LoadExactnessAsync();
+            if (!nonempty.Success || !nonempty.CatalogSaleSafe || !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory) ||
+                exactness.Status != CatalogCompletenessStatus.Verified || string.IsNullOrWhiteSpace(original.Cursor) ||
+                await new ProductRepository(factory).CountActiveRemoteProductsAsync() != 1)
+                throw new InvalidOperationException("empty_history_old_catalog_baseline_failed");
+
+            // Request a full server snapshot while preserving all prior local
+            // evidence until the new response qualifies. No manual reset/seed.
+            server.UseCatalogSnapshot(empty: true);
+            var empty = await host.TriggerAsync(OnlineSyncLane.CatalogDelta, OnlineSyncLaneTrigger.AdministratorRepair, cancellationToken);
+            var preserved = await state.EnsureAndLoadCursorAsync(generation.ShopId, generation.ShopCode, generation);
+            exactness = await state.LoadExactnessAsync();
+            if (!empty.Success || empty.Code != "catalog_authoritatively_empty" || empty.CatalogSaleSafe ||
+                await PosCatalogPullService.IsCatalogSaleSafeAsync(factory) ||
+                !await state.IsAuthoritativelyEmptyAsync(generation) || original.Cursor != preserved.Cursor ||
+                original.Epoch != preserved.Epoch || exactness.Status != CatalogCompletenessStatus.Verified ||
+                await new ProductRepository(factory).CountActiveRemoteProductsAsync() != 1)
+                throw new InvalidOperationException("empty_history_preserved_catalog_empty_fence_failed");
+
+            // A terminal delta without authoritative totals says nothing about
+            // whether the preserved old rows still belong to the remote shop.
+            server.UseEmptyTerminalDelta();
+            var delta = await host.TriggerAsync(OnlineSyncLane.CatalogDelta, OnlineSyncLaneTrigger.Manual, cancellationToken);
+            if (delta.CatalogSaleSafe || await PosCatalogPullService.IsCatalogSaleSafeAsync(factory) ||
+                !string.IsNullOrEmpty(server.LastCatalogRequestCursor) ||
+                await new ProductRepository(factory).CountActiveRemoteProductsAsync() != 1)
+                throw new InvalidOperationException("empty_history_terminal_delta_resurrected_old_catalog");
+
+            // Only a newly validated nonempty full chain restores sale readiness.
+            server.UseCatalogSnapshot(empty: false);
+            var recovered = await host.TriggerAsync(OnlineSyncLane.CatalogDelta, OnlineSyncLaneTrigger.Manual, cancellationToken);
+            if (!recovered.Success || !recovered.CatalogSaleSafe || !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory))
+                throw new InvalidOperationException("empty_history_nonempty_full_recovery_failed");
         }
 
         private const string ShopCode = "ARTICLELOOP";
@@ -1180,7 +1224,9 @@ GROUP BY mutation_kind;")).ToDictionary(
             private int _lostResponseCount;
             private bool _lostCreateResponse;
             private readonly bool _holdFirstCatalogResponse;
-            private readonly bool _authoritativelyEmptyCatalog;
+            private bool _authoritativelyEmptyCatalog;
+            private bool _emptyTerminalDelta;
+            private string _lastCatalogRequestCursor;
             private int _catalogResponseHeld;
 
             internal ArticleLoopbackServer(
@@ -1248,6 +1294,15 @@ GROUP BY mutation_kind;")).ToDictionary(
                 Volatile.Read(ref _articleRequestCount);
             internal int CatalogRequestCount =>
                 Volatile.Read(ref _catalogRequestCount);
+            internal string LastCatalogRequestCursor { get { lock (_gate) return _lastCatalogRequestCursor; } }
+            internal void UseCatalogSnapshot(bool empty)
+            {
+                lock (_gate) { _authoritativelyEmptyCatalog = empty; _emptyTerminalDelta = false; }
+            }
+            internal void UseEmptyTerminalDelta()
+            {
+                lock (_gate) { _authoritativelyEmptyCatalog = true; _emptyTerminalDelta = true; }
+            }
             internal int DuplicateReplayCount =>
                 Volatile.Read(ref _duplicateReplayCount);
             internal int LostResponseCount =>
@@ -1363,6 +1418,8 @@ GROUP BY mutation_kind;")).ToDictionary(
                             "POST /api/pos/catalog/pull ",
                             StringComparison.OrdinalIgnoreCase))
                     {
+                        var catalogRequest = Deserialize<PosCatalogPullRequest>(request.Body);
+                        lock (_gate) _lastCatalogRequestCursor = catalogRequest.SyncCursor ?? string.Empty;
                         Interlocked.Increment(
                             ref _catalogRequestCount);
                         if (_holdFirstCatalogResponse &&
@@ -1939,6 +1996,11 @@ GROUP BY mutation_kind;")).ToDictionary(
                             }
                         };
                         response.CatalogSummary = new PosCatalogSummaryResponse { Products = 0, ActiveProducts = 0, Categories = 0, Suppliers = 0, Prices = 0 };
+                    }
+                    if (_emptyTerminalDelta)
+                    {
+                        response.CatalogSummary = null;
+                        response.SyncMode = "delta";
                     }
                     return response;
                 }

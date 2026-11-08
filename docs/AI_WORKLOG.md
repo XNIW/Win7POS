@@ -6,6 +6,19 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ## 2026-11-07 – Prosecuzione onboarding nuovo negozio (ASUS-W7POS-019)
 
+- Fix fence ora focusedgreen: Core116/116, loopback8/44 e gate50/50. Blocca delta/approvazioni generiche; fullnonempty valida recupera, rollback conserva blocco. Nuovo commit/CI/pacchetti necessari, nessun riuso improprio dei verdi e832d6a.
+
+
+- Review dopo i verdi e832d6a: nuova regressione Core1FAIL e loopback7/8FAIL riproduce sale-safe ripristinabile sui vecchi dati dopo full empty e delta. Runtime invariato durante entrambi i rossi, fingerprint stabile/cleanup confermato. Chiusura sospesa, fence durevole fino full nonempty in qualifica; nuovo candidato/pacchetti necessari. La riconciliazione documentale e832d6a è conservata privatamente come snapshot, non persa o promossa al fix.
+
+
+- Ripresa dopo Esc completata: CI42418832135, Security42418832124, Release42418832168 e WPF42418868960 tutti PASS su e832d6a. Canonica15/15, Core1728/1728 e gate50/50 (log Release stessoSHA), functional20, foundation5/37, smoke8/44 e load11 con tre flag true. Nessun nuovo avvio workflow o suite duplicata.
+- Prodotto scaricato41file/110checksum development-unsigned; QA40file e34 condivisi identici. Smoke QA CWD esterna8/44 e avvio ordinario senza login PASS alla ripresa. Reader DLL prodotto7/7 originali/oracolo integri, NeedsEvidence=true/CanApply=false,4551ms; nessun apply reale. Primo Esc, failure e verifica manuale invalida conservati distintamente.
+- Cattura diagnostica import_summary NOT_RUN (raster uniforme scartato); contratto UI PASS distinto da qualifica visiva. Handoff Mac aggiornato ma invio/risposta PENDING; catalog409, prove merchant/tempo/overlap e Win7 restano BLOCKED_EXTERNAL, nessun DONE. Tutti i processi locali posseduti chiusi, profili/log/fixture mantenuti con owner. Chiusura documentale separata dal codice qualificato.
+
+I punti di avanzamento sotto e il checkpoint Esc conservano la storia della sessione; lo stato conclusivo è nel report collegato.
+
+
 - Ripresa da main locale/remoto pulito `e924a295`, consegna precedente `5c3327bd`; Admin remoto `d021a4af`, checkout Admin Windows preesistente preservato. Nessun reset/stash/branch automatico.
 - NEW_SHOP_019 creata secondo dichiarazione utente; host console staging coincidente con default POS. Causa statica fallback overview staff compatibile; deployment non verificato e handoff Mac PENDING.
 - Avviata correzione accesso storico circoscritto per catalogo autorevolmente vuoto, senza promuovere sale-safe o recovery. Primo avvio companion QA precedente FAIL per ValueTuple assente; payload prodotto raggiunge primo accesso su profilo nuovo isolato. Failure/log privati conservati.
@@ -1422,3 +1435,16 @@ and physical Win7/peripherals remain BLOCKED_EXTERNAL; no inherited hardware def
 Exact identities, hashes, measurements and operator actions are in the
 [result](reports/ASUS_W7POS_019_EXECUTION_RESULT.md) and
 [owner card](reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md).
+
+
+## Checkpoint storico onboarding 2026-11-07 dopo Esc
+
+Main candidato `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`, feature959396b,
+pubblicati. Security42418832124 e WPF42418868960 PASS; QA scaricato40file
+con pin forwarder e smoke esterno8/44 PASS. CI42418832135/Release42418832168
+ancora in corso al checkpoint: leggere gli stessi run, senza rilanciarli.
+Avvio ordinario QA interrotto dall'utente prima dell'osservazione, NOT_RUN.
+Nuovo prodotto/reader reale e chiusura documentale restano da completare.
+Tutti i processi locali posseduti chiusi; profili/log/prime failure conservati.
+Il report onboarding contiene la ripresa precisa; nessuna qualifica reale o
+Win7 promossa, Mac PENDING e prove esercente/tempo/overlap assenti.

@@ -319,6 +319,12 @@ namespace Win7POS.Wpf.Pos.Online
                 }
 
                 capturedEpoch = binding.Epoch;
+                // Preserved old exactness/cursor data cannot make a later delta
+                // authoritative after a confirmed empty snapshot. This durable
+                // fence is independent of the per-attempt empty observation and
+                // also applies to callers outside the supervisor.
+                forceFullRepair = forceFullRepair ||
+                    await catalogState.RequiresFullRefreshAfterEmptyAsync().ConfigureAwait(false);
                 var pullRevisionState = await catalogState.LoadRevisionStateAsync(
                     trustedSession.ShopId,
                     trustedSession.ShopCode,

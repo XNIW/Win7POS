@@ -1,5 +1,38 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
+Aggiornamento successivo: e832d6a sotto è un candidato intermedio. Una nuova
+regressione Core/loopback empty→delta ha riprodotto riattivazione dei vecchi dati;
+la correzione con fence durevole richiede nuovo SHA/CI/pacchetti. Non usare
+questa identità come candidato finale fisico/live finché la qualifica non è aggiornata.
+
+## Ritorno Windows verificato — 2026-11-07
+
+Client/pacchetto finale: `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`
+(feature959396b, closureQAe832d6a). CI42418832135, Security42418832124,
+Release42418832168 e WPF42418868960 tutti PASS. Canonica15/15,
+Core/Data1728/1728 e gate50/50 (contatori esatti dal Release dello stesso SHA),
+functional20/20, foundation5/37, smoke8/44 e load11/11. Prodotto/installer,
+SBOM/provenance verificati come development-unsigned; installazione NOT_EXECUTED.
+QA scaricato40file, smoke esterno8/44 e avvio ordinario su profilo vuoto PASS;
+34 file comuni QA/prodotto identici. Reader prodotto net48/x86 riconcilia7/7
+originali invariati, NeedsEvidence=true/CanApply=false; nessun apply reale.
+
+Il login reale precedente5c3327bd resta valido come evidence del proprio
+tentativo: policy/trust/scope/mirrorpos_admin accettati, catalog pull409unmapped.
+Il nuovo percorso storico passa solo su risposta completa zero qualificata;
+non converte il409 in catalogo vuoto, non apre vendite e non modifica recovery.
+Nessun nuovo tentativo live dopo il409. Identificativi per la correlazione sono
+nel manifest privato Windows, non in questo file. Host staging coincide con
+quello indicato dall'utente; deployment/installato Supabase resta da attestare.
+
+Main Admin ricontrollato invariato a d021a4af. Nessun canale agente Mac trovato
+anche alla ripresa: invio e risposta **PENDING**, nessun coordinamento remoto
+dichiarato. Restano a Mac console staff/overview, provisioning/scope catalogo
+vuoto e verifica principal/lease/RPC installati, seguendo i decision point sotto.
+Il workflow Admin resta REVIEW dopo le proprie prove; DONE richiede il passaggio
+previsto da AGENTS. Il risultato Windows non autorizza grant globali o mapping
+catalogo/esercente arbitrari.
+
 Correlation ID: `ASUS-W7POS-019-ONBOARDING-20261107`.
 Scope pubblico: `NEW_SHOP_019`. Identità e riferimenti finanziari restano nel
 manifest privato; questo handoff non contiene credenziali o materiale di sessione.

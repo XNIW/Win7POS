@@ -4,15 +4,15 @@
 
 | Campo | Valore |
 | --- | --- |
-| Fase | EXECUTION A+B+C consegnata; prosecuzione onboarding nuovo negozio del 2026-11-07 in corso |
+| Fase | Execution A+B+C e onboarding Windows: software consegnato; qualifica reale/fisica aperta |
 | Revisione/data | R3 — 2026-11-04, America/Santiago |
-| Stato del piano | SOFTWARE_DELIVERED precedente; onboarding IN_PROGRESS; mapping/tempo/Win7 BLOCKED_EXTERNAL; specifica R3 conservata |
-| Implementazione | A+B+C completa nel codice `5c3327bd320293ad48edc7d9cc01ad2466e591b4` |
-| Build, test, harness e qualifica runtime | PASS software: CI All15/15, Core1715/1715, gate50/50, foundation5/5, smoke8/8 e Load misurato; Win7 fisico NOT_RUN |
+| Stato del piano | Correzione finale empty→delta IN_PROGRESS: regressione e832d6a riprodotta; nuovo fence in qualifica. Gate reali/Win7 BLOCKED_EXTERNAL |
+| Implementazione | Onboarding959396b + closureQA `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`; precedente consegna5c3327bd conservata |
+| Build, test, harness e qualifica runtime | PASS CI15/15, Core1728/1728, gate50/50, functional20, foundation5/37, smoke8/44 e load11; Win7 fisico NOT_RUN; cattura import_summary NOT_RUN distinta |
 | Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
 | Branch e stato iniziale R3 | main; PLAN R2 untracked e modifiche locali di indice/worklog preservate |
-| Persistenza | Codice su main; CI/Security/Release/QA dello stesso SHA PASS, download verificati; chiusura documentale distinta dai binari |
-| Prossimo passo consentito | Prosecuzione [onboarding](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md): NEW_SHOP_019 creata secondo dichiarazione utente; identità/ambiente, login, catalogo vuoto, mapping/inizioPOS/tempo e Win7 verificati separatamente |
+| Persistenza | Codice su main; quattro workflow exact-SHA PASS, prodotto/QA scaricati e verificati; reader7/7 PASS con NeedsEvidence; documenti finali separati dai binari |
+| Prossimo passo consentito | Mac: attestare/correggere console staff e catalog409; prove esercente/inizioPOS/tempo; Win7 secondo [scheda esterna](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md). [Risultato onboarding](../../reports/ASUS_W7POS_019_ONBOARDING_EXECUTION_RESULT.md) e handoff PENDING |
 
 Questo e il solo piano canonico. Lo stato corrente risiede qui; la sola voce
 ASUS-W7POS-019 nell'[indice](../../CODEX_ASUS_TASKS.md) ne e il collegamento.
@@ -1982,3 +1982,34 @@ contratti/regole/parser e fixture sintetiche distribuite, con C-LOCAL; prima
 verificare nuovamente main e il numero migration senza toccare ora il codice.
 Implementazione NOT_STARTED; build/test/runtime NOT_RUN; qualifica Win7 e
 verifica dati reali non effettuate. Nessuna pubblicazione Git.
+
+
+## Checkpoint storico onboarding 2026-11-07 dopo Esc
+
+Main candidato `e832d6a96d5a736145a5da0cfb9ad2dffeba25dd`, feature959396b,
+pubblicati. Security42418832124 e WPF42418868960 PASS; QA scaricato40file
+con pin forwarder e smoke esterno8/44 PASS. CI42418832135/Release42418832168
+ancora in corso al checkpoint: leggere gli stessi run, senza rilanciarli.
+Avvio ordinario QA interrotto dall'utente prima dell'osservazione, NOT_RUN.
+Nuovo prodotto/reader reale e chiusura documentale restano da completare.
+Tutti i processi locali posseduti chiusi; profili/log/prime failure conservati.
+Il report onboarding contiene la ripresa precisa; nessuna qualifica reale o
+Win7 promossa, Mac PENDING e prove esercente/tempo/overlap assenti.
+
+
+## Esito onboarding Windows — 2026-11-07
+
+La ripresa autorizzata ha chiuso CI/Release e la verifica ordinaria QA: quattro
+workflow PASS sul codice e832d6a, prodotto/QA e reader privato7/7 verificati.
+Il checkpoint Esc sopra è storia, non il prossimo comando. Onboarding live
+resta bloccato dal catalog409unmapped, risposta Mac PENDING e prove reali
+Getnet assenti; Win7 fisico non eseguito. Nessuna estensione di grant/recovery.
+La cattura diagnostica import_summary rimane NOT_RUN, esplicitata nel report.
+
+
+## Review successiva alla qualifica e832d6a
+
+Regressione nuova riprodotta su Core e loopback prima del fix: un delta poteva
+riattivare i vecchi prodotti dopo empty confermato. Il codice e832d6a e i verdi
+sopra sono intermedi. Qualificare il fence durevole fino full nonempty, poi
+nuovo SHA/pacchetto e documenti. Nessuna soglia/guard/oracolo rilassati.
