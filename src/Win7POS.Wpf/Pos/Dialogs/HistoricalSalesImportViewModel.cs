@@ -51,7 +51,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _correctionEvidence = "", _correctionSummary = "";
         private string _planForm;
         private readonly Dictionary<string, string> _groupIds = new Dictionary<string, string>(StringComparer.Ordinal);
-        private bool _busy, _legacyClp, _merchantLimitExceeded;
+        private bool _busy, _legacyClp, _merchantLimitExceeded, _confirmingApply;
         private int _timeChoice;
         private string _temporalEvidence = "", _merchantEvidence = "", _overlapEvidence = "", _summary = "", _coverageDetails = "", _status = "", _shop = "";
         private DateTime? _nativeStart;
@@ -69,7 +69,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SelectCommand = new HistoryCommand(SelectAsync, () => !IsBusy && CanImport);
             AnalyzeCommand = new HistoryCommand(AnalyzeAsync, () => !IsBusy && CanImport && _paths.Count > 0);
             PreviewCommand = new HistoryCommand(PreviewAsync, () => !IsBusy && CanPrepare);
-            ApplyCommand = new HistoryCommand(ApplyAsync, () => !IsBusy && _plan != null && _planForm == FormFingerprint && CanImport);
+            ApplyCommand = new HistoryCommand(ApplyAsync, () => !IsBusy && !_confirmingApply && _plan != null && _planForm == FormFingerprint && CanImport);
             RefreshBatchesCommand = new HistoryCommand(RefreshBatchesAsync, () => !IsBusy && _permissions.Has(PermissionCodes.RegisterViewAll));
             ViewReceiptCommand = new HistoryCommand(ViewReceiptAsync, () => !IsBusy && SelectedBatch != null && _permissions.Has(PermissionCodes.RegisterViewAll));
             UndoCommand = new HistoryCommand(UndoAsync, () => !IsBusy && SelectedBatch?.State == "Active" && _permissions.Has(PermissionCodes.RegisterCancelHistory));
@@ -220,15 +220,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
         private async Task ApplyAsync()
         {
-            if (_plan == null || _planForm != FormFingerprint || !ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), T("apply"), Shop + Environment.NewLine + Summary + Environment.NewLine + string.Format(CultureInfo.CurrentCulture, T("correctionCount"), _plan.CorrectionApprovals.Count) + Environment.NewLine + T("backupNotice"))) return;
-            await ExecuteAsync(async ct =>
+            var plan = _plan;
+            var form = _planForm;
+            if (IsBusy || _confirmingApply || plan == null || form != FormFingerprint || !CanImport) return;
+            // ShowConfirm runs a nested Dispatcher frame. Keep this operation's
+            // immutable plan and reject another command until it has returned.
+            _confirmingApply = true; UpdateCommands();
+            try
             {
-                var receipt = await _service.ApplyHistoricalSalesAsync(_plan, _session, ct).ConfigureAwait(true);
-                DemandPublication(ct, PermissionCodes.RegisterImportHistory);
-                Status = ReceiptText(receipt);
-                _plan = null;
-                if (_permissions.Has(PermissionCodes.RegisterViewAll)) await RefreshBatchesCoreAsync(ct).ConfigureAwait(true);
-            }).ConfigureAwait(true);
+                if (!ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), T("apply"), Shop + Environment.NewLine + Summary + Environment.NewLine + string.Format(CultureInfo.CurrentCulture, T("correctionCount"), plan.CorrectionApprovals.Count) + Environment.NewLine + T("backupNotice"))) return;
+                if (!ReferenceEquals(plan, _plan) || form != FormFingerprint || !CanImport)
+                {
+                    _plan = null; Status = T("reviewStale"); return;
+                }
+                await ExecuteAsync(async ct =>
+                {
+                    var receipt = await _service.ApplyHistoricalSalesAsync(plan, _session, ct).ConfigureAwait(true);
+                    DemandPublication(ct, PermissionCodes.RegisterImportHistory);
+                    Status = ReceiptText(receipt);
+                    _plan = null;
+                    if (_permissions.Has(PermissionCodes.RegisterViewAll)) await RefreshBatchesCoreAsync(ct).ConfigureAwait(true);
+                }).ConfigureAwait(true);
+            }
+            finally { _confirmingApply = false; UpdateCommands(); }
         }
         private async Task UndoAsync()
         {

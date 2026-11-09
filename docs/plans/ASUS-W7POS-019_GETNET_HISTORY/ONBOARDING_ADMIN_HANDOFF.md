@@ -1,6 +1,27 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
-## Raccordo corrente — 9 novembre 2026
+## Raccordo corrente — legacy reale e conferma in qualifica, 9 novembre 2026
+
+Admin148 autenticato PASS sul Worker a68ebec2/deployment1cd437f1: overview
+staff-unavailable e reader Staff safe autorizzato osservati. Docs Admin b5c2dbc,
+software REVIEW. Nessuna nuova SQL, autorizzazione o credenziale modificata.
+
+Windows installato1823697: collegamento Start Menu e profilo conservato
+NEW_SHOP_019 verificati nel processo reale, login e catalogo vuoto/workbench
+PASS. Analisi UI dei sette originali e piano dei soli quattro legacy coincidono
+con i controlli indipendenti. A/B applicabili, CLP esplicito; moderni bloccati da C.
+Apply legacy COMMITTED con backup prodotto verificato; errore NullReference UI
+postcommit conservato. Riconciliazione esatta PASS, ricevuta/report/dettaglio/CSV
+consultati. Nessun retry o undo del lotto valido.
+
+Fix Windows minimo in qualifica: HIST02 riproduce rientranza della conferma,
+non prova lo stack originario live. Piano stabile, seconda attivazione negata e
+review cambiata respinta; build x86/dialog standard PASS. Occorrono qualifica e
+pacchetto exact-SHA prima dell'aggiornamento, poi reopen/dedup sul ledger conservato.
+Display dichiarato200%/2880x1800,100/125 pendenti; Win7 già indisponibile.
+CSV_INPUT BLOCKED_INPUT. Stessa task019 e nota PR29, overall ACTIVE.
+
+## Storia — checkpoint9novembre precedente all'analisi e all'Apply
 
 Percorso B eseguito senza attendere uno SHA originale irrecuperabile: export
 immutabile del Worker servito399720d2 e contratti remoti verificati, reader

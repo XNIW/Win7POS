@@ -1,6 +1,34 @@
 # ASUS-W7POS-019 — Retry, qualifica software e gate end-to-end
 
-## Stato corrente — 9 novembre 2026, stessa Execution R3
+## Stato corrente — 9 novembre 2026, legacy salvato e correzione in qualifica
+
+Stessa ASUS019/R3, ACTIVE. Admin148 autenticato PASS sul Worker a68ebec2 e
+deployment1cd437f1: overview staff-unavailable distinta da denial e reader
+Staff safe autorizzato. Avvio quotidiano dal collegamento installato1823697,
+profilo conservato, login mascherato e catalogo autorevole vuoto PASS.
+
+| Prova reale | Risultato e limite |
+| --- | --- |
+| Analisi originali | Sette XLSX invariati, UI NeedsEvidence disponibile e riepilogo confrontato con oracolo OOXML indipendente; giugno parziale conservato |
+| Scope applicabile | Quattro legacy, A/B verificati e CLP esplicito; tre moderni separati e bloccati da C |
+| Apply legacy | COMMITTED: backup prodotto verificato, ricevuta originaria e singolo lotto attivo; riconciliazione esatta di identità testuali, file/riga, tempi e importi PASS |
+| Errore dopo Apply | NullReferenceException UI osservata e conservata; nessun rollback o retry del lotto valido. Stack live non disponibile |
+| Consultazione | Ricevuta, report solo Getnet giornaliero/periodo e dettaglio del giorno selezionato PASS prima della chiusura |
+| CSV reale | Snapshot esatto del ledger, metadata REPORT/MOVEMENT coerenti, ID integri e testo protetto dalle formule PASS; VerifiedForScope non certifica completezza degli originali |
+| Invarianti | SQLite/FK PASS; vendite native, righe vendita, stock e outbox commerciali invariati; nessuna stampa/fiscale/cassa generata |
+| Correzione | HIST02 riproduce rientranza della conferma e stesso errore postcommit. Fix minimo in working tree: piano stabile, seconda attivazione negata e review cambiata respinta; build/dialog standard PASS, qualifica esatta aperta |
+| Residui | Nuovo pacchetto qualificato/installato, reopen/dedup effettivi e DPI100/125; C modern MISSING, CSV_INPUT BLOCKED_INPUT, Win7 BLOCKED_TARGET |
+
+Focused run05 PASS8/52,53.276s entro60s, exit0/cleanup confermato/nessun orfano:
+conferma singola, rientranza negata e review cambiata senza scritture. Qualifica
+canonica e pacchetto exact-SHA ancora da completare.
+I run diagnostici01-04 e i primi errori rimangono conservati. Il FAIL HIST08
+deriva dal lock image-cache del POS reale concorrente, chiuso normalmente prima
+del prossimo run. Nessuna cache/trust o dato cancellato per ottenere PASS.
+Display dichiarato200% e2880x1800; nessuna prova100/125 trasferita da render
+sintetici. Le qualifiche1823697 sotto restano della baseline installata.
+
+## Storia — 9 novembre 2026, prima dell'analisi e dell'Apply reali
 
 Windows conserva codice/pacchetto/installato1823697, net48/x86 su Windows11
 build26300. EXE SHA2564d9abfa0a4b56d1a86d46d16f145156f5fca4253194024beb6e73761c6939157

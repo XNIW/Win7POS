@@ -88,6 +88,15 @@ e le ricevute prima di riprovare. La ricevuta originaria è immutabile e viene
 mostrata separatamente dallo stato corrente del lotto. Un reimport identico non
 acquisisce la proprietà dei movimenti già presenti.
 
+Premere la conferma una sola volta e attendere la ricevuta. Un messaggio d'errore
+successivo alla conferma non dimostra che la transazione sia stata annullata:
+prima di riprovare aprire **Lotti importati**, aggiornare e consultare la ricevuta
+originaria. Se il lotto valido è già presente, conservarlo; non usare **Annulla**
+come pulizia. Dopo la chiusura e riapertura, un eventuale reimport identico deve
+mostrare zero nuovi movimenti e duplicati coerenti, con totali invariati.
+Se la verifica cambia mentre la conferma è aperta, chiudere e verificare di nuovo
+il piano; non confermare un riepilogo precedente.
+
 **Annulla lotto** disattiva soltanto i movimenti posseduti da quel lotto. Mantiene
 l'audit e le ricevute. Un lotto che ha soltanto osservato duplicati non li rende
 nuovamente visibili dopo l'annullamento del loro proprietario. Per ripristinare

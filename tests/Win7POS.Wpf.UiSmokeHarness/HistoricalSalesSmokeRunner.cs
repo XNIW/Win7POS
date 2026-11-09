@@ -79,16 +79,120 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task ApplyReopenAsync(string data, HistoricalSalesQaCase test)
         {
+            bool durable;
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             {
                 var before = NativeState(f); var plan = await f.PreparePlanAsync(Analyze(SourceFiles())); var applied = await f.ApplyAsync(plan);
-                test.Check("durable_receipt", applied.InsertedCount == 5 && f.Count("historical_import_operation") == 1);
+                durable = applied.InsertedCount == 5 && f.Count("historical_import_operation") == 1;
                 test.Check("manifest_totals", applied.SignedAmountClp == 3380 && applied.RejectedCount == 1, 3380L, applied.SignedAmountClp);
                 using (var c = new SqliteConnectionFactory(f.Options).OpenExistingForRecovery())
                     test.Check("reopened_records", c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1") == 5 && c.ExecuteScalar<long>("SELECT SUM(signed_amount_clp) FROM historical_transactions WHERE is_active=1") == 3380);
                 test.Check("operational_invariants", before == NativeState(f));
             }
+            test.Check("durable_receipt", durable && await WorkflowReceiptAsync(data, test) &&
+                await ViewModelReceiptAsync(data, test) && await ViewModelReceiptAsync(data, test, reenterConfirmation: true) &&
+                await ViewModelReceiptAsync(data, test, changeReview: true));
         }
+        private static async Task<bool> WorkflowReceiptAsync(string data, HistoricalSalesQaCase test)
+        {
+            using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
+            {
+                var workflow = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                var plan = await f.PlanAsync(id: "synthetic-workflow-receipt");
+                try
+                {
+                    var receipt = await workflow.ApplyHistoricalSalesAsync(plan, f.Operator, CancellationToken.None);
+                    return receipt != null && receipt.InsertedCount == 1 && receipt.CurrentBatchState == "Active" &&
+                        f.Count("historical_import_operation") == 1 && f.Count("historical_transactions") == 1;
+                }
+                catch (Exception error)
+                {
+                    test.PrivateDiagnostic("synthetic_workflow_postcommit;exception=" + error);
+                    throw;
+                }
+                finally { workflow.BackupAutomation.Dispose(); }
+            }
+        }
+
+        private static async Task<bool> ViewModelReceiptAsync(string data, HistoricalSalesQaCase test, bool reenterConfirmation = false, bool changeReview = false)
+        {
+            using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
+            using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+            {
+                var workflow = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                using (var model = new HistoricalSalesImportViewModel(workflow, f.Operator))
+                {
+                    var owner = new Window { Width = 1000, Height = 760, ShowInTaskbar = false };
+                    owner.Show();
+                    var dialog = new HistoricalSalesImportDialog(model) { Owner = owner };
+                    DispatcherTimer confirm = null;
+                    Win7POS.Wpf.Import.ApplyConfirmDialog firstConfirmation = null;
+                    var confirmationDeniedReentry = !reenterConfirmation;
+                    EventHandler<System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs> failure = (_, e) =>
+                    {
+                        if (e.Exception is NullReferenceException)
+                            test.PrivateDiagnostic("synthetic_vm_firstchance;exception=" + e.Exception);
+                    };
+                    AppDomain.CurrentDomain.FirstChanceException += failure;
+                    try
+                    {
+                        dialog.Show();
+                        model.LegacyClpConfirmed = true; model.TimeChoice = 1; model.TemporalEvidence = "synthetic-explicit-time";
+                        await model.AnalyzeFilesForTestingAsync(SourceFiles());
+                        foreach (var merchant in model.Merchants)
+                        {
+                            model.AddGroupCommand.Execute(null);
+                            merchant.Group = model.Groups.Last();
+                        }
+                        model.NativeStart = new DateTime(2040, 1, 1); model.MerchantEvidence = "synthetic-merchant"; model.OverlapEvidence = "synthetic-overlap";
+                        model.PreviewCommand.Execute(null);
+                        while (model.IsBusy) { deadline.Token.ThrowIfCancellationRequested(); await Dispatcher.Yield(DispatcherPriority.Background); }
+                        if (!model.ApplyCommand.CanExecute(null)) return false;
+                        confirm = new DispatcherTimer(TimeSpan.FromMilliseconds(10), DispatcherPriority.Send, (_, __) =>
+                        {
+                            if (deadline.IsCancellationRequested)
+                            {
+                                confirm.Stop();
+                                foreach (var pending in Application.Current.Windows.OfType<Win7POS.Wpf.Import.ApplyConfirmDialog>().Where(w => w.Owner == dialog).ToArray()) pending.Close();
+                                return;
+                            }
+                            var popups = Application.Current.Windows.OfType<Win7POS.Wpf.Import.ApplyConfirmDialog>().Where(w => w.IsVisible && w.Owner == dialog).ToArray();
+                            if (popups.Length == 0) return;
+                            Action<Win7POS.Wpf.Import.ApplyConfirmDialog> accept = popup => Descendants<Button>(popup).Single(b => b.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                            if (!reenterConfirmation)
+                            {
+                                confirm.Stop();
+                                if (changeReview) model.OverlapEvidence = "synthetic-review-changed-during-confirmation";
+                                accept(popups.Single()); return;
+                            }
+                            if (firstConfirmation == null)
+                            {
+                                firstConfirmation = popups.Single();
+                                confirmationDeniedReentry = !model.ApplyCommand.CanExecute(null);
+                                if (confirmationDeniedReentry) { confirm.Stop(); accept(firstConfirmation); }
+                                else Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => model.ApplyCommand.Execute(null)));
+                            }
+                            else if (popups.Length > 1) accept(popups.Single(p => p != firstConfirmation));
+                            else if (!model.IsBusy && f.Count("historical_import_operation") == 1) { confirm.Stop(); accept(firstConfirmation); }
+                        }, Dispatcher.CurrentDispatcher);
+                        confirm.Start(); model.ApplyCommand.Execute(null);
+                        while (model.IsBusy) { deadline.Token.ThrowIfCancellationRequested(); await Dispatcher.Yield(DispatcherPriority.Background); }
+                        test.PrivateDiagnostic("synthetic_vm_apply;reentry=" + reenterConfirmation + ";changedReview=" + changeReview + ";denied=" + confirmationDeniedReentry + ";status=" + model.Status);
+                        if (changeReview) return f.Count("historical_import_operation") == 0 && f.Count("historical_transactions") == 0 &&
+                            !model.ApplyCommand.CanExecute(null) && model.Status == Win7POS.Wpf.Localization.PosLocalization.T("history.reviewStale");
+                        return confirmationDeniedReentry && model.Batches.Count == 1 && model.Batches[0].Rows == 5 &&
+                            model.Status.Contains(model.Batches[0].ApplyOperationId) && f.Count("historical_import_operation") == 1;
+                    }
+                    finally
+                    {
+                        confirm?.Stop(); AppDomain.CurrentDomain.FirstChanceException -= failure;
+                        foreach (var popup in Application.Current.Windows.OfType<Win7POS.Wpf.Import.ApplyConfirmDialog>().Where(w => w.Owner == dialog).ToArray()) popup.Close();
+                        dialog.Close(); owner.Close(); workflow.BackupAutomation.Dispose();
+                    }
+                }
+            }
+        }
+
         private static async Task DedupAsync(string data, HistoricalSalesQaCase test)
         {
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))

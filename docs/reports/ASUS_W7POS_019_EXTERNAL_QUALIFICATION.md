@@ -1,6 +1,26 @@
 # ASUS-W7POS-019 — qualifica esterna e scheda operatore Win7
 
-Aggiornamento consegna: 2026-11-09. Codice1823697 SOFTWARE_DELIVERED e
+## Corrente — 9 novembre, legacy committato e patch Windows da qualificare
+
+| Superficie | Stato osservato / residuo |
+| --- | --- |
+| Admin148 | Autenticato PASS su a68ebec2/deployment1cd437f1; overview staff-unavailable e reader Staff safe osservati, docs b5c2dbc |
+| Installato1823697 | Collegamento quotidiano, profilo conservato, login e catalogo vuoto/workbench PASS |
+| Originali Getnet | UI analisi7 PASS; scope legacy4 applicabile salvato con backup e riconciliazione esatta PASS. Moderni bloccati da C |
+| Consultazione reale | Ricevuta originaria/report/dettaglio/CSV PASS; validità riferita al ledger corrente, giugno parziale conservato |
+| Nuovo difetto | NullReference UI dopo commit; prima failure conservata. Rientranza riprodotta su fixture, fix minimo in qualifica; nessun Apply ripetuto o undo reale |
+| Reopen/dedup | Da verificare sul candidato corretto dopo qualifica/pacchetto/installazione, preservando ledger e trust |
+| DPI | Utente dichiara200%/2880x1800;100/125 effettivi ancora pendenti e ripristino200% previsto |
+| Win7/periferiche | BLOCKED_TARGET già dichiarato; nessuna nuova richiesta equivalente. Kit1823697 storico invariato |
+| CSV ingresso | BLOCKED_INPUT, solo XLSX forniti; CSV export reale qualificato separatamente |
+
+Gli hash e i verdi1823697 sotto identificano la baseline installata e il kit
+precedente, non qualificano la nuova patch. Nessuna certificazione Win7 dedotta
+da Windows11. [Matrice corrente](ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+## Storia — consegna1823697 prima dell'Apply reale
+
+Aggiornamento consegna storico: 2026-11-09. Codice1823697 SOFTWARE_DELIVERED e
 invariato, installato/verificato su Windows11; stato complessivo ACTIVE con
 gate reali/evidence/fisico. Percorso B Admin qualificato e pubblicato:
 PR148/9016054, Workera68ebec2, deployment1cd437f1, postmerge CI/Cloudflare e

@@ -4,7 +4,15 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
-## 2026-11-09 — Rollout compatibile e percorso reale ASUS019
+## 2026-11-09 — Legacy reale salvato, correzione conferma ASUS019
+
+- Admin148 nuovo login autenticato PASS: overview staff-unavailable e reader Staff safe osservati sul Worker a68ebec2/deployment1cd437f1; docs b5c2dbc, software REVIEW.
+- Installato1823697: avvio quotidiano Start Menu/profilo conservato, login mascherato, catalogo vuoto e workbench PASS. UI analisi7/piano legacy4 confrontati con oracolo indipendente; A/B validi, CLP esplicito, moderni bloccati da C.
+- Apply legacy committato con backup prodotto verificato; UI NullReference dopo commit conservata. Riconciliazione riga per riga PASS, ricevuta/report/dettaglio/CSV reali PASS. Nessun retry o undo del lotto valido; SQLite/FK e invarianti commerciali PASS.
+- Regressione nell'esistente HIST02: servizio e conferma singola PASS; rientranza della conferma riproduce lo stesso errore postcommit, stack live originale non disponibile. Fix piccolo del ViewModel, piano stabile/seconda attivazione negata/review cambiata respinta; build x86/dialog standard PASS, qualifica exact-SHA aperta.
+- Run diagnostici01-04 conservati FAIL; HIST08 incontra lock image-cache del POS reale concorrente. POS chiuso normalmente, nessuna cache/trust cancellata. Fresh run05 PASS8/52,53.276s entro60s, cleanup confermato e nessun orfano; canonical/exact-SHA package pendenti. Reopen/dedup corretto e DPI100/125 pendenti; host dichiarato200%/2880x1800, Win7 già indisponibile, CSV_INPUT BLOCKED_INPUT. ACTIVE, nessun DONE.
+
+## Storia — 2026-11-09, rollout prima dell'analisi e dell'Apply reali
 
 - Windows1823697 invariato, nessuna reinstallazione o nuova suite completa. Percorso B Admin: bundle servito esportato readonly, reader TASK140F recuperato e artefatto Linux proveniente dalla CI conservato, senza SQL/grant/secret put.
 - PR147/cdebb26: POS installato avviato manualmente dall'utente dopo denial del tool, login/catalogo vuoto/workbench PASS. Console pos_admin FAIL per guard manager-only; prima failure conservata, processo task fermato e rollback pinned399720d2 verificato. Inventario RPC non provava equivalenza semantica.

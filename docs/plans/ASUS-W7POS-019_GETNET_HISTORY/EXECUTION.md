@@ -1,6 +1,43 @@
 # ASUS-W7POS-019 execution ledger
 
-## Latest checkpoint — 2026-11-09, rollout and actual operator path
+## Latest checkpoint — 2026-11-09, durable legacy import and confirmation fix
+
+Admin148 live authenticated PASS: staff-unavailable overview and authorized safe
+Staff reader observed on served a68ebec2/deployment1cd437f1. Admin docs b5c2dbc;
+software REVIEW, overall ACTIVE. First147 failure/rollback retained.
+
+Installed1823697 daily Start Menu shortcut inherited the retained NEW_SHOP_019
+profile; user entered the masked PIN. Login, authoritative empty catalog and
+history workspace PASS. Seven original XLSX hash checks and actual UI analysis
+PASS against independent frozen controls; modern preview remains NeedsEvidence.
+Separate four legacy files had applicable A/B/CLP evidence and current plan.
+User confirmed once; product pre-apply backup verified and transaction committed.
+UI then reported NullReferenceException. Exact rowwise reconciliation PASS:
+original textual identities, source hashes/rows, local timestamps, signed amounts
+and net values. One original receipt/active batch; commercial tables unchanged.
+No repeat Apply or undo of this valid ledger.
+
+Actual receipt read, historical-only daily/period report, selected-day detail
+and CSV export PASS. Private CSV reconciles exactly to the ledger snapshot,
+with report metadata, intact identifiers and formula-safe text. VerifiedForScope
+does not certify complete source-month coverage; June remains partial.
+
+Existing HIST02 reproduces the generic postcommit NullReference when Apply
+reenters while confirmation is open. Direct service and single VM confirmation
+pass; the exact original live stack is unavailable. Minimal fix holds the plan,
+blocks reentry and rejects changed review after the modal. Build x86 and dialog
+standards PASS. Fresh focused run05 PASS,8cases/52asserts, including single
+confirmation, denied reentry and changed review with zero writes; exit0,
+cleanup confirmed/no orphan,53.276s within unchanged60s process budget.
+Canonical exact-SHA qualification and package remain pending.
+Diagnostic runs01-04 retained; HIST08 was blocked by the real POS holding image
+cache. Real POS closed normally before the next isolated QA run.
+
+Getnet C modern MISSING; CSV_INPUT BLOCKED_INPUT; physical Win7 unavailable.
+Host display user-reported200%/2880x1800; temporary100% requested, no scale change
+performed by the tool. Reopen/dedup on corrected candidate and100/125 remain open.
+
+## History — 2026-11-09, rollout before actual analysis/apply
 
 Same ASUS019/R3, Windows1823697 unchanged. Path B qualified full Admin unit:
 served Worker exported read-only, existing TASK140F staff reader restored and
