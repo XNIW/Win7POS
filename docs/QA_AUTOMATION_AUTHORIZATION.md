@@ -6,6 +6,12 @@ Non aggiunge dipendenze al prodotto net48/x86 né richiede `pwsh` sul target Win
 Se l'SDK verificato è installato fuori PATH, aggiungerne temporaneamente la
 directory soltanto alla sessione che avvia il comando; non cambiare `global.json`.
 
+ASUS019 geometria: il runner functional esistente include22scenari, aggiungendo
+OPERATOR_DIALOG_GEOMETRY e AUTHENTICATED_SHELL_UX in processi separati con receipt propria e lo stesso
+limite60s. Usa esclusivamente login loopback, dati/finestre sintetici posseduti
+e misure native; non usa il profilo del negozio. Il worker storico resta60s/52assert
+e il passo superiore90s. Nessun POS reale può concorrere con il harness UI.
+
 Invocabile direttamente da terminale, CI o da una chat Codex autorizzata a eseguire
 questi test. `codex-cli 0.142.4` è stato verificato con `codex --version` e
 `codex exec --help`; il runner non richiede opzioni Codex speciali né modifica
@@ -25,7 +31,7 @@ Windows esegue la sequenza canonica: restore locked soluzione, required gates,
 build soluzione, Core/Data, selftest, build WPF/harness x86 e i cinque runner
 immagini/serializzazione, functional, authorization lease, logging e paging
 Dispatcher. Functional conserva il budget di 60.000 ms per processo scenario;
-deve produrre esattamente visual + 19 risultati distinti. Un suo FAIL non impedisce
+deve produrre esattamente visual + 21 risultati distinti. Un suo FAIL non impedisce
 gli smoke successivi. Un prerequisito fallito blocca soltanto i propri dipendenti.
 Nessuna suite vuota o TRX con zero test può produrre PASS.
 

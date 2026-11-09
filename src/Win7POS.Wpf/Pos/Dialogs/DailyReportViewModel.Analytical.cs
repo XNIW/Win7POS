@@ -57,7 +57,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void InitializeAnalyticalReports(IPermissionService permissions, OperatorSession session, Func<Task> importHistoryAction)
         {
             _reportPermissions = permissions; _reportSession = session;
-            ImportHistoryCommand = new AsyncRelayCommand(async () => { if (importHistoryAction != null) { await importHistoryAction().ConfigureAwait(true); InvalidateAnalyticalReport(); } },
+            ImportHistoryCommand = new AsyncRelayCommand(async () => { if (importHistoryAction != null) { await importHistoryAction().ConfigureAwait(true); if (_reportContext != null && !_reportContext.Coordinator.IsCurrent(_reportContext.Snapshot.Token)) InvalidateAnalyticalReport(); } },
                 _ => !IsBusy && importHistoryAction != null && (_reportPermissions?.Has(PermissionCodes.RegisterImportHistory) == true || _reportPermissions?.Has(PermissionCodes.RegisterCancelHistory) == true));
             CancelReportCommand = new RelayCommand(() => _reportCancellation?.Cancel(), _ => _reportCancellation != null && !_reportFinalizing);
             ConfigureReportTimePolicyCommand = new AsyncRelayCommand(OpenReportTimePolicyConfigurationAsync,

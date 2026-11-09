@@ -56,6 +56,7 @@ $mainXaml = Read-Text "src/Win7POS.Wpf/MainWindow.xaml"
 $mainCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
 $startupCoordinatorPolicy = Read-Text "src/Win7POS.Core/Online/PosStartupCoordinatorPolicy.cs"
+$shellReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosShellAdmissionReader.cs"
 $posView = Read-Text "src/Win7POS.Wpf/Pos/PosView.xaml.cs"
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"
 $dialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
@@ -76,26 +77,20 @@ if ($mainXaml -notmatch 'x:Name="PosTabHost"' -or $mainCode -notmatch "private\s
     Pass "POS view lazy host/creation guard present"
 }
 
-$saleSafeGateIndex = Index-OrFail $startupCoordinator ".IsCatalogSaleSafeAsync(factory)" "sale-safe gate missing from startup coordinator"
-$ensurePosIndex = Index-OrFail $mainCode "EnsurePosViewCreated();" "POS lazy creation call missing"
 $accessDialogIndex = Index-OrFail $mainCode "POS access dialog opening" "unified POS access startup marker missing"
 $accessAcceptanceIndex = Index-OrFail $mainCode "AcceptAuthenticatedAccessAsync(login.AccessMode)" "startup coordinator access acceptance missing"
-if ($accessDialogIndex -gt $accessAcceptanceIndex -or $ensurePosIndex -lt $accessAcceptanceIndex -or
-    $startupCoordinator -notmatch 'AcceptAuthenticatedAccessAsync[\s\S]{0,700}IsCatalogSaleSafeAsync\(factory\)') {
-    Fail "unified access must precede the sale-safe decision and PosView must follow it"
-} else {
-    Pass "unified access precedes sale-safe decision; PosView creation follows it"
-}
-
-if ($startupCoordinator -notmatch "PosStartupCoordinatorPolicy\.DetermineShellMode" -or
-    $startupCoordinatorPolicy -notmatch "PosShellStartupPolicy\.Determine" -or
-    $mainCode -notmatch "PosShellMode\.Recovery" -or
-    $mainCode -notmatch "EnterRecoveryModeAsync" -or
-    $mainCode -notmatch "if\s*\(shellMode\s*==\s*PosShellMode\.Pos\)[\s\S]{0,180}EnsurePosViewCreated") {
-    Fail "catalog-unsafe startup must enter recovery without creating PosView"
-} else {
-    Pass "catalog-unsafe startup enters recovery and blocks normal PosView"
-}
+if ($accessDialogIndex -gt $accessAcceptanceIndex -or
+    $startupCoordinator -notmatch 'AcceptAuthenticatedAccessAsync[\s\S]{0,1000}ReadShellAdmissionAsync' -or
+    $shellReader -notmatch 'IsCatalogSaleSafeAsync' -or $shellReader -notmatch 'IsAuthoritativelyEmptyAsync' -or
+    $shellReader -notmatch 'CurrentOperatorAuthorityVersion' -or $shellReader -notmatch 'IsCurrentAndActiveAsync' -or
+    $mainCode -notmatch 'if\s*\(_shellCanSell\)[\s\S]{0,180}EnsurePosViewCreated') {
+    Fail "versioned authenticated admission and sale-safe-only commercial view are required"
+} else { Pass "authenticated empty shell and sale-safe commercial view are separate" }
+if ($startupCoordinatorPolicy -notmatch 'EvaluateAdmission' -or $startupCoordinatorPolicy -notmatch 'AuthenticatedEmpty' -or
+    $mainCode -notmatch 'EnterRecoveryModeAsync' -or $mainCode -notmatch 'EmptyCatalogPlaceholder' -or
+    $dialogCode -match 'HistoryButton|HistoricalOnboardingAccess|LogoutForced\(\)\s*;\s*_historyAccess') {
+    Fail "login must transfer a normal shell without a compulsory historical capability"
+} else { Pass "verified empty login transfers normal shell; unsafe catalog remains protected" }
 
 if ($mainCode -notmatch "RecoveryModeBanner\.Visibility\s*=\s*Visibility\.Visible" -or
     $mainCode -notmatch "OnVerifyRecoveryCatalogClick" -or
@@ -129,15 +124,15 @@ if ($dialogCode -match "result\.Success[\s\S]{0,220}DialogResult\s*=\s*true") {
     $completeSignInMethod = [regex]::Match($dialogCode, "private\s+async\s+Task<bool>\s+CompleteOnlineSignInAsync[\s\S]*?private\s+async\s+Task<bool>\s+TryOfflineSignInAsync").Value
     $catalogRetryMethod = [regex]::Match($dialogCode, "private\s+async\s+Task\s+RunCatalogRetryAsync[\s\S]*?private\s+void\s+BeginBusySetup").Value
     $initialReadyRoutesThroughGate = $dialogCode -match "result\.CanOpenPos[\s\S]{0,220}CompleteOnlineSignInAsync"
-    $completionRechecksSaleSafe = $completeSignInMethod -match "EnsureCatalogSaleSafeForAccessAsync[\s\S]*DialogResult\s*=\s*true"
+    $completionRechecksSaleSafe = $completeSignInMethod -match "EnsureShellAdmissionForAccessAsync[\s\S]*DialogResult\s*=\s*true"
     $retryRequiresSaleSafe = $catalogRetryMethod -match "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe"
     $resumeOnlyClosesInsideReadyBranch = $catalogRetryMethod -match "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe[\s\S]*_resumeCatalogOnly[\s\S]*DialogResult\s*=\s*true"
     $normalRetryRoutesThroughGate = $catalogRetryMethod -match "CompleteOnlineSignInAsync"
     if (-not $initialReadyRoutesThroughGate -or -not $completionRechecksSaleSafe -or -not $retryRequiresSaleSafe -or
         -not $resumeOnlyClosesInsideReadyBranch -or -not $normalRetryRoutesThroughGate) {
-        Fail "dialog must close only after CanOpenPos or completed sale-safe retry"
+        Fail "dialog must complete only after fenced verified shell readiness"
     } else {
-        Pass "dialog closes only after sale-safe readiness"
+        Pass "dialog completes after fenced verified shell readiness"
     }
 }
 

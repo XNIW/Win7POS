@@ -1,6 +1,33 @@
 # ASUS-W7POS-019 execution ledger
 
+## Combined UX/geometry implementation — local, qualification pending
+
+Same ASUS019/R3 ACTIVE. Pure shell admission and fenced login transfer implemented;
+verified empty opens MainWindow with no commercial VM or history permission gate.
+Start-of-day keeps CanOpenPos sale-only and separately admits authenticated shell;
+timeout rechecks authority/catalog. Shared report/import composition preserves
+filters, session and cart; unavailable payment totals are unavailable. Recovery,
+operator change and existing sync refresh rederive admission. No backend changes.
+
+Focused working-tree evidence: ux-navigation-03-root.private.txt (ordinary
+MainWindow13.297s PASS), ux-navigation-02-root.private.txt (geometry10.870s and
+integrated1.904s PASS), ux-core-initial-root.private.txt (140selected PASS),
+ux-required-gates-02.private.log (50/50 PASS). First nav01 TIMEOUT and all
+compile/gate failures retained. Source not yet published/installed. Canonical
+Windows All and exact candidate delivery still required. Native200% restored;
+new candidate100/125 and low-resolution/hardware verification remain open.
+
 ## Latest checkpoint — 2026-11-09, qualified a8286c6 installed
+
+Latest UX addendum accepted in this same Execution: verified-empty authenticated
+shell with navigation/report, commercial admission still denied; voluntary history
+from sales summary, child close never substitutes for app exit or logout. This
+supersedes mandatory historical login/workspace UX. UX gate ACTIVE alongside
+geometry.21:21UTC: local/remote c54be47, installed a828 EXE hash fa69762f…6a6f,
+no POS/harness active. Geometry dirty patch and new test saved immutably under
+private pre-shell-ux-20261109T212141Z before overlapping edits; no new source
+commit or pipeline yet. Readiness/session ownership/start-of-day/MainWindow
+chain to implement and qualify; prior greens do not qualify this new UX.
 
 Geometry addendum integrated into this same Execution/R3 before final delivery:
 center each new operator surface in its relevant monitor work area, retaining
@@ -11,6 +38,20 @@ Real POS closed normally at an idle checkpoint, no backup/SQLite operation activ
 No new Apply of originals: post-successor review only, new0 expected. Geometry
 regression/fix/qualification is now an explicit open gate; existing greens stay
 attributed to a828, not to a future geometry candidate.
+
+Geometry implementation checkpoint: one shared work-area policy,39XAML roots
+Manual, unchanged owners; measured initial normal sizing, bounded minima and
+size-only clamp, long-message body scrolling with separate footer. Geometry
+worker in existing functional wrapper is the additional21st case, separate
+from historical60s/52asserts. Red reproduced; intermediate non-overlay centering
+FAIL retained; focused22measurements PASS in10.065s process at192DPI. Native
+first-visible HWND witness and independent GetMonitorInfo expected, card/footer,
+four languages, six literal rectangle cases, cancel zero-write/confirm once,
+move preserved/resize containment PASS. Required gates50/50/build x86 PASS.
+Recovery updated from old owner convention to stronger work/card/CTA checks,
+then current-source PASS30.160s. Original local weakref FAIL remains historical,
+without claiming its cause fixed. Exact-SHA qualification/package/install and
+current-source100/125 plus final200/live reopen still pending.
 
 Source/package a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3, version
 1.0.0-dev.a8286c669a7c, installed41/41. CI42673051923, Security42673051757,

@@ -3,12 +3,30 @@
 This file tracks Asus Windows build-machine tasks. Detailed evidence belongs in
 dated reports under `docs/reports/`.
 
+## ASUS-W7POS-019 — current continuation
+
+ACTIVE, same R3. Combined authenticated-empty shell/navigation and shared dialog
+geometry implemented locally; focused real MainWindow navigation and scanner/
+cart/focus PASS, geometry PASS, required gates50/50 PASS. Canonical Windows All,
+exact-SHA package/install and retained-profile review still open. No new real
+Apply/undo. Installed a828 remains distinct from local candidate. Win7 target
+unavailable; modern time evidence C and CSV input remain separate blockers.
+
 ## Recent Tasks
+
+Ultimo addendum ASUS019: gate UX ACTIVE per shell autenticata con catalogo vuoto,
+vendite negate, storico volontario dal riepilogo e chiusure che conservano la
+sessione/processo. Supera la precedente UX login storico; integra la geometria
+locale non pubblicata. HEAD/main c54be47, installato a828 ricontrollato, runtime chiusi.
 
 ASUS019 addendum9novembre: gate condiviso geometria ACTIVE prima della consegna
 finale (work area centrata, owner autentico, titolo/footer raggiungibile a200%).
 a828 già installato;200% ripristinato e POS chiuso inattivo. Nessun nuovo Apply
 degli originali, soltanto review dopo il successore; fixture per mutazioni.
+
+Fix comune implementato, focused22misure200% PASS, guard50/50/build x86 PASS;
+Recovery nuovo codice30.160s PASS, prima failure weakref conservata. Candidato
+geometria in qualifica,100/125 e installato/riapertura finale ancora aperti.
 
 | Task ID | Status | Title | Commit | Evidence |
 | --- | --- | --- | --- | --- |

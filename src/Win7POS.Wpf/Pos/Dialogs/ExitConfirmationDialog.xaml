@@ -4,7 +4,7 @@
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         Title="{loc:Loc exit.title}"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         SizeToContent="WidthAndHeight"
         ResizeMode="NoResize"
         ShowInTaskbar="False"

@@ -9,7 +9,7 @@
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         SizeToContent="WidthAndHeight"
         MinWidth="440"
         MinHeight="240"
@@ -18,16 +18,18 @@
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         <TextBlock x:Name="TitleText" Grid.Row="0" Style="{StaticResource DialogTitleStyle}"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="22">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <TextBlock x:Name="MessageText" Grid.Row="0" TextWrapping="Wrap" FontSize="14" Foreground="#444" LineHeight="22"/>
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="14" Foreground="#444" LineHeight="22"/>
+                </ScrollViewer>
                 <Button Grid.Row="1" MinWidth="120" HorizontalAlignment="Right" IsDefault="True" IsCancel="True"
                         Margin="{StaticResource DialogFooterMargin}"
                         Style="{StaticResource DialogActionButtonStyle}" Click="Ok_Click">

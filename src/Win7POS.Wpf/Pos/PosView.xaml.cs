@@ -19,10 +19,12 @@ namespace Win7POS.Wpf.Pos
         private ListBox _scrollTarget;
         private bool _barcodeComposing;
 
-        public PosView()
+        public PosView() : this(null) { }
+
+        internal PosView(PosWorkflowService service)
         {
             InitializeComponent();
-            var vm = PosViewComposition.CreateViewModel();
+            var vm = PosViewComposition.CreateViewModel(service);
             vm.FocusBarcodeRequested += FocusBarcode;
             vm.StatusToastDetailsRequested += () => CatalogWarningDetailsRequested?.Invoke();
             DataContext = vm;
@@ -266,10 +268,10 @@ namespace Win7POS.Wpf.Pos
     /// <summary>Mini Composition Root: assembla le dipendenze per PosViewModel.</summary>
     internal static class PosViewComposition
     {
-        public static PosViewModel CreateViewModel()
+        public static PosViewModel CreateViewModel(PosWorkflowService sharedService = null)
         {
             var logger = new Infrastructure.FileLogger("PosView");
-            var service = new PosWorkflowService();
+            var service = sharedService ?? new PosWorkflowService();
             var options = PosDbOptions.Default();
             var factory = new SqliteConnectionFactory(options);
             var userRepo = new UserRepository(factory);

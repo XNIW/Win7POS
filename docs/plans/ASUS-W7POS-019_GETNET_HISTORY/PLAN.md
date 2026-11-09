@@ -1,6 +1,38 @@
 # ASUS-W7POS-019 — Importazione storico Getnet
 
+## Checkpoint UX e geometria — implementazione locale 9 novembre
+
+La policy Core distingue autenticazione, shell vuota verificata, catalogo
+vendibile e recovery. Login online/offline condividono completamento fenced
+(versione operatore, lease, generation/shop, cancellazione); nessuna capability
+storico è trasferita alla shell. CanOpenPos conserva significato vendibile;
+start-of-day espone separatamente CanEnterAuthenticatedShell. Anche il timeout
+rivalida le prove, senza inventare CatalogSaleSafe=true.
+
+MainWindow vuota non crea PosView/VM commerciale; mostra operatore, menu e
+messaggio localizzato con Sync Center. Riepilogo e cassa condividono servizio e
+factory; import volontario unico, filtri conservati, Escape dal report torna alla
+cassa e allo scanner. Payment totals indisponibili mostrano N/A, non zero.
+
+Fixture MainWindow reale PASS: tre chiusure import, PID/HWND/sessione/filtri,
+riavvio senza permesso storico, transizione full autorevole, login ready,
+scansione → carrello → report → Escape con carrello/focus conservati. Processo
+13.297s; geometria22osservazioni10.870s e regressione integrata vendita/ricevuta
+1.904s PASS (working tree). Gate50/50 PASS. Prima fixture TIMEOUT60s conservata:
+11assert positivi, osservatore modale della transizione bloccato; observer
+registrato prima di ShowDialog, stesso budget. Qualifica canonica/candidato,
+installazione e percorso reale restano ACTIVE; a828 rimane installato.
+
 ## 0. Stato corrente e mandato
+
+Ultimo addendum UX9novembre, stessa Execution/R3: accesso valido e catalogo
+autorevolmente vuoto devono aprire la shell autenticata con navigazione/report,
+senza abilitare vendite. Storico volontario da riepilogo → Storico → Importa;
+Close/X/Escape del figlio conservano processo, sessione, filtri e ritorno alla
+cassa. Questo supera il precedente trattenimento obbligatorio nel login storico.
+Gate UX ACTIVE insieme alla geometria: patch locale preservata, non ancora
+pubblicata; HEAD/main c54be47 e installato a8286c6 verificati21:21UTC. Nessun
+runtime attivo. Backup/ledger/trust conservati, nessun nuovo Apply o undo reale.
 
 Addendum Execution9novembre: prima della consegna finale ogni nuovo dialog
 operatore deve essere centrato nella work area del monitor pertinente,
@@ -10,6 +42,13 @@ vero owner. Gate geometria ACTIVE: a8286c6 è già installato, display200%
 ripristinato e osservato; POS chiuso ordinariamente al checkpoint inattivo.
 Nessun nuovo Apply degli originali: dopo il nuovo candidato soltanto reopen,
 report/CSV e review del reimport con nuovi0. Mutazioni sulle sole fixture.
+
+Correzione implementata nel livello comune e39root XAML, con owner autentico
+invariato. Focused sintetico200%:22misure, prima posizione HWND/card/footer,
+sei casi matematici e cancel/confirm singolo PASS; guard50/50 e build x86 PASS.
+Recovery nuovo codice30.160s PASS, vecchio weakref FAIL conservato senza causa
+inventata. Nuovo candidato geometria da qualificare/installare; a828 rimane
+installato.100/125 del nuovo codice e verifica200% finale aperti.
 
 | Campo | Valore |
 | --- | --- |

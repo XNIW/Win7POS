@@ -56,6 +56,14 @@ Questi ID non sono secret e possono essere passati allo sviluppatore o al
 manager Admin Web. Non condividere token dispositivo/sessione, PIN/password,
 credential raw, service-role key o dump SQLite completi.
 
+`category=dialog.geometry phase=first_render` registra una sola osservazione per
+apertura: tipo del dialog, DPI WPF, work area/HWND/card e pulsanti condivisi in
+pixel fisici, più il primo HWND visibile catturato dall'hook. Non legge titolo,
+testi, credenziali o contenuti finanziari. È diagnostica del prodotto installato,
+non un hook globale o un'azione di posizionamento in ContentRendered; la policy
+rimane in SourceInitialized. Le receipt QA acquisiscono separatamente l'expected
+da GetMonitorInfo. Il log resta nel profilo selezionato.
+
 ## Come individuare la causa di un crash/errore
 
 1. **Apri `app.log`** e vai alla fine (ultimi eventi).

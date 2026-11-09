@@ -1,6 +1,40 @@
 # ASUS-W7POS-019 — Retry, qualifica software e gate end-to-end
 
+## Latest combined UX gate — ACTIVE
+
+The old chain was reproduced: historical child Close preserves the login;
+Cancel of the underlying unaccepted login closes MainWindow and its login-owned
+historical session. No evidence attributes direct process exit to child Close.
+New login transfers a version-fenced authenticated session exactly once, including
+verified-empty shops without history permission. MainWindow defers commercial VM
+until authoritative sale safety and start-of-day gates. History is voluntary in
+the existing report. Report numbers are unavailable until a current calculation.
+
+Focused real-MainWindow fixture PASS (13.297s): empty login, three import close
+paths (button/X/Escape), same PID/HWND/session/filter/model, report Escape/cart/
+scanner focus, restart without history permission, full authoritative transition
+and ready login/scanner. Separate geometry22observations10.870s and integrated
+sale/retry/receipt/restart1.904s PASS. Required gates50/50 PASS. New source is still
+local; canonical Windows All, exact-SHA package/install and actual NEW_SHOP_019
+navigation/review-only remain required. No original Apply/undo repeated.
+
+Evidence pointers: ux-navigation-03-root.private.txt, ux-navigation-02-root.private.txt,
+ux-core-initial-root.private.txt, ux-required-gates-02.private.log under existing
+private resume. nav01 TIMEOUT60s retained (modal observer fixture,11positive
+asserts); unchanged process budget after observer fix. Previous a828 validation
+below remains attributed to a828. Physical Win7/second monitor absent; modern C
+and CSV input still unavailable. Restored native200% already observed; candidate
+100/125/1024×768 and installed200% remain pending, not inherited PASS.
+
 ## Stato corrente — 9 novembre 2026, a8286c6 qualificato e installato
+
+Ultimo requisito UX in Execution: dopo accesso valido entrare nella shell anche
+con catalogo autorevolmente vuoto, vendite ancora negate; storico volontario
+dal riepilogo e chiusure secondarie senza logout/uscita. Gate UX ACTIVE, oltre
+alla geometria. La patch locale non è pubblicata: HEAD/main c54be47, installato
+a8286c6 ricontrollato, nessun runtime attivo. Snapshot privato pre-shell-ux
+conserva il delta geometria prima delle modifiche sovrapposte. Il vecchio percorso
+login/workspace sotto è evidence della vecchia UX, non il nuovo criterio PASS.
 
 Addendum geometria ACTIVE nella stessa Execution: centro della work area,
 owner autentico, titolo/footer raggiungibili anche a200% e con annidamenti.
@@ -9,6 +43,55 @@ visibili, decentramento osservato senza attribuire un clipping non dimostrato.
 POS chiuso ordinariamente prima di fixture/harness. Il successore geometria
 richiede nuova qualifica; a828 non chiude questo nuovo gate. Sugli originali
 si eseguirà soltanto review del reimport, senza nuovo Apply o undo.
+
+Correzione condivisa implementata, nuovo candidato da congelare/qualificare;
+installato operativo ancora a8286c6. Il focused geometria separato dal worker
+storico passa22misure in10.065s processo, con owner e card reali della catena
+login loopback → workspace → import → conferma → messaggio/parent. Cancel
+scrive zero, conferma una sola operazione; traversal, ritorno all'owner,
+ridimensionamento NOMOVE e trascinamento non ricentrato PASS. Sei expected
+rettangolari indipendenti coprono origini negative, taskbar superiore/laterale,
+work area ridotta,1024×768 richiesto e1024×600 best effort. Sono simulazioni,
+non una certificazione fisica multi-monitor. EN/IT/ES/ZH osservate.
+
+Il primo rosso misura overlay fuori centro di424/136pixel, import oltre il
+bordo utile e footer del messaggio lungo fuori superficie. Il primo fix
+intermedio contieneva ma non centrava il non-overlay: WPF applicava
+SizeToContent dopo la posizione iniziale alla dimensione minima. Il successore
+misura prima di show, fissa le dimensioni iniziali entro il cap e lascia il
+contenuto variabile nello scroll interno. Il clamp ora tratta anche NOMOVE e
+NOSIZE, riprende i campi non definiti dal vero HWND e ricontiene senza
+ricentratura continua. Overlay sempre sulla work area; owner autentici invariati.
+
+| Superficie sintetica al200%,192DPI | Work area pixel | Card/finestra pixel `(x,y,w,h)` | Centro / bordi / footer / primo HWND |
+| --- | --- | --- | --- |
+| POS access | 0,0,2880,1704 | 880,409,1120,886 | PASS; offset0/0 |
+| Historical workspace | stessa | 815,558,1250,588 | PASS; offset0/0 |
+| Historical import vuoto/analizzato | stessa | 720,332,1440,1040 | PASS; offset0/0, footer fuori dal corpo scorrevole |
+| Confirm import / cancel | stessa | 352,572,2176,560 | PASS; offset0/0, nested owner conservato |
+| Messaggio lungo | stessa | 1000,48,880,1608 | PASS; messaggio scorrevole, pulsante esterno |
+| LanguageSettings, quattro lingue | stessa | 1010,628,860,448 nel primo caso | PASS; misure per lingua nella receipt privata |
+| DailyReport | stessa | 720,332,1440,1040 | PASS; contenuto/report sintetico |
+
+Expected monitor acquisito dal test via GetMonitorInfo, distinto dall'helper
+di produzione. Primo HWND effettivo catturato al primo WINDOWPOSCHANGED visibile;
+superficie overlay misurata con RequireOverlayCard/PointToScreen. Pixel fisici,
+DIP relativi, owner, monitor e footer sono distinti nella receipt. Tolleranza
+centro2pixel. Il prodotto registra una sola osservazione first_render redatta
+nel log, senza testi o dati finanziari, per verificare anche l'installato.
+
+Build Release x86 senza warning e guard50/50 PASS. I primi gate45/50 e49/50
+erano aspettative letterali obsolete CenterOwner e fixture functional20: sostituite
+con policy comune e contratto21, mantenendo tutte le prove precedenti e aggiungendo
+geometria come worker separato entro60s. Nessun aumento del budget storico60s
+o del passo90s. Recovery sul nuovo codice passa30.160s dopo sostituzione della
+propria vecchia aspettativa owner con work area/card/CTA più forti. La prima
+failure di questa prosecuzione era tale aspettativa, non il vecchio weakref.
+Il precedente FAIL locale19/20 resta conservato: nessuna causa del weakref
+dichiarata risolta da un verde diverso o retry invariato. I primi errori di
+compilazione/invocazione del test, prima dell'avvio, sono conservati privati.
+Restano da eseguire qualifica exact-SHA,100/125 del nuovo codice, installazione,
+riapertura reale e verifica200% finale. Gate UI complessivo ancora ACTIVE.
 
 Stessa ASUS019/R3, ACTIVE; software REVIEW. Codice/pacchetto
 `a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3`, versione
@@ -29,7 +112,7 @@ riproduce lo stesso errore postcommit; lo stack originario live non è disponibi
 | Admin servito | Percorso B, PR148/9016054, Worker a68ebec2-3c55-46f8-bf4d-502e326187af e deployment1cd437f1-0608-408b-ba42-eb0f9716c7e8 invariati al refresh readonly. Login web corrente: overview staff-unavailable distinta da denial; reader Staff safe autorizzato PASS |
 | Originali e prove | Analisi UI7 su1823697 confrontata con oracolo OOXML indipendente; originali invariati. A/B VERIFIED, tre alias distinti; C modern MISSING. Solo legacy4 committati con backup e riconciliazione esatta. Giugno parziale conservato, date assenti non sono zeri |
 | Consultazione sul successore | LIVE_REOPEN_PENDING: riapertura ricevuta/report, nuovo CSV e reimport identico da concludere. Le prove prima dell'update restano PASS attribuite a1823697; nessun undo del lotto valido |
-| DPI e tastiera | Nativi100% e125% osservati, titolo/footer/form vuoto interamente visibili a2880×1800. Shift+Tab/Enter aprono il file picker, Escape lo chiude senza selezioni; forward Tab/assistività non interamente certificati. Ripristino200% richiesto, ancora da confermare |
+| DPI e tastiera | Nativi100% e125% osservati, titolo/footer/form vuoto interamente visibili a2880×1800. Shift+Tab/Enter aprono il file picker, Escape lo chiude senza selezioni; forward Tab/assistività non interamente certificati. Ripristino200% confermato e osservato sul form a828; nuovo candidato ancora da verificare |
 | Esterni | CSV_INPUT=BLOCKED_INPUT (solo XLSX ricevuti); moderni richiedono prova C pertinente ai campioni privati già preparati. Win7 fisico/periferiche NOT_RUN/BLOCKED_TARGET già dichiarato; nessuna certificazione trasferita da Windows11 |
 
 Prime failure conservate: ca4e437 CI oltre60s pur con8/52 assert PASS e Load

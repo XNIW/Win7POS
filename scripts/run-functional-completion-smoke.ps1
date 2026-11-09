@@ -82,7 +82,7 @@ function Copy-FunctionalEvidence([string]$DataDirectory, [string]$EvidenceDirect
     # JSON is also used for trust profiles. Export only the known functional
     # measurement receipt; unknown JSON stays with the owned source data.
     $files = @(Get-ChildItem -LiteralPath $DataDirectory -File | Where-Object {
-        $_.Extension -in @('.txt','.log','.csv','.png') -or $_.Name -ceq 'sync-backup-load.json'
+        $_.Extension -in @('.txt','.log','.csv','.png') -or $_.Name -in @('sync-backup-load.json','operator-dialog-geometry.private.json','authenticated-shell-ux.private.json')
     })
     if ($files.Count -gt 256) { throw 'Functional diagnostic file count exceeds export bound.' }
     foreach ($file in $files) {
@@ -95,7 +95,7 @@ if (-not $HarnessDirectory) {
     $HarnessDirectory = Join-Path $repoRoot "tests\Win7POS.Wpf.UiSmokeHarness\bin\$Platform\$Configuration\net48"
 }
 $exe = [IO.Path]::GetFullPath((Join-Path $HarnessDirectory 'Win7POS.Wpf.UiSmokeHarness.exe'))
-$scenarios = @('IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
+$scenarios = @('OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
 foreach ($selected in $Scenario) {
     if ($selected -cnotin $scenarios) { throw "Unknown functional scenario: $selected" }
 }
@@ -138,8 +138,8 @@ try {
         $dataDir = Join-Path $dataRoot ('case-{0:D2}' -f $caseIndex++)
         New-Item -ItemType Directory -Path $dataDir | Out-Null
         $visual = $name -eq 'FUNCTIONAL_VISUAL'
-        $timeoutMs = 60000 # ASUS-W7POS-019 R3: all twenty process scenarios share the declared budget.
-        $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
+        $timeoutMs = 60000 # ASUS-W7POS-019 R3: each isolated process retains the declared budget.
+        $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } elseif ($name -eq 'AUTHENTICATED_SHELL_UX') { Join-Path $dataDir 'authenticated-shell-ux-smoke.txt' } elseif ($name -eq 'OPERATOR_DIALOG_GEOMETRY') { Join-Path $dataDir 'operator-dialog-geometry-smoke.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
         $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$evidenceDir; dataDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; cleanupSucceeded=$null; cleanupError=$null; evidenceExportError=$null; error=$null }
         $process = $null
         $threadObserver = $null
@@ -149,7 +149,7 @@ try {
             if (-not $harnessHash) { throw 'Build the x86 WPF harness first.' }
             $arguments = @('--data-dir', ('"' + $dataDir + '"'))
             if ($visual) { $arguments += @('--ui-ux-final-closeout','--output-dir', ('"' + $evidenceDir + '"')) }
-            else { $arguments += @('--functional-completion-smoke','--scenario',$name) }
+            elseif ($name -eq 'AUTHENTICATED_SHELL_UX') { $arguments += '--authenticated-shell-ux-smoke' } elseif ($name -eq 'OPERATOR_DIALOG_GEOMETRY') { $arguments += '--operator-dialog-geometry-smoke' } else { $arguments += @('--functional-completion-smoke','--scenario',$name) }
             $process = Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $evidenceDir 'stdout.log') -RedirectStandardError (Join-Path $evidenceDir 'stderr.log')
             $record.pid = $process.Id
             $null = $process.Handle

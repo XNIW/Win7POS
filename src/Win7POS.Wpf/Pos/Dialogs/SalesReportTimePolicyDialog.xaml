@@ -3,7 +3,7 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
  xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
- Title="{loc:Loc reportTimePolicy.title}" WindowStartupLocation="CenterOwner" ShowHeader="False"
+ Title="{loc:Loc reportTimePolicy.title}" WindowStartupLocation="Manual" ShowHeader="False"
  Width="800" Height="620" MinWidth="560" MinHeight="420" SizeToContent="Manual" ResizeMode="CanResize">
  <Grid Margin="20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>

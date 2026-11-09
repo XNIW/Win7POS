@@ -49,23 +49,32 @@ namespace Win7POS.Wpf.Infrastructure
             if (window is DialogShellWindow dlg && dlg.UseModalOverlay)
                 return;
 
-            window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            window.WindowStartupLocation = WindowStartupLocation.Manual;
             window.SizeToContent = SizeToContent.WidthAndHeight;
             window.MinWidth = minWidth;
             window.MinHeight = minHeight;
             window.ResizeMode = allowResize ? ResizeMode.CanResize : ResizeMode.NoResize;
 
+            if (window is DialogShellWindow shell)
+            {
+                shell.AdaptiveMaxWidthFraction = Math.Max(0.1, Math.Min(1, maxWidthPercent));
+                shell.AdaptiveMaxHeightFraction = Math.Max(0.1, Math.Min(1, maxHeightPercent));
+                return;
+            }
+
             window.SourceInitialized += (s, e) =>
             {
                 var work = MonitorHelper.GetWorkAreaOrPrimary(window);
-                window.MaxWidth = Math.Max(minWidth, work.Width * maxWidthPercent);
-                window.MaxHeight = Math.Max(minHeight, work.Height * maxHeightPercent);
+                window.MinWidth = Math.Min(minWidth, work.Width * maxWidthPercent);
+                window.MinHeight = Math.Min(minHeight, work.Height * maxHeightPercent);
+                window.MaxWidth = work.Width * maxWidthPercent;
+                window.MaxHeight = work.Height * maxHeightPercent;
             };
         }
 
         /// <summary>
-        /// Limita l'altezza massima del dialog a quella della finestra Owner (schermata POS),
-        /// così nessun dialog supera l'altezza della finestra principale.
+        /// Compatibilità dei call site: il limite è la work area del monitor
+        /// pertinente, non l'altezza di un parent che può essere un piccolo prompt.
         /// Va chiamato dopo aver impostato Owner e prima di ShowDialog().
         /// </summary>
         /// <param name="window">Dialog da limitare</param>
@@ -73,11 +82,12 @@ namespace Win7POS.Wpf.Infrastructure
         public static void CapMaxHeightToOwner(Window window, double margin = CapMaxHeightMargin)
         {
             if (window == null) return;
-            if (window is DialogShellWindow dlg && dlg.UseModalOverlay) return;
+            if (window is DialogShellWindow) return; // One constraint policy in the base.
             window.SourceInitialized += (s, e) =>
             {
-                if (window.Owner == null || window.Owner.ActualHeight <= 0) return;
-                var maxFromOwner = Math.Max(CapMaxHeightMin, window.Owner.ActualHeight - margin);
+                var work = MonitorHelper.GetWorkAreaOrPrimary(window);
+                var maxFromOwner = Math.Max(1, work.Height - margin);
+                window.MinHeight = Math.Min(window.MinHeight, maxFromOwner);
                 var currentMax = window.MaxHeight;
                 if (double.IsNaN(currentMax) || currentMax > maxFromOwner || double.IsPositiveInfinity(currentMax))
                     window.MaxHeight = maxFromOwner;

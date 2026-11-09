@@ -46,11 +46,12 @@ namespace Win7POS.Wpf.Pos.Online
             Report(progress, "database", "active", T("startOfDay.stepDatabase"));
             result.CatalogSaleSafe = await PosCatalogPullService
                 .IsCatalogSaleSafeAsync(_factory).ConfigureAwait(false);
+            result.CatalogAuthoritativelyEmpty = await IsAuthoritativelyEmptyAsync().ConfigureAwait(false);
             result.RestoreNeedsReview = await settings
                 .GetBoolAsync(RestoreNeedsReviewSettingKey).ConfigureAwait(false) == true;
             await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
 
-            if (!result.CatalogSaleSafe && !result.RestoreNeedsReview)
+            if (!result.CatalogSaleSafe && !result.CatalogAuthoritativelyEmpty && !result.RestoreNeedsReview)
                 return Block(result, "catalog_not_sale_safe", T("startOfDay.blockCatalogNotSafe"), "database", progress);
             if (result.RestoreNeedsReview && HasAnyUnresolvedOutbox(result))
                 return Block(result, "restore_needs_review", T("startOfDay.blockRestoreReview"), "database", progress);
@@ -128,6 +129,9 @@ namespace Win7POS.Wpf.Pos.Online
 
             result.CatalogSaleSafe = await PosCatalogPullService
                 .IsCatalogSaleSafeAsync(_factory).ConfigureAwait(false);
+            result.CatalogAuthoritativelyEmpty = await IsAuthoritativelyEmptyAsync().ConfigureAwait(false);
+            if (!result.CatalogSaleSafe && !result.CatalogAuthoritativelyEmpty && !result.RestoreNeedsReview)
+                return Block(result, "catalog_not_sale_safe", T("startOfDay.blockCatalogNotSafe"), "catalog", progress);
             if (result.RestoreNeedsReview)
             {
                 if (!catalogComplete || !result.CatalogSaleSafe)
@@ -140,7 +144,8 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             var heartbeatHealthy = lanes.Heartbeat?.Success == true;
-            result.CanOpenPos = true;
+            result.CanOpenPos = result.CatalogSaleSafe;
+            result.CanEnterAuthenticatedShell = result.CatalogSaleSafe || result.CatalogAuthoritativelyEmpty;
             result.RequiresOperatorAction = false;
             result.ShouldContinueInBackground = !heartbeatHealthy ||
                 !salesComplete ||
@@ -208,6 +213,9 @@ namespace Win7POS.Wpf.Pos.Online
         }
 
 
+        private Task<bool> IsAuthoritativelyEmptyAsync() =>
+            new CatalogShopStateRepository(_factory).IsAuthoritativelyEmptyAsync(_syncHost.CurrentGeneration);
+
         private static StartOfDaySyncResult Block(
             StartOfDaySyncResult result,
             string reason,
@@ -216,6 +224,7 @@ namespace Win7POS.Wpf.Pos.Online
             IProgress<PosStartOfDaySyncProgress> progress)
         {
             result.CanOpenPos = false;
+            result.CanEnterAuthenticatedShell = false;
             result.ShouldContinueInBackground = false;
             result.RequiresOperatorAction = true;
             result.BlockingReason = SafeCode(reason);
@@ -233,7 +242,8 @@ namespace Win7POS.Wpf.Pos.Online
             string step,
             IProgress<PosStartOfDaySyncProgress> progress)
         {
-            result.CanOpenPos = true;
+            result.CanOpenPos = result.CatalogSaleSafe;
+            result.CanEnterAuthenticatedShell = result.CatalogSaleSafe || result.CatalogAuthoritativelyEmpty;
             result.ShouldContinueInBackground = shouldContinueInBackground;
             result.RequiresOperatorAction = requiresOperatorAction;
             result.BlockingReason = string.Empty;
@@ -300,6 +310,8 @@ namespace Win7POS.Wpf.Pos.Online
     public sealed class StartOfDaySyncResult
     {
         public bool CanOpenPos { get; set; }
+        public bool CanEnterAuthenticatedShell { get; set; }
+        public bool CatalogAuthoritativelyEmpty { get; set; }
         public bool ShouldContinueInBackground { get; set; }
         public bool RequiresOperatorAction { get; set; }
         public string BlockingReason { get; set; } = string.Empty;

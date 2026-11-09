@@ -4,7 +4,23 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-11-09 — ASUS019 authenticated shell and geometry
+
+Implemented pure Core shell admission, version-fenced empty login transfer,
+separate sale/start-of-day admission and guarded timeout, empty MainWindow without
+commercial VM, shared report/service/import composition and unavailable amounts.
+Real MainWindow fixture verifies close button/X/Escape, PID/HWND/session/filters,
+restart without history permission, full transition, ready scanner/cart and
+Escape focus return. Focused13.297s PASS; geometry10.870s/integrated1.904s PASS;
+Core140selected and required50/50 PASS. Initial modal-observer TIMEOUT retained;
+fixed fixture ordering, no timeout change. Canonical qualification/delivery and
+real retained-profile review remain ACTIVE. No backend or original ledger mutation.
+
 ## 2026-11-09 — a8286c6 qualificato e installato, stessa ASUS019
+
+- Nuovo requisito UX accolto nella stessa Execution: shell dopo accesso valido anche con catalogo autorevolmente vuoto, vendite negate; storico volontario dal riepilogo e close senza logout/uscita. Supera la precedente UX obbligatoria.21:21UTC main/HEAD c54be47 e installato a828 verificati, nessun runtime; snapshot privato immutabile del delta geometria prima degli overlap. Nuovo gate UX ACTIVE, nessun PASS trasferito dal vecchio login/workspace.
+
+- Geometria comune implementata:39root Manual, veri owner invariati, overlay centrato sulla work area; normale misurato prima di show, minimi/cap coerenti e clamp size-only. Messaggi/conferme lunghi scorrono nel corpo, footer esterno. Red sintetico autentico riprodotto, intermedio contenuto ma decentrato conservato; focused22misure192DPI PASS10.065s, primo HWND/card/footer, lingue, sei expected geometrici, cancel zero-write/confirm once e move/resize PASS. Logger first_render solo geometria senza testi finanziari. Build x86/guard50 PASS; Recovery nuovo codice30.160s PASS dopo sostituzione della vecchia aspettativa owner con work/card/CTA. Vecchio weakref FAIL conservato senza diagnosi causale inventata. Candidato geometria da congelare/qualificare/installare;100/125 nuovi e200% finale aperti.
 
 - Addendum utente integrato nella stessa R3: nuova policy comune di centro work area, vero owner e titolo/footer raggiungibili a200%/nested. Gate ACTIVE prima della consegna finale.200% ripristinato/observato; form vuoto decentrato, footer visibile, nessun clipping inventato. POS chiuso ordinariamente inattivo prima del harness; sugli originali niente nuovo Apply, solo review duplicate-only dopo il successore.
 

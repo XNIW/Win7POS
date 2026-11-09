@@ -232,7 +232,7 @@ if ($service -notmatch 'catalogLane\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,
 }
 
 if ($service -notmatch "ShouldContinueInBackground\s*=\s*!heartbeatHealthy\s*\|\|[\s\S]{0,220}!salesComplete\s*\|\|[\s\S]{0,180}!importComplete\s*\|\|[\s\S]{0,180}!catalogComplete" -or
-    $dialog -notmatch "catch\s*\(OperationCanceledException\)[\s\S]{0,900}!_userCancelling[\s\S]{0,400}CanOpenPos\s*=\s*true[\s\S]{0,220}ShouldContinueInBackground\s*=\s*true") {
+    $dialog -notmatch "catch\s*\(OperationCanceledException\)[\s\S]{0,900}!_userCancelling[\s\S]{0,750}CanOpenPos\s*=\s*admission\.CanSell[\s\S]{0,220}ShouldContinueInBackground\s*=\s*true") {
     Fail "start-of-day must allow sale-safe startup with retryable timeout/background sync"
 } else {
     Pass "start-of-day continues in background on retryable timeouts when sale-safe"
@@ -344,8 +344,8 @@ if ($dialogXaml -notmatch "AccessVerifiedPanel" -or
     Pass "start-of-day separates successful sign-in from the actionable sync gate"
 }
 
-if ($dialog -notmatch "ContentRendered" -or $dialog -notmatch "RunPreflightAsync" -or $dialog -notmatch "Result\?\.CanOpenPos") {
-    Fail "start-of-day dialog must run async preflight and gate Continue on CanOpenPos"
+if ($dialog -notmatch "ContentRendered" -or $dialog -notmatch "RunPreflightAsync" -or $dialog -notmatch "Result\?\.CanEnterAuthenticatedShell") {
+    Fail "start-of-day dialog must run async preflight and gate Continue on CanEnterAuthenticatedShell"
 } else {
     Pass "start-of-day dialog runs async preflight and gates Continue"
 }

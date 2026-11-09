@@ -49,7 +49,7 @@ function Check-Present([string]$label, $matches) {
 $allCs = Get-ProjectFiles "*.cs"
 $allXaml = Get-ProjectFiles "*.xaml"
 $dialogXaml = $allXaml | Where-Object {
-    Select-String -Path $_.FullName -Pattern '^\s*<chrome:DialogShellWindow\b' -Quiet
+    Select-String -Path $_.FullName -Pattern '^\s*<(?:[\w]+:)?DialogShellWindow\b' -Quiet
 }
 
 $windowSizingHelperPath = Join-Path $base "Infrastructure/WindowSizingHelper.cs"
@@ -86,20 +86,26 @@ Check-Absent "5. No Dispatcher BeginInvoke overlay recenter" (
     Select-String -Path $dialogShellWindowPath -Pattern 'BeginInvoke'
 )
 
-Write-Section "6. CenterOwner coverage"
-$missingCenterOwner = @()
+Write-Section "6. Shared work-area placement coverage"
+$missingSharedPlacement = @()
 foreach ($file in $dialogXaml) {
-    if (-not (Select-String -Path $file.FullName -Pattern 'WindowStartupLocation="CenterOwner"' -Quiet)) {
-        $missingCenterOwner += $file.FullName
+    if (-not (Select-String -Path $file.FullName -Pattern 'WindowStartupLocation="Manual"' -Quiet)) {
+        $missingSharedPlacement += $file.FullName
     }
 }
-if ($missingCenterOwner.Count -gt 0) {
-    $missingCenterOwner | ForEach-Object { Fail "missing CenterOwner in $_" }
+if ($missingSharedPlacement.Count -gt 0) {
+    $missingSharedPlacement | ForEach-Object { Fail "missing shared Manual policy in $_" }
 }
 else {
     Pass ("OK: {0}/{0}" -f $dialogXaml.Count)
 }
-
+Check-Present "6b. C# dialogs inherit the base initial-placement policy" (
+    Select-String -Path $dialogShellWindowPath -Pattern 'WindowStartupLocation = WindowStartupLocation.Manual'
+)
+Check-Absent "6c. No per-dialog startup centering overrides in C#" (
+    $allCs | Where-Object { $_.Name -notin @('MainWindow.xaml.cs','CustomerDisplayWindow.xaml.cs','MonitorIdentifyWindow.xaml.cs') } |
+        Select-String -Pattern 'WindowStartupLocation\s*=\s*WindowStartupLocation\.(CenterOwner|CenterScreen)'
+)
 $ownerFiles = @(
     (Join-Path $base "Pos/PosViewModel.cs"),
     (Join-Path $base "Products/ProductsViewModel.cs"),
@@ -161,6 +167,10 @@ Check-Present "11. Clamp hook in DialogShellWindow" (
 
 Check-Absent "12. Clamp hook NOT in WindowSizingHelper" (
     Select-String -Path $windowSizingHelperPath -Pattern 'AddWorkAreaClampHook'
+)
+Check-Absent "12b. Clamp hook NOT in individual dialogs" (
+    $allCs | Where-Object { $_.Name -ne 'DialogShellWindow.cs' } |
+        Select-String -Pattern 'MonitorHelper\.AddWorkAreaClampHook\s*\('
 )
 
 Write-Section "13. Base-type consistency"

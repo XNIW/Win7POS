@@ -54,7 +54,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private PosAccessRecoveryDecision _recoveryDecision;
         private PosUserBootstrapState _bootstrapState = new PosUserBootstrapState();
         private PosAdminWebOptions _lastOptions;
-        private HistoricalOnboardingAccess _historyAccess;
 
         public PosAuthenticatedAccessMode AccessMode { get; private set; } = PosAuthenticatedAccessMode.Normal;
 
@@ -94,7 +93,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
             Loaded += OnLoaded;
             Closed += (_, __) =>
             {
-                ClearHistoricalPreparation();
                 ClearPendingOnlineLogin();
                 PosOnlineSyncRevocationLatch.AuthorizationStateChanged -= OnPendingLoginAuthorityChanged;
                 _networkStatusTimer.Stop();
@@ -419,10 +417,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     }
 
                     if (result.CanPrepareEmptyShopHistory && !App.IsSafeStart &&
-                        await TryPrepareHistoricalSignInAsync(attemptId, _activeCts.Token).ConfigureAwait(true))
+                        await CompleteEmptyCatalogSignInAsync(attemptId, _activeCts.Token).ConfigureAwait(true))
                     {
                         FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer,
-                            "success", "history_onboarding", "sales_not_ready");
+                            "success", "authenticated_empty", "shell_ready_sales_unavailable");
                         return;
                     }
 
@@ -631,7 +629,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     initialAuthorityVersion == long.MaxValue || candidateSession.CurrentOperatorAuthorityVersion != initialAuthorityVersion + 1 ||
                     !candidateSession.IsLoggedIn || candidateSession.CurrentUser.Username != username)
                     throw new InvalidOperationException("online_completion_operator_changed");
-                if (!await EnsureCatalogSaleSafeForAccessAsync(logoutOnBlock: false, attemptId: attemptId, mode: mode).ConfigureAwait(true)) return false;
+                if (!await EnsureShellAdmissionForAccessAsync(logoutOnBlock: false, attemptId: attemptId, mode: mode).ConfigureAwait(true)) return false;
                 await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
                 MarkSetupReady();
                 await Task.Delay(450, cancellationToken).ConfigureAwait(true);
@@ -649,10 +647,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     !candidateSession.IsLoggedIn || candidateSession.CurrentUser.Username != username ||
                     !candidateSession.EnsureAuthorizationValid())
                     throw new InvalidOperationException("online_completion_authorization_changed");
+                if (!await EnsureShellAdmissionForAccessAsync(false, attemptId, mode).ConfigureAwait(true)) return false;
+                // No window-owned session remains: Closed releases only this attempt's resources.
                 AccessMode = PosAuthenticatedAccessMode.Normal;
+                retained = true;
                 DialogResult = true;
                 Close();
-                retained = true;
                 return true;
             }
             finally
@@ -728,43 +728,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     return false;
                 }
 
-                LogAccessInfo(attemptId, "offline_mirror_start", "mode=offline");
-                var username = await new UserRepository(_factory)
-                    .FindTrustedRemoteStaffUsernameAsync(
-                        trustedSession.ShopId,
-                        trustedSession.ShopCode,
-                        trustedSession.StaffId,
-                        trustedSession.StaffCode,
-                        trustedSession.StaffCredentialVersion)
+                return await CompleteOnlineSignInAsync(shopCode, staffCode, credential, attemptId, "offline")
                     .ConfigureAwait(true);
-
-                if (string.IsNullOrWhiteSpace(username))
-                {
-                    LogAccessWarning(attemptId, "offline_mirror_result", "result=missing mode=offline");
-                    LogAccessWarning(attemptId, "offline_login_result", "result=failed reason=mirror_missing");
-                    ShowError(PosLocalization.T("access.login.offlineMirrorMissing"));
-                    return false;
-                }
-
-                LogAccessInfo(attemptId, "offline_mirror_result", "result=success mode=offline");
-                if (!await LoginLocalUsernameAsync(username, credential, attemptId, "offline").ConfigureAwait(true))
-                {
-                    LogAccessWarning(attemptId, "offline_login_result", "result=failed reason=local_login_failed");
-                    return false;
-                }
-
-                if (!await EnsureCatalogSaleSafeForAccessAsync(logoutOnBlock: true, attemptId: attemptId, mode: "offline").ConfigureAwait(true))
-                {
-                    LogAccessWarning(attemptId, "offline_login_result", "result=blocked reason=catalog_not_sale_safe");
-                    return false;
-                }
-
-                await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
-                LogAccessInfo(attemptId, "offline_login_result", "result=success");
-                AccessMode = PosAuthenticatedAccessMode.Normal;
-                DialogResult = true;
-                Close();
-                return true;
             }
             catch (Exception ex)
             {
@@ -1198,24 +1163,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        private async Task<bool> EnsureCatalogSaleSafeForAccessAsync(
+        private async Task<bool> EnsureShellAdmissionForAccessAsync(
             bool logoutOnBlock,
             string attemptId,
             string mode)
         {
-            LogAccessInfo(attemptId, "catalog_sale_safe_start", "mode=" + SafeAuditValue(mode));
-            if (await PosCatalogPullService.IsCatalogSaleSafeAsync(_factory).ConfigureAwait(true))
-            {
-                LogAccessInfo(attemptId, "catalog_sale_safe_result", "result=success mode=" + SafeAuditValue(mode));
-                return true;
-            }
-
-            if (logoutOnBlock)
-            {
-                OperatorSessionHolder.Current?.LogoutForced();
-            }
-
-            LogAccessWarning(attemptId, "catalog_sale_safe_result", "result=blocked reason=catalog_not_sale_safe mode=" + SafeAuditValue(mode));
+            var session = OperatorSessionHolder.Current;
+            var version = (session as OperatorSession)?.CurrentOperatorAuthorityVersion;
+            var admission = await PosShellAdmissionReader.ReadAsync(_factory, session, _syncHost.CurrentGeneration,
+                PosAuthenticatedAccessMode.Normal, App.IsSafeStart).ConfigureAwait(true);
+            if (admission.CanUseNormalNavigation) return true;
+            if (logoutOnBlock && version.HasValue && session is OperatorSession concrete)
+                concrete.LogoutForcedIfAuthorityVersion(version.Value);
+            LogAccessWarning(attemptId, "shell_admission", "result=blocked reason=catalog_not_verified mode=" + SafeAuditValue(mode));
             ShowError(PosLocalization.T("onlineFirstLogin.catalogIncomplete"));
             return false;
         }
@@ -1344,7 +1304,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         " catalogSaleSafe=" + BoolText(outcome.CatalogSaleSafe));
                     if (authoritativeEmpty && !_resumeCatalogOnly && !App.IsSafeStart)
                     {
-                        if (await TryPrepareHistoricalSignInAsync(catalogRetryId, _activeCts.Token).ConfigureAwait(true))
+                        if (await CompleteEmptyCatalogSignInAsync(catalogRetryId, _activeCts.Token).ConfigureAwait(true))
                         {
                             FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "success", "history_onboarding_sales_not_ready");
                             return;
@@ -1502,56 +1462,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        private async Task<bool> TryPrepareHistoricalSignInAsync(string attemptId, CancellationToken cancellationToken)
+        private async Task<bool> CompleteEmptyCatalogSignInAsync(string attemptId, CancellationToken cancellationToken)
         {
             var pending = _pendingAuthenticatedLogin;
-            IOperatorSession historySession = null;
-            var retained = false;
-            string credential = null;
-            try
-            {
-                if (pending == null || App.IsSafeStart) throw new InvalidOperationException("pending_online_login_unavailable");
-                await pending.DemandCurrentAsync(cancellationToken).ConfigureAwait(true);
-                if (!await Task.Run(() => new CatalogShopStateRepository(_factory).IsAuthoritativelyEmptyAsync(pending.Generation),
-                        cancellationToken).ConfigureAwait(true))
-                    throw new InvalidOperationException("historical_onboarding_empty_evidence_required");
-                var username = await FindLeaseBoundRemoteStaffUsernameAsync(pending.Generation.ShopCode, pending.StaffCode).ConfigureAwait(true);
-                if (string.IsNullOrWhiteSpace(username)) throw new InvalidOperationException("pending_online_login_mirror_missing");
-                credential = pending.ReadCredentialForMirrorLogin();
-                if (!await LoginLocalUsernameAsync(username, credential, attemptId, "history_onboarding").ConfigureAwait(true)) return false;
-                historySession = OperatorSessionHolder.Current;
-                credential = null;
-                await pending.DemandCurrentAsync(cancellationToken).ConfigureAwait(true);
-                var access = await HistoricalOnboardingAccess.CreateAsync(_factory, historySession as OperatorSession,
-                    pending.Generation, cancellationToken).ConfigureAwait(true);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!IsVisible) throw new OperationCanceledException();
-                _historyAccess = access;
-                await SaveLastShopCodeAsync(pending.Generation.ShopCode).ConfigureAwait(true);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!IsVisible || !access.IsCurrentInMemory) throw new InvalidOperationException("historical_authorization_denied");
-                EndBusyKeepPreparation(retryVisible: false);
-                ProgressPanel.Visibility = Visibility.Collapsed;
-                ShowInfo(PosLocalization.T("history.onboardingAvailable"));
-                HistoryButton.Visibility = Visibility.Visible; HistoryButton.IsEnabled = true; HistoryButton.Focus();
-                retained = true;
-                return true;
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (InvalidOperationException) { ShowError(PosLocalization.T("history.authorizationChanged")); return false; }
-            catch (Exception ex)
-            {
-                LogAccessWarning(attemptId, "history_prepare", "result=failed exceptionType=" + SafeAuditValue(ex.GetType().Name));
-                ShowError(PosLocalization.T("history.onboardingOpenFailed"));
+            if (pending == null || App.IsSafeStart) return false;
+            await pending.DemandCurrentAsync(cancellationToken).ConfigureAwait(true);
+            if (!await new CatalogShopStateRepository(_factory).IsAuthoritativelyEmptyAsync(pending.Generation).ConfigureAwait(true))
                 return false;
-            }
-            finally
-            {
-                credential = null;
-                if (ReferenceEquals(pending, _pendingAuthenticatedLogin)) ClearPendingOnlineLogin();
-                pending?.Dispose();
-                if (!retained) { ClearHistoricalPreparation(); historySession?.LogoutForced(); }
-            }
+            return await CompletePendingOnlineSignInAsync(attemptId, cancellationToken).ConfigureAwait(true);
         }
 
         private async Task<bool> CompletePendingOnlineSignInAsync(string attemptId, CancellationToken cancellationToken)
@@ -1573,47 +1491,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 credential = null;
                 if (ReferenceEquals(pending, _pendingAuthenticatedLogin)) ClearPendingOnlineLogin();
                 pending?.Dispose();
-            }
-        }
-
-        private void ClearHistoricalPreparation()
-        {
-            if (_historyAccess != null) _historyAccess.Session.LogoutForced();
-            _historyAccess = null;
-            if (HistoryButton != null) { HistoryButton.Visibility = Visibility.Collapsed; HistoryButton.IsEnabled = false; }
-        }
-
-        private async void OnHistoryClick(object sender, RoutedEventArgs e)
-        {
-            var access = _historyAccess;
-            if (_busy || access == null || App.IsSafeStart) return;
-            _busy = true; HistoryButton.IsEnabled = false;
-            try
-            {
-                await access.DemandAsync(CancellationToken.None).ConfigureAwait(true);
-                var options = new PosDbOptions(_factory.DbPath, accessContext: _factory.AccessContext);
-                var service = new PosWorkflowService(options, () => DateTimeOffset.UtcNow);
-                var dialog = new HistoricalOnboardingDialog(access, service)
-                { Owner = DialogOwnerHelper.GetSafeOwner(this) };
-                dialog.ShowDialog();
-            }
-            catch (InvalidOperationException)
-            {
-                ClearHistoricalPreparation();
-                ShowError(PosLocalization.T("history.authorizationChanged"));
-                EndBusyAllowFreshLogin();
-            }
-            catch (Exception ex)
-            {
-                LogAccessWarning(null, "history_open", "result=failed exceptionType=" + SafeAuditValue(ex.GetType().Name));
-                ClearHistoricalPreparation();
-                ShowError(PosLocalization.T("history.onboardingOpenFailed"));
-                EndBusyAllowFreshLogin();
-            }
-            finally
-            {
-                _busy = false;
-                if (_historyAccess != null) HistoryButton.IsEnabled = _historyAccess.IsCurrentInMemory;
             }
         }
 
@@ -1669,7 +1546,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void BeginBusySetup(string message)
         {
-            ClearHistoricalPreparation();
             _busy = true;
             _activeSetupStep = "access";
             SetInputEnabled(false);
@@ -1689,7 +1565,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void BeginBusySignIn(string message)
         {
             ClearPendingOnlineLogin();
-            ClearHistoricalPreparation();
             _busy = true;
             SetInputEnabled(false);
             RetryDownloadButton.Visibility = Visibility.Collapsed;

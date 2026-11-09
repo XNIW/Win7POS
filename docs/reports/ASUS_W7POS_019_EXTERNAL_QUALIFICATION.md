@@ -8,6 +8,13 @@ Scala abituale200% ripristinata/observata, POS chiuso al checkpoint inattivo.
 Le osservazioni100/125 sotto riguardano leggibilità e contenimento del form
 vuoto, non costituiscono PASS del nuovo criterio di centratura geometrica.
 
+Nuova implementazione da qualificare/installare: focused200%/192DPI PASS22misure
+in10.065s, con geometria nativa iniziale/card/footer, sei expected indipendenti,
+lingue e mutazioni solo sintetiche. Guard50/50/build x86 PASS; Recovery sul nuovo
+codice30.160s PASS dopo aggiornamento dell'aspettativa di centro. Vecchio FAIL
+weakref conservato senza causa inventata. [Matrice prima/dopo e limiti](ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+Installato ancora a828;100/125 del successore e verifica reale200% finale aperti.
+
 Codice/pacchetto `a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3`, versione
 `1.0.0-dev.a8286c669a7c`, installato41/41 net48/x86 su Windows11 build26300.
 CI42673051923, Security42673051757, Release42674141171 e WPF42675026366

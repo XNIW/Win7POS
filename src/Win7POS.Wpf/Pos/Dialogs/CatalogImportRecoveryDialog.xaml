@@ -4,7 +4,7 @@
     xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
     xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
     Title="{loc:Loc importRecovery.title}" ShowHeader="False" UseModalOverlay="True"
-    WindowStartupLocation="CenterOwner" SizeToContent="Manual" ResizeMode="CanResize"
+    WindowStartupLocation="Manual" SizeToContent="Manual" ResizeMode="CanResize"
     Width="860" Height="640" MinWidth="680" MinHeight="420" ShowInTaskbar="False">
     <Grid>
         <Grid.RowDefinitions>

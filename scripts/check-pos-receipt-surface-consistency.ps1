@@ -97,7 +97,7 @@ function Get-AnalyticalReceiptViolations([string]$daily,[string]$analytical) {
         $canPrint -notmatch '!IsHistoryPreviewLoading' -or $print -notmatch 'await\s+DemandAnalyticalCurrentAsync\(CancellationToken\.None\)' -or
         $print -notmatch 'else if\s*\(MarkedCount\s*==\s*1\)\s*\{\s*textToPrint\s*=\s*SingleMarkedReceiptPreview\s*;' -or
         $print -notmatch 'PrintReceiptTextAsync\(\s*textToPrint,\s*_useReceipt42,\s*"STAMPA_RIEPILOGO_"[\s\S]*explicitUserAction:\s*true\)'){$errors.Add('single marked print must use the exact fenced preview, configured width and explicit print route')}
-    if($analytical -notmatch 'await\s+importHistoryAction\(\)\.ConfigureAwait\(true\);\s*InvalidateAnalyticalReport\(\)' -or
+    if($analytical -notmatch 'await\s+importHistoryAction\(\)\.ConfigureAwait\(true\);\s*if\s*\(_reportContext != null && !_reportContext\.Coordinator\.IsCurrent\(_reportContext\.Snapshot\.Token\)\) InvalidateAnalyticalReport\(\)' -or
         $analytical -notmatch 'AuthorizationStateChanged\s*\+=\s*OnReportSessionChanged'){$errors.Add('import/session authorization changes must invalidate displayed analytical receipts')}
     return $errors.ToArray()
 }

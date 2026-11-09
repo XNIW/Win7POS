@@ -37,9 +37,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
     /// bootstrap catalog pull, WPF product view models, durable scheduler lane, and
     /// canonical pull apply. The server is loopback-only and keeps synthetic state.
     /// </summary>
-    internal static class ArticleMutationLoopbackHarness
+    internal static partial class ArticleMutationLoopbackHarness
     {
-        internal static async Task<bool> VerifyEmptyShopBootstrapAsync(string data, HistoricalSalesQaCase uiTest = null)
+        internal static async Task<bool> VerifyEmptyShopBootstrapAsync(string data, HistoricalSalesQaCase uiTest = null,
+            OperatorDialogGeometrySmoke geometry = null)
         {
             // The real bootstrap also reconciles the process-wide image cache,
             // whose scope store belongs to the current product profile. Own that
@@ -116,7 +117,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         if (stale.CatalogBootstrapText == emptyText || stale.CatalogSaleSafe || !stale.CatalogRepairRequired)
                             throw new InvalidOperationException("empty_history_loopback_stale_status_promoted");
                         await VerifyPreservedCatalogCannotResurrectAsync(factory, host, server, timeout.Token);
-                        await VerifyCatalogRetryUiAsync(factory, data, timeout.Token, uiTest);
+                        await VerifyCatalogRetryUiAsync(factory, data, timeout.Token, uiTest, geometry);
                         return true;
                     }
                     finally { session.LogoutForced(); store.Clear(); }
@@ -178,17 +179,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
 
         private static async Task VerifyCatalogRetryUiAsync(SqliteConnectionFactory factory, string data,
-            CancellationToken cancellationToken, HistoricalSalesQaCase uiTest)
+            CancellationToken cancellationToken, HistoricalSalesQaCase uiTest, OperatorDialogGeometrySmoke geometry = null)
         {
             var proofs = new List<CatalogRetryUiProof>();
             var receiptPath = Path.Combine(data, "history-onboarding-ui.private.json");
-            foreach (var variant in new[] { "retry_empty", "lease_expired", "revoked", "generation_changed", "cancelled",
+            foreach (var variant in geometry != null ? new[] { "retry_empty" } : new[] { "retry_empty", "lease_expired", "revoked", "generation_changed", "cancelled",
                 "normal_ready", "normal_late_generation", "normal_finalization_fault" })
             {
                 var proof = new CatalogRetryUiProof { Case = variant }; proofs.Add(proof); WriteJson(receiptPath, proofs);
                 try
                 {
-                    await VerifyCatalogRetryUiCaseAsync(factory, variant, proof, () => WriteJson(receiptPath, proofs), cancellationToken);
+                    await VerifyCatalogRetryUiCaseAsync(factory, variant, proof, () => WriteJson(receiptPath, proofs), cancellationToken, geometry);
                     proof.Status = "PASS";
                 }
                 catch (Exception error)
@@ -222,8 +223,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
             !(bool)typeof(PosOnlineFirstLoginDialog).GetField("_initializing", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(dialog);
         private static bool AccessDialogOperationFinished(PosOnlineFirstLoginDialog dialog) =>
             typeof(PosOnlineFirstLoginDialog).GetField("_activeCts", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(dialog) == null;
-        private static HistoricalOnboardingAccess AccessDialogHistory(PosOnlineFirstLoginDialog dialog) =>
-            (HistoricalOnboardingAccess)typeof(PosOnlineFirstLoginDialog).GetField("_historyAccess", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(dialog);
         private static object AccessDialogPendingLogin(PosOnlineFirstLoginDialog dialog) =>
             typeof(PosOnlineFirstLoginDialog).GetField("_pendingAuthenticatedLogin", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(dialog);
         private static T AccessControl<T>(PosOnlineFirstLoginDialog dialog, string name) where T : FrameworkElement =>
@@ -241,7 +240,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
 
         private static async Task VerifyCatalogRetryUiCaseAsync(SqliteConnectionFactory factory, string variant,
-            CatalogRetryUiProof proof, Action persist, CancellationToken cancellationToken)
+            CatalogRetryUiProof proof, Action persist, CancellationToken cancellationToken, OperatorDialogGeometrySmoke geometry = null)
         {
             var previousOperator = OperatorSessionHolder.Current;
             var previousBaseUrl = Environment.GetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable);
@@ -261,7 +260,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, server.BaseUrl);
                 var owner = new Window { Width = 1024, Height = 768, ShowInTaskbar = false,
                     WindowStartupLocation = WindowStartupLocation.CenterScreen };
+                geometry?.ConfigureOwner(owner);
                 var dialog = new PosOnlineFirstLoginDialog(factory, false, host);
+                geometry?.ObserveOpening(dialog, "access");
                 var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var rendered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 dialog.ContentRendered += (_, __) => rendered.TrySetResult(true);
@@ -298,7 +299,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             CheckCatalogRetryUi(proof, persist, "connect_catalog_failure_no_automatic_retry",
                                 server.FirstLoginRequestCount == 1 && server.CatalogRequestCount == 1 &&
                                 !session.IsLoggedIn && AccessControl<Button>(dialog, "RetryDownloadButton").IsVisible &&
-                                AccessControl<Button>(dialog, "HistoryButton").Visibility == Visibility.Collapsed);
+                                dialog.FindName("HistoryButton") == null);
                             using (var password = AccessControl<PasswordBox>(dialog, "CredentialBox").SecurePassword)
                                 CheckCatalogRetryUi(proof, persist, "connect_clears_masked_password", password.Length == 0);
                             var pendingLogin = AccessDialogPendingLogin(dialog);
@@ -357,7 +358,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 server.ReleaseNextCatalogResponse();
                             }
                             await WaitCatalogRetryUiAsync(() => AccessDialogOperationFinished(dialog) &&
-                                (variant == "cancelled" || (normalCompletionCase && !dialog.IsVisible) || !AccessDialogBusy(dialog)), cancellationToken);
+                                (variant == "cancelled" || ((normalCompletionCase || variant == "retry_empty") && !dialog.IsVisible) || !AccessDialogBusy(dialog)), cancellationToken);
                             if (variant == "normal_late_generation")
                                 CheckCatalogRetryUi(proof, persist, "retry_normal_late_authority_injected", await lateAuthorityInjected.Task.ConfigureAwait(true));
                             if (variant == "normal_finalization_fault")
@@ -383,37 +384,27 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             catch (ObjectDisposedException) { protectedContinuationDisposed = true; }
                             CheckCatalogRetryUi(proof, persist, "retry_destroys_protected_continuation",
                                 AccessDialogPendingLogin(dialog) == null && protectedContinuationDisposed);
-                            var history = AccessControl<Button>(dialog, "HistoryButton");
+
                             if (variant == "retry_empty")
                             {
                                 CheckCatalogRetryUi(proof, persist, "retry_receives_authoritative_empty",
                                     server.CatalogRequestCount == 2 && await new CatalogShopStateRepository(factory).IsAuthoritativelyEmptyAsync(host.CurrentGeneration));
-                                CheckCatalogRetryUi(proof, persist, "retry_empty_history_enabled",
-                                    history.IsVisible && history.IsEnabled && session.IsLoggedIn && AccessDialogHistory(dialog)?.IsCurrentInMemory == true);
+                                CheckCatalogRetryUi(proof, persist, "retry_empty_completes_authenticated_shell_transfer",
+                                    dialog.DialogResult == true && session.IsLoggedIn && session.EnsureAuthorizationValid() && dialog.FindName("HistoryButton") == null);
                                 CheckCatalogRetryUi(proof, persist, "retry_does_not_admit_sales",
-                                    dialog.DialogResult != true && !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory));
-                                var workspaceSeen = false;
-                                var workspaceCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                                _ = dialog.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(async () =>
+                                    !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory));
+                                if (geometry != null)
                                 {
-                                    try
-                                    {
-                                        await WaitCatalogRetryUiAsync(() => dialog.OwnedWindows.OfType<HistoricalOnboardingDialog>().Any(), cancellationToken);
-                                        var workspace = dialog.OwnedWindows.OfType<HistoricalOnboardingDialog>().Single();
-                                        workspaceSeen = true; workspace.Close(); workspaceCompleted.TrySetResult(true);
-                                    }
-                                    catch (Exception error)
-                                    {
-                                        workspaceCompleted.TrySetException(error);
-                                        foreach (var workspace in dialog.OwnedWindows.OfType<HistoricalOnboardingDialog>().ToArray()) workspace.Close();
-                                    }
-                                }));
-                                AccessClick(dialog, "HistoryButton");
-                                await workspaceCompleted.Task.ConfigureAwait(true);
-                                await WaitCatalogRetryUiAsync(() => !AccessDialogBusy(dialog), cancellationToken);
-                                CheckCatalogRetryUi(proof, persist, "retry_opens_only_historical_workspace",
-                                    workspaceSeen && dialog.IsVisible && dialog.DialogResult != true &&
-                                    !dialog.OwnedWindows.OfType<SalesRegisterDialog>().Any());
+                                    // This explicit legacy capability fixture tests shared geometry only.
+                                    // Actual ordinary MainWindow navigation has its own bounded worker.
+                                    var capability = await HistoricalOnboardingAccess.CreateAsync(factory, session, host.CurrentGeneration, cancellationToken);
+                                    var service = new Win7POS.Wpf.Pos.PosWorkflowService(new PosDbOptions(factory.DbPath, accessContext: factory.AccessContext), () => DateTimeOffset.UtcNow);
+                                    var workspace = new HistoricalOnboardingDialog(capability, service) { Owner = owner };
+                                    workspace.Show(); await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                                    await geometry.VerifyWorkspaceAsync(workspace, factory, cancellationToken); workspace.Close();
+                                }
+                                CheckCatalogRetryUi(proof, persist, "retry_has_no_compulsory_historical_workspace",
+                                    !dialog.IsVisible && session.IsLoggedIn && !owner.OwnedWindows.OfType<HistoricalOnboardingDialog>().Any());
                             }
                             else if (variant == "normal_ready")
                             {
@@ -424,15 +415,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                     dialog.DialogResult == true && dialog.AccessMode == PosAuthenticatedAccessMode.Normal &&
                                     session.IsLoggedIn && session.TryGetAuthorizationBoundUser(out var boundUser) &&
                                     boundUser.Username == expectedUsername && await PosCatalogPullService.IsCatalogSaleSafeAsync(factory) &&
-                                    history.Visibility == Visibility.Collapsed && AccessDialogHistory(dialog) == null);
+                                    dialog.FindName("HistoryButton") == null);
                             }
                             else if (normalCompletionCase)
                                 CheckCatalogRetryUi(proof, persist, variant == "normal_late_generation" ?
                                     "retry_normal_late_authority_cannot_commit_operator" : "retry_normal_fault_cannot_leave_operator_logged_in",
-                                    !session.IsLoggedIn && dialog.DialogResult != true && AccessDialogHistory(dialog) == null);
+                                    !session.IsLoggedIn && dialog.DialogResult != true);
                             else
                                 CheckCatalogRetryUi(proof, persist, "retry_authority_transition_denies_history_and_sales",
-                                    !history.IsVisible && AccessDialogHistory(dialog) == null && !session.IsLoggedIn &&
+                                    dialog.FindName("HistoryButton") == null && !session.IsLoggedIn &&
                                     dialog.DialogResult != true && !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory));
                             completed.TrySetResult(true);
                         }
@@ -2214,6 +2205,8 @@ GROUP BY mutation_kind;")).ToDictionary(
                 };
             }
 
+            internal string StaffRoleKey = "pos_admin";
+
             private PosFirstLoginResponse BuildFirstLoginResponse()
             {
                 var now = DateTimeOffset.UtcNow;
@@ -2250,7 +2243,7 @@ GROUP BY mutation_kind;")).ToDictionary(
                         CredentialVersion = 7,
                         DisplayName =
                             "Synthetic article operator",
-                        RoleKey = "pos_admin",
+                        RoleKey = StaffRoleKey,
                         StaffCode = "ARTICLEPOS",
                         StaffId = StaffId
                     },

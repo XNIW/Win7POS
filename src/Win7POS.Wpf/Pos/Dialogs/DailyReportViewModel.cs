@@ -162,13 +162,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _netAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(NetAmountDisplay)); OnPropertyChanged(nameof(TicketMedioDisplay)); }
         }
 
-        public string TotalAmountDisplay => MoneyClp.FormatDisplay(TotalAmount);
+        public string TotalAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(TotalAmount) : PosLocalization.T("historyReport.notAvailable");
         /// <summary>KPI in alto: da _currentHeaderSummary (Giornaliero / riga selezionata / righe spuntate).</summary>
-        public string CashAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.CashAmount ?? 0);
-        public string CardAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.CardAmount ?? 0);
-        public string GrossSalesAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.GrossAmount ?? 0);
-        public string RefundsAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.RefundsAmount ?? 0);
-        public string NetAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.NetAmount ?? 0);
+        public string CashAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.CashAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
+        public string CardAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.CardAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
+        public string GrossSalesAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.GrossAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
+        public string RefundsAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.RefundsAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
+        public string NetAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.NetAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
         public int SalesCountDisplay => _currentHeaderSummary?.SalesCount ?? 0;
         public string TicketMedioDisplay => _currentHeaderSummary != null && _currentHeaderSummary.SalesCount > 0
             ? FormatNativeAverage(_currentHeaderSummary.NativePositiveSalesClp, _currentHeaderSummary.SalesCount) : PosLocalization.T("historyReport.notAvailable");
@@ -334,11 +334,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public long PeriodCashAmount { get => _periodCashAmount; private set { _periodCashAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodCashDisplay)); } }
         public long PeriodCardAmount { get => _periodCardAmount; private set { _periodCardAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodCardDisplay)); } }
         public int PeriodSalesCount { get => _periodSalesCount; private set { _periodSalesCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodTicketAverageDisplay)); } }
-        public string PeriodNetDisplay => MoneyClp.FormatDisplay(PeriodNetAmount);
-        public string PeriodGrossDisplay => MoneyClp.FormatDisplay(PeriodGrossAmount);
-        public string PeriodRefundsDisplay => MoneyClp.FormatDisplay(PeriodRefundsAmount);
-        public string PeriodCashDisplay => MoneyClp.FormatDisplay(PeriodCashAmount);
-        public string PeriodCardDisplay => MoneyClp.FormatDisplay(PeriodCardAmount);
+        public string PeriodNetDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodNetAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string PeriodGrossDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodGrossAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string PeriodRefundsDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodRefundsAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string PeriodCashDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodCashAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string PeriodCardDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodCardAmount) : PosLocalization.T("historyReport.notAvailable");
         public string PeriodTicketAverageDisplay => FormatNativeAverage(_periodNativePositiveSalesClp, PeriodSalesCount);
 
         private int _markedCount;
@@ -351,11 +351,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public long MarkedRefundsAmount { get => _markedRefundsAmount; private set { _markedRefundsAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedRefundsDisplay)); } }
         public long MarkedCashAmount { get => _markedCashAmount; private set { _markedCashAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedCashDisplay)); } }
         public long MarkedCardAmount { get => _markedCardAmount; private set { _markedCardAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedCardDisplay)); } }
-        public string MarkedNetDisplay => MoneyClp.FormatDisplay(MarkedNetAmount);
-        public string MarkedGrossDisplay => MoneyClp.FormatDisplay(MarkedGrossAmount);
-        public string MarkedRefundsDisplay => MoneyClp.FormatDisplay(MarkedRefundsAmount);
-        public string MarkedCashDisplay => MoneyClp.FormatDisplay(MarkedCashAmount);
-        public string MarkedCardDisplay => MoneyClp.FormatDisplay(MarkedCardAmount);
+        public string MarkedNetDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedNetAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string MarkedGrossDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedGrossAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string MarkedRefundsDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedRefundsAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string MarkedCashDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedCashAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string MarkedCardDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedCardAmount) : PosLocalization.T("historyReport.notAvailable");
         public string MarkedTicketAverageDisplay => FormatNativeAverage(HistoryRows.Where(row => row.IsMarked).Aggregate(0L, (sum,row) => checked(sum + row.NativePositiveSalesClp)), MarkedSalesCount);
         public bool HasMarkedRows => MarkedCount > 0;
         public bool ShowMarkedSummary => MarkedCount > 0;

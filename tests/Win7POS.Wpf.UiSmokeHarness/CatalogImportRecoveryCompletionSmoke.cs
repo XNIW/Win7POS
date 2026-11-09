@@ -1355,21 +1355,22 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
             RecordPhase("capture:" + name + ":begin");
             visual.UpdateLayout();
             var geometry = RecordGeometry(visual, "live_" + name);
-            var workArea = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(visual.Owner ?? visual);
+            var workArea = OperatorDialogGeometrySmoke.IndependentWorkAreaDip(visual);
             Require(Contains(workArea, WindowBounds(visual)), "live overlay escaped its monitor work area: " + geometry);
             var root = visual.Content as FrameworkElement;
             Require(root != null, "dialog has no rendered root: " + geometry);
             var card = (root as Panel)?.Children.OfType<Border>().SingleOrDefault();
             Require(card != null, "dialog has no rendered overlay card: " + geometry);
-            var requiredWidth = RequiredCardLength(card.Width, card.MinWidth);
-            var requiredHeight = RequiredCardLength(card.Height, card.MinHeight);
-            var ownerBounds = visual.Owner == null ? Rect.Empty : WindowBounds(visual.Owner);
-            var ownerCanHost = visual.Owner != null && workArea.Contains(ownerBounds) && ownerBounds.Width >= requiredWidth && ownerBounds.Height >= requiredHeight;
-            var expectedBounds = ownerCanHost ? ownerBounds : workArea;
-            var policyGeometry = geometry + "; required_card=" + requiredWidth.ToString(Invariant) + "," + requiredHeight.ToString(Invariant) + "; expected_native=" + RectText(expectedBounds);
+            var cardBounds = card.TransformToAncestor(visual).TransformBounds(new Rect(card.RenderSize));
+            var policyGeometry = geometry + "; visible_card_relative_dip=" + RectText(cardBounds) + "; expected_native=" + RectText(workArea);
             Evidence.Add(policyGeometry);
-            Require(SameBounds(WindowBounds(visual), expectedBounds), "live overlay did not use its standard owner/work-area bounds: " + policyGeometry);
-            foreach (var action in actions) CheckBounds(action, visual, "live_" + name);
+            Require(SameBounds(WindowBounds(visual), workArea), "live overlay did not use its monitor work-area bounds: " + policyGeometry);
+            Require(OperatorDialogGeometrySmoke.SurfaceFitsWorkArea(visual), "visible recovery card is not centered and contained in native work area: " + policyGeometry);
+            foreach (var action in actions)
+            {
+                CheckBounds(action, visual, "live_" + name);
+                Require(Program.HarnessWindow.IsRenderedWithin(action, card), "recovery CTA escaped its visible card: " + policyGeometry);
+            }
 
             var originalSize = root.RenderSize;
             var originalSlot = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(root);

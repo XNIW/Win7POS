@@ -1,5 +1,6 @@
 using System;
-using System.Diagnostics;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -23,6 +24,10 @@ namespace Win7POS.Wpf.Chrome
     [ContentProperty(nameof(DialogContent))]
     public class DialogShellWindow : Window
     {
+        private Action<Rect> _refreshConstraints;
+        private Border _dialogSurface;
+        private bool _geometryReported;
+        private static readonly FileLogger GeometryLogger = new FileLogger(nameof(DialogShellWindow));
         public static readonly DependencyProperty DialogContentProperty =
             DependencyProperty.Register(
                 nameof(DialogContent),
@@ -114,6 +119,7 @@ namespace Win7POS.Wpf.Chrome
             ResizeMode = ResizeMode.CanResize;
             Background = Brushes.Transparent;
             AllowsTransparency = false;
+            WindowStartupLocation = WindowStartupLocation.Manual;
 
             SourceInitialized += OnSourceInitialized;
         }
@@ -121,10 +127,57 @@ namespace Win7POS.Wpf.Chrome
         private void OnSourceInitialized(object sender, EventArgs e)
         {
             SourceInitialized -= OnSourceInitialized;
+            WindowStartupLocation = WindowStartupLocation.Manual;
             BuildChrome();
 
-            if (!UseModalOverlay)
-                MonitorHelper.AddWorkAreaClampHook(this);
+            MonitorHelper.AddWorkAreaClampHook(this, work => _refreshConstraints?.Invoke(work));
+        }
+
+        protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+        {
+            base.OnDpiChanged(oldDpi, newDpi);
+            _refreshConstraints?.Invoke(MonitorHelper.GetWorkAreaForExactWindowOrPrimary(this));
+        }
+
+        protected override void OnContentRendered(EventArgs e)
+        {
+            base.OnContentRendered(e);
+            if (_geometryReported || _dialogSurface == null) return;
+            _geometryReported = true;
+            try
+            {
+                if (!MonitorHelper.TryReadWindowBoundsPixels(this, out var hwnd, out var work)) return;
+                var first = MonitorHelper.GetFirstVisibleBoundsPixels(this);
+                var ownerBounds = Owner != null && MonitorHelper.TryReadWindowBoundsPixels(Owner, out var ownerNative, out _) ?
+                    ownerNative.ToString(CultureInfo.InvariantCulture) : "none";
+                var dpi = VisualTreeHelper.GetDpi(this);
+                var buttons = new List<string>(); var remaining = 2048;
+                CollectGeometryButtons(_dialogSurface, buttons, ref remaining);
+                GeometryLogger.LogInfo("category=dialog.geometry phase=first_render dialog=" + GetType().Name +
+                    " owner=" + (Owner?.GetType().Name ?? "none") + " owner_px=[" + ownerBounds + "]" +
+                    " dpi=" + (96 * dpi.DpiScaleX).ToString(CultureInfo.InvariantCulture) + "," + (96 * dpi.DpiScaleY).ToString(CultureInfo.InvariantCulture) +
+                    " work_px=[" + work.ToString(CultureInfo.InvariantCulture) + "] hwnd_px=[" + hwnd.ToString(CultureInfo.InvariantCulture) +
+                    "] surface_px=[" + ScreenBounds(_dialogSurface).ToString(CultureInfo.InvariantCulture) + "] first_hwnd_px=[" +
+                    first?.ToString(CultureInfo.InvariantCulture) + "] buttons_px=[" + string.Join(";", buttons) + "]");
+            }
+            catch (Exception error) { GeometryLogger.LogWarning("Dialog geometry observation unavailable: " + error.GetType().Name); }
+        }
+
+        private static Rect ScreenBounds(FrameworkElement element) => new Rect(element.PointToScreen(new Point()),
+            element.PointToScreen(new Point(element.ActualWidth, element.ActualHeight)));
+
+        private static void CollectGeometryButtons(DependencyObject root, List<string> result, ref int remaining)
+        {
+            if (root is ScrollViewer) return; // Body controls are not footer evidence.
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root) && --remaining >= 0 && result.Count < 16; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is Button button && button.IsVisible && button.ActualWidth > 0 &&
+                    (button.IsDefault || button.IsCancel || ReferenceEquals(button.Style, button.TryFindResource("DialogActionButtonStyle")) ||
+                        ReferenceEquals(button.Style, button.TryFindResource("DialogCancelButtonStyle"))))
+                    result.Add(ScreenBounds(button).ToString(CultureInfo.InvariantCulture));
+                CollectGeometryButtons(child, result, ref remaining);
+            }
         }
 
         private void BuildChrome()
@@ -152,11 +205,13 @@ namespace Win7POS.Wpf.Chrome
             var borderBrush = DialogBorderBrush ?? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDD4E8"));
             var outerBorder = new Border
             {
+                Name = "DialogSurface",
                 Background = cardBrush,
                 BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 CornerRadius = radius
             };
+            _dialogSurface = outerBorder;
 
             var mainGrid = new Grid();
             mainGrid.RowDefinitions.Add(new RowDefinition
@@ -268,15 +323,53 @@ namespace Win7POS.Wpf.Chrome
                 var fullGrid = new Grid { Background = Brushes.Transparent };
                 fullGrid.Children.Add(outerBorder);
                 Content = fullGrid;
-                ConfigureOverlayHost(originalSizeToContent, originalWidth, originalHeight, originalMinWidth, originalMinHeight, originalMaxWidth, originalMaxHeight, outerBorder);
-                ApplyOverlayPosition(outerBorder);
+                _refreshConstraints = work =>
+                {
+                    ConfigureOverlayHost(originalSizeToContent, originalWidth, originalHeight, originalMinWidth, originalMinHeight, originalMaxWidth, originalMaxHeight, outerBorder, work);
+                    ApplyOverlayPosition(work);
+                };
+                _refreshConstraints(MonitorHelper.GetWorkAreaOrPrimary(this));
             }
             else
             {
+                var work = MonitorHelper.GetWorkAreaOrPrimary(this);
+                var maxWidth = Math.Min(originalMaxWidth, Math.Max(1, work.Width - 48));
+                var maxHeight = Math.Min(originalMaxHeight, Math.Max(1, work.Height - 48));
+                maxWidth = Math.Min(maxWidth, work.Width * AdaptiveMaxWidthFraction);
+                maxHeight = Math.Min(maxHeight, work.Height * AdaptiveMaxHeightFraction);
+                MinWidth = Math.Min(originalMinWidth, maxWidth);
+                MinHeight = Math.Min(originalMinHeight, maxHeight);
+                MaxWidth = maxWidth;
+                MaxHeight = maxHeight;
+                if (!double.IsNaN(Width)) Width = Math.Min(Width, maxWidth);
+                if (!double.IsNaN(Height)) Height = Math.Min(Height, maxHeight);
+                _refreshConstraints = available =>
+                {
+                    var boundedWidth = Math.Min(originalMaxWidth, Math.Min(Math.Max(1, available.Width - 48), available.Width * AdaptiveMaxWidthFraction));
+                    var boundedHeight = Math.Min(originalMaxHeight, Math.Min(Math.Max(1, available.Height - 48), available.Height * AdaptiveMaxHeightFraction));
+                    MinWidth = Math.Min(originalMinWidth, boundedWidth); MinHeight = Math.Min(originalMinHeight, boundedHeight);
+                    MaxWidth = boundedWidth; MaxHeight = boundedHeight;
+                };
                 Background = cardBrush;
                 Content = outerBorder;
+                // WPF otherwise shows an HWND at its minimum size, then applies
+                // SizeToContent after native initial placement. Measure the final
+                // chrome under the monitor cap before showing; later content uses
+                // the dialog's internal scrolling instead of moving the window.
+                if (originalSizeToContent != SizeToContent.Manual)
+                {
+                    outerBorder.Measure(new Size(maxWidth, maxHeight));
+                    SizeToContent = SizeToContent.Manual;
+                    if (originalSizeToContent == SizeToContent.Width || originalSizeToContent == SizeToContent.WidthAndHeight)
+                        Width = Math.Max(MinWidth, Math.Min(maxWidth, Math.Max(outerBorder.DesiredSize.Width, double.IsNaN(originalWidth) ? 0 : originalWidth)));
+                    if (originalSizeToContent == SizeToContent.Height || originalSizeToContent == SizeToContent.WidthAndHeight)
+                        Height = Math.Max(MinHeight, Math.Min(maxHeight, Math.Max(outerBorder.DesiredSize.Height, double.IsNaN(originalHeight) ? 0 : originalHeight)));
+                }
             }
         }
+
+        internal double AdaptiveMaxWidthFraction { get; set; } = 1;
+        internal double AdaptiveMaxHeightFraction { get; set; } = 1;
 
         private void Header_MouseLeftButtonDown(Button captionButtonsContainer, object sender, MouseButtonEventArgs e)
         {
@@ -323,14 +416,11 @@ namespace Win7POS.Wpf.Chrome
             double originalMinHeight,
             double originalMaxWidth,
             double originalMaxHeight,
-            Border outerBorder)
+            Border outerBorder,
+            Rect cardWorkArea)
         {
-            var cardWorkArea = Owner != null
-                ? MonitorHelper.GetWorkAreaForExactWindowOrPrimary(Owner)
-                : MonitorHelper.GetWorkAreaOrPrimary(this);
-
-            var cardMaxWidth = ClampToFiniteMax(Math.Max(200, cardWorkArea.Width - 48), originalMaxWidth);
-            var cardMaxHeight = ClampToFiniteMax(Math.Max(200, cardWorkArea.Height - 48), originalMaxHeight);
+            var cardMaxWidth = ClampToFiniteMax(Math.Max(1, cardWorkArea.Width - 48), originalMaxWidth);
+            var cardMaxHeight = ClampToFiniteMax(Math.Max(1, cardWorkArea.Height - 48), originalMaxHeight);
 
             outerBorder.MaxWidth = cardMaxWidth;
             outerBorder.MaxHeight = cardMaxHeight;
@@ -355,65 +445,15 @@ namespace Win7POS.Wpf.Chrome
             MaxHeight = double.PositiveInfinity;
         }
 
-        private void ApplyOverlayPosition(Border outerBorder)
+        private void ApplyOverlayPosition(Rect bounds)
         {
-            Rect bounds;
-
-            if (Owner == null)
-            {
-#if DEBUG
-                Debug.WriteLine("[DialogShellWindow] Overlay without owner, using work area fallback.");
-#endif
-                bounds = MonitorHelper.GetWorkAreaOrPrimary(this);
-            }
-            else if (Owner.ActualWidth <= 0 || Owner.ActualHeight <= 0)
-            {
-#if DEBUG
-                Debug.WriteLine("[DialogShellWindow] Overlay owner has invalid size, using exact-owner monitor work area.");
-#endif
-                bounds = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(Owner);
-            }
-            else
-            {
-                var ownerBounds = new Rect(Owner.Left, Owner.Top, Owner.ActualWidth, Owner.ActualHeight);
-                var workArea = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(Owner);
-                var requiredWidth = GetRequiredOverlayLength(outerBorder.Width, outerBorder.MinWidth);
-                var requiredHeight = GetRequiredOverlayLength(outerBorder.Height, outerBorder.MinHeight);
-
-                bounds = CanHostOverlayCard(ownerBounds, workArea, requiredWidth, requiredHeight)
-                    ? ownerBounds
-                    : workArea;
-            }
-
+            // Ownership controls modality/focus; the selected monitor work area
+            // controls geometry. Never center the visible card on a small parent.
+            WindowStartupLocation = WindowStartupLocation.Manual;
             Left = bounds.Left;
             Top = bounds.Top;
             Width = Math.Max(1, bounds.Width);
             Height = Math.Max(1, bounds.Height);
-        }
-
-        private static bool CanHostOverlayCard(Rect ownerBounds, Rect workArea, double requiredWidth, double requiredHeight)
-        {
-            if (ownerBounds.Width <= 0 || ownerBounds.Height <= 0)
-                return false;
-
-            if (ownerBounds.Left < workArea.Left ||
-                ownerBounds.Top < workArea.Top ||
-                ownerBounds.Right > workArea.Right ||
-                ownerBounds.Bottom > workArea.Bottom)
-                return false;
-
-            return ownerBounds.Width >= requiredWidth && ownerBounds.Height >= requiredHeight;
-        }
-
-        private static double GetRequiredOverlayLength(double explicitLength, double minLength)
-        {
-            if (!double.IsNaN(explicitLength) && !double.IsInfinity(explicitLength) && explicitLength > 0)
-                return explicitLength;
-
-            if (!double.IsNaN(minLength) && !double.IsInfinity(minLength) && minLength > 0)
-                return minLength;
-
-            return 1;
         }
 
         private static double ClampToFiniteMax(double value, double max)

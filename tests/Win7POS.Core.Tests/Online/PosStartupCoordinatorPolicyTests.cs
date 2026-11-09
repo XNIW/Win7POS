@@ -8,6 +8,65 @@ namespace Win7POS.Core.Tests.Online;
 public sealed class PosStartupCoordinatorPolicyTests
 {
     [TestMethod]
+    public void VerifiedEmpty_AdmitsAuthenticatedShellWithoutSaleOrHistoryPermission()
+    {
+        var decision = PosStartupCoordinatorPolicy.EvaluateAdmission(PosAuthenticatedAccessMode.Normal,
+            isLoggedIn: true, authorizationAllowed: true, catalogSaleSafe: false, catalogAuthoritativelyEmpty: true);
+        Assert.AreEqual(PosShellReadiness.AuthenticatedEmpty, decision.Readiness);
+        Assert.AreEqual(PosShellMode.AuthenticatedEmpty, decision.ShellMode);
+        Assert.IsTrue(decision.CanEnterShell);
+        Assert.IsTrue(decision.CanUseNormalNavigation);
+        Assert.IsFalse(decision.CanSell);
+    }
+
+    [TestMethod]
+    public void SaleReady_StillRequiresValidNormalAuthorityAndExplicitSaleSafety()
+    {
+        var decision = PosStartupCoordinatorPolicy.EvaluateAdmission(PosAuthenticatedAccessMode.Normal, true, true, true, false);
+        Assert.AreEqual(PosShellReadiness.SaleReady, decision.Readiness);
+        Assert.AreEqual(PosShellMode.Pos, decision.ShellMode);
+        Assert.IsTrue(decision.CanSell);
+        Assert.IsTrue(decision.CanUseNormalNavigation);
+    }
+
+    [DataTestMethod]
+    [DataRow(false, true, false, true)]
+    [DataRow(true, false, false, true)]
+    [DataRow(false, true, true, false)]
+    [DataRow(true, false, true, false)]
+    public void MissingOrExpiredAuthority_DoesNotAdmitShell(bool loggedIn, bool authorized, bool saleSafe, bool empty)
+    {
+        var decision = PosStartupCoordinatorPolicy.EvaluateAdmission(PosAuthenticatedAccessMode.Normal, loggedIn, authorized, saleSafe, empty);
+        Assert.AreEqual(PosShellReadiness.Blocked, decision.Readiness);
+        Assert.IsFalse(decision.CanEnterShell);
+        Assert.IsFalse(decision.CanUseNormalNavigation);
+        Assert.IsFalse(decision.CanSell);
+    }
+
+    [DataTestMethod]
+    [DataRow(false, false, false, false)]
+    [DataRow(true, true, false, false)]
+    [DataRow(true, false, true, false)]
+    [DataRow(false, true, false, true)]
+    public void PartialConflictingOrRecoveryState_DoesNotBecomeNormalShell(bool saleSafe, bool empty, bool safeStart, bool recovery)
+    {
+        var decision = PosStartupCoordinatorPolicy.EvaluateAdmission(PosAuthenticatedAccessMode.Normal, true, true, saleSafe, empty, safeStart, recovery);
+        Assert.AreEqual(PosShellReadiness.Recovery, decision.Readiness);
+        Assert.IsFalse(decision.CanUseNormalNavigation);
+        Assert.IsFalse(decision.CanSell);
+    }
+
+    [TestMethod]
+    public void LocalRecovery_RemainsRestrictedAndDoesNotBorrowNormalShellAuthority()
+    {
+        var decision = PosStartupCoordinatorPolicy.EvaluateAdmission(PosAuthenticatedAccessMode.LocalRecovery, true, false, true, false);
+        Assert.AreEqual(PosShellReadiness.Recovery, decision.Readiness);
+        Assert.IsFalse(decision.CanUseNormalNavigation);
+        Assert.IsFalse(decision.CanSell);
+        Assert.IsFalse(PosStartupCoordinatorPolicy.EvaluateAdmission((PosAuthenticatedAccessMode)99, true, true, true, false).CanEnterShell);
+    }
+
+    [TestMethod]
     public void ShellMode_RequiresNormalAccessAndSaleSafeCatalogForPos()
     {
         Assert.AreEqual(

@@ -9,7 +9,7 @@
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         SizeToContent="WidthAndHeight"
         MinWidth="320"
         ResizeMode="NoResize"

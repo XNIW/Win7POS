@@ -197,14 +197,17 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             var session = EnsureSession();
-            var catalogSaleSafe = await PosCatalogPullService
-                .IsCatalogSaleSafeAsync(factory)
-                .ConfigureAwait(false);
+            var admission = await ReadShellAdmissionAsync(cancellationToken).ConfigureAwait(false);
+            if (!admission.CanEnterShell) throw new InvalidOperationException("shell_authorization_changed");
             return new PosStartupAccessResult(
                 session,
-                PosStartupCoordinatorPolicy.DetermineShellMode(accessMode, catalogSaleSafe),
-                catalogSaleSafe);
+                admission.ShellMode,
+                admission.CanSell);
         }
+
+        public Task<PosShellAdmission> ReadShellAdmissionAsync(CancellationToken cancellationToken = default) =>
+            PosShellAdmissionReader.ReadAsync(RequireFactory(), Session, Host?.CurrentGeneration, AccessMode,
+                IsSafeStart, cancellationToken: cancellationToken);
 
         public async Task EnterRecoveryAsync(SqliteConnectionFactory factory = null)
         {
@@ -223,10 +226,8 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            var catalogSaleSafe = await PosCatalogPullService
-                .IsCatalogSaleSafeAsync(GetRecoveryFactory())
-                .ConfigureAwait(false);
-            return catalogSaleSafe
+            var admission = await ReadShellAdmissionAsync(cancellationToken).ConfigureAwait(false);
+            return admission.CanUseNormalNavigation
                 ? PosRecoveryExitValidation.Ready()
                 : PosRecoveryExitValidation.CatalogUnsafe();
         }

@@ -3,7 +3,7 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
  xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
- Title="{loc:Loc history.title}" WindowStartupLocation="CenterOwner" ShowHeader="False"
+ Title="{loc:Loc history.title}" WindowStartupLocation="Manual" ShowHeader="False"
  Width="960" Height="700" MinWidth="720" MinHeight="520" ResizeMode="CanResize" SizeToContent="Manual">
  <Grid Margin="20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>

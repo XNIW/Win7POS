@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using Win7POS.Data;
+using Win7POS.Core.Security;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Chrome;
@@ -105,12 +106,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 }
                 else if (!_userCancelling)
                 {
+                    var admission = await PosShellAdmissionReader.ReadAsync(_factory, OperatorSessionHolder.Current,
+                        _syncHost.CurrentGeneration, PosAuthenticatedAccessMode.Normal).ConfigureAwait(true);
                     Result = new StartOfDaySyncResult
                     {
-                        CanOpenPos = true,
+                        CanOpenPos = admission.CanSell,
+                        CanEnterAuthenticatedShell = admission.CanUseNormalNavigation,
                         ShouldContinueInBackground = true,
                         StatusMessage = PosLocalization.T("startOfDay.continueBackground"),
-                        CatalogSaleSafe = true,
+                        CatalogSaleSafe = admission.CanSell,
+                        CatalogAuthoritativelyEmpty = admission.Readiness == Win7POS.Core.Online.PosShellReadiness.AuthenticatedEmpty,
                         CatalogStatus = "background",
                     };
                     ApplyResult(Result);
@@ -144,8 +149,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             SetStatus(result.StatusMessage);
             UpdateCounts(result);
-            ContinueButton.IsEnabled = result.CanOpenPos;
-            RetryButton.Visibility = result.CanOpenPos ? Visibility.Collapsed : Visibility.Visible;
+            ContinueButton.IsEnabled = result.CanEnterAuthenticatedShell;
+            RetryButton.Visibility = result.CanEnterAuthenticatedShell ? Visibility.Collapsed : Visibility.Visible;
             SyncDetailsButton.Visibility = result.RequiresOperatorAction
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -155,11 +160,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ActionHelpText.Visibility = result.RequiresOperatorAction
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-            WaitButton.Visibility = result.CanOpenPos && result.ShouldContinueInBackground
+            WaitButton.Visibility = result.CanEnterAuthenticatedShell && result.ShouldContinueInBackground
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
-            if (result.CanOpenPos &&
+            if (result.CanEnterAuthenticatedShell &&
                 !result.ShouldContinueInBackground &&
                 !result.RequiresOperatorAction)
             {
@@ -293,7 +298,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 StartOfDayProgressBar.Value = 100;
             }
 
-            ContinueButton.IsEnabled = !busy && Result?.CanOpenPos == true;
+            ContinueButton.IsEnabled = !busy && Result?.CanEnterAuthenticatedShell == true;
             RetryButton.IsEnabled = !busy;
             SyncDetailsButton.IsEnabled = !busy;
             WaitButton.IsEnabled = !busy;
@@ -301,7 +306,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void Continue_Click(object sender, RoutedEventArgs e)
         {
-            if (Result?.CanOpenPos == true)
+            if (Result?.CanEnterAuthenticatedShell == true)
             {
                 DialogResult = true;
                 Close();

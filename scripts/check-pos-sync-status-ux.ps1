@@ -156,9 +156,9 @@ if ($reader -notmatch "EvaluateSaleSafetyForOfficialShopAsync" -or
 if ($shopDialog -notmatch "CatalogCompletenessText" -or $shopDialog -notmatch "CatalogCountsText" -or $shopDialog -notmatch "CatalogRepairText" -or $shopDialog -notmatch "CatalogSyncModeText") { Fail "shop dialog must display catalog exactness diagnostics" } else { Pass "shop dialog displays catalog exactness diagnostics" }
 if ($workflow -notmatch 'RepairCatalogAsync[\s\S]{0,700}PosOnlineSyncSignalBus\.TriggerAsync\([\s\S]{0,140}OnlineSyncLane\.CatalogDelta,[\s\S]{0,120}OnlineSyncLaneTrigger\.AdministratorRepair') { Fail "workflow must expose supervised authoritative full catalog repair" } else { Pass "workflow exposes supervised authoritative full catalog repair" }
 if ($syncCenter -notmatch 'x:Class="Win7POS\.Wpf\.Pos\.Dialogs\.SyncCenterDialog"' -or
-    $syncCenter -notmatch 'WindowStartupLocation="CenterOwner"' -or
+    $syncCenter -notmatch 'WindowStartupLocation="Manual"' -or
     $syncCenter -notmatch 'DialogFooterMargin' -or
-    $syncCenter -notmatch 'sync\.center\.fullRepair') { Fail "Sync Center must use the shared dialog shell, centered owner and standard footer" } else { Pass "Sync Center follows shared dialog structure" }
+    $syncCenter -notmatch 'sync\.center\.fullRepair') { Fail "Sync Center must use the shared dialog shell, shared work-area placement, true owner and standard footer" } else { Pass "Sync Center follows shared dialog structure" }
 if ($syncCenterCode -notmatch "ApplyConfirmDialog\.ShowConfirm" -or
     $mainCode -notmatch "AuthorizeFullCatalogRepairAsync" -or
     $mainCode -notmatch "PermissionCodes\.DbMaintenance" -or

@@ -380,7 +380,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand StatusToastDetailsCommand { get; }
 
         /// <summary>Crea un ViewModel per la schermata Chiusura cassa (pagina integrata).</summary>
-        public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => new Dialogs.DailyReportViewModel(_service, _overrideAuthService, _permissionService, _operatorSession as OperatorSession, OpenHistoricalSalesImportAsync);
+        public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => DailyReportComposition.Create(_service, _overrideAuthService, _permissionService, _operatorSession as OperatorSession, RequestFocusBarcode);
 
         /// <summary>Costruttore con dipendenze iniettate. Se null, usa istanze di default (compatibilità designer XAML).</summary>
         public PosViewModel(PosWorkflowService service = null, FileLogger logger = null, IPermissionService permissionService = null, IOperatorSession operatorSession = null, IOverrideAuthService overrideAuthService = null, Win7POS.Data.Repositories.UserRepository userRepo = null)
@@ -1668,7 +1668,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _permissionService.Demand(PermissionCodes.DailyCloseView, PosLocalization.Current.Text("operations.dailyClose"));
-                var vm = new DailyReportViewModel(_service, _overrideAuthService, _permissionService, _operatorSession as OperatorSession, OpenHistoricalSalesImportAsync);
+                var vm = CreateDailyReportViewModel();
                 var dlg = new DailyReportDialog(vm)
                 {
                     Owner = DialogOwnerHelper.GetSafeOwner()
@@ -1688,22 +1688,6 @@ namespace Win7POS.Wpf.Pos
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("reports.closeTitle"), PosLocalization.Current.Format("common.errorWithMessage", ex.Message));
             }
             RequestFocusBarcode();
-            return Task.CompletedTask;
-        }
-
-        private Task OpenHistoricalSalesImportAsync()
-        {
-            _permissionService.Demand(_permissionService.Has(PermissionCodes.RegisterImportHistory) ? PermissionCodes.RegisterImportHistory : PermissionCodes.RegisterCancelHistory, PosLocalization.T("history.title"));
-            var authority = _operatorSession as OperatorSession ?? throw new InvalidOperationException("historical_authorization_unavailable");
-            var previousBusy = IsBusy;
-            IsBusy = true;
-            try
-            {
-                var vm = new HistoricalSalesImportViewModel(_service, authority);
-                var dialog = new HistoricalSalesImportDialog(vm) { Owner = DialogOwnerHelper.GetSafeOwner() };
-                dialog.ShowDialog();
-            }
-            finally { IsBusy = previousBusy; RequestFocusBarcode(); }
             return Task.CompletedTask;
         }
 

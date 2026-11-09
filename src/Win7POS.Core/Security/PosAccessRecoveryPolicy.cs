@@ -37,7 +37,8 @@ namespace Win7POS.Core.Security
     public enum PosShellMode
     {
         Pos = 0,
-        Recovery
+        Recovery,
+        AuthenticatedEmpty
     }
 
     public sealed class PosUserBootstrapState

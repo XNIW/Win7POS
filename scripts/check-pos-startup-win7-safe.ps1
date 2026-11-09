@@ -398,13 +398,13 @@ $mainOwnsStartupState =
     $mainWindow -match 'CaptureStartupCoordinatorState'
 if ($mainOwnsStartupState -or
     $startupCoordinator -notmatch 'public\s+SqliteConnectionFactory\s+Initialize\s*\([\s\S]{0,900}DbInitializer\.EnsureCreated[\s\S]{0,1100}EnsureSession' -or
-    $startupCoordinator -notmatch 'public\s+async\s+Task<PosStartupAccessResult>\s+AcceptAuthenticatedAccessAsync[\s\S]{0,700}PosStartupCoordinatorPolicy\.DetermineShellMode' -or
+    $startupCoordinator -notmatch 'public\s+async\s+Task<PosStartupAccessResult>\s+AcceptAuthenticatedAccessAsync[\s\S]{0,1000}ReadShellAdmissionAsync' -or
     $startupCoordinatorPolicy -notmatch 'DetermineShellMode[\s\S]{0,220}PosShellStartupPolicy\.Determine' -or
     $startupCoordinatorPolicy -notmatch 'CanResumeAfterMaintenance' -or
     $startupCoordinatorPolicyTests -notmatch 'MaintenanceResume_RequiresExistingRequestAndNormalLiveState' -or
     $startupCoordinatorPolicyTests -notmatch 'RecoveryExit_RequiresNormalLoggedInAuthorizedSession' -or
     $startupCoordinator -notmatch 'public\s+async\s+Task\s+EnterRecoveryAsync[\s\S]{0,280}StopAsync' -or
-    $startupCoordinator -notmatch 'public\s+async\s+Task<PosRecoveryExitValidation>\s+ValidateRecoveryExitAsync[\s\S]{0,500}IsCatalogSaleSafeAsync' -or
+    $startupCoordinator -notmatch 'public\s+async\s+Task<PosRecoveryExitValidation>\s+ValidateRecoveryExitAsync[\s\S]{0,700}ReadShellAdmissionAsync' -or
     $startupCoordinator -notmatch 'public\s+async\s+Task<PosRecoveryExitValidation>\s+CompleteRecoveryExitAsync[\s\S]{0,350}StopAsync' -or
     $startupCoordinator -notmatch 'TryApproveLocalCatalogAsync[\s\S]{0,450}CatalogRecoveryRepository' -or
     $enterRecoveryBody -notmatch 'coordinator\.EnterRecoveryAsync' -or

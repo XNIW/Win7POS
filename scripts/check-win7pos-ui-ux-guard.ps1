@@ -305,7 +305,7 @@ else {
 
 Test-ContainsAll "Language settings dialog follows dialog resource pattern" $languageDialog @(
     'LanguageSettingsDialog',
-    'WindowStartupLocation="CenterOwner"',
+    'WindowStartupLocation="Manual"',
     'x:Name="LanguageComboBox"',
     'DialogActionButtonStyle',
     'DialogCancelButtonStyle',

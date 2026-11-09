@@ -15,7 +15,7 @@
         MinHeight="440"
         SizeToContent="Manual"
         ResizeMode="NoResize"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         ShowInTaskbar="False">
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>

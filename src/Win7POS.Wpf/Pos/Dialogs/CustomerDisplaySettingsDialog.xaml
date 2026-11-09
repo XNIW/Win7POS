@@ -4,7 +4,7 @@
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         Title="{loc:Loc customerDisplay.settings.title}"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         SizeToContent="Manual"
         Width="860" Height="680"
         MinWidth="700" MinHeight="540"

@@ -224,7 +224,7 @@ $uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 Assert-Contains "recovery access dialog has 20-cycle lifecycle coverage" $uiSmoke "recoveryAccessCycles=20"
 Assert-Contains "recovery lifecycle opens the real access dialog" $uiSmoke "new PosOnlineFirstLoginDialog()"
 
-Assert-Contains "startup coordinator evaluates catalog before PosView" $startupCoordinator "PosStartupCoordinatorPolicy.DetermineShellMode"
+Assert-Contains "startup coordinator evaluates catalog before PosView" $startupCoordinator "ReadShellAdmissionAsync"
 Assert-Contains "startup coordinator policy preserves catalog shell decision" $startupCoordinatorPolicy "PosShellStartupPolicy.Determine"
 Assert-Contains "shell has controlled recovery mode" $main "EnterRecoveryModeAsync"
 Assert-Contains "local recovery explains that online access is required for POS" $main 'localRecoveryAccess ? "access.login.recoveryOnlineRequired"'
@@ -299,7 +299,7 @@ if ($main -match 'private\s+async\s+Task<bool>\s+ExitRecoveryModeAsync\(\)[\s\S]
 } else {
     Fail "recovery exit must validate normal authorized access before clearing recovery mode"
 }
-if ($main -notmatch 'if\s*\(shellMode\s*==\s*PosShellMode\.Pos\)[\s\S]{0,180}EnsurePosViewCreated') {
+if ($main -notmatch 'if\s*\(_shellCanSell\)[\s\S]{0,180}EnsurePosViewCreated') {
     Fail "PosView creation must remain inside the sale-safe POS branch"
 } else {
     Pass "PosView creation remains inside the sale-safe POS branch"

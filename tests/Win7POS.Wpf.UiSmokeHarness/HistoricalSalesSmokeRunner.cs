@@ -481,7 +481,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     dialog.Show(); await PumpAsync(); dialog.MoveFocus(new TraversalRequest(FocusNavigationDirection.First)); await PumpAsync();
                     test.Check("keyboard_focus", await VerifyHistoricalKeyboardAsync(service, f.Operator) && onboardingVerified);
                     dialog.Activate(); await PumpAsync();
-                    test.Check("dialog_standard", dialog is DialogShellWindow && dialog.WindowStartupLocation == WindowStartupLocation.CenterOwner && dialog.MinWidth >= 720 && dialog.Owner == owner && Descendants<Button>(dialog).Any(button => ReferenceEquals(button.Style, dialog.FindResource("DialogActionButtonStyle"))));
+                    test.Check("dialog_standard", dialog is DialogShellWindow && dialog.WindowStartupLocation == WindowStartupLocation.Manual && Math.Abs(dialog.MinWidth - Math.Min(720, dialog.MaxWidth)) < 0.1 && dialog.Owner == owner && Descendants<Button>(dialog).Any(button => ReferenceEquals(button.Style, dialog.FindResource("DialogActionButtonStyle"))));
                     test.Check("nonblocking_dispatcher", await VerifyAnalysisHeartbeatAsync(f, service));
                     var summarySource = WriteModern(f.Root, "visual-summary", new[] { HistoricalSalesFixtureWriter.ModernRow("synthetic-visual-only", 1000) });
                     model.LegacyClpConfirmed = true; model.TimeChoice = 1; model.TemporalEvidence = "synthetic-explicit-UTC-evidence";
@@ -563,9 +563,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         ";focus=" + buttons.Any(button => button.IsKeyboardFocusWithin) +
                         ";width=" + dialog.ActualWidth.ToString(CultureInfo.InvariantCulture) +
                         ";height=" + dialog.ActualHeight.ToString(CultureInfo.InvariantCulture));
-                    if (buttons.Length != 3 || !buttons.Any(button => button.IsKeyboardFocusWithin) ||
-                        dialog.WindowStartupLocation != WindowStartupLocation.CenterOwner || dialog.Owner != owner ||
-                        dialog.ActualWidth > 1024 || dialog.ActualHeight > 768) return false;
+                    if (!buttons.Any(button => button.IsKeyboardFocusWithin) ||
+                        !((Button)dialog.FindName("ImportButton")).IsEnabled || !((Button)dialog.FindName("ReportButton")).IsEnabled ||
+                        dialog.WindowStartupLocation != WindowStartupLocation.Manual || dialog.Owner != owner ||
+                        !OperatorDialogGeometrySmoke.SurfaceFitsWorkArea(dialog)) return false;
                     // The standalone service/view model can import and export, but its
                     // report command cannot send even a synthetic job to a printer.
                     using (var report = new DailyReportViewModel(service, permissions: new PermissionService(f.Operator),

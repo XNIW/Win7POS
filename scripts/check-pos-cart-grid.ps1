@@ -58,7 +58,7 @@ Require ($presenterView -match 'Data="\{StaticResource IconProducts\}"' -and
 Require ($presenterView -notmatch '(?i)Source="\s*https?://' -and
          $presenterView -notmatch '(?i)Source="[^"{]*\.(png|jpe?g|bmp|gif)') "placeholder performs no bitmap or network I/O"
 Require ($settingsHub -match 'settings\.cartView\.title' -and $settingsHubCode -match 'CartViewSettingsDialog\.ShowDialog') "workstation settings exposes cart view"
-Require ($dialog -match 'WindowStartupLocation="CenterOwner"' -and $dialog -match 'DialogActionButtonStyle' -and $dialog -match 'DialogCancelButtonStyle' -and $dialog -match 'DialogFooterMargin') "cart view dialog follows shared dialog resources"
+Require ($dialog -match 'WindowStartupLocation="Manual"' -and $dialog -match 'DialogActionButtonStyle' -and $dialog -match 'DialogCancelButtonStyle' -and $dialog -match 'DialogFooterMargin') "cart view dialog follows shared dialog resources"
 Require ($dialogCode -match 'ownerWindow \?\? DialogOwnerHelper\.GetSafeOwner\(\)') "cart view dialog uses safe nested ownership"
 
 $translationKeys = @(

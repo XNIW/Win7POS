@@ -35,6 +35,10 @@ namespace Win7POS.Wpf
         private static readonly TimeSpan StartupWatchdogTimeout = TimeSpan.FromSeconds(5);
         private readonly TaskCompletionSource<bool> _contentRendered = new TaskCompletionSource<bool>();
         private DispatcherTimer _syncStatusTimer;
+        private bool _shellAuthenticated;
+        private bool _shellCanSell;
+        private bool _shellReadinessRefreshing;
+        private PosWorkflowService _reportService;
         private DispatcherTimer _networkStatusTimer;
         private DispatcherTimer _authorizationLeaseTimer;
         private bool _authorizationLeaseBlockHandled;
@@ -262,7 +266,7 @@ namespace Win7POS.Wpf
             }
             catch { }
             try { DailyReportViewControl.DataContext = null; } catch { }
-            try { GetPosViewModel()?.Dispose(); } catch { }
+            try { (PosViewControl?.DataContext as PosViewModel)?.Dispose(); } catch { }
             try { _customerDisplayManager?.Dispose(); } catch { }
             _customerDisplayManager = null;
         }
@@ -454,7 +458,7 @@ namespace Win7POS.Wpf
                         if (!App.IsSafeStart)
                         {
                             startOfDayResult = await RunStartOfDaySyncAsync(factory).ConfigureAwait(true);
-                            if (startOfDayResult == null || !startOfDayResult.CanOpenPos)
+                            if (startOfDayResult == null || !startOfDayResult.CanEnterAuthenticatedShell)
                             {
                                 _logger.LogWarning("category=start_of_day result=blocked reason=" +
                                     SafeOnlineCode(startOfDayResult?.BlockingReason));
@@ -468,11 +472,8 @@ namespace Win7POS.Wpf
                         }
                     }
 
-                    if (shellMode == PosShellMode.Pos)
-                    {
-                        EnsurePosViewCreated();
-                        await EnsureCustomerDisplayManagerAsync(factory).ConfigureAwait(true);
-                    }
+                    _shellAuthenticated = true;
+                    if (!IsRecoveryMode) await RefreshShellReadinessAsync(runTransitionGate: false).ConfigureAwait(true);
                     UpdateOperatorDisplay(session);
                     RefreshShellAfterOperatorChange(session);
                     if (_observedOperatorSession != null && _operatorSessionChangedHandler != null)
@@ -486,6 +487,7 @@ namespace Win7POS.Wpf
                             if (_cleanupCompleted) return;
                             UpdateOperatorDisplay(session);
                             RefreshShellAfterOperatorChange(session);
+                            _ = RefreshShellReadinessAsync();
                         }));
                     };
                     session.SessionChanged += _operatorSessionChangedHandler;
@@ -706,6 +708,8 @@ namespace Win7POS.Wpf
                 return;
             }
 
+            _shellCanSell = false;
+            EmptyCatalogPlaceholder.Visibility = Visibility.Collapsed;
             await coordinator.EnterRecoveryAsync(factory).ConfigureAwait(true);
             if (HasLeaseFreeLocalRecoveryAccess())
             {
@@ -776,7 +780,7 @@ namespace Win7POS.Wpf
             if (!App.IsSafeStart)
             {
                 startOfDayResult = await RunStartOfDaySyncAsync(factory).ConfigureAwait(true);
-                if (startOfDayResult == null || !startOfDayResult.CanOpenPos)
+                if (startOfDayResult == null || !startOfDayResult.CanEnterAuthenticatedShell)
                 {
                     await coordinator.StopAsync().ConfigureAwait(true);
                     RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.recoveryModeHelp");
@@ -800,7 +804,8 @@ namespace Win7POS.Wpf
             RecoveryModeBanner.Visibility = Visibility.Collapsed;
             RecoveryPlaceholder.Visibility = Visibility.Collapsed;
             SetRecoveryNavigationState(false);
-            EnsurePosViewCreated();
+            _shellAuthenticated = true;
+            await RefreshShellReadinessAsync(runTransitionGate: false).ConfigureAwait(true);
             _customerDisplayManager?.SetOperatorLocked(false);
             CurrentMenuKey = "Pos";
             MainTabControl.SelectedIndex = 0;
@@ -1188,10 +1193,12 @@ namespace Win7POS.Wpf
                 {
                     return;
                 }
+                if (_shellAuthenticated && !IsRecoveryMode) await RefreshShellReadinessAsync().ConfigureAwait(true);
                 var status = await new PosSyncStatusReader(factory).ReadAsync().ConfigureAwait(true);
                 if (SyncStatusText != null)
                 {
-                    SyncStatusText.Text = PosLocalization.Current.Format("sync.statusPrefix", status.SummaryText);
+                    SyncStatusText.Text = PosLocalization.Current.Format("sync.statusPrefix", EmptyCatalogPlaceholder.Visibility == Visibility.Visible && OperatorSessionHolder.Current?.EvaluateAuthorizationLease().Allowed == true
+                        ? PosLocalization.T("history.shellCatalogEmpty") : status.SummaryText);
                     SyncStatusText.ToolTip = status.DeviceText + "\n" +
                         status.StaffText + "\n" +
                         status.LastOnlineText + "\n" +
@@ -1341,6 +1348,7 @@ namespace Win7POS.Wpf
 
                 UpdateOperatorDisplay(session);
                 RefreshShellAfterOperatorChange(session);
+                await RefreshShellReadinessAsync().ConfigureAwait(true);
                 return true;
             }
             finally
@@ -1399,6 +1407,7 @@ namespace Win7POS.Wpf
             {
                 await EnterRecoveryModeAsync(factory).ConfigureAwait(true);
                 RefreshShellAfterOperatorChange(session);
+                await RefreshShellReadinessAsync().ConfigureAwait(true);
                 return true;
             }
 
@@ -1411,6 +1420,7 @@ namespace Win7POS.Wpf
 
             RefreshAuthorizationLeaseSchedule(session);
             RefreshShellAfterOperatorChange(session);
+            await RefreshShellReadinessAsync().ConfigureAwait(true);
             return true;
         }
 
@@ -1978,6 +1988,14 @@ namespace Win7POS.Wpf
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Key == Key.Escape && SideMenuOverlay?.Visibility != Visibility.Visible && MainTabControl.SelectedIndex == 2)
+            {
+                var report = DailyReportViewControl.DataContext as DailyReportViewModel;
+                if (report?.IsBusy == true) report.CancelReportCommand.Execute(null);
+                else OnMenuPosClick(sender, new RoutedEventArgs());
+                e.Handled = true;
+                return;
+            }
             if (e.Key == Key.Escape && SideMenuOverlay?.Visibility == Visibility.Visible)
             {
                 SetSideMenuOpen(false);
@@ -2007,6 +2025,7 @@ namespace Win7POS.Wpf
             CurrentMenuKey = "Pos";
             MainTabControl.SelectedIndex = 0;
             SetSideMenuOpen(false);
+            PosViewControl?.RestoreScannerFocus();
         }
 
         private void OnMenuOpenCashDrawerClick(object sender, RoutedEventArgs e)
@@ -2094,7 +2113,7 @@ namespace Win7POS.Wpf
 
         private PosViewModel GetPosViewModel()
         {
-            return PosViewControl?.DataContext as PosViewModel;
+            return _shellCanSell ? PosViewControl?.DataContext as PosViewModel : null;
         }
 
         private PosView EnsurePosViewCreated()
@@ -2109,12 +2128,61 @@ namespace Win7POS.Wpf
                 return PosViewControl;
             }
 
-            PosViewControl = new PosView();
+            var factory = _startupCoordinator.Factory;
+            _reportService = _reportService ?? new PosWorkflowService(
+                new PosDbOptions(factory.DbPath, accessContext: factory.AccessContext), () => DateTimeOffset.UtcNow);
+            PosViewControl = new PosView(_reportService);
             PosViewControl.CatalogWarningDetailsRequested += ShowCatalogWarningDetails;
             PosTabHost.Children.Insert(0, PosViewControl);
             _customerDisplayManager?.Attach(GetPosViewModel());
             return PosViewControl;
         }
+
+        private async Task RefreshShellReadinessAsync(bool runTransitionGate = true)
+        {
+            if (_cleanupCompleted || !_shellAuthenticated || _shellReadinessRefreshing || IsRecoveryMode || _startupCoordinator == null) return;
+            _shellReadinessRefreshing = true;
+            try
+            {
+                var admission = await _startupCoordinator.ReadShellAdmissionAsync().ConfigureAwait(true);
+                if (_cleanupCompleted) return;
+                if (!admission.CanEnterShell)
+                {
+                    _shellCanSell = false;
+                    SuspendPosViewForRecovery();
+                    HandleAuthorizationLeaseDenied(OperatorSessionHolder.Current);
+                    return;
+                }
+                if (!admission.CanUseNormalNavigation)
+                {
+                    _shellCanSell = false;
+                    EmptyCatalogPlaceholder.Visibility = Visibility.Collapsed;
+                    await EnterRecoveryModeAsync(_startupCoordinator.Factory).ConfigureAwait(true);
+                    return;
+                }
+                if (admission.CanSell && !_shellCanSell && runTransitionGate)
+                {
+                    var start = await RunStartOfDaySyncAsync(_startupCoordinator.Factory).ConfigureAwait(true);
+                    admission = await _startupCoordinator.ReadShellAdmissionAsync().ConfigureAwait(true);
+                    if (start?.CanOpenPos != true || !admission.CanSell) return;
+                }
+                _shellCanSell = admission.CanSell;
+                EmptyCatalogPlaceholder.Visibility = _shellCanSell ? Visibility.Collapsed : Visibility.Visible;
+                if (_shellCanSell)
+                {
+                    EnsurePosViewCreated();
+                    await EnsureCustomerDisplayManagerAsync(_startupCoordinator.Factory).ConfigureAwait(true);
+                }
+                else
+                {
+                    _activePaymentCleanup?.Invoke(false);
+                    SuspendPosViewForRecovery();
+                }
+            }
+            finally { _shellReadinessRefreshing = false; }
+        }
+
+        private void OnEmptyCatalogSyncClick(object sender, RoutedEventArgs e) => ShowSyncCenterDialog();
 
         private void ShowCatalogWarningDetails()
         {
@@ -2174,6 +2242,7 @@ namespace Win7POS.Wpf
 
         private async void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
         {
+            await RefreshShellReadinessAsync().ConfigureAwait(true);
             if (IsRecoveryMode)
             {
                 SetSideMenuOpen(false);
@@ -2193,10 +2262,17 @@ namespace Win7POS.Wpf
                 return;
             }
 
-            var posVm = GetPosViewModel();
-            if (posVm != null && DailyReportViewControl != null)
+            if (DailyReportViewControl.DataContext == null)
             {
-                DailyReportViewControl.DataContext = posVm.CreateDailyReportViewModel();
+                var factory = _startupCoordinator.Factory;
+                var session = OperatorSessionHolder.Current as OperatorSession;
+                if (session == null || !session.EnsureAuthorizationValid()) return;
+                _reportService = _reportService ?? new PosWorkflowService(
+                    new PosDbOptions(factory.DbPath, accessContext: factory.AccessContext), () => DateTimeOffset.UtcNow);
+                var permissions = new PermissionService(session);
+                DailyReportViewControl.DataContext = DailyReportComposition.Create(_reportService,
+                    new OverrideAuthService(new UserRepository(factory), session), permissions, session,
+                    historicalOnly: !_shellCanSell);
             }
             CurrentMenuKey = "DailyReport";
             MainTabControl.SelectedIndex = 2; // 0=POS, 1=Prodotti, 2=Chiusura cassa, 3=Pagamento
@@ -2509,7 +2585,7 @@ namespace Win7POS.Wpf
         /// <summary>Mostra la schermata Pagamento e attende la chiusura (RequestClose).</summary>
         public Task<bool> ShowPaymentScreenAsync(PaymentViewModel vm)
         {
-            if (IsRecoveryMode || vm == null || _activePaymentCleanup != null)
+            if (IsRecoveryMode || !_shellCanSell || vm == null || _activePaymentCleanup != null)
             {
                 return Task.FromResult(false);
             }
@@ -2550,7 +2626,7 @@ namespace Win7POS.Wpf
             _activePaymentCleanup = Cleanup;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (IsRecoveryMode)
+                if (IsRecoveryMode || !_shellCanSell)
                 {
                     Cleanup(false);
                     return;

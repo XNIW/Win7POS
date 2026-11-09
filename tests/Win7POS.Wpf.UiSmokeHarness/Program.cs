@@ -307,7 +307,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Environment.SetEnvironmentVariable("WIN7POS_SAFE_START", "1");
             if (PosDatabaseAuthorityQaProbe.TryRun(args, PosDbOptions.Default(), "harness", out var authorityProbeExit))
             { Environment.ExitCode = authorityProbeExit; return; }
-            if (HasArg(args, "--historical-sales-import-foundation") || HasArg(args, "--historical-sales-import-crash-probe") ||
+            if (HasArg(args, "--authenticated-shell-ux-smoke") || HasArg(args, "--operator-dialog-geometry-smoke") || HasArg(args, "--historical-sales-import-foundation") || HasArg(args, "--historical-sales-import-crash-probe") ||
                 HasArg(args, "--historical-sales-import-crash-verify") || HasArg(args, "--historical-sales-import-smoke") || HasArg(args, "--historical-sales-import-load"))
             {
                 if (Application.ResourceAssembly == null) Application.ResourceAssembly = typeof(ProductEditDialog).Assembly;
@@ -318,7 +318,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var exitCode = 1;
                     try
                     {
-                        if (HasArg(args, "--historical-sales-import-smoke")) exitCode = await HistoricalSalesSmokeRunner.RunAsync(args).ConfigureAwait(true);
+                        if (HasArg(args, "--authenticated-shell-ux-smoke"))
+                        {
+                            var result = await ArticleMutationLoopbackHarness.VerifyAuthenticatedShellUxAsync(dataDir).ConfigureAwait(true);
+                            File.WriteAllText(Path.Combine(dataDir, "authenticated-shell-ux-smoke.txt"), result);
+                            exitCode = result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1;
+                        }
+                        else if (HasArg(args, "--operator-dialog-geometry-smoke"))
+                        {
+                            var result = await OperatorDialogGeometrySmoke.RunAsync(dataDir).ConfigureAwait(true);
+                            File.WriteAllText(Path.Combine(dataDir, "operator-dialog-geometry-smoke.txt"), result);
+                            exitCode = result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1;
+                        }
+                        else if (HasArg(args, "--historical-sales-import-smoke")) exitCode = await HistoricalSalesSmokeRunner.RunAsync(args).ConfigureAwait(true);
                         else if (HasArg(args, "--historical-sales-import-load")) exitCode = await HistoricalSalesLoadRunner.RunAsync(args).ConfigureAwait(true);
                         else exitCode = await HistoricalSalesFoundationRunner.RunAsync(args).ConfigureAwait(true);
                     }
@@ -1222,7 +1234,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return string.Empty;
         }
 
-        private sealed class HarnessWindow : Window
+        internal sealed class HarnessWindow : Window
         {
             private readonly TextBlock _status;
             private bool _running;
@@ -2317,7 +2329,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return control;
             }
 
-            private static FrameworkElement RequireOverlayCard(Window dialog)
+            internal static FrameworkElement RequireOverlayCard(Window dialog)
             {
                 if (dialog.Content is Panel overlayHost)
                 {
@@ -2332,7 +2344,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 throw new InvalidOperationException("Dialog overlay card was not found.");
             }
 
-            private static bool IsRenderedWithin(FrameworkElement control, FrameworkElement root)
+            internal static bool IsRenderedWithin(FrameworkElement control, FrameworkElement root)
             {
                 if (control == null || root == null || control.ActualWidth <= 0 || control.ActualHeight <= 0)
                     return false;
@@ -2343,7 +2355,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                        topLeft.Y + control.ActualHeight <= root.ActualHeight;
             }
 
-            private static string BoundsIn(FrameworkElement control, FrameworkElement root)
+            internal static string BoundsIn(FrameworkElement control, FrameworkElement root)
             {
                 if (control == null || root == null)
                 {
@@ -4356,7 +4368,7 @@ WHERE id = @id;",
                     WorkingSetDelta / 1024L);
             }
 
-            private static IEnumerable<T> FindVisualDescendants<T>(DependencyObject root)
+            internal static IEnumerable<T> FindVisualDescendants<T>(DependencyObject root)
                 where T : DependencyObject
             {
                 if (root == null) yield break;

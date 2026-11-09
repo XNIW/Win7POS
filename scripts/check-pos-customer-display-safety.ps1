@@ -122,7 +122,7 @@ Require-All "safe exit confirmation and programmatic bypass" ($mainWindow + $app
 
 Require-All "settings surface and four-language copy are present" ($settingsDialog + $settingsHub + $settingsHubCode + $translations) @(
     'CustomerDisplaySettingsDialog',
-    'WindowStartupLocation="CenterOwner"',
+    'WindowStartupLocation="Manual"',
     'DialogActionButtonStyle',
     'DialogCancelButtonStyle',
     'DialogFooterMargin',

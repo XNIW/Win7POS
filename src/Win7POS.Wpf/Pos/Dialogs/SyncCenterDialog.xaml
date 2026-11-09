@@ -9,7 +9,7 @@
         DialogCornerRadius="16"
         DialogBackground="{StaticResource SurfaceBrush}"
         DialogBorderBrush="{StaticResource SurfaceBorderBrush}"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         SizeToContent="Manual"
         Width="900"
         Height="700"
