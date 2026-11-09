@@ -1197,7 +1197,7 @@ namespace Win7POS.Wpf
                 var status = await new PosSyncStatusReader(factory).ReadAsync().ConfigureAwait(true);
                 if (SyncStatusText != null)
                 {
-                    SyncStatusText.Text = PosLocalization.Current.Format("sync.statusPrefix", EmptyCatalogPlaceholder.Visibility == Visibility.Visible && OperatorSessionHolder.Current?.EvaluateAuthorizationLease().Allowed == true
+                    SyncStatusText.Text = PosLocalization.Current.Format("sync.statusPrefix", EmptyCatalogPlaceholder.Visibility == Visibility.Visible && status.CatalogIsOnlyBlocker && OperatorSessionHolder.Current?.EvaluateAuthorizationLease().Allowed == true
                         ? PosLocalization.T("history.shellCatalogEmpty") : status.SummaryText);
                     SyncStatusText.ToolTip = status.DeviceText + "\n" +
                         status.StaffText + "\n" +
@@ -2272,7 +2272,7 @@ namespace Win7POS.Wpf
                 var permissions = new PermissionService(session);
                 DailyReportViewControl.DataContext = DailyReportComposition.Create(_reportService,
                     new OverrideAuthService(new UserRepository(factory), session), permissions, session,
-                    historicalOnly: !_shellCanSell);
+                    historicalOnly: !_shellCanSell, commercialView: GetPosViewModel);
             }
             CurrentMenuKey = "DailyReport";
             MainTabControl.SelectedIndex = 2; // 0=POS, 1=Prodotti, 2=Chiusura cassa, 3=Pagamento

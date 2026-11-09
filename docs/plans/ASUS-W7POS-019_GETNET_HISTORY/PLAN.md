@@ -1,5 +1,37 @@
 # ASUS-W7POS-019 — Importazione storico Getnet
 
+## Successor after canonical01 failures — 9 November, ACTIVE
+
+Unpublished local e6aa0e6 canonical Windows-All completed13/15 PASS, source
+fingerprint982eb7fed0618d54a346ca76e19d5453ca2af223930afaa9e3480d10015cc690
+unchanged, all owned cleanup confirmed. Core1745/1745, required50/50, smoke8/52
+(48.971s parent) and load11/11 PASS. Functional21/22: ordinary MainWindow21asserts
+PASS but worker failed on database_authority_connections_active at final owner
+disposal. Crash2/5 complete, process admission timed out30s after5checks: cart
+maintenance probe did not finish. Both failures retained; no qualification/install
+claimed for e6aa.
+
+Successor correction: successful POS initialization is once per VM, active init
+is joined and disposed continuations stop. Fixture drains only its owned sync/
+initialization/backup work before releasing authority; the guard is unchanged.
+Shared report importer again marks the current commercial VM busy and restores
+its previous state/focus. The maintenance fixture explicitly installs/restores
+its valid operator holder and yields fairly within its original8s deadline.
+Final authority/version is rechecked after the last awaited query and before
+login transfer; a newer-operator injection proves no stale forced logout. Empty
+status preserves unrelated warnings; menu uses localized sales/payment summary.
+
+Focused successor PASS16.544s, including real MainWindow, ready scanner/cart,
+button/X/Escape, filters/session, single initialization, no-history operator,
+stale callback and real cart maintenance/cancel/invariants. Evidence pointer
+ux-focused-pre-freeze-02-root.private.txt; required50/50 in
+ux-required-gates-03.private.log. Earlier post-canonical focused failure at8s
+initialization and the first wrong-setting warning fixture remain preserved.
+Native200% synthetic rendered shell/import evidence is private; rendered images
+are distinguished from native HWND/card measurements. Canonical successor,
+exact-SHA pipeline/package/install, retained-profile path and DPI remain open.
+No backend change or real original Apply/undo.
+
 ## Checkpoint UX e geometria — implementazione locale 9 novembre
 
 La policy Core distingue autenticazione, shell vuota verificata, catalogo

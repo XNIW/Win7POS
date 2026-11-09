@@ -250,6 +250,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             model.NativeStart = new DateTime(2040, 1, 1); model.MerchantEvidence = "synthetic-merchant"; model.OverlapEvidence = "synthetic-overlap";
             model.PreviewCommand.Execute(null); await UntilAsync(() => !model.IsBusy, token);
             Measure(dialog, "import-analysis-review");
+            Program.HarnessWindow.SaveVisual(dialog.Content as FrameworkElement,
+                Path.Combine(Path.GetDirectoryName(_receipt), "operator-import-loaded-render.png"));
             for (var confirm = 0; confirm < 2; confirm++)
             {
                 var accept = confirm == 1; var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

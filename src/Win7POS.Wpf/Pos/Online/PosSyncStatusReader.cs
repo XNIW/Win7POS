@@ -204,6 +204,10 @@ namespace Win7POS.Wpf.Pos.Online
 
             return new PosSyncStatusSnapshot
             {
+                CatalogIsOnlyBlocker = emptyVerified && outbox.PendingOrRetry == 0 && outbox.InProgress == 0 && outbox.Blocked == 0 &&
+                    catalogOutbox.PendingOrRetry == 0 && catalogOutbox.InProgress == 0 && catalogOutbox.Blocked == 0 &&
+                    articleUnresolved == 0 && productImageUnresolved == 0 && !restoreNeedsReview &&
+                    string.IsNullOrWhiteSpace(policyWarning) && string.IsNullOrWhiteSpace(lastSalesError),
                 ArticleAffectedCount = articleOutbox.AffectedArticleCount,
                 ArticleBlocked = articleOutbox.FailedBlocked,
                 ArticleCompletedSinceLastView = articleCompletedSinceLastView,
@@ -1034,6 +1038,7 @@ namespace Win7POS.Wpf.Pos.Online
 
     public sealed class PosSyncStatusSnapshot
     {
+        public bool CatalogIsOnlyBlocker { get; set; }
         public long ArticleAffectedCount { get; set; }
         public long ArticleBlocked { get; set; }
         public long ArticleCompletedSinceLastView { get; set; }

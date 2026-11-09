@@ -380,7 +380,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand StatusToastDetailsCommand { get; }
 
         /// <summary>Crea un ViewModel per la schermata Chiusura cassa (pagina integrata).</summary>
-        public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => DailyReportComposition.Create(_service, _overrideAuthService, _permissionService, _operatorSession as OperatorSession, RequestFocusBarcode);
+        public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => DailyReportComposition.Create(_service, _overrideAuthService, _permissionService, _operatorSession as OperatorSession, RequestFocusBarcode, commercialView: () => this);
 
         /// <summary>Costruttore con dipendenze iniettate. Se null, usa istanze di default (compatibilità designer XAML).</summary>
         public PosViewModel(PosWorkflowService service = null, FileLogger logger = null, IPermissionService permissionService = null, IOperatorSession operatorSession = null, IOverrideAuthService overrideAuthService = null, Win7POS.Data.Repositories.UserRepository userRepo = null)
@@ -500,9 +500,14 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Avvia l'inizializzazione (chiamato da PosView.Loaded per evitare schermata bianca al primo render).</summary>
+        private Task _initializationTask;
+        private bool _initialized;
+        internal Task InitializationTask => _initializationTask ?? Task.CompletedTask;
+
         public void StartInitialize()
         {
-            _ = InitializeAsync();
+            if (_disposed || _initialized || _initializationTask != null && !_initializationTask.IsCompleted) return;
+            _initializationTask = InitializeAsync();
         }
 
         private async Task InitializeAsync()
@@ -511,14 +516,20 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 await _service.InitializeAsync().ConfigureAwait(true);
+                if (_disposed) return;
                 await LoadCartViewModeAsync().ConfigureAwait(true);
+                if (_disposed) return;
                 _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                if (_disposed) return;
                 _useReceipt42 = ReceiptProfilePolicy.Columns(_printerSettings.ReceiptProfile) == 42;
                 OnPropertyChanged(nameof(UseReceipt42));
                 RaiseCanExecuteChanged();
                 var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
+                if (_disposed) return;
                 ApplySnapshot(snapshot);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
+                if (_disposed) return;
+                _initialized = true;
                 SetStatus(string.Empty, PosNoticeSeverity.Info, suppressToast: true);
             }
             catch (Exception ex)

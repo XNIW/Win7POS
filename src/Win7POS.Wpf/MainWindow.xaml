@@ -132,7 +132,8 @@
                     <Border x:Name="EmptyCatalogPlaceholder" Visibility="Collapsed" Background="#F7F3FA" Padding="32">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="620">
                             <TextBlock Text="{loc:Loc history.shellCatalogEmpty}" FontSize="22" FontWeight="Bold" Foreground="#4B2E67" TextAlignment="Center" TextWrapping="Wrap"/>
-                            <Button Content="{loc:Loc sync.center.open}" Click="OnEmptyCatalogSyncClick" Margin="0,24,0,0" Height="44"/>
+                            <Button Content="{loc:Loc sync.center.open}" Click="OnEmptyCatalogSyncClick" Margin="0,24,0,0" Height="44"
+                                    Style="{StaticResource DialogActionButtonStyle}" HorizontalAlignment="Center" MinWidth="220"/>
                         </StackPanel>
                     </Border>
                     <Border x:Name="RecoveryPlaceholder" Visibility="Collapsed" Background="#F7F3FA" Padding="32">
@@ -147,7 +148,7 @@
             <TabItem x:Name="ProductsTab" Header="{loc:Loc shell.products}">
                 <prod:ProductsView x:Name="ProductsViewControl"/>
             </TabItem>
-            <TabItem x:Name="DailyReportTab" Header="{loc:Loc shell.dailyClose}">
+            <TabItem x:Name="DailyReportTab" Header="{loc:Loc history.shellReports}">
                 <pos:DailyReportView x:Name="DailyReportViewControl"/>
             </TabItem>
             <TabItem x:Name="PaymentTab" Header="{loc:Loc common.pay}">
@@ -200,10 +201,10 @@
                                 <TextBlock Text="{loc:Loc shell.salesRegister}" Margin="10,0,0,0"/>
                             </StackPanel>
                         </Button>
-                        <Button Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick" ToolTip="{loc:Loc shell.dailyClose}">
+                        <Button Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick" ToolTip="{loc:Loc history.shellReports}">
                             <StackPanel Style="{StaticResource IconButtonContent}">
                                 <Path Data="{StaticResource IconCalendar}" Style="{StaticResource MenuIconPathStyle}"/>
-                                <TextBlock Text="{loc:Loc shell.dailyClose}" Margin="10,0,0,0"/>
+                                <TextBlock Text="{loc:Loc history.shellReports}" Margin="10,0,0,0"/>
                             </StackPanel>
                         </Button>
 

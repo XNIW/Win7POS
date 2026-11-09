@@ -3,6 +3,15 @@
 This file tracks Asus Windows build-machine tasks. Detailed evidence belongs in
 dated reports under `docs/reports/`.
 
+## 2026-11-09 — ASUS019 successor qualification ACTIVE
+
+Canonical01 e6aa13/15, Core1745, smoke8/52 and load11PASS; functional worker
+cleanup and crash/cart admission FAIL retained. Corrected per-VM initialization,
+owned-work drain and importer commercial busy scope; final version fences and
+newer-operator regression retained. Focused successor16.544s and50required gates
+PASS. Exact successor canonical/CI/package/install and real retained-profile
+navigation/review are pending. a828 remains installed; original ledger unchanged.
+
 ## ASUS-W7POS-019 — current continuation
 
 ACTIVE, same R3. Combined authenticated-empty shell/navigation and shared dialog

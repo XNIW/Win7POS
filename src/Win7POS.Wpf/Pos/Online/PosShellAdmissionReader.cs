@@ -39,6 +39,9 @@ namespace Win7POS.Wpf.Pos.Online
                 concrete.CurrentOperatorAuthorityVersion == version && session.IsLoggedIn && session.EnsureAuthorizationValid();
             currentGeneration = currentGeneration && new PosTrustedDeviceStore().TryReadGeneration(generation, out _, out _) &&
                 await new OnlineSyncGenerationRepository(factory).IsCurrentAndActiveAsync(generation).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            authorized = authorized && ReferenceEquals(session, OperatorSessionHolder.Current) &&
+                concrete.CurrentOperatorAuthorityVersion == version && session.IsLoggedIn && session.EnsureAuthorizationValid();
             return PosStartupCoordinatorPolicy.EvaluateAdmission(mode, authorized, authorized,
                 currentGeneration && saleSafe, currentGeneration && empty, safeStart, recoveryRequired);
         }

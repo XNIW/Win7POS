@@ -3817,7 +3817,7 @@ WHERE id = @id;",
                 SaveVisual(element, outputPath, VisualTreeHelper.GetDpi(this));
             }
 
-            private static void SaveVisual(
+            internal static void SaveVisual(
                 FrameworkElement visual,
                 string outputPath,
                 DpiScale? dpiOverride = null)

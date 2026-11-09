@@ -307,10 +307,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             CheckCatalogRetryUi(proof, persist, "connect_retains_only_readonly_protected_continuation",
                                 pendingCredential != null && pendingCredential.IsReadOnly());
 
-                            var normalCompletionCase = variant == "normal_ready" || variant == "normal_late_generation" || variant == "normal_finalization_fault";
+                            var normalCompletionCase = variant == "normal_ready" || variant == "normal_late_generation" || variant == "normal_late_operator" || variant == "normal_finalization_fault";
                             if (normalCompletionCase) server.UseCatalogSnapshot(empty: false);
                             var lateAuthorityInjected = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                            if (variant == "normal_late_generation")
+                            if (variant == "normal_late_generation" || variant == "normal_late_operator")
                             {
                                 _ = dialog.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(async () =>
                                 {
@@ -320,6 +320,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                             AccessControl<ProgressBar>(dialog, "SetupProgressBar").Value == 100 &&
                                             !AccessControl<ProgressBar>(dialog, "SetupProgressBar").IsIndeterminate, cancellationToken);
                                         if (!dialog.IsVisible) throw new InvalidOperationException("retry_normal_late_phase_not_reached");
+                                        if (variant == "normal_late_operator")
+                                        {
+                                            var olderVersion = session.CurrentOperatorAuthorityVersion;
+                                            var replacement = await session.LoginAsync(session.CurrentUser.Username, "2468");
+                                            if (replacement != LoginResult.Success || session.CurrentOperatorAuthorityVersion <= olderVersion)
+                                                throw new InvalidOperationException("retry_newer_operator_not_committed");
+                                            lateAuthorityInjected.TrySetResult(true);
+                                            return;
+                                        }
                                         var previous = host.CurrentGeneration;
                                         var next = new OnlineSyncGeneration(OnlineSyncGeneration.CreateGenerationId(), previous.PosSessionId,
                                             previous.ShopDeviceId, previous.ShopId, previous.ShopCode, previous.StaffId, previous.StaffCredentialVersion);
@@ -359,7 +368,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             }
                             await WaitCatalogRetryUiAsync(() => AccessDialogOperationFinished(dialog) &&
                                 (variant == "cancelled" || ((normalCompletionCase || variant == "retry_empty") && !dialog.IsVisible) || !AccessDialogBusy(dialog)), cancellationToken);
-                            if (variant == "normal_late_generation")
+                            if (variant == "normal_late_generation" || variant == "normal_late_operator")
                                 CheckCatalogRetryUi(proof, persist, "retry_normal_late_authority_injected", await lateAuthorityInjected.Task.ConfigureAwait(true));
                             if (variant == "normal_finalization_fault")
                             {
@@ -417,6 +426,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                     boundUser.Username == expectedUsername && await PosCatalogPullService.IsCatalogSaleSafeAsync(factory) &&
                                     dialog.FindName("HistoryButton") == null);
                             }
+                            else if (variant == "normal_late_operator")
+                                CheckCatalogRetryUi(proof, persist, "retry_stale_callback_preserves_newer_operator",
+                                    dialog.DialogResult != true && session.IsLoggedIn && session.EnsureAuthorizationValid() &&
+                                    session.CurrentOperatorAuthorityVersion >= 2);
                             else if (normalCompletionCase)
                                 CheckCatalogRetryUi(proof, persist, variant == "normal_late_generation" ?
                                     "retry_normal_late_authority_cannot_commit_operator" : "retry_normal_fault_cannot_leave_operator_logged_in",

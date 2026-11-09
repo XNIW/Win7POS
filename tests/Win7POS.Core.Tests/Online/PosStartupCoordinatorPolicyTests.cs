@@ -29,7 +29,7 @@ public sealed class PosStartupCoordinatorPolicyTests
         Assert.IsTrue(decision.CanUseNormalNavigation);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, true, false, true)]
     [DataRow(true, false, false, true)]
     [DataRow(false, true, true, false)]
@@ -43,7 +43,7 @@ public sealed class PosStartupCoordinatorPolicyTests
         Assert.IsFalse(decision.CanSell);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, false, false, false)]
     [DataRow(true, true, false, false)]
     [DataRow(true, false, true, false)]

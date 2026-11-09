@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             var dispatcher = Application.Current.Dispatcher;
             dispatcher.VerifyAccess();
+            var previousOperator = OperatorSessionHolder.Current;
+            OperatorSessionHolder.Current = fixture.Operator;
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
             using var pos = new PosViewModel(workflow, permissionService: new PermissionService(fixture.Operator), operatorSession: fixture.Operator);
             using var report = pos.CreateDailyReportViewModel();
@@ -96,6 +99,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             finally
             {
+                File.WriteAllText(Path.Combine(fixture.Root, "cart-maintenance-probe.private.txt"),
+                    "initialization=" + pos.InitializationTask.Status + ";busy=" + pos.IsBusy + ";cartLines=" + pos.CartItems.Count +
+                    ";entered=" + entered + ";blocked=" + blocked + ";cancelled=" + cancelled + ";status=" + pos.StatusMessage);
+                OperatorSessionHolder.Current = previousOperator;
                 deadline.Cancel(); observer?.Stop(); gate?.Dispose();
                 if (mutation != null) try { await mutation; } catch (OperationCanceledException) { }
                 if (observedDialog?.IsVisible == true) observedDialog.Close();
@@ -108,7 +115,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task UntilAsync(Func<bool> condition, CancellationToken token)
         {
-            while (!condition()) { token.ThrowIfCancellationRequested(); await Dispatcher.Yield(DispatcherPriority.Background); }
+            while (!condition()) { token.ThrowIfCancellationRequested(); await Task.Delay(10, token); await Dispatcher.Yield(DispatcherPriority.Background); }
         }
 
         private static string Fingerprint(PosWorkflowSnapshot snapshot)

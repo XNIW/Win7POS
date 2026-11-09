@@ -648,6 +648,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     !candidateSession.EnsureAuthorizationValid())
                     throw new InvalidOperationException("online_completion_authorization_changed");
                 if (!await EnsureShellAdmissionForAccessAsync(false, attemptId, mode).ConfigureAwait(true)) return false;
+                if (!ReferenceEquals(OperatorSessionHolder.Current, candidateSession) ||
+                    candidateSession.CurrentOperatorAuthorityVersion != initialAuthorityVersion + 1 ||
+                    !candidateSession.IsLoggedIn || !candidateSession.EnsureAuthorizationValid())
+                    throw new InvalidOperationException("online_completion_authorization_changed");
                 // No window-owned session remains: Closed releases only this attempt's resources.
                 AccessMode = PosAuthenticatedAccessMode.Normal;
                 retained = true;

@@ -35,6 +35,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var priorUrl = Environment.GetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable);
                 var priorSession = OperatorSessionHolder.Current;
                 var proofs = new CatalogRetryUiProof { Case = "ordinary_main_window_navigation" };
+                Win7POS.Data.Backup.BackupAutomationService ownedBackup = null;
                 var receipt = Path.Combine(data, "authenticated-shell-ux.private.json");
                 Action save = () => WriteJson(receipt, proofs);
                 Action<string, bool> check = (id, ok) => CheckCatalogRetryUi(proofs, save, id, ok);
@@ -91,7 +92,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                     c.ExecuteScalar<long>("SELECT COUNT(*) FROM local_stock_movements") == 0 &&
                                     c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox") == 0 &&
                                     c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation") == 0);
+                            if (reopen == 0) Program.HarnessWindow.SaveVisual(shell.Content as FrameworkElement,
+                                Path.Combine(data, "authenticated-shell-empty-render.png"));
                             var permissions = new PermissionService(session);
+                            if (reopen == 0)
+                            {
+                                var settings = new Win7POS.Data.Repositories.SettingsRepository(factory);
+                                await settings.SetStringAsync("pos.sales_sync.last_error", "synthetic_warning");
+                                await (Task)ShellInvoke(shell, "RefreshSyncStatusStripAsync", factory);
+                                check("empty_state_preserves_operational_warning", ((TextBlock)shell.FindName("SyncStatusText")).Text.Contains(PosLocalization.T("sync.lastSalesError")));
+                                await settings.SetStringAsync("pos.sales_sync.last_error", string.Empty);
+                                await (Task)ShellInvoke(shell, "RefreshSyncStatusStripAsync", factory);
+                            }
                             var service = new PosWorkflowService(options.WithAccessContext(authority.AccessContext), () => DateTimeOffset.UtcNow);
                             using (var unloaded = DailyReportComposition.Create(service, null, permissions, session, historicalOnly: true))
                                 check("unloaded_payment_totals_unavailable_" + reopen, !unloaded.ReportNumbersVisible &&
@@ -156,6 +168,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             ShellInvoke(shell, "OnMenuPosClick", null, new RoutedEventArgs());
                             server.UseCatalogSnapshot(empty: false);
                             var coordinator = ShellField<PosStartupCoordinator>(shell, "_startupCoordinator");
+                            ownedBackup = ShellField<PosWorkflowService>(shell, "_reportService")?.BackupAutomation ?? ownedBackup;
                             await coordinator.Host.TriggerAsync(Win7POS.Core.Online.OnlineSyncLane.CatalogDelta,
                                 Win7POS.Core.Online.OnlineSyncLaneTrigger.Manual, deadline.Token);
                             // ShowDialog enters its nested Dispatcher frame before the
@@ -189,7 +202,36 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 ShellField<PosView>(shell, "PosViewControl") != null && session.IsLoggedIn && session.CurrentOperatorAuthorityVersion == version);
                             await VerifyShellScannerAndReturnAsync(shell, check, deadline.Token, "transition");
                         }
-                        finally { shell.CloseWithoutUserPrompt(); await Dispatcher.Yield(DispatcherPriority.ContextIdle); }
+                        finally
+                        {
+                            var view = ShellField<PosView>(shell, "PosViewControl");
+                            var model = view?.DataContext as PosViewModel;
+                            var coordinator = ShellField<PosStartupCoordinator>(shell, "_startupCoordinator");
+                            if (coordinator != null)
+                            {
+                                var stop = coordinator.StopAsync();
+                                await WaitCatalogRetryUiAsync(() => stop.IsCompleted, deadline.Token); await stop;
+                            }
+                            if (model != null)
+                            {
+                                var initialization = model.InitializationTask;
+                                await WaitCatalogRetryUiAsync(() => initialization.IsCompleted, deadline.Token); await initialization;
+                            }
+                            shell.CloseWithoutUserPrompt(); await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                        }
+                    }
+                    if (ownedBackup != null)
+                    {
+                        using (var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+                        using (await ownedBackup.EnterMaintenanceAsync(cleanup.Token)) ownedBackup.Dispose();
+                        ownedBackup = null;
+                    }
+                    await VerifyCatalogRetryUiCaseAsync(factory, "normal_late_operator", proofs, save, deadline.Token);
+                    check("stale_login_completion_never_logs_out_newer_operator", true);
+                    using (var maintenance = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
+                    {
+                        var workflow = new PosWorkflowService(maintenance.Options, () => DateTimeOffset.UtcNow);
+                        check("import_blocks_commands_then_restores_cart", await HistoricalSalesCartMaintenanceProbe.RunAsync(maintenance, workflow));
                     }
                     proofs.Status = "PASS"; save(); return "PASS: authenticated_shell_ux";
                 }
@@ -199,8 +241,23 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 finally
                 {
-                    new PosTrustedDeviceStore().Clear(); OperatorSessionHolder.Current = priorSession;
-                    Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, priorUrl);
+                    try
+                    {
+                        if (ownedBackup != null)
+                        {
+                            using (var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+                            using (await ownedBackup.EnterMaintenanceAsync(cleanup.Token)) ownedBackup.Dispose();
+                        }
+                    }
+                    catch (Exception error)
+                    {
+                        proofs.CleanupFailure = error.GetType().Name; proofs.Status = "FAIL"; save(); throw;
+                    }
+                    finally
+                    {
+                        new PosTrustedDeviceStore().Clear(); OperatorSessionHolder.Current = priorSession;
+                        Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, priorUrl);
+                    }
                 }
             }
         }
@@ -217,6 +274,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Environment.TickCount, Key.Enter) { RoutedEvent = Keyboard.KeyDownEvent });
             await WaitCatalogRetryUiAsync(() => vm.ItemsCount > 0 && !vm.IsBusy, token);
             var quantity = vm.ItemsCount; var total = vm.Total;
+            var originalInitialization = vm.InitializationTask;
             check("scanner_adds_fixture_to_cart_" + phase, quantity > 0 && total > 0);
             ShellInvoke(shell, "OnMenuDailyReportClick", null, new RoutedEventArgs());
             var reportView = (DailyReportView)shell.FindName("DailyReportViewControl");
@@ -228,7 +286,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             await Dispatcher.Yield(DispatcherPriority.ContextIdle);
             check("report_escape_preserves_cart_and_scanner_focus_" + phase,
                 ((TabControl)shell.FindName("MainTabControl")).SelectedIndex == 0 &&
-                ReferenceEquals(view.DataContext, vm) && vm.ItemsCount == quantity && vm.Total == total && box.IsKeyboardFocused);
+                ReferenceEquals(view.DataContext, vm) && vm.ItemsCount == quantity && vm.Total == total && box.IsKeyboardFocused &&
+                ReferenceEquals(originalInitialization, vm.InitializationTask));
         }
         private static T ShellField<T>(MainWindow shell, string field) => (T)typeof(MainWindow).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(shell);
         private static object ShellInvoke(MainWindow shell, string method, params object[] args) => typeof(MainWindow).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(shell, args);

@@ -6,6 +6,7 @@ namespace Win7POS.Wpf.Localization
     {
         private static void AddHistoricalImportTranslations(Dictionary<string, Dictionary<string, string>> catalog)
         {
+            HistoryText(catalog,"shellReports","Sales and payment summary","Resumen de ventas y cobros","Riepilogo vendite e incassi","销售与收款汇总");
             HistoryText(catalog,"shellCatalogEmpty","Catalog empty: configure/sync products to start selling.","Catálogo vacío: configura/sincroniza los productos para empezar a vender.","Catalogo vuoto: configura/sincronizza i prodotti per iniziare a vendere.","商品目录为空：请配置或同步商品后开始销售。");
             HistoryText(catalog,"onboardingTitle","Historical workspace","Espacio de historial","Area storico","历史工作区");
             HistoryText(catalog,"catalogEmptyVerified","Catalog confirmed empty. Sales and payments are not ready.","Catálogo confirmado vacío. Ventas y pagos aún no disponibles.","Catalogo confermato vuoto. Vendite e pagamenti non pronti.","已确认目录为空。销售和付款尚未就绪。");
