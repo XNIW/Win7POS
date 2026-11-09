@@ -94,6 +94,9 @@ prima di riprovare aprire **Lotti importati**, aggiornare e consultare la ricevu
 originaria. Se il lotto valido è già presente, conservarlo; non usare **Annulla**
 come pulizia. Dopo la chiusura e riapertura, un eventuale reimport identico deve
 mostrare zero nuovi movimenti e duplicati coerenti, con totali invariati.
+Durante l'analisi successiva, il prodotto ricarica i binding esercente già
+registrati: conservarli se le prove non sono cambiate, evitando di creare un
+nuovo gruppo per il solo scopo di ripetere gli stessi file.
 Se la verifica cambia mentre la conferma è aperta, chiudere e verificare di nuovo
 il piano; non confermare un riepilogo precedente.
 

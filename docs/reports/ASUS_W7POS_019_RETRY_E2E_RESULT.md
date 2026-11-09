@@ -2,6 +2,18 @@
 
 ## Stato corrente — 9 novembre 2026, legacy salvato e correzione in qualifica
 
+Primo candidato ca4e437: CI42667255330 FAIL di durata processo, non di assert
+(8/52 PASS, corpo59.625s più avvio/uscita oltre60s). Load NOT_RUN. WPF42667293657
+functional20/20, Security42667255175 e Release42667255023 PASS; non installato.
+Successore solo test: stessa correzione prodotto, una sola fixture VM per stale
+review/commit singolo/rientranza negata. Fresh run06 PASS8/52 in50.329s processo,
+cleanup confermato e nessun orfano; soglie e assert invariati. Qualifica e pacchetto
+exact-SHA successore aperti. Local full FAIL conservato: Core1734 PASS, Recovery
+19/20 (weakref control4/recovery5); storico non partito per root evidence troppo
+profonda. Crash scaricato2/5 prima del corretto rifiuto ownership W7HP non canonica;
+nessun guard aggirato. Foundation hosted5/37 PASS distinta. Display100% confermato
+dall'utente;100/125 nativi e ripristino200% ancora da osservare.
+
 Stessa ASUS019/R3, ACTIVE. Admin148 autenticato PASS sul Worker a68ebec2 e
 deployment1cd437f1: overview staff-unavailable distinta da denial e reader
 Staff safe autorizzato. Avvio quotidiano dal collegamento installato1823697,

@@ -2,6 +2,13 @@
 
 ## Raccordo corrente — legacy reale e conferma in qualifica, 9 novembre 2026
 
+Windows ca4e437 non installato: CI42667255330 FAIL per processo smoke oltre60s,
+pur con8/52 assert PASS; WPF20/20, Security e Release PASS. Test successor
+con una fixture riusata PASS8/52 in50.329s, stesso codice prodotto e soglie;
+nuova qualifica exact-SHA in corso. Local full Recovery19/20 e problemi di
+receipt path/work ownership restano FAIL/partial conservati, senza retry
+Recovery o guard indeboliti. Utente conferma scala100%, prove native pendenti.
+
 Admin148 autenticato PASS sul Worker a68ebec2/deployment1cd437f1: overview
 staff-unavailable e reader Staff safe autorizzato osservati. Docs Admin b5c2dbc,
 software REVIEW. Nessuna nuova SQL, autorizzazione o credenziale modificata.

@@ -6,6 +6,9 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ## 2026-11-09 — Legacy reale salvato, correzione conferma ASUS019
 
+- ca4e437 CI42667255330 FAIL:8/52 assert PASS ma corpo59.625s più avvio/uscita oltre budget processo60s; Load NOT_RUN. WPF42667293657 functional20/20, Security42667255175 e Release42667255023 PASS; nessuna installazione. Stesso prodotto, regressione test riunita in una fixture con stale zero-write poi commit singolo/rientranza negata: run06 PASS8/52,50.329s processo, HIST02 3.352s, cleanup/no orphan. Nuova qualifica exact-SHA necessaria, soglie e assert invariati.
+- Full locale conservato FAIL: Core1734 PASS, Recovery19/20 per retention weakref4/5; nessun retry invariato. Smoke/crash non partiti per root evidence troppo profonda e suffisso atomico net48. Crash scaricato short-root2/5, poi guard ownership rifiuta W7HP noncanonico: non indebolito. Foundation5/37 hosted PASS distinta. Scala100% confermata dall'utente; prove native e ripristino200% pendenti.
+
 - Admin148 nuovo login autenticato PASS: overview staff-unavailable e reader Staff safe osservati sul Worker a68ebec2/deployment1cd437f1; docs b5c2dbc, software REVIEW.
 - Installato1823697: avvio quotidiano Start Menu/profilo conservato, login mascherato, catalogo vuoto e workbench PASS. UI analisi7/piano legacy4 confrontati con oracolo indipendente; A/B validi, CLP esplicito, moderni bloccati da C.
 - Apply legacy committato con backup prodotto verificato; UI NullReference dopo commit conservata. Riconciliazione riga per riga PASS, ricevuta/report/dettaglio/CSV reali PASS. Nessun retry o undo del lotto valido; SQLite/FK e invarianti commerciali PASS.

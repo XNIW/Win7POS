@@ -2,6 +2,24 @@
 
 ## Latest checkpoint — 2026-11-09, durable legacy import and confirmation fix
 
+ca4e437 CI42667255330 FAIL retained: all8/52 smoke assertions completed PASS,
+but receipt body59.625s plus process startup/shutdown exceeded unchanged60s.
+Load NOT_RUN dependency. Core1734, gates and foundation5/37 PASS; WPF42667293657
+functional20/20, Security42667255175 and Release42667255023 PASS. No install
+of this unqualified candidate. Production fix unchanged; test successor reuses
+one VM fixture for stale rejection then single commit/reentry denial. Fresh
+run06 PASS8/52, process50.329s, HIST02 3.352s, exit0/cleanup/no orphan. Exact-SHA
+successor qualification/package pending; no assertion or budget relaxed.
+
+Local full run retained FAIL: Core1734 and other independent gates PASS,
+functional19/20 with Recovery weakref retention control4/recovery5 FAIL; no
+unchanged Recovery retry. History receipts failed before tests because this
+operator's deep evidence root plus atomic suffix exceeded net48 path length.
+Short-root downloaded crash probe passed hot-journal and commit authority, then
+correctly rejected noncanonical W7HP work ownership; partial2/5, not a PASS.
+No work guard weakened. Full canonical foundation PASS belongs to hosted CI.
+User confirmed display100%; actual native100/125 test and restore200% pending.
+
 Admin148 live authenticated PASS: staff-unavailable overview and authorized safe
 Staff reader observed on served a68ebec2/deployment1cd437f1. Admin docs b5c2dbc;
 software REVIEW, overall ACTIVE. First147 failure/rollback retained.

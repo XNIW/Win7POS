@@ -2,6 +2,14 @@
 
 ## Corrente — 9 novembre, legacy committato e patch Windows da qualificare
 
+ca4e437: CI42667255330 FAIL di budget processo smoke60s con8/52 assert PASS;
+WPF20/20, Security e Release PASS, nessun install. Successore test-only riusa
+la fixture mantenendo tutte le prove e soglie: run06 PASS8/52, processo50.329s.
+Qualifica/pacchetto exact-SHA successore aperti. Full locale FAIL conservato
+(Core1734 PASS, Recovery19/20; history receipt path troppo profondo). Prova crash
+scaricata2/5, poi ownership noncanonico rifiutato; non sostituisce foundation5/37
+hosted PASS. Scala100% ora confermata dall'utente, form nativo100/125 pendente.
+
 | Superficie | Stato osservato / residuo |
 | --- | --- |
 | Admin148 | Autenticato PASS su a68ebec2/deployment1cd437f1; overview staff-unavailable e reader Staff safe osservati, docs b5c2dbc |
