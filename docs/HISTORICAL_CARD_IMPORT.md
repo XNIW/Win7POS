@@ -20,13 +20,20 @@ collegamento Start Menu. Dopo una configurazione per utente, chiudere/riaprire
 dal collegamento esistente e verificare negozio/profilo prima del PIN. Non
 spostare DB/trust o usare una seconda istanza per correggere una selezione errata.
 
-Per un nuovo negozio senza catalogo operativo, il primo accesso online può
-mostrare **Storico disponibile, vendite non pronte** e il pulsante di accesso
-allo storico. Serve una risposta catalogo completa con totale zero, riferita
-allo shop e alla generation correnti: errori, timeout e risposte parziali non
-abilitano questo percorso. Il login, la lease e i permessi dedicati devono
-essere validi. Il workbench consente import e riepilogo/grafico/CSV, senza
-aprire cassa, pagamento o stampa. Non è la modalità recovery locale.
+Per un nuovo negozio senza catalogo operativo, un accesso valido apre la
+finestra principale autenticata anche quando il catalogo è confermato vuoto.
+Serve una risposta catalogo completa con totale zero, riferita allo shop e alla
+generation correnti: errori, timeout e risposte parziali non abilitano questo
+percorso. Login e lease devono essere validi; il permesso d'importazione non è
+necessario per entrare nella finestra principale. Un messaggio spiega che le
+vendite non sono pronte e consente di aprire il centro di sincronizzazione.
+Carrello, pagamento e stampa di vendita restano protetti. Non è recovery locale.
+
+Lo storico è una scelta volontaria: aprire **Riepilogo vendite e incassi** e poi
+**Importazione storico**, con i permessi descritti sotto. Chiudere il dialog con
+il pulsante, la X o Escape riporta al riepilogo; tornare alla cassa conserva la
+sessione e il processo. Uscire dal programma e cambiare operatore sono azioni
+distinte. La consultazione e il CSV rimangono soggetti ai rispettivi permessi.
 
 La prova di catalogo vuoto non rende il catalogo sale-safe. I dati precedenti
 sono conservati e le vendite rimangono bloccate finché una successiva

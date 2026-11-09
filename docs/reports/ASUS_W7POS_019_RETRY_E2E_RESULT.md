@@ -1,5 +1,22 @@
 # ASUS-W7POS-019 — Retry, qualifica software e gate end-to-end
 
+## Qualifica a397 conclusa; estensione QA finale — 9 novembre
+
+Il candidato pubblicato a397a49 ha concluso Windows-All 15/15 PASS: Core1745,
+functional22, crash5, smoke8/52 e load11; report e prime failure restano conservati.
+CI42713452349, Security42713452311, WPF42713541044 e Release42713451813 SUCCESS.
+Evidence: ux-canonical-02-roots.private.json; QA scaricato e verificato40/40.
+L'installato rimane a8286c6: nessuna nuova installazione o prova reale attribuita
+ad a397. Ripristino display200%/2880x1800 già confermato; nuova matrice DPI aperta.
+
+Un'estensione soltanto del test MainWindow copre il percorso pronto scanner →
+carrello → pagamento → ricevuta, commit una volta e ritorno alla cassa; stampa,
+cassetto e prenotazione fiscale disattivati sulla fixture. PASS20.586s, pointer
+ux-main-payment-root.private.txt. src è identico ad a397. Il successore QA e la
+guida corretta vengono congelati per la qualifica finale; i PASS sopra restano
+attribuiti ad a397. Il nuovo Planning Admin B/C non aggiunge codice a Windows.
+Nessun Apply/undo del lotto reale; installazione e navigazione reale restano aperte.
+
 ## Successor after canonical01 failures — 9 November, ACTIVE
 
 Unpublished local e6aa0e6 canonical Windows-All completed13/15 PASS, source

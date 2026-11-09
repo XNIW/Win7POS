@@ -80,6 +80,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 check("ready_login_no_historical_popup", shell.IsVisible && session.IsLoggedIn && !login.IsVisible &&
                                     !shell.OwnedWindows.OfType<HistoricalOnboardingDialog>().Any() && ShellField<bool>(shell, "_shellCanSell"));
                                 await VerifyShellScannerAndReturnAsync(shell, check, deadline.Token, "ready_login");
+                                await VerifyShellPaymentAsync(shell, factory, check, deadline.Token);
                                 continue;
                             }
                             check("login_empty_shell_" + reopen, shell.IsVisible && session.IsLoggedIn && session.EnsureAuthorizationValid() &&
@@ -289,6 +290,47 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 ReferenceEquals(view.DataContext, vm) && vm.ItemsCount == quantity && vm.Total == total && box.IsKeyboardFocused &&
                 ReferenceEquals(originalInitialization, vm.InitializationTask));
         }
+        private static async Task VerifyShellPaymentAsync(MainWindow shell, SqliteConnectionFactory factory,
+            Action<string, bool> check, CancellationToken token)
+        {
+            var pos = (PosViewModel)ShellField<PosView>(shell, "PosViewControl").DataContext;
+            var workflow = ShellField<PosWorkflowService>(shell, "_reportService");
+            var total = pos.Total; var quantity = pos.ItemsCount;
+            decimal stock;
+            using (var connection = factory.Open())
+            {
+                check("ready_payment_starts_without_native_sale", connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sales") == 0);
+                stock = connection.ExecuteScalar<decimal>("SELECT stock_qty FROM product_meta WHERE barcode='LOOP-REMOTE'");
+            }
+            var fiscalBefore = await workflow.GetFiscalBoletaNumberAsync();
+            check("ready_cart_allows_payment_command", total > 0 && quantity > 0 && pos.PayCommand.CanExecute(null));
+            pos.PayCommand.Execute(null);
+            var paymentView = (PaymentView)shell.FindName("PaymentViewControl");
+            await WaitCatalogRetryUiAsync(() => paymentView.IsVisible && paymentView.DataContext is PaymentViewModel &&
+                ((TabControl)shell.FindName("MainTabControl")).SelectedIndex == 3, token);
+            var payment = (PaymentViewModel)paymentView.DataContext;
+            // This synthetic sale has no printer, drawer or fiscal side effect.
+            payment.ShouldPrint = false; payment.AutoPrintFiscalBoleta = false; payment.OpenDrawerForCurrentPayment = false;
+            payment.SetExactTotalCommand.Execute(null);
+            check("ready_payment_uses_real_main_surface", payment.IsValid && payment.ConfirmCommand.CanExecute(null) &&
+                payment.CashAmountMinor == total && payment.CardAmountMinor == 0 && shell.IsVisible);
+            var saleCode = payment.SaleCode;
+            payment.ConfirmCommand.Execute(null);
+            await WaitCatalogRetryUiAsync(() => paymentView.DataContext == null && pos.ItemsCount == 0 &&
+                !pos.IsPaymentCommitInProgress && !string.IsNullOrWhiteSpace(pos.ReceiptPreview), token);
+            var receipt = await workflow.GetLastReceiptPreviewAsync(pos.UseReceipt42);
+            using (var connection = factory.Open())
+                check("ready_main_sale_receipt_and_inventory_commit_once",
+                    connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sales") == 1 &&
+                    connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox") == 1 &&
+                    connection.ExecuteScalar<long>("SELECT SUM(lineTotal) FROM sale_lines") == total &&
+                    connection.ExecuteScalar<decimal>("SELECT stock_qty FROM product_meta WHERE barcode='LOOP-REMOTE'") == stock - quantity &&
+                    receipt == pos.ReceiptPreview && receipt.Contains(saleCode));
+            check("ready_payment_returns_to_live_cash_without_fiscal_reservation", shell.IsVisible &&
+                ((TabControl)shell.FindName("MainTabControl")).SelectedIndex == 0 &&
+                await workflow.GetFiscalBoletaNumberAsync() == fiscalBefore);
+        }
+
         private static T ShellField<T>(MainWindow shell, string field) => (T)typeof(MainWindow).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(shell);
         private static object ShellInvoke(MainWindow shell, string method, params object[] args) => typeof(MainWindow).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(shell, args);
     }
