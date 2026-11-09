@@ -5,15 +5,15 @@
 | Campo | Valore |
 | --- | --- |
 | Fase | Execution A+B+C e onboarding Windows: software consegnato; qualifica reale/fisica aperta |
-| Revisione/data | R3 normativo congelato; stato Execution aggiornato2026-11-08, America/Santiago |
-| Stato del piano | SOFTWARE_DELIVERED Windows1823697 invariato; ACTIVE con gate rollout/prove/fisico. Avvio e prima autenticazione reali PASS; HTTP500 catalog_v2_empty_manifest. Admin PR144/145/146 integrate, fix e diagnostica qualificati; rollout dell'unità compatibile ancora da attestare |
+| Revisione/data | R3 normativo congelato; stato Execution aggiornato2026-11-09, America/Santiago |
+| Stato del piano | SOFTWARE_DELIVERED Windows1823697 invariato; ACTIVE con gate reali/fisico. Percorso B Admin qualificato: PR148/9016054, Workera68ebec2 servito, postmerge CI/Cloudflare PASS. Prima147 POS login/catalogo vuoto/workbench PASS, web pos_admin FAIL conservato e rollback verificato; prova autenticata successore in corso |
 | Implementazione | Ultimo codice `1823697f1f0c965fb8fd9d85259a862160f12c59`: Retry comune, continuazione protetta bounded, rollback/final authority e cattura reale. Onboarding959396b, closureQAe832d6a e fence d262ccd preservati |
 | Build, test, harness e qualifica runtime | Quattro workflow1823697 PASS: CI15/15, Core1734/1734, gate50/50, functional20, foundation5/37, smoke8/52 e load11(M/E/S=true). Prodotto installato41/41,34comuni QA identici, reader7/7, import_summary leggibile osservato. Win7 fisico ancora NOT_RUN |
-| Nuove prove della prosecuzione | Login reale verificato, failure HTTP500 conservata e corretta lato Admin; nessuna nuova SQL. Render client intero EN/IT sintetici a192DPI osservati;100/125 e input nativo non qualificati. Utente conferma Win7 non disponibile; kit invariato, A/B/C Getnet ancora MISSING |
+| Nuove prove della prosecuzione | Login e workbench nativi osservati; sette XLSX riindicati/hash invariati, analisi UI/apply ancora da completare. Getnet A dichiarazione contestuale corroborata e B mai usato prima VERIFIED; C moderno MISSING. Profilo utente configurato, collegamento quotidiano da provare. Win7 fisico già indisponibile, kit invariato;100/125 non qualificati, CSV_INPUT BLOCKED_INPUT |
 | Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
 | Branch e stato iniziale R3 | main; PLAN R2 untracked e modifiche locali di indice/worklog preservate |
 | Persistenza | Codice su main; quattro workflow exact-SHA PASS, prodotto/QA scaricati e verificati; reader7/7 PASS con NeedsEvidence; documenti finali separati dai binari |
-| Prossimo passo consentito | Owner Admin: riconciliare sorgente/build/contratto della versione Worker corrente e distribuire unità compatibile con rollback predisposto; poi HTTP/storico/preview reali. Esercente: completare fonti della scheda privata Getnet, senza deduzioni. Operatore: DPI100/125 e input; owner fisico: [scheda Win7](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md) quando disponibile. [Risultato corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md); nessuna nuova domanda equivalente di autorizzazione, nessun DONE |
+| Prossimo passo consentito | Verificare accesso autenticato del Worker148 e riapertura ordinaria sul profilo conservato prima del PIN; analizzare7XLSX nella UI. Qualificare separatamente legacy con A/B validi, moderni bloccati da C; Apply solo con piano/prove correnti. Operatore: DPI100/125 dove accessibili. Win7 già indisponibile, [scheda](../../reports/ASUS_W7POS_019_EXTERNAL_QUALIFICATION.md) conservata. [Risultato corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md); nessun nuovo consenso equivalente o DONE |
 
 Questo e il solo piano canonico. Lo stato corrente risiede qui; la sola voce
 ASUS-W7POS-019 nell'[indice](../../CODEX_ASUS_TASKS.md) ne e il collegamento.

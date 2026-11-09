@@ -1,6 +1,59 @@
 # ASUS-W7POS-019 — Retry, qualifica software e gate end-to-end
 
-## Residui verificati — prosecuzione dell'8 novembre 2026
+## Stato corrente — 9 novembre 2026, stessa Execution R3
+
+Windows conserva codice/pacchetto/installato1823697, net48/x86 su Windows11
+build26300. EXE SHA2564d9abfa0a4b56d1a86d46d16f145156f5fca4253194024beb6e73761c6939157
+ricontrollato. Nessuna patch Windows, reinstallazione o nuova suite completa.
+Le qualifiche1734/50/15/8-52, reader originali7/7 e CSV50000 restano attribuite
+al candidato invariato. Reader non significa analisi UI; CSV50000 è export.
+
+| Risultato richiesto | Osservato / evidence attribuibile | Residuo e chiusura |
+| --- | --- | --- |
+| Release compatibile | Percorso B: export readonly del Worker realmente servito399720d2, confronto dei percorsi runtime/config e contratti remoti; recuperati reader staff TASK140F e predicate dei ruoli web esistenti | Non è stata pretesa equivalenza dello snapshot8ottobre. Nessun nuovo SQL, grant, RLS o secret put |
+| Prima release147 | Mergecdebb26, CI42632336586/Cloudflare42632336513 PASS; Worker5cbf018f pubblicato. Catalogo/workbench POS PASS, console pos_admin FAIL | Due sessioni nuove non scadute revocate dal guard manager-only: prima failure conservata. POS della task fermato prima del rollback pinned399720d2, deployment1c2aaf19 verificato e pubblico PASS |
+| Successore148 | Codicecc7b835, merge9016054ab6fea1a8d9ad7e6765255662af5afafe.45mirati PASS; CI42638651781 attempt2 e Cloudflare42638650988 PASS. Post-merge CI42641653938/Cloudflare42641652917 PASS | Primo attempt CI PREFIX_CONTAINER_HEALTH_FAILED prima di bind/apply/test conservato; un solo rerun failed jobs, TASK094 live SKIPPED |
+| Artefatto e rollout corrente | Artifact13684508006: source434e312/tree918a24e equivalente a cc7b835/merge9016054;57checksum, lock/config e dry-run no-bundle PASS. Worker a68ebec2-3c55-46f8-bf4d-502e326187af, deployment1cd437f1-0608-408b-ba42-eb0f9716c7e8,100%, tag9016054 verificati, pubblico PASS | Controllo autenticato del successore IN_PROGRESS. Il pubblico non certifica login o import |
+| POS installato / storico | Sul primo rollout, avvio normale manuale dopo rifiuto dello strumento; login riuscito, «catalog confirmed empty / history available / sales and payments not ready» osservato, Historical workspace aperto | Riapertura sul successore da osservare. Il log mostra pagina1/products0/hasMoreFalse; non contiene uno status HTTP200 esplicito: non inventarne una ricevuta |
+| Avvio quotidiano | Collegamento Start Menu esistente verificato: EXE installato, nessun argomento. WIN7POS_DATA_DIR configurata solo per l'utente corrente sul profilo conservato NEW_SHOP_019; nessun DB/trust spostato | Configurazione persistita PASS; ereditarietà nel processo avviato dal collegamento ancora da verificare prima del PIN. Nessun launcher alternativo o retry automatico del comando negato |
+| Analisi sette XLSX | Tutti i sette file nuovamente indicati dall'utente hanno hash uguali al manifest indipendente congelato; nessun CSV ricevuto | Analizza nella UI IN_PROGRESS, nessun PASS trasferito dal reader. Diagnostica/copertura, incluso giugno parziale, da confrontare con oracle privato |
+| Getnet A | VERIFIED: dichiarazione contestuale dell'utente che associa gli export al negozio indicato, corroborata da due identità fiscali esportate corrispondenti all'unico shop ufficiale pertinente | Tre alias conservati distinti; non raggruppati dal solo nome o RUT. Fonte e limiti nella scheda privata |
+| Getnet B | VERIFIED: attestazione utente «Mai usato prima»; DB isolato vuoto è solo corroborazione | Rappresentare il confine della nuova attivazione9novembre, senza inventare una precedente prima vendita |
+| Getnet C | MISSING per i moderni: la colonna FECHA DE VENTA con suffisso Z dichiara UTC lessicale, ma non discrimina la semantica di costruzione dell'export Getnet | Serve riscontro provider/portale/voucher pertinente ai campioni privati già individuati. Non trasferire OneGMR CSV/SFTP o fuso del PC. EXT-TIME moderno distinto dal legacy commerciale locale e dalla policy POS nativa |
+| Apply / reopen / consultazione / CSV / dedup | NOT_RUN reale; nessuna importazione effettuata | Verificare separatamente l'eventuale scope legacy con A/B validi. Moderni bloccati da C; Apply soltanto con piano corrente e prove applicabili, backup prodotto e conferma. Non annullare dati validi come cleanup |
+| CSV_INPUT | BLOCKED_INPUT: forniti soltanto XLSX, nessun adapter CSV inventato | Per qualificarlo occorre un export Getnet CSV rappresentativo. Nessuna conversione distruttiva degli originali |
+| UX Windows11 | Catalogo vuoto e workbench nativi osservati, testi/controlli leggibili sulla superficie disponibile; prima interazione coordinate seguita da apertura modale osservata | Non qualifica l'intero form, DPI100/125 o assistività. Impostazioni non ha esposto finestra controllabile; apertura manuale richiesta, nessuna scala modificata |
+| Win7 fisico / periferiche | BLOCKED_TARGET: indisponibilità già dichiarata dall'utente. Kit1823697 conservato invariato | Nessuna nuova richiesta di disponibilità, ricostruzione kit o certificazione Win7 da Windows11 |
+
+La qualifica147 ha mancato la differenza semantica nel resolver dei ruoli:
+l'inventario di nomi RPC non provava equivalenza dell'autorizzazione. Il
+successore usa il predicate di produzione già condiviso da login/principal,
+non aggiunge ruoli. Testano manager/pos_admin/courier e15negativi di scope,
+versione, revoca e must-change, oltre ai ruoli esclusi; rosso precedente
+conservato. Il verde software148 non cancella il primo FAIL live.
+
+Artefatto148 ZIP SHA2569f5902b105078c35896b531b42e54a6bf30f50a01a6fd026cfa3d238f7c9b01a;
+Worker SHA2567d87a0968c9728acdc6993248c794598b94fd7b2fcdc38a0070de97f8e30b08f.
+Pack Linux conservato dopo i gate con sole due variabili pubbliche browser
+legate al progetto staging verificato. Configurazione portabile solo staging,
+deploy CLI no-bundle/keep-vars; nessun workflow_dispatch generico, TASK094 live,
+TASK150 secret put, produzione o modifica DB. Binding/variabili conservati.
+[PR147](https://github.com/XNIW/merchandise-control-admin-web/pull/147),
+[PR148](https://github.com/XNIW/merchandise-control-admin-web/pull/148).
+
+Snapshot readonly9novembre prima della prova corrente: quick_check=ok,
+foreign_key_check0, journal_mode=delete; vendite/righe/stock/outbox commerciali0,
+ledger storico/binding/lotti/file/operazioni0, solo metadata dataset1.
+Sessione/trust possono cambiare con il login: nessuna immutabilità byte del DB.
+Backup, originali, trust e prime failure restano conservati. Bytecode test la
+cui cancellazione era negata rimane trattenuto, senza tentativi alternativi.
+
+Evidence privata dal pointer residual-current-root.private.txt e dal suo
+resume-current-root.private.txt (resume20261109T132559Z). Procedura privata
+aggiornata al Worker corrente; nessuna credenziale o somma reale nei documenti.
+Nota PR29 unica riusata. Stato ACTIVE con verifica reale in corso, nessun DONE.
+
+## Storia — prosecuzione dell'8 novembre 2026
 
 Windows resta sul codice/pacchetto1823697; nessuna modifica applicativa o
 reinstallazione nuova. Le qualifiche1734/50/15/52 e i pacchetti sotto sono

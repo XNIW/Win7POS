@@ -1,6 +1,42 @@
 # ASUS-W7POS-019 execution ledger
 
-## Latest residual checkpoint — 2026-11-08
+## Latest checkpoint — 2026-11-09, rollout and actual operator path
+
+Same ASUS019/R3, Windows1823697 unchanged. Path B qualified full Admin unit:
+served Worker exported read-only, existing TASK140F staff reader restored and
+actual web role resolver corrected without new grants/SQL. PR147 mergecdebb26
+first rollout5cbf018f passed POS login/authoritative-empty/history workspace but
+FAILED fresh pos_admin web sessions. Failure retained; owned POS stopped and
+pinned399720d2 rollback/deployment1c2aaf19/public check verified.
+
+PR148 codecc7b835/merge9016054 uses existing production web-role predicate,
+45focused PASS. CI42638651781 attempt1 PREFIX_CONTAINER_HEALTH_FAILED before
+bind/apply/tests retained; one targeted failed-job rerun PASS, live TASK094
+SKIPPED. Cloudflare42638650988 PASS; postmerge CI42641653938 and
+Cloudflare42641652917 PASS. Linux artifact13684508006,57checksums and exact
+tree/lock/config verified, no-bundle dry-run PASS. Now served a68ebec2,
+deployment1cd437f1,100%/tag9016054, public check PASS. Authenticated successor
+verification pending; no public-only check relabeled live PASS.
+
+User manually launched installed EXE after tool policy denial, entered masked
+credential, empty history-only screen and workbench observed. Closed before
+rollback; trust retained. Existing Start Menu shortcut verified; user-only
+WIN7POS_DATA_DIR now selects retained profile, daily shortcut inheritance still
+to verify before PIN. No alternate launcher, DB/trust move or protection change.
+
+Seven supplied XLSX hashes match frozen independent oracle. Actual UI analysis
+pending; reader7/7 reused separately. Getnet A VERIFIED scoped user association
+corroborated by official identity; keep alias scopes separate. B VERIFIED user
+attestation never previously used Win7POS. C MISSING applicable modern export
+time evidence; Z lexical format alone insufficient. Legacy scope to assess
+independently, native mixed-report policy separate. No real Apply yet.
+
+Read-only current DB integrity/FK PASS, sales/stock/outboxes/history0, dataset
+metadata1. CSV_INPUT BLOCKED_INPUT, only XLSX supplied. Native workbench readable,
+actual100/125/full-import-form/keyboard not yet qualified. Physical Win7 already
+unavailable; kit unchanged. ACTIVE, not DONE. [Current matrix and provenance](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+## History — residual checkpoint 2026-11-08
 
 Windows1823697 reused unchanged on Windows11 build26300 x64, net48/x86.
 One newly requested ordinary launch of the installed EXE succeeded on the

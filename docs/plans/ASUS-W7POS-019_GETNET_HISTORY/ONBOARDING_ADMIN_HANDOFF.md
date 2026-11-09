@@ -1,6 +1,37 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
-## Raccordo più recente — residui reali dell'8 novembre
+## Raccordo corrente — 9 novembre 2026
+
+Percorso B eseguito senza attendere uno SHA originale irrecuperabile: export
+immutabile del Worker servito399720d2 e contratti remoti verificati, reader
+TASK140F recuperato, artefatto Linux con provenienza conservato. Primo rollout
+PR147/cdebb26: POS login/catalogo vuoto/workbench PASS, console pos_admin FAIL
+per guard manager-only. Prima failure preservata, rollback pinned399720d2
+verificato dopo arresto del solo POS posseduto; nessuna SQL/chiave/grant cambiata.
+
+Successore PR148 cc7b835/merge9016054 riusa il predicate dei ruoli web già
+ammessi;45mirati PASS. CI42638651781 attempt2/Cloudflare42638650988 PASS,
+primo prefix container health FAIL conservato. Postmerge CI42641653938 e
+Cloudflare42641652917 PASS. Artifact13684508006,57checksum, tree918a24e
+equivalente, lock/config/no-bundle verificati. Worker correntea68ebec2,
+deployment1cd437f1,100% tag9016054, pubblico PASS; login autenticato successore
+in corso. Niente TASK094 live, TASK150 secret put o dispatch generico.
+
+Windows1823697 invariato. Avvio automatico negato dallo strumento; l'utente ha
+eseguito il normale avvio sul profilo conservato e il PIN mascherato. Osservati
+«catalog confirmed empty / history available» e Historical workspace, vendite
+non pronte. Riapertura dal collegamento Start Menu esistente da verificare:
+WIN7POS_DATA_DIR configurata solo per utente, nessun dato/trust spostato.
+
+A Getnet VERIFIED con dichiarazione contestuale e riscontri d'identità; alias
+conservati distinti. B VERIFIED «Mai usato prima». C moderno MISSING: colonna
+FECHA DE VENTA con Z non prova la semantica provider. Analisi UI7XLSX in corso,
+eventuale Apply legacy da qualificare separatamente; nessun Apply reale finora.
+CSV_INPUT BLOCKED_INPUT. Win7 fisico indisponibile già dichiarato, kit invariato;
+DPI100/125 e form import completo non certificati. Stessa nota PR29 e task019,
+nessun nuovo backlog o consenso equivalente richiesto. [Matrice corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+## Storia — residui reali dell'8 novembre
 
 Autorizzazione già valida; su nuova richiesta esplicita il normale avvio
 dell'installato Windows1823697 è riuscito, senza cambiare launcher o protezioni.

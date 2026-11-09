@@ -1,22 +1,24 @@
 # ASUS-W7POS-019 — qualifica esterna e scheda operatore Win7
 
-Aggiornamento consegna: 2026-11-08. Codice1823697 SOFTWARE_DELIVERED e
+Aggiornamento consegna: 2026-11-09. Codice1823697 SOFTWARE_DELIVERED e
 invariato, installato/verificato su Windows11; stato complessivo ACTIVE con
-gate rollout/evidence/fisico. Il nuovo normale avvio richiesto dall'utente e
-la prima autenticazione sono PASS osservati sul profilo isolato; il catalogo
-HTTP500 fallisce con catalog_v2_empty_manifest. I precedenti rifiuti dello
-strumento restano storici. Resolver409 corretto; fix HTTP e stato console
-integrati nelle PR Admin144/145, rollout dell'unità compatibile da attestare.
-L'installazione non aveva auto-avviato il POS. Mapping Getnet, inizio POS/overlap,
-semantica provider e Win7 fisico restano gate separati; utente conferma target
-Win7 non disponibile, nessun owner/hardware/run fisico assegnato.
+gate reali/evidence/fisico. Percorso B Admin qualificato e pubblicato:
+PR148/9016054, Workera68ebec2, deployment1cd437f1, postmerge CI/Cloudflare e
+pubblico PASS, controllo autenticato successore in corso. Prima147: POS login,
+catalogo autorevolmente vuoto e workbench storico PASS; console pos_admin FAIL
+conservato, rollback pinned399720d2 verificato.148 riusa il predicate dei ruoli
+esistenti, senza nuovi grant. Nessuna SQL, secret put o produzione modificata.
+Avvio quotidiano configurato via WIN7POS_DATA_DIR utente, ereditarietà del
+collegamento esistente da verificare. Getnet A/B VERIFIED, C moderno MISSING;
+analisi UI/apply ancora da completare. Win7 già dichiarato indisponibile,
+nessun owner/hardware/run fisico assegnato o nuova richiesta equivalente.
 [Risultato corrente e prime failure](ASUS_W7POS_019_RETRY_E2E_RESULT.md).
 
 Il bundle QA precedente5c privo del forwarder e la prima cattura vuota restano
 failure storiche. Il candidato corrente ha closure e smoke scaricato PASS;
 tre regioni sintetiche realmente osservate sono leggibili. Rimane
 development-unsigned. Avvio e autenticazione ordinari del candidato ora
-attestati; bootstrap non completo. I verdi software non certificano Win7 o
+attestati sul primo rollout, con percorso storico vuoto aperto. I verdi software non certificano Win7 o
 un apply reale. Il kit già trasferibile non viene ricostruito: hash invariato,
 istruzioni/versione binaria restano valide; questo stato corrente supera la
 nota storica di blocco launcher contenuta nel README congelato del kit.
@@ -63,15 +65,15 @@ attribuito al solo limite del provider o dell'host osservatore.
 | Superficie | Applicabilità e stato | Evidenza osservata / sblocco |
 | --- | --- | --- |
 | Import/undo storico → cloud commerciale | `NOT_APPLICABLE` come trasporto V1; isolamento sintetico PASS | `HistoricalSalesImportService` mantiene un ledger locale. Apply/Undo scrivono mapping, batch, file, transazioni, osservazioni e receipt storici; non chiamano writer vendite, stock, fiscale o outbox. Vedere [service](../../src/Win7POS.Data/Import/HistoricalSalesImportService.cs#L127), Apply/Undo e [regressione](../../tests/Win7POS.Core.Tests/Persistence/HistoricalLedgerTests.cs#L15). B-D11 è coperto dalle receipt sintetiche del candidato; nessun apply reale. |
-| Route, schema, RLS, funzioni e Storage Supabase nuovi per lo storico | `NOT_APPLICABLE` nella V1 locale | Nessuna route storica è aggiunta al client. Il resolver409 esistente è stato corretto separatamente, migration applicata e RPC verificato; non attestano HTTP/UI del client. Nessuna nuova modifica server in questa ripresa. |
-| Prima autenticazione e heartbeat esistenti | APPLICABLE_EXISTING; primo login reale5c PASS, manifest reale v3 PASS dopo fix, normale UI NOT_RUN_POLICY | Shop/policy/trust/generation e mirror verificati nel tentativo reale precedente. Route POS first-login e heartbeat restano separate da Supabase Auth e sessione web; contratto installato/heartbeat live da attestare al Mac. Nessuna readiness articoli richiesta per il normale accesso. |
-| Autorizzazione import/undo | APPLICABLE_LOCAL; sintetico1823697 PASS, uso storico reale BLOCKED | Lease, permessi e fingerprint generation vincolati fino al commit. Prova empty distinta da sale-safe/recovery; Retry verificato dal wiring reale del dialog con loopback. RPC reale non sostituisce uso UI reale. Nessun grant automatico a ruoli senza permesso. |
-| Binding esercente Getnet → Shop | `APPLICABLE`; reale `BLOCKED_EXTERNAL` | [Workflow](../../src/Win7POS.Wpf/Pos/PosWorkflowService.HistoricalImport.cs#L50), [mapping locale](../../src/Win7POS.Data/Import/HistoricalSalesImportService.cs#L332). Richiede ShopId autorevole, alias/esercente e inizio uso POS provati. La preview dei file non crea una Shop né risolve questi vincoli. |
+| Route, schema, RLS, funzioni e Storage Supabase nuovi per lo storico | `NOT_APPLICABLE` nella V1 locale; fix server esistenti qualificati separatamente | Nessuna route storica aggiunta. In questa ripresa PR147/148 recuperano reader/ruoli TASK140F nell'unità main con fix144/145 e packaging; rollout staging eseguito, prima147 ritirata e148 ora servita. Nessuna nuova migrazione/SQL/grant/RLS/Storage o secret put. |
+| Prima autenticazione e heartbeat esistenti | APPLICABLE_EXISTING; login ordinario1823697 PASS, catalogo vuoto/workbench nativi osservati | Avvio manuale normale dopo denial dello strumento, password nel campo mascherato; trust conservato. Primo rollout5cb: history-only osservato, vendite/pagamenti non pronti. Nuova prova su a68ebec2 in corso. Sessione POS distinta dalla web; nessun PASS corrente attribuito al vecchio5c o NOT_RUN_POLICY obsoleto. |
+| Autorizzazione import/undo | APPLICABLE_LOCAL; sintetico1823697 PASS, workbench reale PASS, Apply NOT_RUN | Lease, permessi e generation vincolati fino al commit. Empty distinto da sale-safe/recovery; ingresso reale non certifica import/undo. Nessun grant automatico o fallback ai ruoli non autorizzati. |
+| Binding esercente Getnet → Shop | `APPLICABLE`; A VERIFIED, B VERIFIED; piano effettivo ancora da qualificare | Dichiarazione contestuale dell'utente che associa i file al negozio indicato, corroborata da due corrispondenze fiscali ufficiali; terzo alias conservato distinto. Attestazione «Mai usato prima» tracciata, confine nuova attivazione9novembre. DB vuoto e nomi file non sostituiscono prove. Nessun mapping persistito prima dell'Apply. |
 | Sync vendite/catalogo/ordini esistenti | `APPLICABLE_REGRESSION`, nessuna estensione storica | Le route esistenti restano nel [client](../../src/Win7POS.Data/Online/PosAdminWebClient.cs#L17). [OutboxShopBinding](../../src/Win7POS.Data/Online/OutboxShopBinding.cs#L70) e [sales sync](../../src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs#L161) verificano origine/trust. Import e undo non devono aggiungere eventi a questi canali. I sintetici locali/loopback non attestano il server remoto. |
-| Semantica oraria esportazione Getnet | `APPLICABLE`; reale `BLOCKED_EVIDENCE` | Serve prova privata del significato provider Z/offset e delle transizioni per esercente e periodo pertinenti. La policy sintetica non autorizza dati reali; nessun fallback al fuso del PC. |
+| Semantica oraria esportazione Getnet | `APPLICABLE`; C moderno `BLOCKED_EVIDENCE`; legacy da valutare separatamente | Risposta utente sulla colonna Z non discrimina semantica provider. Serve riscontro pertinente ai campioni privati già indicati, senza nuova domanda generale. Nessun fallback al PC o trasferimento OneGMR CSV/SFTP; EXT-TIME moderno non diventa prerequisito universale legacy. |
 | Policy temporale POS nativa | Gate separato per report misti; copertura reale indisponibile | Non è prerequisito universale dell'Apply Getnet. Storico consentito conservato, copertura nativa indisponibile distinta da zero completo; osservazione CSV50000 storici senza vendite native PASS. |
-| Originali privati | Reader runtime prodotto1823697 PASS7/7 | Originali/oracolo indipendente e hash invariati prima/dopo, DLL QA net48/x86 verificate byte-identiche al prodotto. NeedsEvidence=true/CanApply=false; nessun apply reale o prova della semantica provider dedotta dal parser. |
-| Staging/live QA | `BLOCKED_EXTERNAL` se richiesta; non necessaria per import storico locale | Vale esclusivamente [QA_AUTOMATION_AUTHORIZATION](../QA_AUTOMATION_AUTHORIZATION.md#staging-e-autorizzazione-operativa): profilo DPAPI, scope autorizzato, nuova readiness e Release Pack dello stesso candidato. La readiness articoli con `salesAllowed=false` non autorizza vendite remote. Nessuna suite Staging o mutazione live eseguita; normale primo accesso5c descritto separatamente. |
+| Originali privati | Reader runtime prodotto1823697 PASS7/7, hash7/7 riconfermati9novembre; analisi UI pending | Oracle indipendente conservato; reader NeedsEvidence=true/CanApply=false non è un PASS UI. Nessun Apply reale finora. CSV_INPUT BLOCKED_INPUT: ricevuti solo XLSX, CSV50000 è export. |
+| Staging/live QA | Controlli login/catalogo/web autorizzati distinti da suite commerciale | Rollout staging e normali accessi eseguiti come documentato; nessuna suite commerciale Staging, TASK094 live, vendita o import catalogo remoto. [QA_AUTOMATION_AUTHORIZATION](../QA_AUTOMATION_AUTHORIZATION.md#staging-e-autorizzazione-operativa) resta applicabile alle suite separate. Readiness salesAllowed=false non autorizza vendite. |
 | Hardware e sistema operativo target | `APPLICABLE`; `BLOCKED_EXTERNAL` | Richiede il medesimo pacchetto x86 su macchina fisica Win7 SP1 identificata, net48 e periferiche reali nello scope della scheda sotto. Un PASS su Windows 11 non soddisfa W7-01. |
 
 Nota storica della review precedente: la skill `supabase:supabase` del plugin Supabase

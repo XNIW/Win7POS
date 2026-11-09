@@ -7,6 +7,19 @@ l'applicazione ne verifica nuovamente l'integrità.
 
 ## Preparazione e preview
 
+L'ingresso supportato legge soltanto `.xlsx`. Selezionare gli originali senza
+convertirli: il CSV dei report è un'uscita, non un formato d'importazione.
+CSV_INPUT rimane BLOCKED_INPUT finché non esiste un export Getnet CSV reale
+rappresentativo da qualificare; non rinominare un CSV in Excel.
+
+Per l'avvio quotidiano il prodotto usa `WIN7POS_DATA_DIR`, se configurata,
+altrimenti la directory predefinita ProgramData. Il collegamento ordinario deve
+puntare all'EXE installato e il suo processo deve ereditare il profilo concordato.
+Una variabile impostata soltanto nella PowerShell di una prova non qualifica il
+collegamento Start Menu. Dopo una configurazione per utente, chiudere/riaprire
+dal collegamento esistente e verificare negozio/profilo prima del PIN. Non
+spostare DB/trust o usare una seconda istanza per correggere una selezione errata.
+
 Per un nuovo negozio senza catalogo operativo, il primo accesso online può
 mostrare **Storico disponibile, vendite non pronte** e il pulsante di accesso
 allo storico. Serve una risposta catalogo completa con totale zero, riferita
@@ -48,6 +61,19 @@ o responsabili.
 `NeedsEvidence` consente la preview e impedisce l'applicazione. La presenza di `Z`
 e di un offset nell'export non costituisce da sola l'approvazione della semantica
 temporale del provider. Non scegliere una policy per far scomparire il blocco.
+
+**Analizza** è distinto da **Verifica importazione**: la prima fase legge gli
+originali e mostra anche dati con prove mancanti; la seconda prepara un piano
+solo con analisi applicabile, gruppi esercente, data/confine d'inizio POS e
+riferimenti delle prove validi. **Applica** richiede quel piano ancora corrente
+e una conferma. Cambiare file, opzioni, mapping o autorizzazione invalida il piano.
+
+Valutare le prove per il formato selezionato. Gli orari commerciali locali del
+legacy restano distinti dall'interpretazione Z/offset dei moderni: una prova
+mancante sui moderni non approva né invalida automaticamente un lotto separato
+legacy. Per un negozio mai usato prima, conservare l'attestazione tracciata e
+usare il confine verificato della nuova attivazione; non inventare una data di
+prima vendita storica. Il DB isolato vuoto non sostituisce l'attestazione.
 
 ## Applicazione, ricevute e annullamento
 

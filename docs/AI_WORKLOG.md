@@ -4,6 +4,14 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-11-09 — Rollout compatibile e percorso reale ASUS019
+
+- Windows1823697 invariato, nessuna reinstallazione o nuova suite completa. Percorso B Admin: bundle servito esportato readonly, reader TASK140F recuperato e artefatto Linux proveniente dalla CI conservato, senza SQL/grant/secret put.
+- PR147/cdebb26: POS installato avviato manualmente dall'utente dopo denial del tool, login/catalogo vuoto/workbench PASS. Console pos_admin FAIL per guard manager-only; prima failure conservata, processo task fermato e rollback pinned399720d2 verificato. Inventario RPC non provava equivalenza semantica.
+- PR148/9016054 corregge il solo resolver usando il predicate di ruolo già esistente.45mirati PASS, CI42638651781 attempt2/Cloudflare42638650988 PASS; prefix health FAIL attempt1 conservato. Postmerge42641653938/42641652917 PASS. Artifact13684508006 verificato57file, ora Workera68ebec2/deployment1cd437f1/tag9016054, pubblico PASS, nuova prova autenticata in corso.
+- Profilo conservato NEW_SHOP_019 selezionato via WIN7POS_DATA_DIR utente; collegamento ordinario esistente inventariato, riapertura effettiva da verificare prima del PIN. Nessun launcher o spostamento DB/trust. DB readonly integrity/FK PASS, dati commerciali/storici0.
+- Sette originali XLSX riindicati/hash invariati; analisi UI ancora da completare. A VERIFIED dichiarazione contestuale corroborata, B VERIFIED mai usato prima; C moderno MISSING, Z lessicale insufficiente. Legacy distinto dal gate moderno, CSV_INPUT BLOCKED_INPUT, Win7 fisico già indisponibile/kit invariato. [Stato corrente e limiti](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md). Nessun DONE.
+
 ## 2026-11-08 — Residui reali ASUS019, stessa task
 
 - Windows1823697 invariato, nessuna reinstallazione o suite completa ripetuta. Su nuova richiesta utente avvio normale dell'installato PASS; password solo nella PasswordBox, autenticazione verificata. Catalogo reale500/db_failure, auditcatalog_v2_empty_manifest; prima failure preservata, nessuna full o cassa aperta.
