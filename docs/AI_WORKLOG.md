@@ -4,7 +4,15 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
-## 2026-11-09 — Legacy reale salvato, correzione conferma ASUS019
+## 2026-11-09 — a8286c6 qualificato e installato, stessa ASUS019
+
+- Addendum utente integrato nella stessa R3: nuova policy comune di centro work area, vero owner e titolo/footer raggiungibili a200%/nested. Gate ACTIVE prima della consegna finale.200% ripristinato/observato; form vuoto decentrato, footer visibile, nessun clipping inventato. POS chiuso ordinariamente inattivo prima del harness; sugli originali niente nuovo Apply, solo review duplicate-only dopo il successore.
+
+- CI42673051923/Security42673051757/Release42674141171/WPF42675026366 SUCCESS: canonica15, functional20, foundation5/37, smoke8/52 e load11 con M/E/S=true. QA scaricato40 verificato, smoke49.678s PASS8/52, cleanup/fingerprint/payload invariati. Prodotto41/110checksum,34file comuni QA identici; installato41/41, versione1.0.0-dev.a8286c669a7c. Soglie/assert invariati; first FAIL ca4e437, Recovery/path/ownership e job initialization GitHub conservati.
+- Backup prodotto prima update; profilo/trust byte-invariati durante installer, primo consenso UAC annullato senza mutazioni, secondo exit0 e nessun auto-start. Collegamento quotidiano aperto dall'utente, EXE/profilo verificati prima PIN: login/empty/workbench/import PASS. Ledger/ricevuta logici esatti dopo riapertura, SQLite/FK/invarianti commerciali PASS. LIVE_REOPEN_PENDING per ricevuta/report/nuovo CSV/reimport sul successore; nessun undo del lotto valido.
+- Form nativo100/125% intero, reverse Tab/Enter/Escape osservati; ripristino200% pendente. Admin148 autenticato PASS e servito invariato; A/B VERIFIED, C moderno MISSING, CSV_INPUT BLOCKED_INPUT. Target Win7 già indisponibile; nuovo kit del codice cambiato preparato,182 immutato. Software REVIEW, complessivo ACTIVE; [matrice corrente](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+## Storia — 2026-11-09, legacy reale salvato e correzione conferma ASUS019
 
 - ca4e437 CI42667255330 FAIL:8/52 assert PASS ma corpo59.625s più avvio/uscita oltre budget processo60s; Load NOT_RUN. WPF42667293657 functional20/20, Security42667255175 e Release42667255023 PASS; nessuna installazione. Stesso prodotto, regressione test riunita in una fixture con stale zero-write poi commit singolo/rientranza negata: run06 PASS8/52,50.329s processo, HIST02 3.352s, cleanup/no orphan. Nuova qualifica exact-SHA necessaria, soglie e assert invariati.
 - Full locale conservato FAIL: Core1734 PASS, Recovery19/20 per retention weakref4/5; nessun retry invariato. Smoke/crash non partiti per root evidence troppo profonda e suffisso atomico net48. Crash scaricato short-root2/5, poi guard ownership rifiuta W7HP noncanonico: non indebolito. Foundation5/37 hosted PASS distinta. Scala100% confermata dall'utente; prove native e ripristino200% pendenti.

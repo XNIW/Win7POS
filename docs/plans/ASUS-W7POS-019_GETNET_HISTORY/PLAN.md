@@ -2,18 +2,27 @@
 
 ## 0. Stato corrente e mandato
 
+Addendum Execution9novembre: prima della consegna finale ogni nuovo dialog
+operatore deve essere centrato nella work area del monitor pertinente,
+contenuto e con titolo/footer raggiungibili, anche annidato e al200%.
+La policy CenterOwner è da sostituire nel livello condiviso, mantenendo il
+vero owner. Gate geometria ACTIVE: a8286c6 è già installato, display200%
+ripristinato e osservato; POS chiuso ordinariamente al checkpoint inattivo.
+Nessun nuovo Apply degli originali: dopo il nuovo candidato soltanto reopen,
+report/CSV e review del reimport con nuovi0. Mutazioni sulle sole fixture.
+
 | Campo | Valore |
 | --- | --- |
 | Fase | Execution A+B+C e onboarding Windows: software consegnato; qualifica reale/fisica aperta |
 | Revisione/data | R3 normativo congelato; stato Execution aggiornato2026-11-09, America/Santiago |
-| Stato del piano | ACTIVE: Admin148 autenticato PASS; legacy reale salvato/riconciliato. Installato1823697; ca4e437 non installato dopo FAIL CI del budget processo60s con8/52 assert PASS. Successore solo test riusa la fixture, fresh8/52 in50.329s; qualifica exact-SHA aperta. Prime failure e rollback conservati; nessun DONE |
-| Implementazione | Ultimo codice `1823697f1f0c965fb8fd9d85259a862160f12c59`: Retry comune, continuazione protetta bounded, rollback/final authority e cattura reale. Onboarding959396b, closureQAe832d6a e fence d262ccd preservati |
-| Build, test, harness e qualifica runtime | Quattro workflow1823697 PASS: CI15/15, Core1734/1734, gate50/50, functional20, foundation5/37, smoke8/52 e load11(M/E/S=true). Prodotto installato41/41,34comuni QA identici, reader7/7, import_summary leggibile osservato. Win7 fisico ancora NOT_RUN |
-| Nuove prove della prosecuzione | Collegamento/profilo/login/empty/workbench, UI7, legacy4 e riconciliazione indipendente PASS; ricevuta/report/dettaglio/CSV PASS, errore UI postcommit conservato. Fix in qualifica, nessun retry/undo reale. A/B VERIFIED, C moderno MISSING. Core1734 PASS; locale Recovery19/20 FAIL e receipt/work-ownership failures conservati, foundation hosted5/37 PASS distinta. Scala100% confermata, native100/125 e reopen/dedup pendenti; Win7 indisponibile, CSV_INPUT BLOCKED_INPUT |
+| Stato del piano | ACTIVE; software REVIEW. Admin148 autenticato PASS; legacy reale salvato/riconciliato. Nuovo a8286c6 qualificato e installato41/41; prima failure UI/CI, rollback e altri FAIL conservati. Nessun DONE |
+| Implementazione | Codice/pacchetto `a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3`, versione1.0.0-dev.a8286c669a7c: fix minimo conferma con piano stabile, rientranza negata e review modificata respinta. Rispetto a ca4e437 cambia soltanto la fixture; Retry comune, continuazione bounded, rollback/final authority, onboarding959396b, closureQAe832d6a e fence d262ccd preservati |
+| Build, test, harness e qualifica runtime | CI42673051923/Security42673051757/Release42674141171/WPF42675026366 SUCCESS: canonica15, functional20, foundation5/37, smoke8/52 e load11(M/E/S=true). QA scaricato40 verificato, smoke49.678s PASS8/52, cleanup/fingerprint invariati; prodotto41/110checksum e34comuni QA identici. Core1734 e gate50 attribuiti nei report; nessuna qualifica fisica Win7 |
+| Nuove prove della prosecuzione | a828 avviato dal collegamento quotidiano sul profilo conservato, verificato prima PIN: login/empty/workbench/import PASS. Ledger e ricevuta esatti dopo update/reopen, SQLite/FK e invarianti commerciali PASS. UI7 e legacy4/report/dettaglio/CSV prima update PASS attribuiti a1823697. LIVE_REOPEN_PENDING sul successore. Form nativo100/125 intero, reverse Tab/Enter/Escape osservati; ripristino200% pendente. A/B VERIFIED, C moderno MISSING, CSV_INPUT BLOCKED_INPUT, Win7 indisponibile |
 | Baseline locale/remota verificata | 32618249fc01f29e86c6774d2b2c9262a90f226f |
 | Branch e stato iniziale R3 | main; PLAN R2 untracked e modifiche locali di indice/worklog preservate |
 | Persistenza | Codice su main; quattro workflow exact-SHA PASS, prodotto/QA scaricati e verificati; reader7/7 PASS con NeedsEvidence; documenti finali separati dai binari |
-| Prossimo passo consentito | Qualificare fix minimo con regressione, gate e pacchetto exact-SHA; aggiornare installato preservando ledger/trust. Riaprire ricevuta e storico, reimport identico con zero nuovi e totali invariati; DPI100/125 effettivi e ripristino200%. Moderni bloccati da C, Win7 già indisponibile. [Risultato corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md); nessun retry invariato dell'Apply riuscito o DONE |
+| Prossimo passo consentito | Concludere consultazione/reimport identico sul successore con zero nuovi e totali invariati, ripristinare200%. Nuovo kit a828 preparato per il target indisponibile; precedente182 immutato. Moderni bloccati da C, CSV ingresso privo di campione. [Risultato corrente](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md); nessun undo del lotto valido o DONE |
 
 Questo e il solo piano canonico. Lo stato corrente risiede qui; la sola voce
 ASUS-W7POS-019 nell'[indice](../../CODEX_ASUS_TASKS.md) ne e il collegamento.

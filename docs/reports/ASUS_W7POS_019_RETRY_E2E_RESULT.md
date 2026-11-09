@@ -1,6 +1,55 @@
 # ASUS-W7POS-019 — Retry, qualifica software e gate end-to-end
 
-## Stato corrente — 9 novembre 2026, legacy salvato e correzione in qualifica
+## Stato corrente — 9 novembre 2026, a8286c6 qualificato e installato
+
+Addendum geometria ACTIVE nella stessa Execution: centro della work area,
+owner autentico, titolo/footer raggiungibili anche a200% e con annidamenti.
+Display200% ripristinato dall'utente e form vuoto osservato; pulsanti ancora
+visibili, decentramento osservato senza attribuire un clipping non dimostrato.
+POS chiuso ordinariamente prima di fixture/harness. Il successore geometria
+richiede nuova qualifica; a828 non chiude questo nuovo gate. Sugli originali
+si eseguirà soltanto review del reimport, senza nuovo Apply o undo.
+
+Stessa ASUS019/R3, ACTIVE; software REVIEW. Codice/pacchetto
+`a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3`, versione
+`1.0.0-dev.a8286c669a7c`, net48/x86, development-unsigned, su Windows11
+Home Single Language10.0.26300 x64. Il successore cambia soltanto la fixture
+rispetto al fix ca4e437: tutte le assertion e il budget processo60s restano
+invariati. Il fix mantiene il piano durante la conferma, nega la rientranza e
+respinge una review modificata mentre il popup è aperto. La regressione
+riproduce lo stesso errore postcommit; lo stack originario live non è disponibile.
+
+| Superficie | Expected / osservato ed evidence |
+| --- | --- |
+| Qualifica exact-SHA | [CI42673051923](https://github.com/XNIW/Win7POS/actions/runs/42673051923), [Security42673051757](https://github.com/XNIW/Win7POS/actions/runs/42673051757), [Release42674141171](https://github.com/XNIW/Win7POS/actions/runs/42674141171), [WPF42675026366](https://github.com/XNIW/Win7POS/actions/runs/42675026366) SUCCESS; canonica15/15, functional20/20, foundation5/37, smoke8/52, load11/11 con measurementCompleted/environmentValid/thresholdsPassed=true |
+| QA scaricato | Artifact13698359462, payload40 verificato; CI artifact13699879208 verificato con validator canonico e harness/WPF byte-identici. Smoke sul PC49.678s,8/52 PASS, exit0, cleanup confermato, nessun orfano; fingerprint e40file invariati |
+| Release e installazione | Release41file/110checksum verificati,34file comuni QA/prodotto identici; installato41/41. Setup789da5b9d3b5bd86b052a44292dffb5ac09d98c60c0bd61fc60b6ecc9f7c4f91; ZIP2aa065419d9349f8098113514ad5766ae43786c09058830ecd29f911ae5d226a; EXEfa69762f43d17a44f1a9291827d1848c2f443e1301e6802f2733f39aa1216a6f |
+| Conservazione dati | Backup prodotto verificato del ledger committato prima dell'update; intero profilo byte-invariato durante installer, trust e configurazione utente conservati, nessun auto-start. Dopo login, riconciliazione logica esatta con originali e ricevuta PASS, SQLite/FK e invarianti commerciali PASS |
+| Avvio ordinario corrente | Collegamento Start Menu esistente → EXE installato/profilo NEW_SHOP_019 verificati prima del PIN → immissione mascherata utente → accesso/empty autorevole/workbench/import PASS. Nessun launcher alternativo o retry dell'avvio negato dallo strumento |
+| Admin servito | Percorso B, PR148/9016054, Worker a68ebec2-3c55-46f8-bf4d-502e326187af e deployment1cd437f1-0608-408b-ba42-eb0f9716c7e8 invariati al refresh readonly. Login web corrente: overview staff-unavailable distinta da denial; reader Staff safe autorizzato PASS |
+| Originali e prove | Analisi UI7 su1823697 confrontata con oracolo OOXML indipendente; originali invariati. A/B VERIFIED, tre alias distinti; C modern MISSING. Solo legacy4 committati con backup e riconciliazione esatta. Giugno parziale conservato, date assenti non sono zeri |
+| Consultazione sul successore | LIVE_REOPEN_PENDING: riapertura ricevuta/report, nuovo CSV e reimport identico da concludere. Le prove prima dell'update restano PASS attribuite a1823697; nessun undo del lotto valido |
+| DPI e tastiera | Nativi100% e125% osservati, titolo/footer/form vuoto interamente visibili a2880×1800. Shift+Tab/Enter aprono il file picker, Escape lo chiude senza selezioni; forward Tab/assistività non interamente certificati. Ripristino200% richiesto, ancora da confermare |
+| Esterni | CSV_INPUT=BLOCKED_INPUT (solo XLSX ricevuti); moderni richiedono prova C pertinente ai campioni privati già preparati. Win7 fisico/periferiche NOT_RUN/BLOCKED_TARGET già dichiarato; nessuna certificazione trasferita da Windows11 |
+
+Prime failure conservate: ca4e437 CI oltre60s pur con8/52 assert PASS e Load
+NOT_RUN; full locale Recovery19/20 e history non partito per path evidence
+troppo profondo; crash diagnostico2/5 poi corretto rifiuto ownership W7HP.
+Nessun guard o soglia indeboliti, nessun retry Recovery invariato. I primi run
+GitHub a828 Release42673052013/WPF42673173639 e WPF42674135048 non hanno
+creato job per Internal server error; retry API failed-jobs403 non possibile,
+poi invocazioni ordinarie sopra SUCCESS. Non è dimostrata una causa negli input.
+Prima UAC annullata prima del lancio: installato/profilo invariati; secondo
+consenso utente, installer exit0 e verifica41/41. Nessun FAIL cancellato.
+
+Evidence privata dal pointer residual-current-root.private.txt e dal suo
+resume-current-root.private.txt, delivery-a8286c6, downloaded smoke, riconciliazioni
+ledger/CSV e receipt originali. Nessun dato finanziario, identificativo bancario,
+credenziale, DB o trust pubblicato. La policy POS nativa resta separata per i
+report misti; non blocca il report solo Getnet. Storico V1 locale, distinto dal
+cloud/mobile. Le sezioni seguenti sono checkpoint storici del proprio candidato.
+
+## Storia — 9 novembre 2026, legacy salvato e correzione in qualifica
 
 Primo candidato ca4e437: CI42667255330 FAIL di durata processo, non di assert
 (8/52 PASS, corpo59.625s più avvio/uscita oltre60s). Load NOT_RUN. WPF42667293657

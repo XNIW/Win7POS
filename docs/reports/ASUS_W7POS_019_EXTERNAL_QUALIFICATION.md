@@ -1,6 +1,45 @@
 # ASUS-W7POS-019 — qualifica esterna e scheda operatore Win7
 
-## Corrente — 9 novembre, legacy committato e patch Windows da qualificare
+## Corrente — 9 novembre, candidato a8286c6 consegnato
+
+Addendum UI aperto: centratura sulla work area e contenimento dalla prima
+visualizzazione, owner autentico e footer raggiungibile, inclusi200% e nested.
+Scala abituale200% ripristinata/observata, POS chiuso al checkpoint inattivo.
+Le osservazioni100/125 sotto riguardano leggibilità e contenimento del form
+vuoto, non costituiscono PASS del nuovo criterio di centratura geometrica.
+
+Codice/pacchetto `a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3`, versione
+`1.0.0-dev.a8286c669a7c`, installato41/41 net48/x86 su Windows11 build26300.
+CI42673051923, Security42673051757, Release42674141171 e WPF42675026366
+SUCCESS: canonica15/15, functional20/20, foundation5/37, smoke8/52 e load11/11
+con M/E/S=true. QA scaricato40file verificato, smoke effettivo49.678s PASS8/52;
+source fingerprint e payload invariati. [Provenienza, hash e prime failure](ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+| Superficie corrente | Risultato / limite |
+| --- | --- |
+| Admin148 e avvio quotidiano | Autenticato PASS, Worker a68ebec2/deployment1cd437f1; nuovo EXE dal collegamento ordinario sul profilo conservato NEW_SHOP_019, login mascherato, empty/workbench/import PASS |
+| Ledger conservato | Backup prodotto prima update, profilo byte-invariato nell'installer; dopo login righe/ricevuta esatte con oracolo, SQLite/FK/invarianti commerciali PASS |
+| Originali | Analisi reale7 su1823697 PASS; legacy4 committati e consultati, C modern MISSING; nessun undo del lotto valido |
+| Reopen/dedup corrente | LIVE_REOPEN_PENDING; ricevuta/report/nuovo CSV/reimport da concludere sul successore |
+| UI nativa | Form vuoto100/125% osservato intero a2880×1800, reverse Tab/Enter/Escape osservati; forward Tab e assistività non interamente certificati. Ripristino200% richiesto e pendente |
+| Win7 e periferiche | NOT_RUN/BLOCKED_TARGET, indisponibilità già dichiarata. Kit1823697 sotto è storico e invariato: non qualifica il nuovo codice |
+| CSV ingresso | BLOCKED_INPUT, nessun campione CSV reale; export distinto dall'ingresso |
+
+Stessa task019/R3, software REVIEW e complessivo ACTIVE. Le tabelle1823697
+seguenti conservano la qualifica e la scheda del kit precedente; non sono
+identità correnti a828. Nessuna nuova richiesta di disponibilità Win7.
+
+Nuovo kit del codice cambiato: Win7POS-ASUS019-a8286c6-Win7-transfer.zip,
+SHA2565a202ca254b99180831c245d092b95ef517f7a905627928fceb39cb2e46a9a99,
+receipt privata delivery-a8286c6/win7-kit-a8286c6.private.json. Contiene soltanto
+Setup/QA/manifest qualificati, due context inerti, scheda W7-00..W7-10 e checksum.
+Fingerprint candidato c15b4c05ab15a7b8a96efd70b9c6837afe6bcc1aaead1205e5a2d3366d50c630;
+QA ZIP08c79d02b9bb7300105f2c702b6a3e724a2c7ab9e47612387c719bd83cad6f68,
+manifestd5a8b0168f03a6b6729e1cd8ded5f4cb8cb3b35f6a58a8f0982907ca2bdcb89e.
+Nove file archiviati ricontrollati byte per byte; kit1823697 invariato. Il kit
+non contiene DB, originali, trust, backup o segreti e non attesta un run fisico.
+
+## Storia — 9 novembre, legacy committato e patch Windows da qualificare
 
 ca4e437: CI42667255330 FAIL di budget processo smoke60s con8/52 assert PASS;
 WPF20/20, Security e Release PASS, nessun install. Successore test-only riusa

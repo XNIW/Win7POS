@@ -131,6 +131,23 @@ La sostituzione di un file esistente richiede consenso esplicito sul percorso.
 
 ## Qualificazione e limiti correnti
 
+Checkpoint9novembre2026: codice/pacchetto a8286c6 qualificato e installato,
+versione1.0.0-dev.a8286c669a7c. La conferma mantiene il piano stabile, impedisce
+una seconda attivazione e richiede nuova review se i dati cambiano mentre il
+popup è aperto. La prima failure postcommit resta conservata: una schermata
+d'errore non prova che la transazione sia stata annullata. Prima di ripetere
+un'importazione consultare ricevuta e lotto; non annullare un lotto valido
+come cleanup. Il collegamento Start Menu usa il profilo Minimondo conservato
+NEW_SHOP_019 tramite configurazione utente già verificata.
+
+Gli originali sette XLSX sono stati analizzati nella UI; soltanto i quattro
+legacy con prove A/B/CLP valide sono committati e riconciliati. I tre moderni
+rimangono esclusi dall'Apply finché manca C pertinente: il solo suffisso Z non
+risolve la semantica dell'export. La copertura descrive record osservati, con
+giugno parziale. Il report solo storico non richiede la policy POS nativa dei
+report misti. LIVE_REOPEN_PENDING sul successore; qualifica Win7 fisica e
+periferiche NOT_RUN/BLOCKED_TARGET, CSV ingresso BLOCKED_INPUT.
+
 Lo stato effettivo della task e dei gate è nel
 [registro di esecuzione](plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md).
 Input reali, prove temporali, binding del nuovo negozio e Windows 7 fisico sono

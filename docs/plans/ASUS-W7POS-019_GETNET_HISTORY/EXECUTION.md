@@ -1,6 +1,44 @@
 # ASUS-W7POS-019 execution ledger
 
-## Latest checkpoint — 2026-11-09, durable legacy import and confirmation fix
+## Latest checkpoint — 2026-11-09, qualified a8286c6 installed
+
+Geometry addendum integrated into this same Execution/R3 before final delivery:
+center each new operator surface in its relevant monitor work area, retaining
+true ownership and reachable title/footer at200%, nested and long-content cases.
+a828 is already installed; user restored200%, native empty form observed with
+footer visible but off-center. No clipping inferred from this observation.
+Real POS closed normally at an idle checkpoint, no backup/SQLite operation active.
+No new Apply of originals: post-successor review only, new0 expected. Geometry
+regression/fix/qualification is now an explicit open gate; existing greens stay
+attributed to a828, not to a future geometry candidate.
+
+Source/package a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3, version
+1.0.0-dev.a8286c669a7c, installed41/41. CI42673051923, Security42673051757,
+Release42674141171 and WPF42675026366 SUCCESS: canonical15, functional20,
+foundation5/37, smoke8/52 and load11 with all measurement/environment/threshold
+flags true. Downloaded QA40 verified, fresh local smoke49.678s PASS8/52 with
+cleanup and unchanged bytes/fingerprint;34common QA/product files identical.
+No thresholds/assertions relaxed. The production correction is unchanged from
+ca4e437; the test successor reuses one actual VM fixture without redundant setup.
+
+Verified product backup retained before update; installer exit0, no POS auto-start,
+whole retained profile byte-identical through installation. User opened the
+existing Start Menu shortcut; EXE/profile verified before masked PIN input.
+Current login, authoritative-empty catalog, history workspace and empty import
+form PASS. Logical ledger/original receipt reconciliation after reopen PASS,
+integrity/FK and commercial invariants PASS. LIVE_REOPEN_PENDING: actual receipt,
+report, new CSV and duplicate-only reimport still to conclude on this candidate.
+Native empty form100/125% observed entirely visible, reverse Tab/Enter/Escape
+observed; full forward Tab/assistive coverage remains limited. Restore200% pending.
+
+Admin148 authenticated PASS and served identity unchanged. A/B VERIFIED, modern
+C MISSING, CSV_INPUT BLOCKED_INPUT, physical Win7 NOT_RUN/BLOCKED_TARGET.
+No undo of valid real history. Same019/R3, software REVIEW, overall ACTIVE.
+See [current result](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md) for hashes,
+private evidence pointers, first failures and qualified run links. Initial zero-job
+GitHub Internal server errors and cancelled first UAC remain historical failures.
+
+## History — 2026-11-09, durable legacy import and confirmation fix
 
 ca4e437 CI42667255330 FAIL retained: all8/52 smoke assertions completed PASS,
 but receipt body59.625s plus process startup/shutdown exceeded unchanged60s.

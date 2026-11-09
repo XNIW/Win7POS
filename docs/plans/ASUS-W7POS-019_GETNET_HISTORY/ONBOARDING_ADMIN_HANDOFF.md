@@ -1,6 +1,31 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
-## Raccordo corrente — legacy reale e conferma in qualifica, 9 novembre 2026
+## Raccordo corrente — a8286c6 qualificato e installato, 9 novembre 2026
+
+Windows codice/pacchetto a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3,
+versione1.0.0-dev.a8286c669a7c, installato41/41 con profilo/trust conservati.
+CI42673051923, Security42673051757, Release42674141171 e WPF42675026366
+SUCCESS: canonica15, functional20, foundation5/37, smoke8/52 e load11 M/E/S=true.
+QA scaricato40 verificato, smoke effettivo49.678s PASS8/52;34comuni QA/prodotto
+identici. Prima failure ca4e43760s, full locale Recovery/path/ownership e primi
+GitHub Internal server error conservati. Nessuna soglia o assertion allentata.
+
+Admin148 autenticato PASS, Workera68ebec2/deployment1cd437f1 invariati al
+refresh readonly; nessun nuovo deploy/SQL/grant/secret. Nuovo EXE aperto
+manualmente dal collegamento ordinario sul profilo NEW_SHOP_019, verificato
+prima del PIN; login/empty/workbench/import PASS. Backup prodotto del ledger
+prima update, profilo byte-invariato durante installer, nessun auto-start;
+riconciliazione logica dopo login PASS. LIVE_REOPEN_PENDING: ricevuta/report,
+nuovo CSV e reimport duplicate-only sul successore. Nessun undo reale.
+
+Form vuoto100/125% osservato intero, reverse Tab/Enter/Escape osservati;
+ripristino200% pendente. A/B VERIFIED, C modern MISSING, CSV_INPUT
+BLOCKED_INPUT, Win7/periferiche NOT_RUN/BLOCKED_TARGET già dichiarato.
+Kit distinto a828 preparato con byte qualificati;182 resta invariato.
+Stessa019/R3, software REVIEW, overall ACTIVE, stessa nota PR29.
+[Matrice corrente e prime failure](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+
+## Storia — legacy reale e conferma in qualifica, 9 novembre 2026
 
 Windows ca4e437 non installato: CI42667255330 FAIL per processo smoke oltre60s,
 pur con8/52 assert PASS; WPF20/20, Security e Release PASS. Test successor
