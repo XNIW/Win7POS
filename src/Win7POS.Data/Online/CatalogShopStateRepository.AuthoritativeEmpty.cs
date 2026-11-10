@@ -109,7 +109,7 @@ WHERE current.singleton_id = 1 AND current.active = 1
         public async Task<PosPublishedCatalogState> ReadPublishedSnapshotAsync(OnlineSyncGeneration generation)
         {
             using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction();
+            using var tx = conn.BeginTransaction(deferred: true);
             var safety = await EvaluateSaleSafetyAsync(conn, tx, false).ConfigureAwait(false);
             var empty = await IsAuthoritativelyEmptyWithinTransactionAsync(conn, tx, generation).ConfigureAwait(false);
             var restore = await conn.ExecuteScalarAsync<string>(
