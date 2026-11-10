@@ -93,3 +93,26 @@ che intenzionalmente include tutti i permessi. La fixture storica è quindi un
 manager delegato con permessi espliciti: la rimozione di un singolo permesso deve
 continuare a negare l'operazione. Il percorso HTTP di geometria rimane pos_admin.
 Nessuna modifica ai ruoli o ai permessi del prodotto, nessun negativo eliminato.
+
+## Review10novembre: conservazione limitata della replica
+
+Stessa Execution ASUS019 ACTIVE, draft135. La copia pubblicata resta intatta
+fino al compare-and-swap. Sono ammessi al massimo tre trasferimenti pendenti:
+quelli compatibili conservano cursore e pagine per55minuti; quelli scaduti,
+di altro epoch/dataset o basati su una pubblicazione superata sono rimossi
+insieme alle loro righe. Nessuna modifica allo schema0016 o ai suoi checksum.
+
+Un delta senza righe riusa la generazione pubblicata. Un delta con modifiche
+materializza la copia solo alla prima pagina non vuota, una volta per tentativo;
+il costo di quel caso resta proporzionale alle dimensioni della replica.
+La pubblicazione verifica checksum/count/identità e impedisce regressioni di
+revisione anche quando due delta vuoti condividono la stessa generazione.
+La pulizia transazionale libera pagine SQLite riutilizzabili, senza VACUUM
+automatico o promessa di riduzione immediata del file fisico.
+
+HistoricalReplicaTests10/10 PASS (review-replica02, TRX privata):40 sincronizzazioni
+vuote con pagine DB limitate, delta multipagina interrotto/ripreso, quota/expiry,
+cambio epoch, revisione concorrente, checksum errato e revoca prima del commit.
+Qualifica CI del nuovo commit ancora da acquisire; i PASS9d47f28 restano storici.
+Pacchetto5d8e704/installato a828 invariati. Nessuna finestra POS, installazione,
+Apply/Undo reale o modifica del lotto legacy. Operatore e targetWin7 restano aperti.

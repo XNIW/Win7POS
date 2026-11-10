@@ -30,6 +30,7 @@ namespace Win7POS.Data.Import
         private static CommandDefinition Command(string sql,object p,SqliteTransaction t,CancellationToken ct)=>new CommandDefinition(sql,p,t,cancellationToken:ct);
         public async Task<(string GenerationId,HistoricalCloudResult Manifest,bool Complete)> ReadPendingAsync(string shop,CancellationToken ct)
         {
+            await PruneAsync(shop,ct).ConfigureAwait(false);
             _demandCurrent();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);
             var g=await c.QuerySingleOrDefaultAsync<Generation>(Command(@"SELECT g.generation_id Id,g.shop_id Shop,g.dataset_id DatasetId,g.writer_epoch Epoch,g.revision Revision,g.mode Mode,g.checksum Checksum,g.movement_count Movements,g.batch_count Batches,g.next_cursor NextCursor,g.terminal_cursor TerminalCursor,g.complete Complete
 FROM historical_cloud_generation g JOIN historical_cloud_state s ON s.shop_id=g.shop_id AND s.dataset_id=g.dataset_id AND s.writer_epoch=g.writer_epoch
@@ -64,11 +65,11 @@ dataset_id=@dataset,writer_epoch=@epoch,server_revision=@revision,writer_authori
             _demandCurrent();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();
             var state=await c.QuerySingleAsync<GenerationSource>(Command("SELECT dataset_id DatasetId,writer_epoch Epoch,generation_id GenerationId,published_revision Revision FROM historical_cloud_state WHERE shop_id=@shop",new{shop},t,ct)).ConfigureAwait(false);
             if(state.DatasetId!=manifest.DatasetId||state.Epoch!=epoch||manifest.Mode=="delta"&&(state.GenerationId==null||state.Revision>revision))throw new InvalidOperationException("history_replica_resnapshot_required");
+            await Prune(c,t,shop,ct).ConfigureAwait(false);
+            if(await c.ExecuteScalarAsync<long>(Command("SELECT COUNT(*) FROM historical_cloud_generation WHERE shop_id=@shop AND generation_id IS NOT @published",new{shop,published=state.GenerationId},t,ct)).ConfigureAwait(false)>=3)throw new InvalidOperationException("history_replica_transfer_capacity");
             var generation=Guid.NewGuid().ToString("D");
             await c.ExecuteAsync(Command(@"INSERT INTO historical_cloud_generation(generation_id,shop_id,dataset_id,writer_epoch,revision,mode,checksum,movement_count,batch_count,next_cursor,source_generation_id,created_utc_ms)
 VALUES(@generation,@shop,@dataset,@epoch,@revision,@mode,@checksum,@movements,@batches,@cursor,@source,@utc)",new{generation,shop,dataset=manifest.DatasetId,epoch,revision,mode=manifest.Mode,checksum=manifest.Checksum,movements=manifest.Movements,batches=manifest.Batches,cursor=manifest.Cursor,source=state.GenerationId,utc=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},t,ct)).ConfigureAwait(false);
-            if(manifest.Mode=="delta")await c.ExecuteAsync(Command(@"INSERT INTO historical_cloud_entity(generation_id,entity_kind,entity_id,entity_digest,payload_json,shop_id,batch_id,identity_key,is_active,business_ticks,signed_amount_clp,signed_fee_clp,signed_fee_vat_clp,signed_net_clp,external_namespace,external_id,source_sheet,source_row,timestamp_raw,offset_minutes,card_subtype)
-SELECT @generation,entity_kind,entity_id,entity_digest,payload_json,shop_id,batch_id,identity_key,is_active,business_ticks,signed_amount_clp,signed_fee_clp,signed_fee_vat_clp,signed_net_clp,external_namespace,external_id,source_sheet,source_row,timestamp_raw,offset_minutes,card_subtype FROM historical_cloud_entity WHERE generation_id=@source",new{generation,source=state.GenerationId},t,ct)).ConfigureAwait(false);
             _demandCurrent();t.Commit();return generation;
         }
         public async Task StageAsync(string generation,HistoricalCloudResult page,CancellationToken ct)
@@ -79,6 +80,9 @@ SELECT @generation,entity_kind,entity_id,entity_digest,payload_json,shop_id,batc
             var g=await LoadGeneration(c,t,generation,ct).ConfigureAwait(false);var json=Serialize(page);var digest=Hash(json);
             if(g.LastCursor==page.Cursor){if(g.LastPageDigest!=digest)throw new InvalidOperationException("history_replica_page_changed");return;}
             if(g.Complete!=0||g.NextCursor!=page.Cursor||g.DatasetId!=page.DatasetId||g.Revision.ToString(CultureInfo.InvariantCulture)!=page.Revision||g.Epoch.ToString(CultureInfo.InvariantCulture)!=page.WriterEpoch||g.Checksum!=page.Checksum||g.Movements!=page.Movements||g.Batches!=page.Batches)throw new InvalidOperationException("history_replica_page_changed");
+            // Materialize only when a delta actually changes entities. Empty pages retain the source.
+            if(g.Mode=="delta"&&page.Entities.Length>0&&await c.ExecuteScalarAsync<long>(Command("SELECT EXISTS(SELECT 1 FROM historical_cloud_entity WHERE generation_id=@generation)",new{generation},t,ct)).ConfigureAwait(false)==0)await c.ExecuteAsync(Command(@"INSERT INTO historical_cloud_entity(generation_id,entity_kind,entity_id,entity_digest,payload_json,shop_id,batch_id,identity_key,is_active,business_ticks,signed_amount_clp,signed_fee_clp,signed_fee_vat_clp,signed_net_clp,external_namespace,external_id,source_sheet,source_row,timestamp_raw,offset_minutes,card_subtype)
+SELECT @generation,entity_kind,entity_id,entity_digest,payload_json,shop_id,batch_id,identity_key,is_active,business_ticks,signed_amount_clp,signed_fee_clp,signed_fee_vat_clp,signed_net_clp,external_namespace,external_id,source_sheet,source_row,timestamp_raw,offset_minutes,card_subtype FROM historical_cloud_entity WHERE generation_id=@source",new{generation,source=g.SourceGeneration},t,ct)).ConfigureAwait(false);
             foreach(var entity in page.Entities)
             {
                 ct.ThrowIfCancellationRequested();HistoricalReplicaProtocol.Validate(entity,g.Revision);var p=entity.Payload;var movement=entity.Kind=="movement";
@@ -95,21 +99,43 @@ ON CONFLICT(generation_id,entity_kind,entity_id) DO UPDATE SET entity_digest=exc
         {
             _demandCurrent();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();var g=await LoadGeneration(c,t,generation,ct).ConfigureAwait(false);
             if(g.Complete!=1||g.TerminalCursor==null)throw new InvalidOperationException("history_replica_incomplete");
-            var counts=await c.QuerySingleAsync<Counts>(Command("SELECT SUM(CASE WHEN entity_kind='movement' THEN 1 ELSE 0 END) Movements,SUM(CASE WHEN entity_kind='batch' THEN 1 ELSE 0 END) Batches FROM historical_cloud_entity WHERE generation_id=@generation",new{generation},t,ct)).ConfigureAwait(false);
-            if(counts.Movements!=g.Movements||counts.Batches!=g.Batches||await c.ExecuteScalarAsync<long>(Command(@"SELECT COUNT(*) FROM (SELECT identity_key FROM historical_cloud_entity WHERE generation_id=@generation AND entity_kind='movement' AND is_active=1 GROUP BY identity_key HAVING COUNT(*)>1)",new{generation},t,ct)).ConfigureAwait(false)!=0)throw new InvalidOperationException("history_replica_count_mismatch");
-            if(await c.ExecuteScalarAsync<long>(Command(@"SELECT COUNT(*) FROM historical_cloud_entity m WHERE m.generation_id=@generation AND m.entity_kind='movement' AND NOT EXISTS(SELECT 1 FROM historical_cloud_entity b WHERE b.generation_id=m.generation_id AND b.entity_kind='batch' AND b.entity_id=m.batch_id)",new{generation},t,ct)).ConfigureAwait(false)!=0)throw new InvalidOperationException("history_replica_batch_missing");
-            var entities=c.Query<string>("SELECT payload_json FROM historical_cloud_entity WHERE generation_id=@generation ORDER BY entity_kind COLLATE BINARY,entity_id COLLATE BINARY",new{generation},t,buffered:false).Select(Deserialize<HistoricalReplicaEntity>);
+            var emptyDelta=g.Mode=="delta"&&g.SourceGeneration!=null&&await c.ExecuteScalarAsync<long>(Command("SELECT EXISTS(SELECT 1 FROM historical_cloud_entity WHERE generation_id=@generation)",new{generation},t,ct)).ConfigureAwait(false)==0;
+            var published=emptyDelta?g.SourceGeneration:generation;
+            var counts=await c.QuerySingleAsync<Counts>(Command("SELECT SUM(CASE WHEN entity_kind='movement' THEN 1 ELSE 0 END) Movements,SUM(CASE WHEN entity_kind='batch' THEN 1 ELSE 0 END) Batches FROM historical_cloud_entity WHERE generation_id=@generation",new{generation=published},t,ct)).ConfigureAwait(false);
+            if(counts.Movements!=g.Movements||counts.Batches!=g.Batches||await c.ExecuteScalarAsync<long>(Command(@"SELECT COUNT(*) FROM (SELECT identity_key FROM historical_cloud_entity WHERE generation_id=@generation AND entity_kind='movement' AND is_active=1 GROUP BY identity_key HAVING COUNT(*)>1)",new{generation=published},t,ct)).ConfigureAwait(false)!=0)throw new InvalidOperationException("history_replica_count_mismatch");
+            if(await c.ExecuteScalarAsync<long>(Command(@"SELECT COUNT(*) FROM historical_cloud_entity m WHERE m.generation_id=@generation AND m.entity_kind='movement' AND NOT EXISTS(SELECT 1 FROM historical_cloud_entity b WHERE b.generation_id=m.generation_id AND b.entity_kind='batch' AND b.entity_id=m.batch_id)",new{generation=published},t,ct)).ConfigureAwait(false)!=0)throw new InvalidOperationException("history_replica_batch_missing");
+            var entities=c.Query<string>("SELECT payload_json FROM historical_cloud_entity WHERE generation_id=@generation ORDER BY entity_kind COLLATE BINARY,entity_id COLLATE BINARY",new{generation=published},t,buffered:false).Select(Deserialize<HistoricalReplicaEntity>);
             var checksum=HistoricalReplicaProtocol.SnapshotChecksumOrdered(g.Shop,g.DatasetId,g.Revision,g.Epoch,entities);
             if(checksum!=g.Checksum)throw new InvalidOperationException("history_replica_checksum_mismatch");
             var changed=await c.ExecuteAsync(Command(@"UPDATE historical_cloud_state SET generation_id=@generation,published_revision=@revision,checksum=@checksum,last_success_utc_ms=@utc,stale_reason=NULL
-WHERE shop_id=@shop AND dataset_id=@dataset AND writer_epoch=@epoch AND generation_id IS @source",new{generation,revision=g.Revision,checksum,utc=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),shop=g.Shop,dataset=g.DatasetId,epoch=g.Epoch,source=g.SourceGeneration},t,ct)).ConfigureAwait(false);
+WHERE shop_id=@shop AND dataset_id=@dataset AND writer_epoch=@epoch AND generation_id IS @source AND (published_revision IS NULL OR published_revision<=@revision)",new{generation=published,revision=g.Revision,checksum,utc=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),shop=g.Shop,dataset=g.DatasetId,epoch=g.Epoch,source=g.SourceGeneration},t,ct)).ConfigureAwait(false);
             if(changed!=1)throw new InvalidOperationException("history_replica_publication_changed");
+            // The empty candidate carries only the resumable cursor; no full copy survives publication.
+            if(emptyDelta)await c.ExecuteAsync(Command("DELETE FROM historical_cloud_generation WHERE generation_id=@generation",new{generation},t,ct)).ConfigureAwait(false);
+            await Prune(c,t,g.Shop,ct).ConfigureAwait(false);
             await Bump(c,t,ct).ConfigureAwait(false);_demandCurrent();t.Commit();return g.TerminalCursor;
         }
         public async Task MarkStaleAsync(string shop,CancellationToken ct)
         {
             _demandCurrent();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();
             await c.ExecuteAsync(Command("UPDATE historical_cloud_state SET stale_reason='offline_or_interrupted' WHERE shop_id=@shop",new{shop},t,ct)).ConfigureAwait(false);await Bump(c,t,ct).ConfigureAwait(false);_demandCurrent();t.Commit();
+        }
+        public async Task PruneAsync(string shop,CancellationToken ct)
+        {
+            HistoricalReplicaProtocol.DemandId(shop);_demandCurrent();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();
+            await Prune(c,t,shop,ct).ConfigureAwait(false);_demandCurrent();t.Commit();
+        }
+        private static async Task Prune(SqliteConnection c,SqliteTransaction t,string shop,CancellationToken ct)
+        {
+            // Keep the published copy and every compatible transfer within the resume lease.
+            // At most three such transfers can be admitted. Source generations of stale
+            // candidates cannot publish through the compare-and-swap and may be reclaimed.
+            const string obsolete=@"SELECT g.generation_id FROM historical_cloud_generation g WHERE g.shop_id=@shop
+AND NOT EXISTS(SELECT 1 FROM historical_cloud_state s WHERE s.shop_id=g.shop_id AND (s.generation_id=g.generation_id OR
+(s.dataset_id=g.dataset_id AND s.writer_epoch=g.writer_epoch AND g.source_generation_id IS s.generation_id AND g.revision>=COALESCE(s.published_revision,0) AND g.created_utc_ms>@oldest)))";
+            var args=new{shop,oldest=DateTimeOffset.UtcNow.AddMinutes(-55).ToUnixTimeMilliseconds()};
+            await c.ExecuteAsync(Command("DELETE FROM historical_cloud_entity WHERE generation_id IN ("+obsolete+")",args,t,ct)).ConfigureAwait(false);
+            await c.ExecuteAsync(Command("DELETE FROM historical_cloud_generation WHERE generation_id IN ("+obsolete+")",args,t,ct)).ConfigureAwait(false);
         }
         private static long? NullableInteger(string value)=>value==null?(long?)null:HistoricalReplicaProtocol.Integer(value);
         private static Task<int> Bump(SqliteConnection c,SqliteTransaction t,CancellationToken ct)=>c.ExecuteAsync(Command("UPDATE historical_cloud_cache_revision SET revision=revision+1 WHERE singleton_id=1",null,t,ct));
