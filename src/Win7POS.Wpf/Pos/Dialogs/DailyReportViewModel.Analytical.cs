@@ -13,6 +13,7 @@ using Win7POS.Core.Reports;
 using Win7POS.Core.Security;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
+using Win7POS.Data.Reports;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
@@ -29,6 +30,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private Dispatcher _reportDispatcher;
         private CancellationTokenSource _reportCancellation;
         private DispatcherTimer _reportRevisionTimer;
+        private SalesReportSnapshotCoordinator _reportCoordinator;
+        private int _reportRefreshRequested, _reportRefreshQueued;
+        private ReportSelection _reportRefreshSelection;
         private int _reportLoadVersion;
         private bool _reportAuthorityCurrent;
         private bool _reportFinalizing;
@@ -65,12 +69,61 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (_reportSession != null) _reportSession.SessionChanged += OnReportSessionChanged;
             _reportDispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
             PosOnlineSyncRevocationLatch.AuthorizationStateChanged += OnReportSessionChanged;
+            _reportCoordinator = _service.ReportSnapshotCoordinator;
+            _reportCoordinator.SnapshotChanged += OnReportSnapshotChanged;
             _reportRevisionTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, __) =>
             {
-                if (_reportContext != null && (!ReportNumbersVisible && _reportContext.Snapshot.Coverage.CanPublish ||
-                    !_reportContext.Coordinator.IsCurrent(_reportContext.Snapshot.Token))) InvalidateAnalyticalReport();
+                if (_reportContext == null) return;
+                if (_reportSession?.IsSalesReportReadAuthorityCurrent(_reportReadAuthority, _reportContext.Filter) != true)
+                    InvalidateAnalyticalReport();
+                else if (!_reportContext.Coordinator.IsCurrent(_reportContext.Snapshot.Token))
+                    OnReportSnapshotChanged(this, EventArgs.Empty);
             }, Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher);
             _reportRevisionTimer.Start();
+        }
+        private void OnReportSnapshotChanged(object sender, EventArgs args)
+        {
+            Interlocked.Exchange(ref _reportRefreshRequested, 1);
+            ScheduleReportRefresh();
+        }
+        private void ScheduleReportRefresh()
+        {
+            if (_disposed || Volatile.Read(ref _reportRefreshRequested) == 0 || _reportDispatcher == null ||
+                _reportDispatcher.HasShutdownStarted || Interlocked.CompareExchange(ref _reportRefreshQueued, 1, 0) != 0) return;
+            _reportDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(async () =>
+            {
+                try
+                {
+                    if (_disposed || IsBusy) return;
+                    Interlocked.Exchange(ref _reportRefreshRequested, 0);
+                    var context = _reportContext;
+                    if (context != null && context.Coordinator.IsCurrent(context.Snapshot.Token)) return;
+                    DemandAnalyticalPermission();
+                    if (context != null && _reportRefreshSelection == null)
+                        _reportRefreshSelection = new ReportSelection(context.Filter.Fingerprint,
+                            HistoryRows.ToDictionary(row => row.Date, row => row.IsMarked), SelectedHistoryRow?.Date);
+                    await ReloadAnalyticalAsync().ConfigureAwait(true);
+                }
+                catch (Exception error) { if (!_disposed) { InvalidateAnalyticalReport(); Status = ReportError(error); } }
+                finally
+                {
+                    // A complete replica can arrive while a previous reload is
+                    // suspended, or after a temporary coverage gap. Keep the
+                    // user's selection until a current readable copy is shown.
+                    if (_reportContext?.Snapshot.Coverage.CanPublish == true &&
+                        _reportContext.Coordinator.IsCurrent(_reportContext.Snapshot.Token)) _reportRefreshSelection = null;
+                    Interlocked.Exchange(ref _reportRefreshQueued, 0);
+                    if (!IsBusy) ScheduleReportRefresh();
+                }
+            }));
+        }
+        private sealed class ReportSelection
+        {
+            internal ReportSelection(string filter, Dictionary<DateTime,bool> marks, DateTime? selected)
+            { Filter=filter; Marks=marks; Selected=selected; }
+            internal string Filter { get; }
+            internal Dictionary<DateTime,bool> Marks { get; }
+            internal DateTime? Selected { get; }
         }
         private async Task OpenReportTimePolicyConfigurationAsync()
         {
@@ -106,6 +159,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void DisposeAnalyticalReports()
         {
             _reportRevisionTimer?.Stop(); _reportRevisionTimer = null;
+            if (_reportCoordinator != null) _reportCoordinator.SnapshotChanged -= OnReportSnapshotChanged;
+            _reportCoordinator = null;
             if (_reportSession != null) _reportSession.SessionChanged -= OnReportSessionChanged;
             PosOnlineSyncRevocationLatch.AuthorizationStateChanged -= OnReportSessionChanged;
             _reportCancellation?.Cancel(); _reportContext = null;
@@ -174,7 +229,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (OperationCanceledException) { }
             catch (Exception exception) { if (version == _reportLoadVersion) { _reportContext = null; SummaryReceiptPreview = string.Empty; HourlySalesPoints.Clear(); Status = ReportError(exception); NotifyReportCoverage(); } }
-            finally { if (ReferenceEquals(_reportCancellation, cancellation)) { _reportCancellation = null; IsBusy = false; } cancellation.Dispose(); }
+            finally { if (ReferenceEquals(_reportCancellation, cancellation)) { _reportCancellation = null; IsBusy = false; } cancellation.Dispose(); ScheduleReportRefresh(); }
         }
 
         private async Task LoadAnalyticalHistoryAsync()
@@ -197,7 +252,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (OperationCanceledException) { }
             catch (Exception exception) { if (version == _reportLoadVersion) { _reportContext = null; HistoryRows.Clear(); HistoryRowCount = 0; SummaryReceiptPreview = string.Empty; Status = ReportError(exception); NotifyReportCoverage(); } }
-            finally { if (ReferenceEquals(_reportCancellation, cancellation)) { _reportCancellation = null; IsBusy = false; } cancellation.Dispose(); }
+            finally { if (ReferenceEquals(_reportCancellation, cancellation)) { _reportCancellation = null; IsBusy = false; } cancellation.Dispose(); ScheduleReportRefresh(); }
         }
 
         private async Task LoadAnalyticalSelectedPreviewAsync(bool singleMarked)
@@ -229,6 +284,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void PublishAnalyticalSnapshot(SalesReportContext context, SalesReportReadAuthority authority, bool history, DateTime from, DateTime to)
         {
             var snapshot = context.Snapshot;
+            var selection = _reportRefreshSelection?.Filter == context.Filter.Fingerprint ? _reportRefreshSelection : null;
             var rows = new ObservableCollection<HistoryRow>();
             if (history && snapshot.Coverage.CanPublish)
             {
@@ -240,14 +296,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         NativePositiveSalesClp = summary.NativePositiveSalesClp, HistoricalMovementCount = summary.HistoricalMovementCount, NetAmount = summary.BalanceClp,
                         GrossAmount = summary.GrossPositiveClp, RefundsAmount = summary.ReversalsClp, CashAmount = summary.CashClp, CardAmount = summary.CardClp,
                         GrossDisplay = MoneyClp.FormatDisplay(summary.GrossPositiveClp), RefundsDisplay = MoneyClp.FormatDisplay(summary.ReversalsClp), NetDisplay = MoneyClp.FormatDisplay(summary.BalanceClp),
-                        CashDisplay = MoneyClp.FormatDisplay(summary.CashClp), CardDisplay = MoneyClp.FormatDisplay(summary.CardClp), IsMarked = true });
+                        CashDisplay = MoneyClp.FormatDisplay(summary.CashClp), CardDisplay = MoneyClp.FormatDisplay(summary.CardClp),
+                        IsMarked = selection == null || !selection.Marks.TryGetValue(date, out var marked) || marked });
                 }
             }
             var maximum = SalesReportHourlyGeometry.MaximumMagnitude(snapshot.HourlyAmounts);
             var points = new ObservableCollection<HourlySalesPoint>();
             for (var hour = 0; hour < 24; hour++) points.Add(new HourlySalesPoint { Hour = hour, AmountMinor = snapshot.HourlyAmounts[hour], AmountDisplay = MoneyClp.FormatDisplay(snapshot.HourlyAmounts[hour]),
                 NormalizedHeight = maximum == 0 ? 0 : (double)((decimal)snapshot.HourlyAmounts[hour] / maximum), IsPeak = snapshot.HourlyAmounts[hour] > 0 && snapshot.HourlyAmounts[hour] == snapshot.HourlyAmounts.Max() });
-            var selected = rows.FirstOrDefault();
+            var selected = rows.FirstOrDefault(row => row.Date == selection?.Selected) ?? rows.FirstOrDefault();
             var displayed = history ? snapshot.Days.FirstOrDefault(day => day.Date == from)?.Summary ?? SalesReportSummary.Empty : snapshot.Summary;
             var preview = snapshot.Coverage.CanPublish ? RenderAnalyticalSummary(from, LegacySummary(from, displayed), PosLocalization.T("historyReport.coverage." + snapshot.Coverage.Status)) : string.Empty;
             var headerSummary = history ? snapshot.Summary : displayed;
@@ -272,6 +329,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             foreach (var row in oldRows) row.PropertyChanged -= OnHistoryRowPropertyChanged;
             foreach (var row in rows) row.PropertyChanged += OnHistoryRowPropertyChanged;
             NotifyAnalyticalValues(); NotifyReportCoverage();
+            if (history && selection != null) RefreshAnalyticalMarkedAggregates();
         }
 
         private void CaptureAnalyticalAmounts(SalesReportSummary summary)

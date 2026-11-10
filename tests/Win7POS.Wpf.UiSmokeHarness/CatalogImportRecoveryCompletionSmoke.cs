@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -46,6 +47,67 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static readonly List<string> Evidence = new List<string>();
         private static int _flushedEvidenceCount;
         private static readonly Stopwatch Timeline = Stopwatch.StartNew();
+        // Scalar identities plus weak targets only. These diagnostics must not
+        // turn a surviving window into a new test-owned GC root.
+        private sealed class ClosedWindowIdentity
+        {
+            internal int Id, OwnerId; internal string Type; internal long OpenHandle, ClosedTick; internal bool Closed;
+        }
+        private static readonly Dictionary<WeakReference, ClosedWindowIdentity> ClosedWindowIdentities = new Dictionary<WeakReference, ClosedWindowIdentity>();
+        private static WeakReference TrackClosingWindow(Window window)
+        {
+            var identity = new ClosedWindowIdentity { Id = RuntimeHelpers.GetHashCode(window),
+                OwnerId = window.Owner == null ? 0 : RuntimeHelpers.GetHashCode(window.Owner), Type = window.GetType().Name,
+                OpenHandle = new System.Windows.Interop.WindowInteropHelper(window).Handle.ToInt64() };
+            window.Closed += (_, __) => { identity.Closed = true; identity.ClosedTick = Stopwatch.GetTimestamp(); };
+            var weak = new WeakReference(window); ClosedWindowIdentities.Add(weak, identity); return weak;
+        }
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void WriteWindowIdentities(IReadOnlyList<WeakReference> windows, string scope)
+        {
+            foreach (var weak in windows)
+            {
+                var identity = ClosedWindowIdentities[weak]; var window = weak.Target as Window;
+                var detail = "window_identity scope=" + scope + "; id=" + identity.Id + "; type=" + identity.Type +
+                    "; owner_id=" + identity.OwnerId + "; open_hwnd=" + identity.OpenHandle + "; closed_event=" + identity.Closed + "; alive=" + (window != null);
+                if (window != null)
+                {
+                    detail += "; visible=" + window.IsVisible + "; loaded=" + window.IsLoaded +
+                        "; hwnd=" + new System.Windows.Interop.WindowInteropHelper(window).Handle.ToInt64() +
+                        "; presentation_source=" + (PresentationSource.FromVisual(window) != null) +
+                        "; application_windows=" + (Application.Current?.Windows.Cast<Window>().Contains(window) == true) +
+                        "; owner_windows=" + (window.Owner?.OwnedWindows.Cast<Window>().Contains(window) == true) +
+                        "; keyboard_within=" + window.IsKeyboardFocusWithin;
+                    if (window is CatalogImportRecoveryDialog recovery)
+                    {
+                        detail += "; product_closed=" + PrivateField<bool>(recovery, "_closed") + "; busy=" + PrivateField<bool>(recovery, "_busy") +
+                            "; draft_timer=" + PrivateField<DispatcherTimer>(recovery, "_draftSaveTimer").IsEnabled +
+                            "; progress_timer=" + PrivateField<DispatcherTimer>(recovery, "_planProgressTimer").IsEnabled +
+                            "; draft_save=" + (PrivateField<Task>(recovery, "_draftSaveTask")?.Status.ToString() ?? "none");
+                    }
+                }
+                Evidence.Add(detail);
+            }
+        }
+        [DllImport("dbghelp.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool MiniDumpWriteDump(IntPtr process, uint pid, Microsoft.Win32.SafeHandles.SafeFileHandle file,
+            uint dumpType, IntPtr exception, IntPtr streams, IntPtr callback);
+        private static void WriteOwnedRecoveryDump()
+        {
+            var root = Environment.GetEnvironmentVariable("WIN7POS_QA_RECOVERY_DUMP_DIR");
+            if (string.IsNullOrEmpty(root)) return;
+            if (!Path.IsPathRooted(root) || !Directory.Exists(root)) throw new InvalidOperationException("recovery_dump_root_invalid");
+            var full = Path.GetFullPath(root); var directory = new DirectoryInfo(full);
+            while (directory != null) { if ((directory.Attributes & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("recovery_dump_link"); directory = directory.Parent; }
+            // Opt-in private synthetic-process capture after the observed window;
+            // never included in Copy-FunctionalEvidence or public QA projection.
+            using var process = Process.GetCurrentProcess();
+            using var file = new FileStream(Path.Combine(full, "recovery-owned.dmp"), FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            if (!MiniDumpWriteDump(process.Handle, (uint)process.Id, file.SafeFileHandle, 0x1006, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            Evidence.Add("private_owned_dump=True; pid=" + process.Id + "; creation_utc=" + process.StartTime.ToUniversalTime().ToString("O", Invariant));
+        }
 
         internal static async Task RunAsync()
         {
@@ -696,9 +758,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     await samples.StopAsync();
                     var state = observation.Snapshot();
                     var retained = closed.Count(reference => reference.IsAlive);
+                    WriteWindowIdentities(closed, "recovery");
                     var managedAfter = GC.GetTotalMemory(true);
                     Evidence.Add("recovery_release absolute_release=NOT_QUALIFIED; control_closed_window_weakrefs_alive=" + controlRetained + "; recovery_closed_window_weakrefs_alive=" + retained + "; pending_closed_window_roots=" + state.ClosedRootedWindows + "; observer_dropped=" + observation.Dropped + "; managed_before_bytes=" + managedBefore + "; managed_after_gc_bytes=" + managedAfter);
                     samples.Write();
+                    WriteOwnedRecoveryDump();
                     // This host retains closed plain WPF and Recovery DataGrids through
                     // native UIA handles. Compare identical caller/focus lifecycles;
                     // surviving weak targets never qualify absolute release or Win7.
@@ -718,6 +782,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 await DrainAndCollectAsync(closed, "plain_control");
                 await samples.StopAsync(); samples.Write();
                 var retained = closed.Count(reference => reference.IsAlive);
+                WriteWindowIdentities(closed, "plain_control");
                 Evidence.Add("control_release closed_window_weakrefs_alive=" + retained + "; focus_return=visible_caller_button_before_close; model_rows=3");
                 return retained;
             }
@@ -737,7 +802,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
                 grid.CommitEdit(DataGridEditingUnit.Cell, true); grid.CommitEdit(DataGridEditingUnit.Row, true);
                 await control.ReturnFocusAsync();
-                var weak = new WeakReference(dialog);
+                var weak = TrackClosingWindow(dialog);
                 dialog.Close();
                 return weak;
             }
@@ -887,7 +952,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 // restoration. WPF input restoration may retain a retired editor
                 // when a test closes both its focused dialog and disposable owner.
                 await control.ReturnFocusAsync();
-                var weak = new WeakReference(dialog);
+                var weak = TrackClosingWindow(dialog);
                 dialog.Close(); dialog = null;
                 return weak;
             }
@@ -1463,6 +1528,19 @@ WHERE p.original_id=@id ORDER BY m.ordinal", new { id = OriginalId }).ToArray();
         }
         private static async Task DrainAndCollectAsync(IReadOnlyList<WeakReference> closed = null, string scope = "warmup")
         {
+            if (closed != null && closed.Count > 0)
+            {
+                // Heap evidence identifies the .NET Framework TextBoxView's
+                // two-second input throttle timer, through TextAdaptor/column
+                // back to the retired window. Compare both fixtures at the
+                // same age after their last Closed event, beyond that timer.
+                // This does not change the scenario's 60s or 8MiB budgets.
+                var lastClosed = closed.Select(w => ClosedWindowIdentities[w].ClosedTick).Max();
+                var elapsed = (Stopwatch.GetTimestamp() - lastClosed) * 1000d / Stopwatch.Frequency;
+                var remaining = Math.Max(0, 2100 - elapsed);
+                if (lastClosed > 0 && remaining > 0) await Task.Delay((int)Math.Ceiling(remaining));
+                Evidence.Add("collection_retirement scope=" + scope + "; minimum_age_after_last_closed_ms=2100; cause=framework_textbox_input_throttle_2000ms; scenario_timeout_ms=60000");
+            }
             // Match the existing Program lifecycle observer: WPF weak-event and
             // binding cleanup can retire roots after a Dispatcher timer turn.
             for (var attempt = 1; attempt <= 10; attempt++)

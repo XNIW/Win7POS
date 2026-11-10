@@ -282,7 +282,15 @@ postcondition=current-structural-schema",
                     "fdcb306ee7c0a7223938c3f6a40bfdf2b49330e628ea02320c4a32c3a1a84cb3",
                     "1.0.0",
                     "Additive replica cache; rollback requires the verified backup and server reconciliation. Never re-enable an old local writer.",
-                    true,HistoricalCloudSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalCloudBaseline)
+                    true,HistoricalCloudSchema.Apply,IsPostHistoricalCloudSchemaStructurallyValid,IsRecognizedHistoricalCloudBaseline),
+                new SchemaMigration(
+                    "0017-historical-publication-outbox",
+                    "Persist historical publication intents, immutable pages and delivery receipts atomically with the local ledger.",
+                    "0017-historical-publication-outbox/v1\n" + HistoricalPublicationSchema.Sql + HistoricalPublicationSchema.LineageSeedSql,
+                    "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b",
+                    "1.0.0",
+                    "Additive historical outbox; rollback requires verified backup and reconciliation of unresolved server authorizations.",
+                    true,HistoricalPublicationSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalPublicationBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -311,6 +319,8 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+            => IsPostHistoricalCloudSchemaStructurallyValid(detector) && HistoricalPublicationSchema.IsSatisfied(detector);
+        private static bool IsPostHistoricalCloudSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalSchemaStructurallyValid(detector) && HistoricalCloudSchema.IsSatisfied(detector);
         private static bool IsPostHistoricalSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostCatalogPlanSchemaStructurallyValid(detector) && HistoricalSalesSchema.IsSatisfied(detector);
@@ -318,11 +328,23 @@ postcondition=current-structural-schema",
         private static bool IsRecognizedHistoricalCloudBaseline(LegacySchemaDetector detector)
         {
             if(detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'historical_cloud_%' OR name LIKE '%_historical_cloud_%'",transaction:detector.Transaction)==0)return false;
-            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalSalesBaseline(detector)
+            if(!IsPostHistoricalCloudSchemaStructurallyValid(detector)||!IsRecognizedHistoricalSalesBaseline(detector)
                 ||detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_cloud_cache_revision WHERE singleton_id=1 AND typeof(revision)='integer' AND revision>=0",transaction:detector.Transaction)!=1
                 ||!detector.NoRows(@"SELECT 1 FROM historical_cloud_state s WHERE s.generation_id IS NOT NULL AND NOT EXISTS(
 SELECT 1 FROM historical_cloud_generation g WHERE g.generation_id=s.generation_id AND g.shop_id=s.shop_id AND g.dataset_id=s.dataset_id AND g.complete=1 AND g.revision=s.published_revision AND g.checksum=s.checksum) LIMIT 1")
                 ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Cloud history cache baseline is incomplete or inconsistent.");
+            return true;
+        }
+
+        private static bool IsRecognizedHistoricalPublicationBaseline(LegacySchemaDetector detector)
+        {
+            if(detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'historical_publication_%'",transaction:detector.Transaction)==0)return false;
+            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalCloudBaseline(detector)
+                ||!detector.NoRows(@"SELECT 1 FROM historical_publication_outbox o
+WHERE (SELECT COUNT(*) FROM historical_publication_page p WHERE p.operation_id=o.operation_id)<>o.page_count
+ OR NOT EXISTS(SELECT 1 FROM historical_publication_delivery d WHERE d.operation_id=o.operation_id)
+ OR NOT EXISTS(SELECT 1 FROM historical_import_operation h WHERE h.operation_id=o.operation_id AND h.shop_id=o.shop_id AND h.dataset_id=o.local_dataset_id AND h.request_fingerprint=o.request_fingerprint) LIMIT 1")
+                ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Historical publication baseline is incomplete or inconsistent.");
             return true;
         }
 

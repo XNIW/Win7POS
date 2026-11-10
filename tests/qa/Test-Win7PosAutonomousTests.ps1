@@ -196,13 +196,14 @@ function Invoke-QaProcess {
     [pscustomobject]@{ status=$(if ($fails) { 'FAIL' } else { 'PASS' }); code='mock_exit'; exitCode=$(if ($fails) { 7 } else { 0 }); identity=$null; elapsedMs=1; workDirectory=(Join-Path $root 'mock-work'); temporaryDirectory=(Join-Path $root 'mock-work/temp'); dataDirectory=(Join-Path $root 'mock-work/data'); cleanupSucceeded=($Executable -ne 'cleanup-failure'); processRemaining=$(if ($Executable -eq 'cleanup-failure') { 1 } else { 0 }); cleanupError=$(if ($Executable -eq 'cleanup-failure') { 'synthetic_job_still_active' } else { $null }) }
 }
 $windows = @(New-QaPlan 'Windows' $root 'synthetic-pwsh')
-foreach ($selection in @(@{mode='All';count=8},@{mode='Smoke';count=6},@{mode='CrashProbe';count=6},@{mode='Load';count=7})) {
+foreach ($selection in @(@{mode='All';count=9},@{mode='Smoke';count=6},@{mode='CrashProbe';count=6},@{mode='Load';count=7},@{mode='CloudSync';count=6})) {
     $selected=@(New-QaPlan 'Windows' $root 'synthetic-pwsh' $selection.mode)
     $runners=@($selected|Where-Object {$_.depends -contains 'build-harness'})
     Assert-QaTest ($runners.Count -eq $selection.count) ('Incorrect closed history runner count: '+$selection.mode)
     foreach ($step in $selected) {foreach ($dependency in $step.depends) {Assert-QaTest (@($selected|Where-Object name -ceq $dependency).Count -eq 1) 'Selected plan has an unreachable dependency'}}
 }
 Assert-QaTest (@($windows|Where-Object {$_.name -ceq 'historical-sales-import-crash' -and $_.timeout -eq 360 -and $_.depends.Count -eq 1 -and $_.depends[0] -ceq 'build-harness'}).Count -eq 1) 'B gate depends on C or lacks the 360 second supervisor budget'
+Assert-QaTest (@($windows|Where-Object {$_.name -ceq 'historical-sales-import-cloudsync' -and $_.timeout -eq 90 -and $_.depends.Count -eq 1 -and $_.depends[0] -ceq 'build-harness'}).Count -eq 1) 'Cloud continuity must run independently of the legacy smoke and load'
 Assert-QaTest (@($windows | Where-Object { $_.name -eq 'restore' -and $_.arguments -contains '--locked-mode' }).Count -eq 1) 'Locked restore absent'
 Assert-QaTest (@($windows | Where-Object { $_.name -eq 'core' -and $_.timeout -eq 3600 }).Count -eq 1) 'Core timeout must cover the measured 35m56s baseline'
 $smokes = @($windows | Where-Object { $_.name -in @('product-image-profile','functional-completion','authorization-lease','bounded-logging','product-paging-dispatcher') })
@@ -294,7 +295,7 @@ New-Item -ItemType Directory -Path $functionalData | Out-Null
 $functionalEvidence = Join-Path $unicode 'functional evidence'
 New-Item -ItemType Directory -Path $functionalEvidence | Out-Null
 Assert-QaTest ($functionalData.Length -le 89 -and -not (Test-QaWithin $functionalData $functionalEvidence)) 'Functional SQLite data inherited the report path length'
-$functionalDiagnostics = @('functional-completion.txt','measurements.csv','sync-backup-load.json','capture.png')
+$functionalDiagnostics = @('functional-completion.txt','measurements.csv','sync-backup-load.json','capture.png','qa-diagnostics.json')
 $functionalPrivateFiles = @('entry.json','pos-trusted-device.json','trusted-device-profile.json','synthetic.db','memory.dmp','token.dat')
 foreach ($name in ($functionalDiagnostics + $functionalPrivateFiles)) { [IO.File]::WriteAllText((Join-Path $functionalData $name),'synthetic') }
 Copy-FunctionalEvidence $functionalData $functionalEvidence

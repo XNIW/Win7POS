@@ -53,7 +53,7 @@ namespace Win7POS.Data.Online
     /// that caller's wait; relink, shutdown, or a current-generation auth denial are
     /// the only events that cancel shared lane work.
     /// </summary>
-    public sealed class OnlineSyncSupervisor : IDisposable
+    public sealed class OnlineSyncSupervisor : IDisposable,IOnlineSyncCredentialedRequestExecutor
     {
         private readonly object _gate = new object();
         private readonly OnlineSyncGeneration _generation;
@@ -68,6 +68,7 @@ namespace Win7POS.Data.Online
         private readonly PriorityOnlineRequestGate _requestGate;
         private readonly CancellationTokenSource _lifetime = new CancellationTokenSource();
         private readonly HashSet<Task> _scheduledTasks = new HashSet<Task>();
+        private readonly HashSet<Task> _foregroundRequests = new HashSet<Task>();
         private bool _authenticationStopped;
         private bool _stopping;
         private Task _authenticationStopTask = Task.CompletedTask;
@@ -100,6 +101,45 @@ namespace Win7POS.Data.Online
 
         public OnlineSyncGeneration Generation => _generation;
 
+        /// <summary>
+        /// An operator request uses the same bounded network gate and live
+        /// credentials as a lane. Its caller owns cancellation; shutdown also
+        /// cancels and drains it before disposing this generation's resources.
+        /// </summary>
+        public Task<T> ExecuteCredentialedRequestAsync<T>(OnlineSyncGeneration expected,
+            OnlineSyncLane lane,Func<OnlineSyncRequestCredentials,CancellationToken,Task<T>> request,
+            Func<T,string> authenticationDenialCode,CancellationToken cancellationToken)
+        {
+            if(expected==null||request==null||authenticationDenialCode==null)throw new ArgumentNullException();
+            if(!Enum.IsDefined(typeof(OnlineSyncLane),lane))throw new ArgumentOutOfRangeException(nameof(lane));
+            lock(_gate)
+            {
+                if(_stopping||_authenticationStopped||expected.Fingerprint!=_generation.Fingerprint)
+                    return Task.FromException<T>(new OnlineSyncGenerationChangedException());
+                var drained=new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _foregroundRequests.Add(drained.Task);
+                return Task.Run(async()=>
+                {
+                    try
+                    {
+                        using var owned=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,_lifetime.Token);
+                        var context=new OnlineSyncLaneExecutionContext(_generation,lane,_requestGate,_isCurrent,
+                            StopAuthenticationAsync,_credentialProvider);
+                        var result=await context.ExecuteCredentialedRequestAsync(request,authenticationDenialCode,owned.Token).ConfigureAwait(false);
+                        owned.Token.ThrowIfCancellationRequested();
+                        if(!await _isCurrent(_generation).ConfigureAwait(false))throw new OnlineSyncGenerationChangedException();
+                        owned.Token.ThrowIfCancellationRequested();
+                        return result;
+                    }
+                    finally
+                    {
+                        lock(_gate)_foregroundRequests.Remove(drained.Task);
+                        drained.TrySetResult(null);
+                    }
+                });
+            }
+        }
+
         public void Start()
         {
             Signal(OnlineSyncLane.Heartbeat, OnlineSyncLaneTrigger.StartOfDay);
@@ -108,6 +148,7 @@ namespace Win7POS.Data.Online
             Signal(OnlineSyncLane.ArticleMutationOutbox, OnlineSyncLaneTrigger.StartOfDay);
             Signal(OnlineSyncLane.ProductImageOutbox, OnlineSyncLaneTrigger.StartOfDay);
             Signal(OnlineSyncLane.CustomerOrders, OnlineSyncLaneTrigger.StartOfDay);
+            Signal(OnlineSyncLane.HistoricalPayments, OnlineSyncLaneTrigger.StartOfDay);
         }
 
         public void Signal(OnlineSyncLane lane, OnlineSyncLaneTrigger trigger)
@@ -147,6 +188,7 @@ namespace Win7POS.Data.Online
             bool catalogRequired,
             CancellationToken waiterCancellationToken)
         {
+            Signal(OnlineSyncLane.HistoricalPayments,OnlineSyncLaneTrigger.StartOfDay);
             var heartbeat = TriggerAsync(
                 OnlineSyncLane.Heartbeat,
                 OnlineSyncLaneTrigger.StartOfDay,
@@ -228,6 +270,7 @@ namespace Win7POS.Data.Online
                     tasks = _lanes.Values
                         .Where(slot => slot.InFlight && slot.DrainTask != null)
                         .Select(slot => slot.DrainTask)
+                        .Concat(_foregroundRequests)
                         .Distinct()
                         .ToArray();
                     if (tasks.Length == 0)

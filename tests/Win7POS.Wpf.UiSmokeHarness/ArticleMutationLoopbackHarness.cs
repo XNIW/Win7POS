@@ -216,9 +216,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
             if (failed != null && uiTest == null) throw new InvalidOperationException("empty_history_ui_" + failed.Case + "_" + failed.Failure);
         }
 
-        private static void CheckCatalogRetryUi(CatalogRetryUiProof proof, Action persist, string id, bool passed)
+        private static void CheckCatalogRetryUi(CatalogRetryUiProof proof, Action persist, string id, bool passed,
+            [System.Runtime.CompilerServices.CallerFilePath] string sourceFile="",
+            [System.Runtime.CompilerServices.CallerLineNumber] int sourceLine=0)
         {
             proof.Assertions.Add(new CatalogRetryUiAssertion { Id = id, Passed = passed }); persist();
+            TypedQaDiagnosticWriter.RecordAssertion(passed,true,passed,sourceFile,sourceLine);
+            // A process deadline can terminate before catch/finally. Preserve the
+            // last completed checkpoint without exporting private proof contents.
+            TypedQaDiagnosticWriter.FlushCheckpoint();
             if (!passed) throw new InvalidOperationException(id);
         }
 
@@ -348,6 +354,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         dialog.FindName("HistoryButton")==null && server.CatalogRequestCount==0 && server.FirstLoginRequestCount==1);
                     if(geometry!=null && positive)
                     {
+                        // This component owns a manually-triggered host, without
+                        // a startup coordinator or continuous lanes. Register its
+                        // real credentialed request gate for the real loopback HTTP
+                        // admission; maintenance has no background runner to stop.
+                        using var historyRequests=PosOnlineSyncSignalBus.Register(host.Signal,host.TriggerAsync,
+                            ()=>Task.CompletedTask,_=>Task.CompletedTask,requestHost:host);
                         var catalog=await host.TriggerAsync(OnlineSyncLane.CatalogDelta,OnlineSyncLaneTrigger.FirstBootstrap,cancellationToken);
                         CheckCatalogRetryUi(proof,persist,"geometry_component_has_verified_empty",catalog.Code=="catalog_authoritatively_empty");
                         var access=await HistoricalOnboardingAccess.CreateAsync(factory,session,host.CurrentGeneration,cancellationToken);

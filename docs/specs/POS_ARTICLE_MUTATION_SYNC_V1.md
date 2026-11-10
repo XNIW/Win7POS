@@ -256,3 +256,13 @@ preserves immutable audit and prohibits an additional Worker deployment.
 
 The accepted exact-main run and redacted evidence summary are recorded in
 `docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`.
+
+
+## ASUS019 bilateral verification scope
+
+The accepted article protocol remains unchanged. ASUS019 reuses its write origins,
+remote shadow and pending overlay rules for the shared-domain matrix in
+docs/plans/ASUS-W7POS-019_GETNET_HISTORY/CLOUD-CONTINUATION.md.
+New cross-station/API/view-update proofs have their own status; an outbound
+receipt does not qualify a shared native-sales reader or a historical writer.
+No timestamp-based last-writer-wins or additional article queue is introduced.

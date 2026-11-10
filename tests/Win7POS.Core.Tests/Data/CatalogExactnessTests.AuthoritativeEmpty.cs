@@ -473,6 +473,35 @@ WHERE key IN (@safe, @completed) AND TRIM(value) <> '';",
         Assert.AreEqual(CatalogCompletenessStatus.Verified, (await state.LoadExactnessAsync()).Status);
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PublishedCatalog_IdentityScopeMustMatchEvenWhileGenerationRemainsActive(bool empty)
+    {
+        using var db = TestDb.Create();
+        if (!empty) await SeedCleanCatalogAsync(db);
+        var stage = await StageEmptySnapshotAsync(db, "published-scope-" + empty);
+        var state = new CatalogShopStateRepository(db.Factory);
+        if (empty) Assert.AreEqual(string.Empty, await ConfirmEmptySnapshotAsync(db, stage));
+        else
+        {
+            await CatalogExactnessTestFixture.SeedVerifiedAsync(db.Factory, stage.ShopId, stage.ShopCode);
+            await state.StoreSaleSafeAsync(stage.ShopId, stage.ShopCode, "2026-11-07T01:00:00Z",
+                stage.Fence.ExpectedEpoch, generation: stage.Generation);
+        }
+        Assert.IsFalse((await state.ReadPublishedSnapshotAsync(stage.Generation)).RecoveryRequired);
+        await SaveShopAsync(db, "changed-official-shop", "CHANGED-SHOP");
+        Assert.IsTrue(await new OnlineSyncGenerationRepository(db.Factory).IsCurrentAndActiveAsync(stage.Generation));
+        var changed = await state.ReadPublishedSnapshotAsync(stage.Generation);
+        Assert.IsTrue(changed.RecoveryRequired);
+        Assert.IsFalse(changed.RemoteSaleSafe);
+        Assert.IsFalse(changed.AuthoritativelyEmpty);
+        await SaveShopAsync(db, stage.ShopId, stage.ShopCode);
+        using (var connection = db.Factory.Open())
+            await connection.ExecuteAsync("DELETE FROM app_settings WHERE key=@key;", new { key = CatalogShopStateRepository.BoundShopCodeKey });
+        Assert.IsTrue((await state.ReadPublishedSnapshotAsync(stage.Generation)).RecoveryRequired);
+    }
+
     private static Task<string> ConfirmEmptySnapshotAsync(TestDb db, AuthoritativeStageContext stage)
     {
         return new CatalogFullRefreshReconciler(db.Factory).ConfirmAuthoritativeEmptyAsync(

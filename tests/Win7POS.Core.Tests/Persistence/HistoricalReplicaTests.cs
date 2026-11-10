@@ -9,6 +9,7 @@ using Win7POS.Core.Reports;
 using Win7POS.Data.Import;
 using Win7POS.Data.Reports;
 using Win7POS.Data.Repositories;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Core.Tests.Persistence;
 
@@ -17,6 +18,26 @@ public sealed class HistoricalReplicaTests
 {
     const string Shop=HistoricalCloudExportTests.Fixture.Shop,Dataset="90000000-0000-4000-8000-000000003019",Batch="80000000-0000-4000-8000-000000003019",Merchant="70000000-0000-4000-8000-000000003019",Cursor="60000000-0000-4000-8000-000000003019";
     static readonly CancellationToken Ct=CancellationToken.None;
+    [TestMethod]
+    public async Task AuthorityObservation_KnownRevisionCannotRegressAndDoesNotInvalidateReadableEconomics()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});var rows=Entities(f);
+        await store.ObserveAuthorityAsync(Shop,Authority(),Ct);var manifest=Manifest(rows);var g=await store.BeginAsync(Shop,manifest,Ct);
+        await store.StageAsync(g,Page(manifest,rows,Cursor,null),Ct);await store.PublishAsync(g,Ct);var report=await Report(f);
+        var coordinator=SalesReportSnapshotCoordinator.ForDatabase(f.Db.Factory.DbPath);var status=0;var reports=0;
+        EventHandler statusChanged=(_,_)=>status++;EventHandler snapshotChanged=(_,_)=>reports++;
+        coordinator.HistoricalSyncStatusChanged+=statusChanged;coordinator.SnapshotChanged+=snapshotChanged;
+        try
+        {
+            await store.ObserveAuthorityAsync(Shop,Authority(revision:"3"),Ct);
+            await store.ObserveAuthorityAsync(Shop,Authority(revision:"3"),Ct);
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>store.ObserveAuthorityAsync(Shop,Authority(revision:"2"),Ct));
+            var state=await store.ReadAsync(Shop,Ct);Assert.AreEqual(3L,state.ServerRevision);Assert.AreEqual(1L,state.PublishedRevision);
+            Assert.AreEqual(1,status);Assert.AreEqual(0,reports);Assert.AreEqual(3380L,(await Report(f)).Summary.BalanceClp);
+            await Query(f).ValidateAsync(report.Token,Filter(),null,Ct);
+        }
+        finally{coordinator.HistoricalSyncStatusChanged-=statusChanged;coordinator.SnapshotChanged-=snapshotChanged;}
+    }
     [TestMethod]
     public async Task CompleteReplica_PublishesOnceWithoutAddingTheLocalLegacyTotals()
     {
@@ -53,6 +74,27 @@ public sealed class HistoricalReplicaTests
         using var c=f.Db.Factory.Open();Assert.AreEqual(5L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1"));
     }
     [TestMethod]
+    public async Task ReplicaVerification_DoesNotReserveTheWriterWhileAnotherCommercialTransactionIsActive()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();
+        var verifying=false;var calls=0;var verified=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store=new HistoricalReplicaStore(f.Db.Factory,()=>{if(verifying&&Interlocked.Increment(ref calls)==2)verified.TrySetResult(true);});
+        var source=Entities(f);await store.ObserveAuthorityAsync(Shop,Authority(),Ct);var manifest=Manifest(source);
+        var generation=await store.BeginAsync(Shop,manifest,Ct);await store.StageAsync(generation,Page(manifest,source,Cursor,null),Ct);
+        using var c=f.Db.Factory.Open();using var writer=c.BeginTransaction(deferred:false);
+        c.Execute("INSERT INTO app_settings(key,value) VALUES('qa.commercial.active','synthetic')",transaction:writer);
+        verifying=true;var publish=Task.Run(()=>store.PublishAsync(generation,Ct));
+        var readCompleted=false;
+        try
+        {
+            readCompleted=ReferenceEquals(await Task.WhenAny(verified.Task,Task.Delay(750)),verified.Task);
+            Assert.IsFalse(publish.IsCompleted,"The replica pointer committed inside another writer's transaction.");
+        }
+        finally{writer.Rollback();await publish;}
+        Assert.IsTrue(readCompleted,"Replica verification tried to reserve the writer before reading and hashing its candidate.");
+        Assert.AreEqual(3380L,(await Report(f)).Summary.BalanceClp);
+    }
+    [TestMethod]
     public async Task BadChecksumAndRevocation_LeaveTheLastCompleteGenerationUntouched()
     {
         using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var revoked=false;var store=new HistoricalReplicaStore(f.Db.Factory,()=>{if(revoked)throw new InvalidOperationException("revoked");});var source=Entities(f);
@@ -85,6 +127,35 @@ public sealed class HistoricalReplicaTests
     {
         Assert.AreEqual(long.MaxValue,HistoricalReplicaProtocol.Integer("9223372036854775807"));
         foreach(var value in new[]{"9223372036854775808","1e3","01","-0","1.0"})Assert.Throws<InvalidOperationException>(()=>HistoricalReplicaProtocol.Integer(value));
+    }
+    [TestMethod]
+    public async Task ReplicaPublication_InvalidatesOpenMemoryTokenAndDoesNotReloadForRepeatedEmptyDeltas()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();
+        var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});
+        var coordinator=SalesReportSnapshotCoordinator.ForDatabase(f.Db.Factory.DbPath);
+        var notifications=0;
+        EventHandler changed=(_,_)=>notifications++;
+        coordinator.SnapshotChanged+=changed;
+        try
+        {
+            var local=await Report(f);
+            await store.ObserveAuthorityAsync(Shop,Authority(),Ct);
+            Assert.IsFalse(coordinator.IsCurrent(local.Token),"Authority changed without invalidating an already open report.");
+            var rows=Entities(f);var m=Manifest(rows);var g=await store.BeginAsync(Shop,m,Ct);
+            await store.StageAsync(g,Page(m,rows,Cursor,null),Ct);await store.PublishAsync(g,Ct);
+            var published=await Report(f);var before=notifications;
+            Assert.IsTrue(coordinator.IsCurrent(published.Token));
+            var delta=Manifest(rows,mode:"delta");var candidate=await store.BeginAsync(Shop,delta,Ct);
+            await store.StageAsync(candidate,Page(delta,Array.Empty<HistoricalReplicaEntity>(),Cursor,null),Ct);
+            await store.PublishAsync(candidate,Ct);
+            Assert.IsTrue(coordinator.IsCurrent(published.Token));Assert.AreEqual(before,notifications);
+            await store.MarkStaleAsync(Shop,Ct);
+            Assert.IsFalse(coordinator.IsCurrent(published.Token));Assert.AreEqual(before+1,notifications);
+            await store.MarkStaleAsync(Shop,Ct);Assert.AreEqual(before+1,notifications);
+            var cached=await Report(f);Assert.AreEqual(published.Summary.BalanceClp,cached.Summary.BalanceClp);
+        }
+        finally{coordinator.SnapshotChanged-=changed;}
     }
     [TestMethod]
     public async Task RepeatedEmptyDeltas_ReusesPublishedRowsAndBoundsDatabasePages()
@@ -138,8 +209,59 @@ public sealed class HistoricalReplicaTests
         using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});var rows=Entities(f);await store.ObserveAuthorityAsync(Shop,Authority(),Ct);var m=Manifest(rows);var g=await store.BeginAsync(Shop,m,Ct);await store.StageAsync(g,Page(m,rows,Cursor,null),Ct);await store.PublishAsync(g,Ct);
         var earlier=Manifest(rows,revision:"2",mode:"delta");var later=Manifest(rows,revision:"3",mode:"delta");var a=await store.BeginAsync(Shop,earlier,Ct);var b=await store.BeginAsync(Shop,later,Ct);
         await store.StageAsync(a,Page(earlier,Array.Empty<HistoricalReplicaEntity>(),Cursor,null),Ct);await store.StageAsync(b,Page(later,Array.Empty<HistoricalReplicaEntity>(),Cursor,null),Ct);await store.PublishAsync(b,Ct);
-        await Assert.ThrowsAsync<InvalidOperationException>(()=>store.PublishAsync(a,Ct));Assert.AreEqual(3L,(await store.ReadAsync(Shop,Ct)).PublishedRevision);Assert.AreEqual(g,(await store.ReadAsync(Shop,Ct)).GenerationId);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>store.PublishAsync(a,Ct));Assert.AreEqual(3L,(await store.ReadAsync(Shop,Ct)).PublishedRevision);Assert.AreEqual(3L,(await store.ReadAsync(Shop,Ct)).ServerRevision);Assert.AreEqual(g,(await store.ReadAsync(Shop,Ct)).GenerationId);
     }
+    [TestMethod]
+    public async Task Synchronizer_YieldsAfterEightPagesAndResumesWithoutReplacingTheReadableCopy()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();
+        var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});var source=Entities(f);
+        await store.ObserveAuthorityAsync(Shop,Authority(),Ct);
+        var old=Manifest(source);var oldGeneration=await store.BeginAsync(Shop,old,Ct);
+        await store.StageAsync(oldGeneration,Page(old,source,Cursor,null),Ct);await store.PublishAsync(oldGeneration,Ct);
+        var target=Manifest(source,revision:"2",mode:"delta");
+        var requests=0;var pages=0;var ack=0;
+        var entered=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload payload,CancellationToken token)
+        {
+            requests++;
+            if(op=="authority"){entered.TrySetResult(true);await release.Task.WaitAsync(token);return Authority(revision:"2");}
+            if(op=="delta_start")return target;
+            if(op=="page")
+            {
+                pages++;var last=pages==9;
+                return Page(target,last?source:Array.Empty<HistoricalReplicaEntity>(),payload.Cursor,last?null:Guid.NewGuid().ToString("D"));
+            }
+            if(op=="replica_ack"){ack++;return new(){Acknowledged=true,Revision="2",WriterEpoch="2"};}
+            Assert.Fail("Unexpected operation "+op);return null!;
+        }
+        var sync=new HistoricalReplicaSynchronizer(store,()=>{},Request);
+        var first=sync.RunAsync(Shop,new string('a',40),Ct);await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(3380L,(await Report(f)).Summary.BalanceClp,"Network wait must retain the old complete read model.");
+        Assert.AreEqual(oldGeneration,(await store.ReadAsync(Shop,Ct)).GenerationId);
+        release.SetResult(true);Assert.IsTrue(await first);Assert.AreEqual(8,pages);Assert.AreEqual(0,ack);
+        Assert.AreEqual(oldGeneration,(await store.ReadAsync(Shop,Ct)).GenerationId);
+        Assert.IsFalse(await sync.RunAsync(Shop,new string('a',40),Ct));Assert.AreEqual(9,pages);Assert.AreEqual(1,ack);
+        Assert.AreEqual(3380L,(await Report(f)).Summary.BalanceClp);Assert.AreEqual(2L,(await store.ReadAsync(Shop,Ct)).PublishedRevision);
+        Assert.AreEqual(13,requests,"Two authority reads, one manifest, nine pages, one ACK; no repeated full download.");
+    }
+
+    [TestMethod]
+    public async Task ReplicaCommit_RejectsAnInactiveDurableGenerationEvenIfTheCallerCallbackIsStale()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();
+        var generation=new OnlineSyncGeneration(Guid.NewGuid().ToString("N"),Guid.NewGuid().ToString("D"),Guid.NewGuid().ToString("D"),Shop,"fixture");
+        await new OnlineSyncGenerationRepository(f.Db.Factory).ActivateAndRecoverAsync(generation,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var store=new HistoricalReplicaStore(f.Db.Factory,()=>{},generation);var source=Entities(f);
+        await store.ObserveAuthorityAsync(Shop,Authority(),Ct);var manifest=Manifest(source);var pending=await store.BeginAsync(Shop,manifest,Ct);
+        await store.StageAsync(pending,Page(manifest,source,Cursor,null),Ct);
+        using(var c=f.Db.Factory.Open())c.Execute("UPDATE pos_sync_session_generation SET active=0 WHERE singleton_id=1");
+        await Assert.ThrowsAsync<OnlineSyncGenerationChangedException>(()=>store.PublishAsync(pending,Ct));
+        Assert.IsNull((await store.ReadAsync(Shop,Ct)).GenerationId);
+        using(var c=f.Db.Factory.Open())Assert.AreEqual(5L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1"));
+    }
+
     static HistoricalCloudResult Authority(string writer="web",string epoch="2",string revision="1")=>new(){DatasetId=Dataset,Revision=revision,WriterEpoch=epoch,WriterAuthority=writer,ProtocolVersion=1};
     static HistoricalCloudResult Manifest(HistoricalReplicaEntity[] rows,string revision="1",string mode="snapshot")=>new(){DatasetId=Dataset,Revision=revision,WriterEpoch="2",Mode=mode,Cursor=Cursor,Movements=rows.Count(r=>r.Kind=="movement"),Batches=rows.Count(r=>r.Kind=="batch"),Checksum=HistoricalReplicaProtocol.SnapshotChecksum(Shop,Dataset,long.Parse(revision),2,rows)};
     static HistoricalCloudResult Page(HistoricalCloudResult manifest,HistoricalReplicaEntity[] rows,string cursor,string? next)=>new(){DatasetId=manifest.DatasetId,Revision=manifest.Revision,WriterEpoch=manifest.WriterEpoch,Cursor=cursor,NextCursor=next,Done=next==null,Checksum=manifest.Checksum,Movements=manifest.Movements,Batches=manifest.Batches,Entities=rows};

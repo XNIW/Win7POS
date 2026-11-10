@@ -1,53 +1,159 @@
 # ASUS-W7POS-019 execution ledger
 
 <!-- ASUS019_CURRENT_START -->
-## Stato corrente — candidato finale qualificato, installazione in attesa
+## Convergenza corrente — stessa Execution ASUS-W7POS-019
 
-ASUS019/R3 ACTIVE. Sorgente pubblicata `5d8e704b2d0027c4ee1d5a9f4cb6b10842b85b54`, fingerprint
-`2adbcf2a3244638d25e00897ecffa8af9972c6e0c3315b0566c3dc669d29b2dd` invariato prima/dopo la canonica.
-Il codice prodotto src e identico ad a397; la prova finale aggiunge pagamento nella
-MainWindow reale su fixture e guida all'ingresso volontario dal riepilogo.
-I PASS di a397/e6aa non sono trasferiti: qui sono riportate le prove di5d8e704.
+Addendum di convergenza recepito: due consegne, cassa quotidiana e storico
+bilaterale. Nessuna funzione nuova; la precedente matrice di altri domini resta
+inventario storico e non amplia il lavoro corrente. Stato ACTIVE, nessun DONE.
 
-| Gate del candidato5d8e704 | Esito effettivo |
-| --- | --- |
-| Windows-All locale | PASS15/15, exit0, Core1745/1745, functional22/22, crash5, smoke8/52, load11; cleanup completo e pubblicazione evidence PASS |
-| Pipeline exact-SHA | CI42719698708, Security42719698588, WPF42719773542, Release42719699281 SUCCESS |
-| Pacchetto | ReleasePack13721564802 verificato dal validator canonico; prodotto41, QA40,34 file comuni byte-identici |
-| Setup | SHA256 `54e087cc3cf7e04b6ef7e26921a148290ec7431c0d0f3a164c4e58b3509fe044` |
-| QA scaricata | Smoke8/52 PASS in49.397s; non e una prova sul registro reale |
-| MainWindow fixture | Empty/admin e no-history, login pronto/scanner/carrello/pagamento/ricevuta, chiusure e sessione PASS; AUTH18.738s, nessuna mutazione reale |
-| Geometria nativa fixture | PASS22 osservazioni,192DPI (200%),work area2880x1704, titolo/footer contenuti e traversata focus;100/125 e basse risoluzioni del nuovo candidato NOT_RUN |
-| Installazione reale | Primo consenso UAC annullato prima dell'avvio, esito conservato; EXE a8286c6 e10/10 file profilo invariati. Nessun installer/POS nuovo avviato da questo tentativo |
-| Registro reale | Riconciliazione read-only di originali/ricevuta/invarianti PASS e backup prodotto fresco verificato; una ricevuta Apply/un lotto attivo per quattro originali legacy. Nessun nuovo Apply/undo |
+| Scenario | Sorgente / binding | Comando / ambiente | Esito | Evidence | Prossimo gate |
+|---|---|---|---|---|---|
+| Cassa PR136 |149c978c2c169dd8640e7e2d13c0e6ca151f2884; Release42889654511 | CI/Security/WPF/Release e pacchetto esatto | PASS build e Integrated12; FAIL soak60 |42897760117, U19CartSoak14901, artifact13807390665 | attribuire i cicli116/118, correggere causa, nuova qualifica |
+| Focus, attribuzione | prodotto149 invariato; solo harness6533c71d68cb15d30ad94f7b809e54a37a721c0e | run-cart-performance Diagnostic, stesso carico/budget; hosted42924975778 | RUNNING, non qualifica | U19Focus149Local02; product-binding; run42924975778 | leggere massimi per ciclo/fase/callback; nessuna causa scanner presunta |
+| Windows precedente | fbdde199 + fingerprint6c170539da7fd1af2ba72d0236ef5edad140aab9c8d2f2308eff050fc4a6dd99 | Windows -HistoricalSalesMode All | FAIL conservato | U19CloudAll01 | successore completo su checkpoint nuovo |
+| Successori fixture Windows | stesso ramo135 + delta proprio | geometry/shell/Smoke/RequiredGates | PASS9.698s /25.519s /8gruppi52assert55.430s /50su50 | U19CloudFunctionalFix01 e04, U19CloudSmoke04, required-gates05 | non sommare con la suite precedente |
+| Recovery | diagnosi fixture; prodotto invariato | net48/x86, cinque aperture, deadline60s e8MiB invariati | FAIL iniziale5contro3 conservato; successore mirato PASS40.545s | U19RecoveryIdentity01, U19RecoveryHeap03, U19RecoveryRetirement04, U19RecoveryHeap04 | suite Windows completa; rilascio assoluto/Win7 non attestato |
+| Owner correzione Windows | ramo135 + delta, riferimenti lotto/Apply e cancellazione spool | Ledger64test, mirati4, build19, CloudView06 | PASS; i4 sono sovrapposti | U19CloudSync28/30, build19, CloudView06 3.382s | owner canonico server e ammissione v2 |
+| Admin qualificato | e67008ad7668b9ca91b45432e3031427e190cf71; merge CI d137c89561c50a5c7f491fd1b3a0d8c40c2963fb, stesso tree626493033d90264d81fb814e08cad6030d701fdd | CI42914874218; Cloudflare42914874236 | PASS CI e packaging, deploy SKIPPED | U19AdminWorkerE67001:58hash verificati, artifact13809111740 | non confondere bundle con servizio operativo |
+| Admin delta locale | owner lotto/Apply, permessi marker per dominio e503 separato | typecheck03/lint01; foundation06 | PASS1547,7SKIP preesistenti,0FAIL su1554 | admin-foundation06.private.log; 109.174s | CI sul commit successore |
+| SQL owner shape + marker | 81116906db3f6db32aea989d542ee7e80fa21f3f; migration04af62ef/e9af34c2 | replay canonico Linux isolato42925339887 | PASS80file/4787assert | U19SqlMarker04/complete.json | nessun SQL linked o deploy |
+| SQL owner canonico | isolato186f4c67f2aec07847d67ba9cf636aa02d131df2; migration20261110234619 SHA d46c65c96b13585f12994fc360f86cdb847a5508979301e7ab3631c6a4bc6898 | replay isolato42926950143 | RUNNING; parse/18assert plan PASS locale | run42926950143 | raccogliere esito; helper ancora privato |
+| Catena v2 e baseline | v1 ancora chiamato dal WPF; API v2 chiusa | Apply/outbox componenti, preparatore e semantica privati | INCOMPLETE, E2E autenticato NOT_RUN | stesso diff135/151 | baseline verificata, autorizzazione contenuto, consegna/ricevuta, WPF, lettura globale |
+| Cleanup vecchio TASK094 |42896389034 | nessun retry live | FAIL auth_denied; cleanup zero NOT_ATTESTED | admin016-task094-staging.private.log | recuperare soli ID fixture e verifica read-only, niente purge |
+| Mobile / Win7 fisico | handoff TASK146 esistente / target mancante | nessun build mobile; hardware non disponibile | NOT_RUN / BLOCKED_TARGET | commento6722613449; piano Win7 | nessun PASS trasferito da Windows11 |
 
-Pacchetto payload ZIP SHA256 `8912fbfb18ec4bcf6982e6d6f93db58dea8c5726a7d1b5656495fde10154f31a`.
-Qualifica locale: ux-canonical-03-roots.private.json; smoke scaricato:
-ux-final-downloaded-smoke-root.private.txt; prova macchina:
-ux-final-delivery-checkpoint.private.json. Primo e6aa13/15, timeout e failure di
-cleanup/probe, interruzioni desktop e tentativo UAC annullato restano conservati.
-Non sono riclassificati come PASS.
+La diagnostica breve149 attribuisce un'attesa407.506ms alla fase setup, con
+callback Render sovrapposti225.670/80.837ms e barcode già focalizzato. È un
+campione di avvio locale, non la spiegazione dei massimi258.573/258.382ms dei
+cicli116/118 hosted. Le soglie250ms e il workload congelato restano invariati.
 
-Percorso reale5d8e704 ancora NOT_RUN: installazione verificata, avvio dal
-collegamento quotidiano, identita profilo prima del PIN mascherato, login -> shell
--> riepilogo -> storico volontario -> chiusura -> riepilogo -> cassa con PID/sessione
-vivi. Solo lettura ricevuta/report e review legacy nuovi=0; mai Apply/undo originali.
-Vendite sempre negate con catalogo vuoto. Scala concordata200%/2880x1800 conservata;
-completare100/125 e1024x768,1024x600 best effort e ripristino concordato.
+Recovery: identificate singolarmente le finestre chiuse, senza HWND, owner-list,
+focus o timer prodotto attivi. Il dump privato sintetico individua una catena
+DispatcherTimer.FireTick → TextBoxView.OnThrottleBackgroundTimeout → TextEditor /
+TextAdaptor / DataGridCellItemAutomationPeer → colonna/DataGrid → Recovery.
+Il timer interno net48 dura2s: il vecchio drain poteva terminare prima. Ora
+entrambi i fixture sono raccolti alla stessa età minima2100ms dopo l'ultimo
+Closed, con gli stessi10 tentativi, deadline60s e confronto memoria8MiB.
+Nel successore recovery1/control5; il dump successivo non trova root path verso
+le istanze Recovery. Il PASS mirato non cancella il FAIL originale e non qualifica
+rilascio assoluto o hardware fisico. Riferimento tecnico Microsoft:
+https://source.dot.net/PresentationFramework/MS/Internal/Documents/TextBoxView.cs.html
+e https://devblogs.microsoft.com/dotnet/wpf-on-dotnet-7/ . Nessuna dipendenza
+aggiunta al prodotto: lettore ClrMD3.1.512801 solo nel tool privato di diagnosi.
 
-Kit Win7 finale: `C:\Dev\U19K09fb63a7\Win7POS-ASUS019-5d8e704-Win7-transfer.zip`,
-SHA256 `0f6bb7d62496614e51a2f2b134d02109422aff71732bfb7f1f5ab79a88a95942`;9 file, template inerti, vecchi kit invariati.
-Target fisico/periferiche gia dichiarati indisponibili: NOT_RUN/BLOCKED_TARGET;
-nessuna nuova richiesta e nessun SDK moderno sul registratore. Secondo monitor
-assente NOT_RUN. Moderni C MISSING e CSV_INPUT BLOCKED_INPUT restano distinti.
+SQL marker:42921661653 FAIL per evento fixture forgiato;42923536204 FAIL per
+tentativo di revocare il ruolo pos_admin canonico. Successore usa evento reale
+del trigger catalogo e ruolo limitato manager modificabile: nessuna protezione
+indebolita.42919972944 verde ma head obsoleto non qualifica questi20assert.
 
-Admin: [piano B/C pubblicato](https://github.com/XNIW/merchandise-control-admin-web/blob/d20233220d451c4c8be4ffff5170e45ca224c7e6/docs/ARCHITECTURE/ASUS019-ADMIN-OPERATIONS-HISTORY-PLAN.md),
-READY_FOR_REVIEW / PLANNING_ONLY: matrice, reader staff mancanti, wizard tre passi,
-ledger cloud e cutover con unico writer. Nessun ruolo, credenziale, grant/RLS,
-schema, dato o deploy modificato. Stessa task, nessun DONE o secondo MasterPlan.
+Installato verificato2ad42ca,41file, profilo/ledger Minimondo e quattro XLSX
+importati conservati. Nessuna installazione, nuovo Apply/Undo/vendita reale o
+scrittura del profilo.200% preservato;100/125 USER_DEFERRED, Win7 BLOCKED_TARGET,
+Getnet moderno prova C MISSING. Nessun merge/deploy/cutover. Il Worker storico
+operativo resta un gate distinto dal Worker web impacchettato.
 
-I checkpoint sotto conservano la propria data; lo stato corrente e questo riquadro.
+Checkpoint UTC 2026-11-10T23:54:20.160630+00:00.
 <!-- ASUS019_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente 10 novembre 22:27 UTC, conservato alla convergenza</summary>
+
+## Stato corrente — Execution bilaterale attiva, checkpoint 10 novembre 22:27 UTC
+
+Admin151/43f668df + diff: lettore movimenti nominativo, filtri per data commerciale,
+cursore vincolato a dataset/revisione/filtro, totali globali filtrati e importi
+esatti/null preservati. La pagina mostra provenienza e prova temporale; il JSON
+esporta la pagina filtrata con totali globali, senza dichiarare un export completo.
+Il polling globale ShopShell esistente (3s, backoff fino30s) pubblica un marker
+storico separato; lease staff ricontrollato, nessun timer per vista o audit ogni poll.
+Richieste cancellabili, nessuna sostituzione di file/input/focus o posizione commerciale.
+
+Typecheck07/lint02 PASS. Foundation05:1527PASS/7SKIP preesistenti (1534 totali,
+91.408s); browser sintetico desktop13PASS6.3s, tablet5PASS2.6s, ritocco etichetta
+netto desktop5PASS2.5s. Non sono E2E autenticati o prova di stile del CSS distribuito.
+SQL isolato e099bce8918caabcc0b766132a5bfb86bbbf4f4f /42912319575 PASS:
+78file/4755assert, artifact13806949466, digest
+30b7b9d2f1aa7c2c26491ae38a6349dd2fb2dd0083396582a1b0a507e8a82b6a.
+Include le primitive private preparazione/semantica e il lettore/marker37assert.
+Tentativi42910563273 FAIL pin CRLF/LF e42911042429 FAIL fixture revoca senza
+revoked_at conservati; corretti pin LF e fixture, nessuna protezione indebolita.
+Vecchio job live TASK094/42896389034 auth_denied FAIL resta senza retry;
+cleanup finally eseguito, conteggio zero finale NOT_ATTESTED.
+
+Client135/fbdde199 + diff: richiesta foreground nella stessa gate prioritaria e
+credenziali correnti; preparazione paginata riprendibile20PASS13s; revisioni
+monotone/status34PASS23s. CloudView05 PASS3.985s, conferma325ms, copia489ms,
+notifica revisione nota332ms: convergenza di componente, distinta da Input250ms.
+Windows-All U19CloudAll01 fingerprint6c170539da7fd1af2ba72d0236ef5edad140aab9c8d2f2308eff050fc4a6dd99
+FAIL: Core/Data, build, gate e CloudSync PASS; functional19/22 e Smoke50/52
+prima del deadline FAIL, Load NOT_RUN dependency_failed. Sorgente invariata nella run.
+Geometria corretta nel fixture tramite gate foreground reale loopback: PASS9.698s.
+Shell mirata successiva PASS25.519s dopo drain della lettura automatica prima
+Close:70checkpoint, stesso budget60s. Tre TIMEOUT diagnostici intermedi conservati.
+Recovery mantiene FAIL per weakref chiuse5 contro3 del controllo; nessuna deroga.
+Windows-All finale sul nuovo delta resta da completare.
+
+PR136/149c978 resta congelata: CI, Security, WPF e Release PASS;41/40file e34comuni
+identici verificati. Qualifica42897760117: Integrated12min PASS, soak60min FAIL
+su158cicli, ambiente valido, focus258.573/258.382ms nei cicli116/118 oltre250ms.
+Artifact13807390665 digestada85a03ea8e2dc64c86be5fcd8408dcb664eb8c83ffd755bd0fbde72eda4387,
+evidence U19CartSoak14901. PR136 aggiornata: nessun retry cieco o budget allargato.
+
+Residui critici aperti: ammissione v2 completa e ingest/ricevute esposte, baseline/
+backfill del lotto originale da backup attestato, collegamento WPF al grant v2,
+lettura canonica globale e registri inter-postazione; E2E autenticati bilaterali
+per dominio NOT_RUN. Il WPF usa ancora grant v1; preparatore v2 non collegato.
+Worker operativo/deploy/SQL live/cutover NOT_RUN. Installato2ad42ca e ledger
+Minimondo invariati, nessun nuovo Apply/Undo/vendita reale.200% preservato;
+100/125 USER_DEFERRED, Win7 BLOCKED_TARGET, Getnet moderno C MISSING.
+Stessa ASUS019 ACTIVE: nessun merge o DONE; risultati Windows non attestano mobile.
+
+</details>
+
+<details>
+<summary>Checkpoint precedente 10 novembre 21:00 UTC, conservato</summary>
+
+## Stato corrente — Execution bilaterale attiva, consegna Windows separata
+
+PR136/149c978: CI42884098486 e Security42884098503 SUCCESS,15/15 passi e
+functional22/22. WPF42889661815 e Release42889654511 SUCCESS. Scaricati/verificati
+41file prodotto,40QA,34comuni identici e110file checksummed/provenienza.
+Evidence privata U19R149Verified01; Integrated12min+soak60min42897760117 in corso,
+non PASS. Installato2ad42ca e profilo conservati, nessuna nuova installazione,
+vendita o Apply/Undo reale.200% preservato;100/125 USER_DEFERRED.
+
+PR135/fbdde199 con diff locale non pubblicato: outbox atomica e lineage restore,
+ACK recuperabile, replica fuori gate cassa, verifica hash in lettura WAL e breve
+pubblicazione pointer; richieste operatore sullo stesso gate HTTP2 con credenziali
+correnti, cancellazione/drain posseduti e fence generazione/manutenzione.
+Foreground/gate/bus33test PASS; ledger/replica/notifiche/stato67test PASS. UI
+separa salvato qui, pending, confermato server, attenzione, originali da registrare
+e ultima copia ricevuta, senza dedurre allineamento dal badge Online.
+
+WPF CloudView04 PASS3.045s: conferma visibile in253ms e copia in386ms, selezione e
+conti locali invariati. Smoke03:8/52PASS57.380s, budget60s invariato; required
+50/50PASS; build13 net48/x86 zero warning/error. Fingerprint delle due prove WPF
+`14b781992c26d4501e6c8bc3a361c59e2d9ac7794b26e050a1da351c4be44309`.
+253/386ms sono convergenze di componente, non Input250ms né rete reale.
+I FAIL iniziali restano conservati nel CLOUD-CONTINUATION.
+
+Admin151/43f668df con diff: contratto17/17, boundary36/36, typecheck03 e
+foundation03 1484PASS/7SKIP preesistenti. SQL isolato0162205:75file/4664assert PASS;
+Verify verde ma vecchio job staging TASK094 FAIL auth_denied, nessun retry.
+Cleanup nel finally; conteggi finali zero non attestati. SQL preparazione privata
+984d6e4/42897836745:76file/4694assert PASS in modalità isolata senza staging.
+La preparazione non crea grant o movimenti: API v2/ammissione/ingest/ricevute,
+baseline/backfill del lotto originale, fonte globale canonica e Admin movimenti/
+aggregati restano incompleti. Nuovo Windows-All finale ed E2E autenticati bilaterali
+per dominio NOT_RUN. Nessun deploy, SQL linked, worker operativo o cutover attestato.
+
+Handoff TASK146 aggiornato nella nota esistente; storia conservata, nessun PASS
+mobile. Win7 fisico BLOCKED_TARGET e Getnet moderno C MISSING. ASUS019 ACTIVE,
+nessuna nuova task, merge o DONE. Matrice, failure e residui nella stessa
+CLOUD-CONTINUATION.md; i checkpoint più vecchi conservano la propria attribuzione.
+
+</details>
 ## Qualifica a397 conclusa; estensione QA finale — 9 novembre
 
 Il candidato pubblicato a397a49 ha concluso Windows-All 15/15 PASS: Core1745,
@@ -990,3 +1096,62 @@ body unchanged. V3 with current real lease returns ok/shop_scoped/done/0counts.
 No Worker or Windows code change. App launch rejected by tool policy, no process
 and no new pull verified; explicit authorization pending, no alternative launcher.
 No Getnet apply/sale/reset/revocation. New report holds evidence and next step.
+# Addendum corrente: pubblicazione automatica dello storico
+
+Mandato utente 10 novembre, stessa ASUS-W7POS-019 ACTIVE. Il contratto e la
+sequenza del nuovo delta sono in [CLOUD-CONTINUATION](CLOUD-CONTINUATION.md).
+PR136 conserva la propria qualifica/consegna; le modifiche cloud sono in PR135
+e Admin151. Gap Apply/Undo→server confermato, implementazione aperta, nuovi gate
+NOT_RUN. Nessun import/annullamento originale, rollout o cutover implicito.
+
+<details>
+<summary>Checkpoint precedente conservato — stato prima del nuovo addendum bilaterale</summary>
+
+## Stato corrente — candidato finale qualificato, installazione in attesa
+
+ASUS019/R3 ACTIVE. Sorgente pubblicata `5d8e704b2d0027c4ee1d5a9f4cb6b10842b85b54`, fingerprint
+`2adbcf2a3244638d25e00897ecffa8af9972c6e0c3315b0566c3dc669d29b2dd` invariato prima/dopo la canonica.
+Il codice prodotto src e identico ad a397; la prova finale aggiunge pagamento nella
+MainWindow reale su fixture e guida all'ingresso volontario dal riepilogo.
+I PASS di a397/e6aa non sono trasferiti: qui sono riportate le prove di5d8e704.
+
+| Gate del candidato5d8e704 | Esito effettivo |
+| --- | --- |
+| Windows-All locale | PASS15/15, exit0, Core1745/1745, functional22/22, crash5, smoke8/52, load11; cleanup completo e pubblicazione evidence PASS |
+| Pipeline exact-SHA | CI42719698708, Security42719698588, WPF42719773542, Release42719699281 SUCCESS |
+| Pacchetto | ReleasePack13721564802 verificato dal validator canonico; prodotto41, QA40,34 file comuni byte-identici |
+| Setup | SHA256 `54e087cc3cf7e04b6ef7e26921a148290ec7431c0d0f3a164c4e58b3509fe044` |
+| QA scaricata | Smoke8/52 PASS in49.397s; non e una prova sul registro reale |
+| MainWindow fixture | Empty/admin e no-history, login pronto/scanner/carrello/pagamento/ricevuta, chiusure e sessione PASS; AUTH18.738s, nessuna mutazione reale |
+| Geometria nativa fixture | PASS22 osservazioni,192DPI (200%),work area2880x1704, titolo/footer contenuti e traversata focus;100/125 e basse risoluzioni del nuovo candidato NOT_RUN |
+| Installazione reale | Primo consenso UAC annullato prima dell'avvio, esito conservato; EXE a8286c6 e10/10 file profilo invariati. Nessun installer/POS nuovo avviato da questo tentativo |
+| Registro reale | Riconciliazione read-only di originali/ricevuta/invarianti PASS e backup prodotto fresco verificato; una ricevuta Apply/un lotto attivo per quattro originali legacy. Nessun nuovo Apply/undo |
+
+Pacchetto payload ZIP SHA256 `8912fbfb18ec4bcf6982e6d6f93db58dea8c5726a7d1b5656495fde10154f31a`.
+Qualifica locale: ux-canonical-03-roots.private.json; smoke scaricato:
+ux-final-downloaded-smoke-root.private.txt; prova macchina:
+ux-final-delivery-checkpoint.private.json. Primo e6aa13/15, timeout e failure di
+cleanup/probe, interruzioni desktop e tentativo UAC annullato restano conservati.
+Non sono riclassificati come PASS.
+
+Percorso reale5d8e704 ancora NOT_RUN: installazione verificata, avvio dal
+collegamento quotidiano, identita profilo prima del PIN mascherato, login -> shell
+-> riepilogo -> storico volontario -> chiusura -> riepilogo -> cassa con PID/sessione
+vivi. Solo lettura ricevuta/report e review legacy nuovi=0; mai Apply/undo originali.
+Vendite sempre negate con catalogo vuoto. Scala concordata200%/2880x1800 conservata;
+completare100/125 e1024x768,1024x600 best effort e ripristino concordato.
+
+Kit Win7 finale: `C:\Dev\U19K09fb63a7\Win7POS-ASUS019-5d8e704-Win7-transfer.zip`,
+SHA256 `0f6bb7d62496614e51a2f2b134d02109422aff71732bfb7f1f5ab79a88a95942`;9 file, template inerti, vecchi kit invariati.
+Target fisico/periferiche gia dichiarati indisponibili: NOT_RUN/BLOCKED_TARGET;
+nessuna nuova richiesta e nessun SDK moderno sul registratore. Secondo monitor
+assente NOT_RUN. Moderni C MISSING e CSV_INPUT BLOCKED_INPUT restano distinti.
+
+Admin: [piano B/C pubblicato](https://github.com/XNIW/merchandise-control-admin-web/blob/d20233220d451c4c8be4ffff5170e45ca224c7e6/docs/ARCHITECTURE/ASUS019-ADMIN-OPERATIONS-HISTORY-PLAN.md),
+READY_FOR_REVIEW / PLANNING_ONLY: matrice, reader staff mancanti, wizard tre passi,
+ledger cloud e cutover con unico writer. Nessun ruolo, credenziale, grant/RLS,
+schema, dato o deploy modificato. Stessa task, nessun DONE o secondo MasterPlan.
+
+I checkpoint sotto conservano la propria data; lo stato corrente e questo riquadro.
+
+</details>

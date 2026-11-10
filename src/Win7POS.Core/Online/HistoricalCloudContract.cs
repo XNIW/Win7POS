@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Win7POS.Core.Reports;
+using Win7POS.Core.Import;
 
 namespace Win7POS.Core.Online
 {
@@ -37,11 +38,23 @@ namespace Win7POS.Core.Online
         [DataMember(Name="local_dataset_id",EmitDefaultValue=false)] public string LocalDatasetId { get; set; }
         [DataMember(Name="data_revision",EmitDefaultValue=false)] public string DataRevision { get; set; }
         [DataMember(Name="restore_epoch",EmitDefaultValue=false)] public string RestoreEpoch { get; set; }
+        [DataMember(Name="restore_lineage_id",EmitDefaultValue=false)] public string RestoreLineageId { get; set; }
         [DataMember(Name="archive_sha256",EmitDefaultValue=false)] public string ArchiveSha256 { get; set; }
         [DataMember(Name="manifest_sha256",EmitDefaultValue=false)] public string ManifestSha256 { get; set; }
         [DataMember(Name="backup_sha256",EmitDefaultValue=false)] public string BackupSha256 { get; set; }
         [DataMember(Name="local_writes_drained",EmitDefaultValue=false)] public bool? LocalWritesDrained { get; set; }
         [DataMember(Name="native_outbox_drained",EmitDefaultValue=false)] public bool? NativeOutboxDrained { get; set; }
+        [DataMember(Name="content_digest",EmitDefaultValue=false)] public string ContentDigest { get; set; }
+        [DataMember(Name="request_fingerprint",EmitDefaultValue=false)] public string RequestFingerprint { get; set; }
+        [DataMember(Name="base_revision",EmitDefaultValue=false)] public string BaseRevision { get; set; }
+        [DataMember(Name="page_count",EmitDefaultValue=false)] public int? PageCount { get; set; }
+        [DataMember(Name="ordinal",EmitDefaultValue=false)] public int? Ordinal { get; set; }
+        [DataMember(Name="page_json",EmitDefaultValue=false)] public string PageJson { get; set; }
+        [DataMember(Name="page_sha256",EmitDefaultValue=false)] public string PageSha256 { get; set; }
+        [DataMember(Name="grant_id",EmitDefaultValue=false)] public string GrantId { get; set; }
+        [DataMember(Name="local_revision",EmitDefaultValue=false)] public string LocalRevision { get; set; }
+        [DataMember(Name="local_sequence",EmitDefaultValue=false)] public string LocalSequence { get; set; }
+        [DataMember(Name="local_receipt_json",EmitDefaultValue=false)] public string LocalReceiptJson { get; set; }
     }
     [DataContract]
     public sealed class HistoricalCloudResponse
@@ -73,6 +86,34 @@ namespace Win7POS.Core.Online
         [DataMember(Name="batches")] public int Batches { get; set; }
         [DataMember(Name="acknowledged")] public bool Acknowledged { get; set; }
         [DataMember(Name="entities")] public HistoricalReplicaEntity[] Entities { get; set; }
+        [DataMember(Name="state")] public string State { get; set; }
+        [DataMember(Name="content_digest")] public string ContentDigest { get; set; }
+        [DataMember(Name="next_ordinal")] public int NextOrdinal { get; set; }
+        [DataMember(Name="page_count")] public int PublicationPageCount { get; set; }
+        [DataMember(Name="proof")] public HistoricalPublicationProof PublicationProof { get; set; }
+        [DataMember(Name="receipt")] public HistoricalPublicationServerReceipt PublicationReceipt { get; set; }
+    }
+    [DataContract]
+    public sealed class HistoricalPublicationServerReceipt
+    {
+        [DataMember(Name="operation_id")] public string OperationId { get; set; }
+        [DataMember(Name="grant_id")] public string GrantId { get; set; }
+        [DataMember(Name="shop_id")] public string ShopId { get; set; }
+        [DataMember(Name="device_id")] public string DeviceId { get; set; }
+        [DataMember(Name="dataset_id")] public string DatasetId { get; set; }
+        [DataMember(Name="local_dataset_id")] public string LocalDatasetId { get; set; }
+        [DataMember(Name="restore_epoch")] public string RestoreEpoch { get; set; }
+        [DataMember(Name="writer_epoch")] public string WriterEpoch { get; set; }
+        [DataMember(Name="revision")] public string Revision { get; set; }
+        [DataMember(Name="content_digest")] public string ContentDigest { get; set; }
+        [DataMember(Name="local_receipt_sha256")] public string LocalReceiptSha256 { get; set; }
+        [DataMember(Name="restore_lineage_id")] public string RestoreLineageId { get; set; }
+        [DataMember(Name="batch_id")] public string BatchId { get; set; }
+        [DataMember(Name="kind")] public string Kind { get; set; }
+        [DataMember(Name="inserted")] public int Inserted { get; set; }
+        [DataMember(Name="duplicates")] public int Duplicates { get; set; }
+        [DataMember(Name="deactivated")] public int Deactivated { get; set; }
+        [DataMember(Name="signed_gross_clp")] public string SignedGrossClp { get; set; }
     }
     [DataContract]
     public sealed class HistoricalReplicaEntity

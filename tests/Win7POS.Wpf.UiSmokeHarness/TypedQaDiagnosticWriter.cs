@@ -21,6 +21,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static string _stepOverride;
         private static bool _dropped;
         internal static void BeginScenario(string scenario, string stepId = null) { lock (Gate) { _scenario = scenario; if (stepId != null) _stepOverride = stepId; Flush(); } }
+        internal static void FlushCheckpoint() { lock (Gate) { Flush(); } }
 
         internal static void RecordAssertion(bool condition, object expected = null, object actual = null,
             [CallerFilePath] string sourceFile = "", [CallerLineNumber] int sourceLine = 0, string observationId = null)

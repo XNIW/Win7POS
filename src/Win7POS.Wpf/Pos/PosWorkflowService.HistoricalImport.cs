@@ -10,6 +10,7 @@ using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.Pos
 {
@@ -87,6 +88,19 @@ namespace Win7POS.Wpf.Pos
             if (session.CurrentOperatorAuthorityVersion != version || current?.ShopId != shop.ShopId) throw new InvalidOperationException("historical_read_scope_changed");
             return receipt;
         }
+        public async Task<HistoricalPublicationSummary> ReadHistoricalPublicationSummaryAsync(OperatorSession session,CancellationToken ct)
+        {
+            var version=session.CurrentOperatorAuthorityVersion;var stamp=_factory.AuthorityStamp;
+            var permissions=new PermissionService(session);permissions.Demand(PermissionCodes.RegisterViewAll,PermissionCodes.RegisterViewAll);
+            var shop=await _officialShopSnapshots.GetAsync().ConfigureAwait(false);
+            if(string.IsNullOrWhiteSpace(shop?.ShopId))throw new InvalidOperationException("historical_shop_binding_required");
+            var summary=await Task.Run(()=>new HistoricalPublicationOutbox(_factory).ReadSummaryAsync(shop.ShopId,ct),ct).ConfigureAwait(false);
+            var current=await _officialShopSnapshots.GetAsync().ConfigureAwait(false);ct.ThrowIfCancellationRequested();
+            permissions.Demand(PermissionCodes.RegisterViewAll,PermissionCodes.RegisterViewAll);var after=_factory.AuthorityStamp;
+            if(session.CurrentOperatorAuthorityVersion!=version||current?.ShopId!=shop.ShopId||stamp.RestoreEpoch!=after.RestoreEpoch||stamp.AuthorityInstanceEpoch!=after.AuthorityInstanceEpoch)
+                throw new InvalidOperationException("historical_read_scope_changed");
+            return summary;
+        }
         public Task<HistoricalSalesApplyPreview> PreviewHistoricalSalesAsync(HistoricalSalesImportPlan plan, CancellationToken ct)
             => Task.Run(() => HistoricalLedger.PreviewAsync(plan, ct), ct);
         public async Task<HistoricalSalesOperationReceipt> ApplyHistoricalSalesAsync(HistoricalSalesImportPlan plan, OperatorSession session, CancellationToken ct)
@@ -118,10 +132,16 @@ namespace Win7POS.Wpf.Pos
             {
                 HistoricalSalesOperationReceipt authorized = null;
                 readAuthority.Publish(() => authorized = replay);
+                SignalHistoricalPublication();
                 return authorized;
             }
             // Hash and hold inputs before acquiring workflow/auth/catalog/maintenance locks.
             using var sources = sourcePlan == null ? null : await HistoricalLedger.VerifySourcesAsync(sourcePlan, admission.Token).ConfigureAwait(false);
+            readAuthority.DemandStillValid();
+            var expectedAuthority = _factory.AuthorityStamp;
+            // All HTTP admission finishes before backup maintenance, workflow
+            // serialization or the catalog barrier. Commit rechecks this stamp.
+            var writerGrant = await AcquireHistoricalLocalWriteAsync(session,shopId,op,kind,admission.Token).ConfigureAwait(false);
             readAuthority.DemandStillValid();
             if (Interlocked.CompareExchange(ref _historicalMaintenance, 1, 0) != 0) throw new InvalidOperationException("historical_maintenance_active");
             var ownsGate = false;
@@ -129,8 +149,6 @@ namespace Win7POS.Wpf.Pos
             {
                 using var backupLease = await _backupAutomation.EnterMaintenanceAsync(admission.Token).ConfigureAwait(false);
                 await _gate.WaitAsync(admission.Token).ConfigureAwait(false); ownsGate = true;
-                var writerGrant = await AcquireHistoricalLocalWriteAsync(session,shopId,op,kind,admission.Token).ConfigureAwait(false);
-                var expectedAuthority = _factory.AuthorityStamp;
                 using var authorization = await session.BeginHistoricalAuthorizationUseAsync(kind, op, fingerprint, dataset, epoch, () =>
                 {
                     var current = _factory.AuthorityStamp;
@@ -138,10 +156,17 @@ namespace Win7POS.Wpf.Pos
                     if (current.RestoreEpoch != epoch || current.AuthorityInstanceEpoch != expectedAuthority.AuthorityInstanceEpoch) throw new InvalidOperationException("historical_database_authority_changed");
                 }, admission.Token).ConfigureAwait(false);
                 using var catalog = await new CatalogShopTransitionBarrier(_factory).EnterAsync(admission.Token).ConfigureAwait(false);
-                return await Task.Run(() => mutation(authorization.Guard, sources, admission.Token,
+                var receipt = await Task.Run(() => mutation(authorization.Guard, sources, admission.Token,
                     () => admission.CancelAfter(Timeout.InfiniteTimeSpan)), ct).ConfigureAwait(false);
+                SignalHistoricalPublication();
+                return receipt;
             }
             finally { if (ownsGate) _gate.Release(); Interlocked.Exchange(ref _historicalMaintenance, 0); }
+        }
+        private static void SignalHistoricalPublication()
+        {
+            try { PosOnlineSyncSignalBus.Signal(Win7POS.Core.Online.OnlineSyncLane.HistoricalPayments,
+                Win7POS.Core.Online.OnlineSyncLaneTrigger.LocalCommit); } catch { }
         }
     }
 }

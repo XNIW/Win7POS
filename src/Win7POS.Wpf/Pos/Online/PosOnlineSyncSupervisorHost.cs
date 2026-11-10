@@ -48,7 +48,7 @@ namespace Win7POS.Wpf.Pos.Online
     /// Generation transitions are serialized here before a replacement supervisor
     /// can issue requests or commit remote results.
     /// </summary>
-    public sealed class PosOnlineSyncSupervisorHost : IDisposable
+    public sealed class PosOnlineSyncSupervisorHost : IDisposable,IOnlineSyncCredentialedRequestExecutor
     {
         private const string CatalogLastErrorSettingKey = "pos.catalog.last_error";
         private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(4);
@@ -108,6 +108,17 @@ namespace Win7POS.Wpf.Pos.Online
         {
             lock (_stateGate)
                 return _supervisor?.GetSnapshot();
+        }
+
+        public Task<T> ExecuteCredentialedRequestAsync<T>(OnlineSyncGeneration expected,
+            OnlineSyncLane lane,Func<OnlineSyncRequestCredentials,CancellationToken,Task<T>> request,
+            Func<T,string> authenticationDenialCode,CancellationToken ct)
+        {
+            OnlineSyncSupervisor supervisor;
+            lock(_stateGate)supervisor=_disposed?null:_supervisor;
+            return supervisor==null
+                ?Task.FromException<T>(new OnlineSyncGenerationChangedException())
+                :supervisor.ExecuteCredentialedRequestAsync(expected,lane,request,authenticationDenialCode,ct);
         }
 
         public Task<OnlineSyncGeneration> AttachCurrentTrustAsync(
@@ -857,6 +868,8 @@ namespace Win7POS.Wpf.Pos.Online
                     return RunProductImagesAsync(context, cancellationToken);
                 case OnlineSyncLane.CustomerOrders:
                     return RunCustomerOrdersAsync(context, cancellationToken);
+                case OnlineSyncLane.HistoricalPayments:
+                    return RunHistoricalPaymentsAsync(context, cancellationToken);
                 default:
                     return Task.FromResult(new OnlineSyncLaneOutcome(
                         false,
@@ -1097,6 +1110,17 @@ namespace Win7POS.Wpf.Pos.Online
                         .Assembly.GetName().Version?.ToString(),
                     cancellationToken).ConfigureAwait(false);
             return FromOutbox(result, requestCatalogNow: false);
+        }
+
+        private Task<OnlineSyncLaneOutcome> RunHistoricalPaymentsAsync(OnlineSyncLaneExecutionContext context,CancellationToken ct)
+        {
+            if(!PosAdminWebOptions.TryLoad(out var options,out _))
+                return Task.FromResult(new OnlineSyncLaneOutcome(false,"admin_web_config_missing"));
+            string build;
+            try{build=PosWorkflowService.HistoricalCloudBuildIdentity;}
+            catch(InvalidOperationException){return Task.FromResult(new OnlineSyncLaneOutcome(false,"history_cloud_build_identity_required",terminal:true));}
+            return new PosHistoricalCloudSyncService(_factory).SynchronizeAsync(options,context,build,
+                ()=>CurrentGeneration?.Fingerprint==context.Generation.Fingerprint,ct);
         }
 
         private async Task<OnlineSyncLaneOutcome> RunCatalogImportAsync(

@@ -36,6 +36,7 @@ public sealed class ArticleMutationMigrationTests
             CatalogImportPlanSchema.Apply(connection, transaction);
             HistoricalSalesSchema.Apply(connection, transaction);
             HistoricalCloudSchema.Apply(connection, transaction);
+            HistoricalPublicationSchema.Apply(connection, transaction);
             transaction.Commit();
         }
 
@@ -77,7 +78,7 @@ public sealed class ArticleMutationMigrationTests
             SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(detector),
             "Fresh schema does not satisfy the current migration invariant.");
         Assert.AreEqual(
-            "0016-historical-cloud-replica",
+            "0017-historical-publication-outbox",
             SchemaMigrationRegistry.Latest.MigrationId);
     }
 

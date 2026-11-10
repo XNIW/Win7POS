@@ -94,7 +94,8 @@ Require-Text $registry 'DbInitializer\.DependentSchemaSql' "dependent bootstrap 
 Require-Text $registry 'DbInitializer\.PrBKnownSchemaSql' "ledgerless bootstrap is bounded to the frozen PR-B schema whitelist"
 Require-Text $registry 'IsRecognizedPostPr7LedgerlessBaseline' "post-PR7 ledgerless bootstrap uses a dedicated bounded baseline recognizer"
 Require-Text $registry 'HistoricalSalesSchema\.Apply,\s*IsPostHistoricalSchemaStructurallyValid,\s*IsRecognizedHistoricalSalesBaseline' "historical imports require the current schema invariant and explicit ledgerless baseline recognizer"
-Require-Text $registry 'HistoricalCloudSchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalCloudBaseline' "cloud replica requires its current schema invariant and explicit ledgerless baseline recognizer"
+Require-Text $registry 'HistoricalCloudSchema\.Apply,\s*IsPostHistoricalCloudSchemaStructurallyValid,\s*IsRecognizedHistoricalCloudBaseline' "cloud replica retains its frozen schema invariant and explicit ledgerless baseline recognizer"
+Require-Text $registry 'HistoricalPublicationSchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalPublicationBaseline' "publication outbox requires the latest invariant and its explicit ledgerless baseline recognizer"
 Require-Text $registry 'IsPostHistoricalSchemaStructurallyValid\(detector\) && HistoricalCloudSchema\.IsSatisfied\(detector\)' "current schema retains historical invariants before validating the cloud cache"
 Require-Text $registry 'IsCanonicalRegistry' "special ledgerless recognition is restricted to the canonical registry"
 Require-Text $migration 'RecognizesLedgerlessBaseline' "ledgerless baseline recognition is explicit migration metadata"
@@ -135,7 +136,8 @@ $expectedIds = @(
     "0013-catalog-import-recovery",
     "0014-catalog-import-plans-and-drafts",
     "0015-historical-card-imports",
-    "0016-historical-cloud-replica"
+    "0016-historical-cloud-replica",
+    "0017-historical-publication-outbox"
 )
 if (($ids -join "|") -ne ($expectedIds -join "|")) {
     Fail "registry is not the expected append-only ordered migration sequence"
@@ -160,7 +162,8 @@ $expectedChecksums = @(
     "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883",
     "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff",
     "9e04be2f76ee6ec7e7bd1eee99c4be59ee93e137277a0314747180274d0d720e",
-    "fdcb306ee7c0a7223938c3f6a40bfdf2b49330e628ea02320c4a32c3a1a84cb3"
+    "fdcb306ee7c0a7223938c3f6a40bfdf2b49330e628ea02320c4a32c3a1a84cb3",
+    "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or
@@ -172,7 +175,7 @@ if (-not $failed) { Pass "published ID-to-checksum mapping is pinned in registry
 
 $trueBeforeApplyCount = [regex]::Matches(
     $registry,
-    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply|HistoricalCloudSchema\.Apply)').Count
+    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply|HistoricalCloudSchema\.Apply|HistoricalPublicationSchema\.Apply)').Count
 if ($trueBeforeApplyCount -ne $expectedIds.Count) {
     Fail "every published PR-B migration must require a pre-migration backup"
 }

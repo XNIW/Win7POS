@@ -16,6 +16,15 @@ namespace Win7POS.Data.Import
     {
         private readonly SqliteConnectionFactory _factory;
         public HistoricalPreparedExportStore(SqliteConnectionFactory factory){_factory=factory??throw new ArgumentNullException(nameof(factory));}
+        public async Task DemandHistoricalPublicationsDrainedAsync(HistoricalCloudExportGuard guard,CancellationToken ct)
+        {
+            guard.DemandStillValid();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);
+            if(await c.ExecuteScalarAsync<long>(new CommandDefinition(@"SELECT COUNT(*) FROM historical_publication_outbox o
+LEFT JOIN historical_publication_delivery d ON d.operation_id=o.operation_id
+WHERE o.shop_id=@shop AND (d.operation_id IS NULL OR d.status<>'synchronized')",new{shop=guard.ShopId},cancellationToken:ct)).ConfigureAwait(false)!=0)
+                throw new InvalidOperationException("history_cloud_history_sync_required");
+            guard.DemandStillValid();
+        }
         public async Task DemandNativeSalesDrainedAsync(HistoricalCloudExportGuard guard,CancellationToken ct)
         {
             guard.DemandStillValid();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);

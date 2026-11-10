@@ -54,6 +54,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _busy, _legacyClp, _merchantLimitExceeded, _confirmingApply,_cloudLocalWriterClosed;
         private int _timeChoice;
         private string _temporalEvidence = "", _merchantEvidence = "", _overlapEvidence = "", _summary = "", _coverageDetails = "", _status = "", _shop = "";
+        private string _publicationStatus="",_receptionStatus="";
         private DateTime? _nativeStart;
         private HistoricalSalesBatch _selectedBatch;
         private long _readVersion;
@@ -62,6 +63,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _publicationAuthorityCurrent;
         private int _disposed;
         private readonly Dispatcher _dispatcher;
+        private int _refreshRequested, _refreshQueued;
         public HistoricalSalesImportViewModel(PosWorkflowService service, OperatorSession session)
         {
             _service = service; _session = session; _permissions = new PermissionService(session);
@@ -79,6 +81,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SyncCloudCommand = new HistoryCommand(()=>ExecuteAsync(async ct=>{await _service.SynchronizeHistoricalCloudAsync(_session,PosWorkflowService.HistoricalCloudBuildIdentity,ct);Status=T("cloudSynced");},PermissionCodes.RegisterViewAll),()=>!IsBusy&&_permissions.Has(PermissionCodes.RegisterViewAll));
             _session.SessionChanged += OnSessionChanged;
             PosOnlineSyncRevocationLatch.AuthorizationStateChanged += OnSessionChanged;
+            _service.ReportSnapshotCoordinator.SnapshotChanged += OnHistoricalSnapshotChanged;
+            _service.ReportSnapshotCoordinator.HistoricalSyncStatusChanged += OnHistoricalSnapshotChanged;
             _readExpiryTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, __) =>
             {
                 if (Volatile.Read(ref _publicationAuthorityCurrent) && !ImportReadAuthorityCurrent) OnSessionChanged();
@@ -96,6 +100,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool LocalHistoryWriterClosed=>_cloudLocalWriterClosed;
         public string Shop { get => _shop; private set { _shop = value; Changed(); } }
         public string Status { get => _status; private set { _status = value; Changed(); } }
+        public string PublicationStatus => ImportReadAuthorityCurrent?_publicationStatus:"";
+        public string ReceptionStatus => ImportReadAuthorityCurrent?_receptionStatus:"";
         public bool ImportReadAuthorityCurrent => Volatile.Read(ref _publicationAuthorityCurrent) &&
             _readVersion == _session.CurrentOperatorAuthorityVersion &&
             _readAuthority?.IsCurrentInMemory == true;
@@ -282,13 +288,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var batches = await _service.ReadHistoricalBatchesAsync(_session, ct).ConfigureAwait(true);
             DemandPublication(ct, PermissionCodes.RegisterViewAll);
             Batches.Clear(); foreach (var b in batches) Batches.Add(b);
+            var delivery=await _service.ReadHistoricalPublicationSummaryAsync(_session,ct).ConfigureAwait(true);
+            DemandPublication(ct,PermissionCodes.RegisterViewAll);
+            _publicationStatus=string.Format(CultureInfo.CurrentCulture,T("publicationState"),delivery.LocalOperations,delivery.Pending,delivery.Confirmed,delivery.Attention,delivery.Unregistered,
+                delivery.LastConfirmedRevision??T("notConfirmed"));Changed(nameof(PublicationStatus));
         }
-        private async Task ExecuteAsync(Func<CancellationToken, Task> work, string permission = PermissionCodes.RegisterImportHistory)
+        private async Task ExecuteAsync(Func<CancellationToken, Task> work, string permission = PermissionCodes.RegisterImportHistory, bool keepStatus = false)
         {
             if (IsBusy || Volatile.Read(ref _disposed) != 0) return;
             if (PosOnlineSyncRevocationLatch.ReadAuthorizationStamp().Inactive) return;
             using var operation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); _operation = operation; _readVersion = _session.CurrentOperatorAuthorityVersion;
-            Volatile.Write(ref _publicationAuthorityCurrent, false); IsBusy = true; Status = T("working");
+            Volatile.Write(ref _publicationAuthorityCurrent, false); IsBusy = true; if (!keepStatus) Status = T("working");
             try
             {
                 _readAuthority = _session.CaptureHistoricalUiReadAuthority(permission);
@@ -296,13 +306,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if(_permissions.Has(PermissionCodes.RegisterViewAll))
                 {
                     var cloud=await _service.ReadHistoricalCloudStateAsync(_session,operation.Token).ConfigureAwait(true);
+                    DemandPublication(operation.Token,permission);
                     _cloudLocalWriterClosed=cloud!=null&&(cloud.EverWeb!=0||cloud.WriterAuthority!="local");Changed(nameof(CanImport));Changed(nameof(LocalHistoryWriterClosed));
+                    _receptionStatus=cloud?.PublishedRevision==null?T("noCompleteCopy"):string.Format(CultureInfo.CurrentCulture,T("receptionState"),
+                        cloud.PublishedRevision.Value,cloud.LastSuccessUtcMs.HasValue?DateTimeOffset.FromUnixTimeMilliseconds(cloud.LastSuccessUtcMs.Value).ToLocalTime().ToString("g",CultureInfo.CurrentCulture):T("notConfirmed"),
+                        string.IsNullOrEmpty(cloud.StaleReason)&&cloud.PublishedRevision.Value>=cloud.ServerRevision?T("copyCurrent"):T("copyRetained"));Changed(nameof(ReceptionStatus));
                 }
                 await work(operation.Token).ConfigureAwait(true);
             }
             catch (OperationCanceledException) { Status = T("cancelled"); }
             catch (Exception e) { Status = e is InvalidOperationException && e.Message.StartsWith("history_cloud_",StringComparison.Ordinal) ? T("cloudFailed") : e is InvalidOperationException && e.Message.StartsWith("history_local_",StringComparison.Ordinal) ? T("localWriterClosed") : T("failed") + " " + (e is InvalidOperationException ? e.Message : e.GetType().Name); }
-            finally { _operation = null; IsBusy = false; Changed(nameof(CanEdit)); }
+            finally { _operation = null; IsBusy = false; Changed(nameof(CanEdit)); ScheduleHistoricalRefresh(); }
         }
         internal Task AnalyzeFilesForTestingAsync(IReadOnlyList<string> paths) { _paths = paths; return AnalyzeAsync(); }
         internal Task RefreshBatchesForTestingAsync() => RefreshBatchesAsync();
@@ -348,6 +362,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private static string ReceiptText(HistoricalSalesOperationReceipt receipt) => string.Format(CultureInfo.CurrentCulture, T("receipt"), receipt.OperationId, receipt.InsertedCount, receipt.DuplicateCount, receipt.RejectedCount, receipt.SignedAmountClp, receipt.CurrentBatchState) + " " + string.Format(CultureInfo.CurrentCulture, T("correctionCount"), receipt.CorrectionCount);
         private void InvalidateCorrections() { _plan = null; _correctionPreview = null; _correctionContext = null; _reviewedInput = null; _correctionsApproved = false; _correctionEvidence = ""; CorrectionSummary = ""; Changed(nameof(CorrectionsApproved)); Changed(nameof(CorrectionEvidence)); Changed(nameof(CanApproveCorrections)); }
         private void InvalidateAnalysis() { _analysis = null; _merchantLimitExceeded = false; InvalidateCorrections(); Summary = ""; CoverageDetails = ""; Merchants.Clear(); UpdateCommands(); }
+        private void OnHistoricalSnapshotChanged(object sender, EventArgs args)
+        {
+            Interlocked.Exchange(ref _refreshRequested, 1);
+            ScheduleHistoricalRefresh();
+        }
+        private void ScheduleHistoricalRefresh()
+        {
+            if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _refreshRequested) == 0 ||
+                _dispatcher.HasShutdownStarted || Interlocked.CompareExchange(ref _refreshQueued, 1, 0) != 0) return;
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(async () =>
+            {
+                try
+                {
+                    if (Volatile.Read(ref _disposed) != 0 || IsBusy) return;
+                    Interlocked.Exchange(ref _refreshRequested, 0);
+                    if (!_permissions.Has(PermissionCodes.RegisterViewAll)) return;
+                    var selectedOperation = SelectedBatch?.ApplyOperationId;
+                    await ExecuteAsync(async ct =>
+                    {
+                        await RefreshBatchesCoreAsync(ct).ConfigureAwait(true);
+                        SelectedBatch = Batches.FirstOrDefault(batch => batch.ApplyOperationId == selectedOperation);
+                    }, PermissionCodes.RegisterViewAll, keepStatus: true).ConfigureAwait(true);
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _refreshQueued, 0);
+                    if (!IsBusy) ScheduleHistoricalRefresh();
+                }
+            }));
+        }
         private void OnSessionChanged()
         {
             Volatile.Write(ref _publicationAuthorityCurrent, false);
@@ -356,6 +400,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 if (Volatile.Read(ref _disposed) != 0) return;
                 _operation?.Cancel(); _readAuthority = null; InvalidateAnalysis(); Batches.Clear(); SelectedBatch = null; Shop = "";
+                _publicationStatus="";_receptionStatus="";Changed(nameof(PublicationStatus));Changed(nameof(ReceptionStatus));
                 Status = T("authorizationChanged"); Changed(nameof(ImportReadAuthorityCurrent)); UpdateCommands();
             }));
         }
@@ -373,6 +418,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             Volatile.Write(ref _publicationAuthorityCurrent, false);
             _session.SessionChanged -= OnSessionChanged;
             PosOnlineSyncRevocationLatch.AuthorizationStateChanged -= OnSessionChanged;
+            _service.ReportSnapshotCoordinator.SnapshotChanged -= OnHistoricalSnapshotChanged;
+            _service.ReportSnapshotCoordinator.HistoricalSyncStatusChanged -= OnHistoricalSnapshotChanged;
             _readExpiryTimer.Stop();
             _lifetime.Cancel(); _lifetime.Dispose();
         }

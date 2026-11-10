@@ -24,6 +24,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
             using var pos = new PosViewModel(workflow, permissionService: new PermissionService(fixture.Operator), operatorSession: fixture.Operator);
             using var report = pos.CreateDailyReportViewModel();
+            void Checkpoint(string phase) => File.AppendAllText(Path.Combine(fixture.Root,"cart-maintenance-checkpoint.private.txt"),phase+Environment.NewLine);
+            Checkpoint("started");
             var focusRequests = 0;
             pos.FocusBarcodeRequested += () => focusRequests++;
             DispatcherTimer observer = null;
@@ -44,6 +46,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var expected = Fingerprint(original);
                 pos.StartInitialize();
                 await UntilAsync(() => !pos.IsBusy && pos.CartItems.Count == 2, deadline.Token);
+                Checkpoint("pos-initialized");
                 if (!pos.AddBarcodeCommand.CanExecute(null) || !pos.PayCommand.CanExecute(null) || !pos.ClearCartCommand.CanExecute(null) ||
                     pos.CartItems.Sum(x => x.LineTotal) != 3035 || !report.ImportHistoryCommand.CanExecute(null)) return false;
                 // Initialization only adds the normal synthetic demo catalog. Freeze the
@@ -69,13 +72,36 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         mutation = workflow.ApplyHistoricalSalesAsync(plan, fixture.Operator, deadline.Token);
                         await UntilAsync(() => workflow.IsHistoricalMaintenanceActive || mutation.IsCompleted, deadline.Token);
                         if (!workflow.IsHistoricalMaintenanceActive || mutation.IsCompleted) throw new InvalidOperationException("qa_cart_maintenance_not_reached");
+                        File.AppendAllText(Path.Combine(fixture.Root,"cart-maintenance-checkpoint.private.txt"),
+                            "maintenance-reached;cancelled="+deadline.IsCancellationRequested+Environment.NewLine);
                         var attempt = workflow.AddManualPriceAsync(999);
                         blocked = attempt.IsCompleted;
+                        Checkpoint("attempt-completed="+blocked);
+                        // A failed synchronous-block assertion must not deadlock
+                        // behind the deliberately held workflow gate. Release the
+                        // owned gate and observe the attempt before reporting FAIL.
+                        if (!blocked)
+                        {
+                            gate.Dispose();gate=null;
+                            try { await attempt; } catch (InvalidOperationException) { }
+                            throw new InvalidOperationException("qa_cart_mutation_not_immediately_blocked");
+                        }
                         try { await attempt; blocked = false; }
                         catch (InvalidOperationException error) { blocked &= error.Message == "historical_maintenance_active"; }
+                        Checkpoint("cancelling");
                         deadline.Cancel();
+                        Checkpoint("cancel-returned");
                         try { await mutation; }
                         catch (OperationCanceledException) { cancelled = true; }
+                        Checkpoint("mutation-ended");
+                        gate.Dispose();gate=null;
+                        // Authority/status notifications can have scheduled a
+                        // read-only refresh behind this deliberately held gate.
+                        // Drain it before closing; the real dialog correctly
+                        // refuses Close while its view model is busy.
+                        using (var closing=new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+                            await UntilAsync(()=>!(dialog.DataContext is HistoricalSalesImportViewModel model)||!model.IsBusy,closing.Token);
+                        dialog.Close();
                         modalResult.TrySetResult(true);
                     }
                     catch (Exception error) { modalResult.TrySetException(error); }
@@ -90,7 +116,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 // The nested dispatcher observes the command states while this call is open.
                 report.ImportHistoryCommand.Execute(null);
                 await modalResult.Task;
+                Checkpoint("modal-ended");
                 var after = await workflow.GetSnapshotAsync();
+                Checkpoint("snapshot-read");
                 return entered && blocked && cancelled && observedDialog != null && !observedDialog.IsVisible &&
                     !workflow.IsHistoricalMaintenanceActive && !pos.IsBusy && pos.AddBarcodeCommand.CanExecute(null) &&
                     pos.PayCommand.CanExecute(null) && pos.ClearCartCommand.CanExecute(null) && focusRequests > 0 &&

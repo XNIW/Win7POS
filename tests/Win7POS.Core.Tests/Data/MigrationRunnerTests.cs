@@ -35,11 +35,12 @@ public sealed class MigrationRunnerTests
             ["0013-catalog-import-recovery"] = "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883",
             ["0014-catalog-import-plans-and-drafts"] = "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff",
             ["0015-historical-card-imports"] = "9e04be2f76ee6ec7e7bd1eee99c4be59ee93e137277a0314747180274d0d720e",
-            ["0016-historical-cloud-replica"] = "fdcb306ee7c0a7223938c3f6a40bfdf2b49330e628ea02320c4a32c3a1a84cb3"
+            ["0016-historical-cloud-replica"] = "fdcb306ee7c0a7223938c3f6a40bfdf2b49330e628ea02320c4a32c3a1a84cb3",
+            ["0017-historical-publication-outbox"] = "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b"
         };
 
-        Assert.AreEqual(16, migrations.Count);
-        Assert.AreEqual("0016-historical-cloud-replica", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(17, migrations.Count);
+        Assert.AreEqual("0017-historical-publication-outbox", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -153,7 +154,7 @@ WHERE code = 'SNAPSHOT-BASELINE';"),
             OptionsThatCountBackups(() => backups++)).Run();
         Assert.AreEqual(1, backups);
         CollectionAssert.AreEqual(SchemaMigrationRegistry.All.Take(14).Select(x => x.MigrationId).ToArray(), result.BootstrappedMigrationIds.ToArray());
-        CollectionAssert.AreEqual(new[] { "0015-historical-card-imports","0016-historical-cloud-replica" }, result.AppliedMigrationIds.ToArray());
+        CollectionAssert.AreEqual(new[] { "0015-historical-card-imports","0016-historical-cloud-replica","0017-historical-publication-outbox" }, result.AppliedMigrationIds.ToArray());
         AssertLatestLedger(database.Factory);
         using var verify = database.Factory.Open();
         Assert.AreEqual(1L, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_dataset"));
@@ -229,7 +230,7 @@ VALUES('PRE-0007', 2, 750, 750, 0, 0);");
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox"
             },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
@@ -279,7 +280,7 @@ VALUES('perf2a.migration-probe', 'preserve-before-0009');");
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox"
             },
             first.AppliedMigrationIds.ToArray());
         Assert.IsTrue(second.WasNoOp);
@@ -617,6 +618,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
     [TestMethod]
     [DataRow(14,"0015-historical-card-imports")]
     [DataRow(15,"0016-historical-cloud-replica")]
+    [DataRow(16,"0017-historical-publication-outbox")]
     public void CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor(int prefix,string successor)
     {
         using var database = MigrationDatabase.Create();

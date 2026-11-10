@@ -181,7 +181,7 @@ ORDER BY migration_id;").ToArray();
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox"
             },
             appliedIds,
             "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0015.");
@@ -206,7 +206,7 @@ ORDER BY migration_id;").ToArray();
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox"
             },
             appliedIds,
             "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0015.");
@@ -237,7 +237,7 @@ ORDER BY migration_id;").ToArray();
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox"
             },
             appliedIds,
             "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009-0015.");

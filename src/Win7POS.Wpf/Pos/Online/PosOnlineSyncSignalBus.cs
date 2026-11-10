@@ -4,6 +4,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Wpf.Pos.Online
 {
@@ -37,13 +38,14 @@ namespace Win7POS.Wpf.Pos.Online
             Func<OnlineSyncLane, OnlineSyncLaneTrigger, CancellationToken,
                 Task<OnlineSyncLaneOutcome>> trigger,
             Func<Task> stop,
-            Func<CancellationToken, Task> resume)
+            Func<CancellationToken, Task> resume,
+            IOnlineSyncCredentialedRequestExecutor requestHost = null)
         {
             if (signal == null) throw new ArgumentNullException(nameof(signal));
             if (trigger == null) throw new ArgumentNullException(nameof(trigger));
             if (stop == null) throw new ArgumentNullException(nameof(stop));
             if (resume == null) throw new ArgumentNullException(nameof(resume));
-            var registration = new Registration(signal, trigger, stop, resume);
+            var registration = new Registration(signal, trigger, stop, resume, requestHost);
             var pauseForMaintenance = false;
             lock (Gate)
             {
@@ -91,6 +93,17 @@ namespace Win7POS.Wpf.Pos.Online
                     "sync_supervisor_inactive",
                     terminal: true))
                 : handler(lane, trigger, cancellationToken);
+        }
+
+        public static Task<T> ExecuteCredentialedRequestAsync<T>(OnlineSyncGeneration expected,
+            OnlineSyncLane lane,Func<OnlineSyncRequestCredentials,CancellationToken,Task<T>> request,
+            Func<T,string> authenticationDenialCode,CancellationToken ct)
+        {
+            IOnlineSyncCredentialedRequestExecutor host;
+            lock(Gate)host=_maintenanceDepth>0||_resumePending?null:_registration?.RequestHost;
+            return host==null
+                ?Task.FromException<T>(new OnlineSyncGenerationChangedException())
+                :host.ExecuteCredentialedRequestAsync(expected,lane,request,authenticationDenialCode,ct);
         }
 
         public static async Task StopAsync()
@@ -246,12 +259,14 @@ namespace Win7POS.Wpf.Pos.Online
                 Func<OnlineSyncLane, OnlineSyncLaneTrigger, CancellationToken,
                     Task<OnlineSyncLaneOutcome>> triggerHandler,
                 Func<Task> stopHandler,
-                Func<CancellationToken, Task> resumeHandler)
+                Func<CancellationToken, Task> resumeHandler,
+                IOnlineSyncCredentialedRequestExecutor requestHost)
             {
                 SignalHandler = signalHandler;
                 TriggerHandler = triggerHandler;
                 StopHandler = stopHandler;
                 ResumeHandler = resumeHandler;
+                RequestHost = requestHost;
             }
 
             public Action<OnlineSyncLane, OnlineSyncLaneTrigger> SignalHandler { get; }
@@ -259,6 +274,7 @@ namespace Win7POS.Wpf.Pos.Online
                 Task<OnlineSyncLaneOutcome>> TriggerHandler { get; }
             public Func<Task> StopHandler { get; }
             public Func<CancellationToken, Task> ResumeHandler { get; }
+            public IOnlineSyncCredentialedRequestExecutor RequestHost { get; }
 
             public void Dispose()
             {

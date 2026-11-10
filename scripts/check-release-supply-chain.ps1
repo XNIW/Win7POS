@@ -147,15 +147,17 @@ $u2IdempotencyFalsePositives = @(
     "0cadf54369d6e9bb7f60d1b26d3bf8ac7752c8b1:tests/fixtures/pos-catalog-import-receipt-v1/correction.request.json:generic-api-key:47"
 )
 $missingU2IdempotencyFalsePositives = @($u2IdempotencyFalsePositives | Where-Object { $ignoreLines -cnotcontains $_ })
-if ($ignoreLines.Count -ne 20 -or
+$asusWorklogFalsePositive = "cc6128f448cd36089f1c470a21885091efa4de3c:docs/AI_WORKLOG.md:generic-api-key:9"
+if ($ignoreLines.Count -ne 21 -or
     $invalidIgnoreLines.Count -ne 0 -or
     $ignoreLines -cnotcontains $perf2bFalsePositive -or
     $ignoreLines -cnotcontains $f4OutboxFalsePositive -or
     $ignoreLines -cnotcontains $f4ReserveOutboxFalsePositive -or
-    $missingU2IdempotencyFalsePositives.Count -ne 0) {
-    Fail "Gitleaks history exceptions must be twenty reviewed exact commit/path/rule/line fingerprints"
+    $missingU2IdempotencyFalsePositives.Count -ne 0 -or
+    $ignoreLines -cnotcontains $asusWorklogFalsePositive) {
+    Fail "Gitleaks history exceptions must be twenty-one reviewed exact commit/path/rule/line fingerprints"
 }
-else { Pass "Gitleaks history exceptions are twenty reviewed exact fingerprints with no wildcard" }
+else { Pass "Gitleaks history exceptions are twenty-one reviewed exact fingerprints with no wildcard" }
 
 $securityWorkflow = Read-RequiredText ".github\workflows\security-supply-chain.yml"
 $releaseWorkflow = Read-RequiredText ".github\workflows\release-pack.yml"

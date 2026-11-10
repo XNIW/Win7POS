@@ -159,7 +159,8 @@ namespace Win7POS.Wpf.Pos.Online
                     registeredHost.Signal,
                     (lane, trigger, token) => registeredHost.TriggerAsync(lane, trigger, token),
                     () => StopForMaintenanceAsync(registeredHost),
-                    token => ResumeAfterMaintenanceAsync(registeredHost, token));
+                    token => ResumeAfterMaintenanceAsync(registeredHost, token),
+                    requestHost: registeredHost);
 
                 EnsureSession(factory);
                 _factory = factory;
@@ -343,6 +344,7 @@ namespace Win7POS.Wpf.Pos.Online
             host.Signal(OnlineSyncLane.CatalogImportOutbox, trigger);
             host.Signal(OnlineSyncLane.ArticleMutationOutbox, trigger);
             host.Signal(OnlineSyncLane.CustomerOrders, trigger);
+            host.Signal(OnlineSyncLane.HistoricalPayments, trigger);
         }
 
         public async Task<CatalogSyncRunResult> TriggerAdaptiveOnlineRefreshAsync(
@@ -409,6 +411,9 @@ namespace Win7POS.Wpf.Pos.Online
                     code: "catalog_sync_full_repair_required");
             }
 
+            // Discovery is owned by the existing history lane. Its network turn
+            // must not extend a foreground catalog refresh's response time.
+            host.Signal(OnlineSyncLane.HistoricalPayments, trigger);
             var heartbeatTask = host.TriggerAsync(
                 OnlineSyncLane.Heartbeat,
                 trigger,

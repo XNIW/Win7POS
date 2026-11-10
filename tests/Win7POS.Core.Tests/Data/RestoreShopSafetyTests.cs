@@ -11,6 +11,35 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class RestoreShopSafetyTests
 {
     [TestMethod]
+    public async Task CandidateLiveAndReview_RejectUnresolvedHistoricalPublicationIncludingAttention()
+    {
+        using var db=TestDb.Create();await SaveShopAsync(db.Factory,"shop-a","SHOP-A");
+        var binding=await new CatalogShopStateRepository(db.Factory).EnsureAndLoadCursorAsync("shop-a","SHOP-A");
+        using(var c=db.Factory.Open())
+        using(var t=c.BeginTransaction())
+        {
+            // Synthetic historical facts only. Native sales and their queue stay empty.
+            c.Execute(@"INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,state,created_at)
+SELECT 'fixture-batch','shop-a',dataset_id,'fixture-operation','Active',1 FROM historical_import_dataset;
+INSERT INTO historical_import_operation(operation_id,operation_kind,shop_id,dataset_id,request_fingerprint,batch_id,operator_id,created_at,receipt_json,inserted_count,duplicate_count,signed_amount_clp)
+SELECT 'fixture-operation','Apply','shop-a',dataset_id,'fixture-fingerprint','fixture-batch',1,1,'{}',0,0,0 FROM historical_import_dataset;
+INSERT INTO historical_publication_outbox(operation_id,shop_id,device_id,local_dataset_id,restore_epoch,local_revision,operation_kind,request_fingerprint,content_digest,protocol_version,receipt_json,page_count,created_at)
+SELECT 'fixture-operation','shop-a','fixture-device',dataset_id,0,0,'Apply','fixture-fingerprint','fixture-digest',2,'{}',1,1 FROM historical_import_dataset;
+INSERT INTO historical_publication_page VALUES('fixture-operation',1,'[]','fixture-page-digest');
+INSERT INTO historical_publication_delivery(operation_id,status,reason_code) VALUES('fixture-operation','needs_attention','history_publication_proof_missing');",transaction:t);
+            t.Commit();
+        }
+        var settings=new SettingsRepository(db.Factory);await settings.SetBoolAsync(RestoreShopSafetyRepository.RestoreNeedsReviewKey,true);
+        var safety=new RestoreShopSafetyRepository(db.Factory);
+        Assert.AreEqual("restore_candidate_outbox_unresolved",(await safety.ValidateCandidateAsync("shop-a","SHOP-A")).Code);
+        Assert.AreEqual("restore_live_history_outbox_unresolved",(await safety.ValidateLivePreSwapAsync("shop-a","SHOP-A",binding.Epoch)).Code);
+        Assert.AreEqual("restore_review_outbox_unresolved",(await safety.CompleteReviewAsync()).Code);
+        Assert.IsTrue(await settings.GetBoolAsync(RestoreShopSafetyRepository.RestoreNeedsReviewKey));
+        using var verify=db.Factory.Open();Assert.AreEqual(1L,verify.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox"));
+        Assert.AreEqual(0L,verify.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox"));
+    }
+
+    [TestMethod]
     public async Task CandidateValidation_RejectsCrossShopSnapshotAndAnyUnresolvedOutbox()
     {
         using var crossShop = TestDb.Create();

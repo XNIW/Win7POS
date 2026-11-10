@@ -1,7 +1,7 @@
 #requires -Version 7.4
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Smoke','Load','CrashProbe')][string]$Mode,
+    [Parameter(Mandatory)][ValidateSet('Smoke','Load','CrashProbe','CloudSync')][string]$Mode,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [Parameter(Mandatory)][string]$ContextFile,
     [string]$HarnessDirectory=''
@@ -48,6 +48,7 @@ function Get-HistoryWorkerPhase([string]$Name) {
         'HIST_B_ENTRYPOINT_AUTHORITY' {return @{id='entrypoint';limit=120000}}
         'HIST_B_BACKUP_RESTORE' {return @{id='backup-restore';limit=45000}}
         'smoke' {return @{id='smoke';limit=60000}}
+        'cloudsync' {return @{id='cloudsync';limit=60000}}
         'load' {return @{id='load';limit=180000}}
         'checkpoint-report' {return @{id='checkpoint-report';limit=20000}}
         default {throw 'qa_history_worker_phase_invalid'}
@@ -165,7 +166,7 @@ try {
     $receiptPath=Join-Path $output $contract.file
     if (Test-Path -LiteralPath $receiptPath) {throw 'qa_history_receipt_identity_reused'}
     if ($Mode -ne 'CrashProbe') {
-        $flag=if ($Mode -eq 'Smoke') {'--historical-sales-import-smoke'} else {'--historical-sales-import-load'}
+        $flag=if ($Mode -eq 'CloudSync') {'--historical-cloud-sync-probe'} elseif ($Mode -eq 'Smoke') {'--historical-sales-import-smoke'} else {'--historical-sales-import-load'}
         $rawExit=Invoke-HistoryWorker -Arguments ($base+@($flag,'--receipt',$receiptPath)) -Name ($Mode.ToLowerInvariant())
         if ($rawExit -ne 0) {throw 'qa_history_harness_failed'}
         $receipt=Read-HistoricalSalesQaJson $receiptPath

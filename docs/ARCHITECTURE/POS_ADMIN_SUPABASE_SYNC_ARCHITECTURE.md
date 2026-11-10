@@ -92,8 +92,17 @@ Admin Web accepts a new idempotency key once, treats same key/hash as duplicate/
 
 - Same `idempotencyKey` and same `payloadHash`: duplicate/idempotent success, no duplicate product/price/sync events.
 - Same `idempotencyKey` and different `payloadHash`: conflict; local row becomes `failed_blocked`.
-- Same barcode changed in Admin Web while POS was offline: Admin Web/Supabase remains authoritative; next catalog pull reconciles local cache.
+- A remote change for an article with pending local intent updates the remote
+  shadow/base through `RemoteCatalogProductWriter`; it preserves the local
+  overlay and immutable mutation payload/baseRevision. A stale base produces an
+  explicit conflict. It does not discard local changes or use computer timestamps
+  to select a financial winner. See `POS_ARTICLE_MUTATION_SYNC_V1.md`.
 - Remote tombstone vs local active product: pull applies local soft tombstone, never hard delete.
+- With protected local intent, the tombstone is retained in the authoritative
+  shadow/base until the corresponding conflict/dependency is resolved; a remote
+  apply is not a new local save. `RemoteCatalogApply` and `ArticleMutationAck`
+  cannot enqueue another mutation. Pull-before-ACK price ownership is reconciled
+  by exact remote price ID, not by amount/time coincidence.
 - Local import without `remote_product_id`: ACK maps remote ids when returned; catalog pull reconciles barcode to `remote_product_id` when ACK lacks ids.
 - Price conflict: remote price history is keyed by product/type/effective time; POS stores returned `remote_price_id` against the original local import client item.
 

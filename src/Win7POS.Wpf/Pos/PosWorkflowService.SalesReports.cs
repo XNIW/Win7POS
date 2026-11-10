@@ -21,6 +21,8 @@ namespace Win7POS.Wpf.Pos
 
     public sealed partial class PosWorkflowService
     {
+        internal SalesReportSnapshotCoordinator ReportSnapshotCoordinator => SalesReportSnapshotCoordinator.ForDatabase(_factory.DbPath);
+
         public Task<SalesReportContext> OpenAnalyticalReportAsync(DateTime fromInclusive, DateTime toExclusive,
             SalesReportOrigins origins, bool canViewAllOperators, int? operatorId, string referenceSearch, CancellationToken cancellationToken, IEnumerable<DateTime> selectedDates = null)
         {

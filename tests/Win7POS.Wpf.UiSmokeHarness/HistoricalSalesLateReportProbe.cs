@@ -11,7 +11,7 @@ using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.UiSmokeHarness
 {
-    internal static class HistoricalSalesLateReportProbe
+    internal static partial class HistoricalSalesLateReportProbe
     {
         internal static async Task<bool> RunAsync(string data, HistoricalSalesQaCase test)
             => await RunCaseAsync(data, test, false) && await RunCaseAsync(data, test, true);

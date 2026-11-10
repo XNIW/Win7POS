@@ -218,8 +218,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 Envelope = new HistoricalSalesQaEnvelope
                 {
-                    SchemaVersion = mode == "Load" ? "win7pos-historical-sales-load-v2" : mode == "Smoke" ? "win7pos-historical-sales-qa-v3" : "win7pos-historical-sales-foundation-v3",
-                    ProtocolVersion = mode == "Load" ? 2 : 3,
+                    SchemaVersion = mode == "CloudSync" ? "win7pos-historical-cloud-sync-v1" : mode == "Load" ? "win7pos-historical-sales-load-v2" : mode == "Smoke" ? "win7pos-historical-sales-qa-v3" : "win7pos-historical-sales-foundation-v3",
+                    ProtocolVersion = mode == "CloudSync" ? 1 : mode == "Load" ? 2 : 3,
                     RunId = Context.RunId, RunNonce = Context.RunNonce, SourceSha = Context.SourceSha, SourceFingerprintSha256 = Context.SourceFingerprintSha256,
                     HarnessSha256 = Context.HarnessSha256, WpfSha256 = Context.WpfSha256, FixtureVersion = Context.FixtureVersion, FixtureSha256 = Context.FixtureSha256, TimePolicyVersion = Context.TimePolicyVersion,
                     StartedAtUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture), StartedTicks = Stopwatch.GetTimestamp(), Summary = new HistoricalSalesQaSummary { Expected = _contract.Count },
@@ -305,6 +305,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
         internal static Dictionary<string, string[]> Contract(string mode)
         {
+            if(mode=="CloudSync")return new Dictionary<string,string[]>(StringComparer.Ordinal){["HIST_C_OPEN_REPLICA"]=new[]{"open_view_convergence"}};
             if (mode == "Smoke") return new Dictionary<string, string[]>(StringComparer.Ordinal)
             {
                 ["HIST01_PROFILES_PREVIEW"] = new[] { "profiles_detected", "header_mapping", "exact_values", "text_ids", "policy_visible", "invalid_input_blocked" },
