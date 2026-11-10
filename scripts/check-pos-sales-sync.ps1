@@ -135,12 +135,12 @@ if ($sync -notmatch "duplicate" -or $sync -notmatch "idempotent" -or $sync -notm
 
 if ($transactionWriter -notmatch "InsertSaleAsync" -or $transactionWriter -notmatch "ApplyLocalStockMovementsAsync" -or $transactionWriter -notmatch "EnqueueSalesSyncOutboxAsync" -or $transactionWriter -notmatch "tx\.Commit\(\)") { Fail "sale save must persist sale, stock movement and outbox in one transaction through F6" } else { Pass "sale save persists sale, stock and outbox together through F6" }
 if ($transactionWriter -notmatch "sale\.Kind\s*==\s*\(int\)SaleKind\.Sale" -or
-    $transactionWriter -notmatch "RequireSaleSafeForOrdinarySaleAsync\(conn, tx\)" -or
+    $transactionWriter -notmatch "RequireSaleSafeForOrdinarySaleAsync\(conn, tx, sale, lines, authorizationCommitGuard\)" -or
     $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_binding_partial" -or
     $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_repair_required" -or
     $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_not_sale_safe" -or
     $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_exactness_shop_mismatch" -or
-    $transactionWriter.IndexOf("RequireSaleSafeForOrdinarySaleAsync(conn, tx)") -gt $transactionWriter.IndexOf("ApplyLocalStockMovementsAsync")) {
+    $transactionWriter.IndexOf("RequireSaleSafeForOrdinarySaleAsync(conn, tx, sale, lines, authorizationCommitGuard)") -gt $transactionWriter.IndexOf("ApplyLocalStockMovementsAsync")) {
     Fail "ordinary sale persistence must enforce catalog sale-safe state inside the sale transaction before stock/outbox writes"
 } else {
     Pass "ordinary sale persistence enforces catalog sale-safe state atomically before stock/outbox writes"

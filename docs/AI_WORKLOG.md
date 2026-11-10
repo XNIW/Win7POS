@@ -1,6 +1,21 @@
 # AI Worklog – Win7POS
 
 <!-- ASUS019_CURRENT_START -->
+## Stato corrente — ASUS019 carrello reale e sync automatica, ACTIVE
+
+Successore WIP del ramo PR136; installato2ad42ca conservato, POS chiuso. Ingresso
+con vera VM/scanner dopo autorizzazione locale, supervisor automatico, stato
+pubblicato distinto dai tentativi, provenienza locale/manuale e guard al commit.
+Core175/175, required50/50, AUTH69 assert, integrated/F05 e storico8/52 PASS di
+sviluppo; precedenti FAIL conservati. Build08 net48/x860warning. Qualifica
+congelata, CI/pacchetto e consegna nuovi aperti, nessun PASS trasferito.
+[Execution](plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md) e
+[handoff mobile](plans/ASUS-W7POS-019_GETNET_HISTORY/HANDOFF_MOBILE.md).
+Cloud futuro distinto, nessun deploy/merge;200% mantenuto,100/125 differiti,
+Win7 fisico indisponibile, moderni Getnet senza prova C. Nessun DONE.
+
+<details><summary>Checkpoint precedente5d8e704</summary>
+
 ## Stato corrente —5d8e704 qualificato, consegna reale aperta
 
 Stessa ASUS019/R3 ACTIVE: Windows-All15/15 PASS (Core1745, functional22,
@@ -15,6 +30,8 @@ vecchi kit invariati. Moderni C MISSING e CSV_INPUT BLOCKED_INPUT separati.
 Admin B/C soltanto Planning pubblicato d202332, nessun backend cambiato.
 Dettagli e riferimenti: [report canonico](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
 Le sezioni sotto sono checkpoint storici, non lo stato corrente. Nessun DONE.
+
+</details>
 <!-- ASUS019_CURRENT_END -->
 Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significativa.
 

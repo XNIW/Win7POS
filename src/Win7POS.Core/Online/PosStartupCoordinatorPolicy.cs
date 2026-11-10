@@ -2,12 +2,22 @@ using Win7POS.Core.Security;
 
 namespace Win7POS.Core.Online
 {
+    public sealed class PosPublishedCatalogState
+    {
+        public PosPublishedCatalogState(bool remoteSaleSafe, bool authoritativelyEmpty, bool recoveryRequired)
+        { RemoteSaleSafe = remoteSaleSafe; AuthoritativelyEmpty = authoritativelyEmpty; RecoveryRequired = recoveryRequired; }
+        public bool RemoteSaleSafe { get; }
+        public bool AuthoritativelyEmpty { get; }
+        public bool RecoveryRequired { get; }
+    }
+
     public enum PosShellReadiness
     {
         Blocked = 0,
         Recovery,
         AuthenticatedEmpty,
-        SaleReady
+        SaleReady,
+        AuthenticatedPending
     }
 
     public sealed class PosShellAdmission
@@ -15,10 +25,12 @@ namespace Win7POS.Core.Online
         internal PosShellAdmission(PosShellReadiness readiness) { Readiness = readiness; }
         public PosShellReadiness Readiness { get; }
         public bool CanEnterShell => Readiness != PosShellReadiness.Blocked;
-        public bool CanUseNormalNavigation => Readiness == PosShellReadiness.AuthenticatedEmpty || Readiness == PosShellReadiness.SaleReady;
+        public bool CanUseNormalNavigation => CanUsePosWorkspace;
+        public bool CanUsePosWorkspace => Readiness == PosShellReadiness.AuthenticatedEmpty ||
+            Readiness == PosShellReadiness.AuthenticatedPending || Readiness == PosShellReadiness.SaleReady;
+        // Compatibility: this describes the published remote catalog, not permission to pay.
         public bool CanSell => Readiness == PosShellReadiness.SaleReady;
-        public PosShellMode ShellMode => CanSell ? PosShellMode.Pos :
-            Readiness == PosShellReadiness.AuthenticatedEmpty ? PosShellMode.AuthenticatedEmpty : PosShellMode.Recovery;
+        public PosShellMode ShellMode => CanUsePosWorkspace ? PosShellMode.Pos : PosShellMode.Recovery;
     }
 
     /// <summary>
@@ -49,7 +61,7 @@ namespace Win7POS.Core.Online
             if (isSafeStart || recoveryRequired || (catalogSaleSafe && catalogAuthoritativelyEmpty))
                 return new PosShellAdmission(PosShellReadiness.Recovery);
             return new PosShellAdmission(catalogSaleSafe ? PosShellReadiness.SaleReady :
-                catalogAuthoritativelyEmpty ? PosShellReadiness.AuthenticatedEmpty : PosShellReadiness.Recovery);
+                catalogAuthoritativelyEmpty ? PosShellReadiness.AuthenticatedEmpty : PosShellReadiness.AuthenticatedPending);
         }
 
         public static bool CanCompleteRecoveryExit(

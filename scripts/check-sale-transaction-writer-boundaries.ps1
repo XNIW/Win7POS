@@ -391,7 +391,7 @@ if ($saleWriters.Count -ne 1) {
         [pscustomobject]@{ Name = "default-kind guard"; Pattern = "if \(sale\.Kind == 0\)" },
         [pscustomobject]@{ Name = "default sale kind"; Pattern = "sale\.Kind\s*=\s*\(int\)SaleKind\.Sale" },
         [pscustomobject]@{ Name = "ordinary-kind guard"; Pattern = "if \(sale\.Kind == \(int\)SaleKind\.Sale\)" },
-        [pscustomobject]@{ Name = "ordinary sale-safe barrier"; Pattern = "RequireSaleSafeForOrdinarySaleAsync\(conn\s*,\s*tx\)" },
+        [pscustomobject]@{ Name = "ordinary sale-safe barrier"; Pattern = "RequireSaleSafeForOrdinarySaleAsync\(conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\s*,\s*authorizationCommitGuard\)" },
         [pscustomobject]@{ Name = "reversal boundary"; Pattern = "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync\(conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\)" },
         [pscustomobject]@{ Name = "sale header"; Pattern = "INSERT\s+INTO\s+sales\(" },
         [pscustomobject]@{ Name = "client sale id"; Pattern = "EnsureClientSaleIdAsync\(conn\s*,\s*tx\s*,\s*saleId\)" },

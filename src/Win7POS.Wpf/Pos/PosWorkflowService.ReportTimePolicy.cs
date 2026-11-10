@@ -20,6 +20,16 @@ namespace Win7POS.Wpf.Pos
 
     public sealed partial class PosWorkflowService
     {
+        internal async Task<bool> HasVerifiedNativeReportPolicyAsync(OperatorSession session, CancellationToken token)
+        {
+            if (session == null || !session.IsLoggedIn || !session.EnsureAuthorizationValid()) return false;
+            var version = session.CurrentOperatorAuthorityVersion;
+            var official = await _officialShopSnapshots.GetAsync().ConfigureAwait(false);
+            if (official == null || string.IsNullOrWhiteSpace(official.ShopId)) return false;
+            var policy = await new SalesReportTimePolicyRepository(_factory).GetActiveAsync(official.ShopId, token).ConfigureAwait(false);
+            return policy != null && ReferenceEquals(session, OperatorSessionHolder.Current) &&
+                session.CurrentOperatorAuthorityVersion == version && session.IsLoggedIn && session.EnsureAuthorizationValid();
+        }
         public Task<SalesReportTimePolicyActivationResult> ConfigureSalesReportTimePolicyAsync(ApprovedSalesReportTimePolicy approved,
             string evidenceReference, HistoricalImportContext reviewedContext, OperatorSession session, CancellationToken cancellationToken)
         {

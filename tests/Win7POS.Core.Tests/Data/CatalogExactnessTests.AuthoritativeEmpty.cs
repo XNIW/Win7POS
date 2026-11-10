@@ -225,12 +225,12 @@ WHERE key IN (@safe, @completed) AND TRIM(value) <> '';",
                 new { key = CatalogShopStateRepository.FullRefreshRequiredAfterEmptyKey });
         }
         Assert.IsTrue(await state.RequiresFullRefreshAfterEmptyAsync());
-        Assert.AreEqual(CatalogShopStateRepository.FullRefreshRequiredAfterEmptyCode,
+        Assert.AreEqual(CatalogSaleSafetyPolicy.RepairRequiredCode,
             (await state.EvaluateSaleSafetyForOfficialShopAsync()).ReasonCode);
     }
 
     [TestMethod]
-    public async Task AuthoritativeEmpty_IncompleteNewAttemptInvalidatesPreviousObservation()
+    public async Task AuthoritativeEmpty_IncompleteNewAttemptPreservesPublishedObservation()
     {
         using var db = TestDb.Create();
         var stage = await StageEmptySnapshotAsync(db, "empty-retry");
@@ -242,7 +242,7 @@ WHERE key IN (@safe, @completed) AND TRIM(value) <> '';",
             stage.FullRunId, Summary(0, 0, 0, 0), incomplete, stage.Fence);
 
         Assert.AreEqual("catalog_authoritative_stage_incomplete", code);
-        Assert.IsFalse(await new CatalogShopStateRepository(db.Factory).IsAuthoritativelyEmptyAsync(stage.Generation));
+        Assert.IsTrue(await new CatalogShopStateRepository(db.Factory).IsAuthoritativelyEmptyAsync(stage.Generation));
     }
 
     [TestMethod]
@@ -415,6 +415,50 @@ WHERE key IN (@safe, @completed) AND TRIM(value) <> '';",
                 { FullRunId = stage.FullRunId, PageNumber = 1, HasMore = hasMore }
             }, CancellationToken.None, stage.Fence);
         return stage;
+    }
+
+    [TestMethod]
+    public async Task PublishedEmpty_ReadDoesNotJoinNetworkBarrier_AndRejectionDoesNotUnpublish()
+    {
+        using var db=TestDb.Create();var stage=await StageEmptySnapshotAsync(db,"published-read");
+        Assert.AreEqual(string.Empty,await ConfirmEmptySnapshotAsync(db,stage));
+        var state=new CatalogShopStateRepository(db.Factory);
+        Task<PosPublishedCatalogState> read;bool completed;
+        using(await new CatalogShopTransitionBarrier(db.Factory).EnterAsync())
+        {
+            read=Task.Run(()=>state.ReadPublishedSnapshotAsync(stage.Generation));
+            completed=await Task.WhenAny(read,Task.Delay(250))==read;
+        }
+        var published=await read.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.IsTrue(completed,"Published reads must not wait for the network transition lease.");
+        Assert.IsTrue(published.AuthoritativelyEmpty);Assert.IsFalse(published.RemoteSaleSafe);
+        await state.StoreAttemptExactnessAsync(stage.ShopId,stage.ShopCode,new CatalogExactnessResult
+        {Code="synthetic_candidate_rejected",Status=CatalogCompletenessStatus.Mismatch,RepairRequired=true},
+            stage.Fence.ExpectedEpoch,stage.Fence.ExpectedPreviousCursor,stage.Fence.ExpectedPreviousMode,stage.Generation);
+        published=await state.ReadPublishedSnapshotAsync(stage.Generation);
+        Assert.IsTrue(published.AuthoritativelyEmpty);Assert.IsFalse(published.RemoteSaleSafe);
+        Assert.IsFalse(published.RecoveryRequired);
+    }
+
+    [TestMethod]
+    public async Task PublishedNonempty_CandidateFailureDoesNotInvalidateOperationalSnapshot()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        var stage = await CreateAuthoritativeStageAsync(db, "candidate-rejection");
+        var state = new CatalogShopStateRepository(db.Factory);
+        await CatalogExactnessTestFixture.SeedVerifiedAsync(db.Factory, stage.ShopId, stage.ShopCode);
+        await state.StoreSaleSafeAsync(stage.ShopId, stage.ShopCode, "2026-11-07T01:00:00Z",
+            stage.Fence.ExpectedEpoch, generation: stage.Generation);
+        Assert.IsTrue((await state.ReadPublishedSnapshotAsync(stage.Generation)).RemoteSaleSafe);
+        await state.StoreAttemptExactnessAsync(stage.ShopId, stage.ShopCode, new CatalogExactnessResult
+        { Code = "candidate_count_mismatch", Status = CatalogCompletenessStatus.Mismatch, RepairRequired = true },
+            stage.Fence.ExpectedEpoch, stage.Fence.ExpectedPreviousCursor, stage.Fence.ExpectedPreviousMode, stage.Generation);
+        var published = await state.ReadPublishedSnapshotAsync(stage.Generation);
+        Assert.IsTrue(published.RemoteSaleSafe);
+        Assert.IsFalse(published.AuthoritativelyEmpty);
+        Assert.IsFalse(published.RecoveryRequired);
+        Assert.AreEqual(CatalogCompletenessStatus.Verified, (await state.LoadExactnessAsync()).Status);
     }
 
     private static Task<string> ConfirmEmptySnapshotAsync(TestDb db, AuthoritativeStageContext stage)

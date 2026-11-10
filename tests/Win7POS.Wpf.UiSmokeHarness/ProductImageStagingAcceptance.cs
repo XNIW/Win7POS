@@ -964,7 +964,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             using (var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(12)))
             {
-                return await new PosOnlineBootstrapService(factory, store, host)
+                var authenticated=await new PosOnlineBootstrapService(factory, store, host)
                     .BootstrapAsync(
                         new PosAdminWebOptions(baseUri),
                         new PosFirstLoginRequest
@@ -981,6 +981,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         },
                         credential,
                         timeout.Token).ConfigureAwait(true);
+                return await ArticleMutationLoopbackHarness.CompleteCatalogForQaAsync(authenticated,host,timeout.Token);
             }
         }
 

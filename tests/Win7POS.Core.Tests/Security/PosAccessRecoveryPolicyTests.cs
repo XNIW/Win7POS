@@ -220,10 +220,10 @@ public sealed class PosAccessRecoveryPolicyTests
     }
 
     [TestMethod]
-    public void NormalAuthorizedAccessWithUnsafeCatalog_UsesRecoveryShell()
+    public void NormalAuthorizedAccessWithPendingCatalog_UsesPosWorkspace()
     {
         Assert.AreEqual(
-            PosShellMode.Recovery,
+            PosShellMode.Pos,
             PosShellStartupPolicy.Determine(PosAuthenticatedAccessMode.Normal, catalogSaleSafe: false));
     }
 

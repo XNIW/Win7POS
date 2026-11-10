@@ -1,6 +1,74 @@
 # ASUS-W7POS-019 — Retry, qualifica software e gate end-to-end
 
 <!-- ASUS019_CURRENT_START -->
+## Stato corrente — postazione reale, sviluppo verificato; qualifica finale aperta
+
+Stessa ASUS019 ACTIVE. Main0378e17, PR136 draft sul ramo correttivo; installato
+2ad42ca verificato41/41, profilo10/10 invariato e POS reale chiuso normalmente.
+Il successore ancora WIP sostituisce la shell empty con una sola vera postazione
+POS dopo autenticazione/lease/trust/policy/mirror/binding e inizializzazione locale.
+Catalogo, outbox e ordini passano al supervisor della shell. Nessun Continue,
+Sync Center o secondo login richiesto per usare carrello e scanner.
+
+Contratto implementato: snapshot pubblicato distinto dal tentativo; lettura SQL
+coerente senza barriera lunga di rete; candidato fallito non invalida la copia
+operativa precedente; empty autorevole conserva il fence remoto. VM/carrello,
+selezione, input e report persistono nei refresh. Stato e callback sono fenced
+per identità/generazione; chiusura attende lane, timer, letture e scanner posseduti.
+Il report nativo dipende dalla vera policy temporale attiva, non dalla PosView.
+
+Al commit Data verifica economia, autorizzazione, shop/generazione, prodotto
+attivo e prezzo corrente. Manuale richiede evidenza immutabile emessa dal dominio;
+locale richiede intento originale hashato più scope del negozio persistito nella
+stessa transazione della creazione, anche dopo ack coerente. Un vecchio prodotto
+con client ID arbitrario non basta. Nessun backfill inferito delle vecchie prove.
+Compatibilità pre-supervisor: soltanto snapshot remoto già verificato e guard
+live con shop ufficiale uguale possono operare se manca del tutto la riga SQL
+generazione; una riga esistente inattiva/differente non ammette fallback. Nessuna
+esenzione empty/locale senza generazione durevole. Lease/permessi/fisco, commit
+unico stock/righe/outbox e replay restano verificati dai protocolli esistenti.
+
+Prove di sviluppo su HEAD2ad+WIP, **non qualifica del binario installato**:
+
+- Core06:175/175 PASS, inclusi policy, supervisor, commit economico, provenienza,
+  prezzi concorrenti/replay, cancellazione timer e candidato rifiutato con copia
+  pubblicata ancora valida. Core02(3FAIL),04(1FAIL) e correzioni restano conservati;
+  Core03 6/6 e05 14/14 PASS sono prove selettive con attribuzione propria.
+- Required03:50/50 PASS. Required01 41/50 e02 49/50 restano storici; il difetto
+  architetturale UI/SQLite corretto spostando la classificazione in Data.
+  Build08 Release net48/x86 prodotto+harness PASS,0warning/0error; restore locked PASS.
+- AUTH shell12:69 assert PASS,26.370s, cleanup vero; ingresso prima della risposta
+  sospesa, scanner rapido, pending/unknown/cancel/permesso negato, primo locale e
+  manuale con pagamento/ricevuta/stock/outbox, zero→remoto automatico, refresh con
+  report/import/input/selezione,503/perdita TCP, chiusura nel pull e riavvio.
+  Nessun Continue, CatalogDelta Manual o RefreshShellReadiness privato in questa
+  accettazione. Target11 integrated vendita e F05 carrello/restart PASS.
+- Misure sintetiche shell12,2880×1800/200%: login chiuso→interattivo155–221ms;
+  Input completion0.6076ms≤250ms; tre input73.2524ms; barcode noto con50361.2055ms,
+  perdita TCP35.6541ms. Campioni singoli, non p95 o qualifica performance finale.
+- Storico sviluppo02:8/52 PASS, circa44s nel budget60s. Il primo run FAIL perché
+  la vecchia fixture pretendeva il catalogo nel bootstrap; aggiornata la sola
+  preparazione QA esplicita. AUTH pubblico resta indipendente da quella utility.
+  Il preflight privato iniziale incompleto è NOT_EXECUTED, non PASS.
+
+Evidence: U19Cartb7e31/target10..12, U19Hcart7a101(smoke FAIL),7a102(PASS),
+cart-*.private.log nella root resume019. FAIL/timeout precedenti e dati sintetici
+conservati; nessun harness con POS reale aperto, Apply/Undo originale o vendita reale.
+Qualifica congelata Windows-All/performance, CI/pacchetto, backup aggiornamento,
+installazione e percorso sul binario nuovo restano aperti. Nessun DONE.
+
+Cloud separato: PR135b030 ha due FAIL del vecchio budget storico60s conservati
+(42826371935,42832581283), nessun terzo retry cieco; sync controllata dei fix comuni
+ancora richiesta. Admin151/6c2bd41 qualificato, nessun deploy. Il contesto mobile è
+stato letto: [handoff](../plans/ASUS-W7POS-019_GETNET_HISTORY/HANDOFF_MOBILE.md), nessun PASS iOS/Android derivato da Windows.
+Scala200%/2880×1800 mantenuta;100/125 NOT_RUN/USER_DEFERRED; Win7 fisico
+NOT_RUN/BLOCKED_TARGET; Getnet moderni C MISSING, nessun Apply moderno.
+
+<!-- ASUS019_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente5d8e704 (storico)</summary>
+
 ## Stato corrente — candidato finale qualificato, installazione in attesa
 
 ASUS019/R3 ACTIVE. Sorgente pubblicata `5d8e704b2d0027c4ee1d5a9f4cb6b10842b85b54`, fingerprint
@@ -47,7 +115,8 @@ ledger cloud e cutover con unico writer. Nessun ruolo, credenziale, grant/RLS,
 schema, dato o deploy modificato. Stessa task, nessun DONE o secondo MasterPlan.
 
 I checkpoint sotto conservano la propria data; lo stato corrente e questo riquadro.
-<!-- ASUS019_CURRENT_END -->
+
+</details>
 ## Qualifica a397 conclusa; estensione QA finale — 9 novembre
 
 Il candidato pubblicato a397a49 ha concluso Windows-All 15/15 PASS: Core1745,

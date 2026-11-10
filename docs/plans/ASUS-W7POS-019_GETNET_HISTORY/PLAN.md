@@ -1,7 +1,49 @@
 # ASUS-W7POS-019 — Importazione storico Getnet
 
 <!-- ASUS019_CURRENT_START -->
-## Stato corrente —5d8e704 qualificato, consegna reale aperta
+## Stato corrente — POS reale e sync in background, ACTIVE (10 novembre)
+
+Addendum operativo: dopo autenticazione normale valida, ambiente locale valido e
+policy/lease verificati, mostrare la vera PosView con carrello e scanner anche
+prima della popolazione del catalogo. Il requisito precedente di shell empty
+senza VM commerciale è superato. La validità delle operazioni economiche resta
+separata dalla disponibilità della postazione e arriva fino al commit Data.
+
+Baseline riconfermata: main0378e17; ramo correttivo
+`codex/asus019-catalog-refresh-shell-race`, PR136,2ad42ca. Questo binario è
+**già installato**,41/41 file verificati e10/10 file profilo conservati.
+Accesso reale, riepilogo/storico/import volontario vuoto, Escape e Close verso
+gli stessi filtri osservati;15 cicli catalogo senza recovery. Queste prove e
+CI/Release/WPF verdi qualificano il contratto precedente, non questo addendum.
+
+Passi1–5 implementati e verificati in sviluppo: Core175/175, required50/50,
+AUTH69 assert/26.370s, integrated/F05 e storico8/52 PASS; FAIL precedenti conservati.
+Build08 pulita. La prossima azione è congelare il codice e qualificare un solo
+successore Windows-All/performance, poi consegna verificata. Dettagli in Execution.
+
+Piano del successore, nello stesso ramo (nessuna implementazione concorrente):
+
+1. Separare policy Core di accesso/postazione, stato pubblicato e operazioni.
+2. Completare login dopo trust/identità/policy/mirror, trasferendo al supervisor
+   della shell il lavoro automatico; niente drain/catalogo nel cammino critico.
+3. Conservare una sola VM/carrello/input/route attraverso refresh; letture dello
+   stato pubblicato senza attesa della barriera di rete, commit sempre fenced.
+4. Validare righe manuali/locali con provenienza concreta e remote con snapshot
+   operativo; mantenere empty fence, auth/lease/fisco e atomicità/idempotenza.
+5. Estendere prove pubbliche/supervisor, negative economiche e latenza250ms;
+   poi congelare un solo successore per Windows canonica/performance/pacchetto.
+6. Backup prodotto, installazione verificata, avvio/PIN manuali e percorso reale
+   login→carrello/scanner→riepilogo/storico→ritorno; niente Apply/Undo originali.
+7. Sincronizzare i fix comuni al futuro PR135 e preparare handoff mobile dopo
+   lettura della task/codice mobile; nessun PASS mobile derivato da Windows.
+
+Cloud separato: PR135b030 ha due FAIL conservati nel budget storico60s
+(42826371935,42832581283), niente terzo retry cieco. PR151Admin6c2bd41
+qualificato (SQL4638 assert,CI42822197960/Build42822197996 verdi), nessun deploy.
+Scala200%/2880×1800 invariata;100/125 NOT_RUN/USER_DEFERRED, Win7 fisico
+NOT_RUN/BLOCKED_TARGET. Moderni Getnet C MISSING. Nessun DONE generale.
+
+### Checkpoint precedente5d8e704 (storico)
 
 Stessa ASUS019/R3 ACTIVE: Windows-All15/15 PASS (Core1745, functional22,
 crash5, smoke8/52, load11), quattro workflow exact-SHA SUCCESS, pacchetto41/QA40

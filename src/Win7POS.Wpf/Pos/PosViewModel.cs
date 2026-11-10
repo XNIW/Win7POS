@@ -502,6 +502,7 @@ namespace Win7POS.Wpf.Pos
         /// <summary>Avvia l'inizializzazione (chiamato da PosView.Loaded per evitare schermata bianca al primo render).</summary>
         private Task _initializationTask;
         private bool _initialized;
+        internal bool IsInitialized => _initialized;
         internal Task InitializationTask => _initializationTask ?? Task.CompletedTask;
 
         public void StartInitialize()
@@ -574,16 +575,71 @@ namespace Win7POS.Wpf.Pos
                 StartCartProductImageHydration();
         }
 
-        private async Task AddBarcodeAsync()
+        private const int BarcodeQueueCapacity = 8;
+        private readonly System.Collections.Generic.Queue<string> _barcodeQueue = new System.Collections.Generic.Queue<string>();
+
+        // Only scanner work queues scanner work; payment/maintenance remain exclusive.
+        public bool TryQueueBarcodeSubmission()
+        {
+            if (!_isBarcodeSubmissionInProgress || string.IsNullOrWhiteSpace(BarcodeInput)) return false;
+            if (_barcodeQueue.Count == BarcodeQueueCapacity)
+            {
+                SetStatus(PosLocalization.T("history.scannerQueueFull"), PosNoticeSeverity.Warning);
+                return true; // Keep the unsent text visible for explicit resubmission.
+            }
+            _barcodeQueue.Enqueue(BarcodeInput);
+            BarcodeInput = string.Empty;
+            return true;
+        }
+
+        private Task _scannerSubmissionTask = Task.CompletedTask;
+        internal Task ScannerSubmissionTask => _scannerSubmissionTask;
+        private Task AddBarcodeAsync()
+        {
+            if (!_scannerSubmissionTask.IsCompleted) return _scannerSubmissionTask;
+            return _scannerSubmissionTask = DrainBarcodeSubmissionsAsync();
+        }
+
+        private async Task DrainBarcodeSubmissionsAsync()
         {
             if (_isBarcodeSubmissionInProgress) return;
+            var raw = BarcodeInput ?? string.Empty;
+            BarcodeInput = string.Empty;
             _isBarcodeSubmissionInProgress = true;
             RaiseCanExecuteChanged();
             try
             {
+                while (true)
+                {
+                    await ProcessBarcodeSubmissionAsync(raw).ConfigureAwait(true);
+                    if (_disposed || _barcodeQueue.Count == 0) break;
+                    raw = _barcodeQueue.Dequeue();
+                }
+            }
+            catch (Exception error)
+            {
+                _logger.LogError(error, "POS scanner submission failed.");
+                SetStatus(PosLocalization.T("history.scannerRetry"), PosNoticeSeverity.Error);
+                // Keep the first unprocessed code visible; subsequent submissions were
+                // bounded and the notice explicitly asks the operator to resubmit.
+                if (string.IsNullOrEmpty(BarcodeInput)) BarcodeInput = raw;
+            }
+            finally
+            {
+                _barcodeQueue.Clear();
+                _isBarcodeSubmissionInProgress = false;
+                IsBusy = false;
+                RaiseCanExecuteChanged();
+                RequestFocusBarcode();
+            }
+        }
+
+        private async Task ProcessBarcodeSubmissionAsync(string raw)
+        {
+            try
+            {
                 try { _permissionService.Demand(PermissionCodes.PosSell, PosLocalization.Current.Text("sales.kind.sale")); }
                 catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
-                var raw = BarcodeInput ?? string.Empty;
                 if (raw.Length == 0)
                     return;
                 IsBusy = true;
@@ -595,7 +651,7 @@ namespace Win7POS.Wpf.Pos
                 if (await TryHandleQuantityInputAsync(input).ConfigureAwait(true))
                 {
                     PendingInputQuantity = null;
-                    BarcodeInput = string.Empty;
+                    /* Captured input was cleared on submission; preserve subsequent typing. */
                     RequestFocusBarcode();
                     return;
                 }
@@ -621,7 +677,7 @@ namespace Win7POS.Wpf.Pos
                     finally
                     {
                         PendingInputQuantity = null;
-                        BarcodeInput = string.Empty;
+                        /* Captured input was cleared on submission; preserve subsequent typing. */
                         IsBusy = false;
                         RequestFocusBarcode();
                     }
@@ -649,7 +705,7 @@ namespace Win7POS.Wpf.Pos
                     finally
                     {
                         PendingInputQuantity = null;
-                        BarcodeInput = string.Empty;
+                        /* Captured input was cleared on submission; preserve subsequent typing. */
                         IsBusy = false;
                         RequestFocusBarcode();
                     }
@@ -660,7 +716,7 @@ namespace Win7POS.Wpf.Pos
                 if (!ScannerInputPolicy.TryNormalize(raw, scanner, out input, out var scannerError))
                 {
                     SetStatus(PosLocalization.T(scannerError), PosNoticeSeverity.Warning);
-                    BarcodeInput = string.Empty; RequestFocusBarcode(); return;
+                    /* Captured input was cleared on submission; preserve subsequent typing. */ RequestFocusBarcode(); return;
                 }
 
                 IsBusy = true;
@@ -671,6 +727,14 @@ namespace Win7POS.Wpf.Pos
                     snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
                     ApplySnapshot(snapshot, input);
                     SetStatus(PosLocalization.Current.Format("pos.status.productAdded", input), PosNoticeSeverity.Success);
+                }
+                catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotYetAvailable)
+                {
+                    SetStatus(PosLocalization.T("history.catalogProductPending"), PosNoticeSeverity.Info);
+                }
+                catch (PosException ex) when (ex.Code == PosErrorCode.ProductUnavailable)
+                {
+                    SetStatus(PosLocalization.T("history.catalogProductUnavailable"), PosNoticeSeverity.Warning);
                 }
                 catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
                 {
@@ -712,14 +776,13 @@ namespace Win7POS.Wpf.Pos
                 finally
                 {
                     PendingInputQuantity = null;
-                    BarcodeInput = string.Empty;
+                    /* Captured input was cleared on submission; preserve subsequent typing. */
                     IsBusy = false;
                     RequestFocusBarcode();
                 }
             }
             finally
             {
-                _isBarcodeSubmissionInProgress = false;
                 IsBusy = false;
                 RaiseCanExecuteChanged();
             }

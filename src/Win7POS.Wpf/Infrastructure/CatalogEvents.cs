@@ -9,6 +9,13 @@ namespace Win7POS.Wpf.Infrastructure
         private static long _revision;
 
         public static event Action<string> CatalogChanged;
+        public static event Action<string, string> CatalogPublished;
+
+        public static void PublishCommittedCatalog(string databasePath, string generationFingerprint)
+        {
+            AdvanceRevision();
+            CatalogPublished?.Invoke(databasePath, generationFingerprint);
+        }
 
         public static long Revision => Interlocked.Read(ref _revision);
 

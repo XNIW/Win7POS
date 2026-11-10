@@ -28,6 +28,10 @@ namespace Win7POS.Core.Pos
                     return "Invalid barcode.";
                 case PosErrorCode.InvalidPrice:
                     return contextValue == null ? "Prezzo non valido." : $"Prezzo non valido: {contextValue}";
+                case PosErrorCode.ProductNotYetAvailable:
+                    return "Product not available in the first catalog download yet.";
+                case PosErrorCode.ProductUnavailable:
+                    return "Product is unavailable in the operative catalog.";
                 default:
                     return "POS error.";
             }
