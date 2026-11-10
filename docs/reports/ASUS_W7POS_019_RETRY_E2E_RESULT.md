@@ -3,6 +3,17 @@
 <!-- ASUS019_CURRENT_START -->
 ## Stato corrente — postazione reale, sviluppo verificato; qualifica finale aperta
 
+Codice congelato in cc6128f448cd36089f1c470a21885091efa4de3c; Windows-All locale
+in corso, restore/gate/build PASS, Core ancora attivo. WPF42857545140 SUCCESS.
+Release42857518468 FAIL: generic-api-key sul conteggio test del worklog, falso
+positivo riprodotto con Gitleaks8.30.1 (working tree e storia, solo docs riga9).
+Questo follow-up cambia soltanto testo e impronta storica esatta; scansioni dir/git
+PASS senza esclusione di percorsi o regole. src/scripts/tests/eng e contratti di
+build byte-identici a cc6128f, verificati con git diff. Nuovi pacchetti e workflow
+sono legati al nuovo SHA; la run locale cc6128f resta attribuita al suo codice.
+Il checkout della run attiva non viene modificato. La cronologia sotto conserva
+la preparazione e i FAIL; nessuna dichiarazione di consegna completata.
+
 Stessa ASUS019 ACTIVE. Main0378e17, PR136 draft sul ramo correttivo; installato
 2ad42ca verificato41/41, profilo10/10 invariato e POS reale chiuso normalmente.
 Il successore ancora WIP sostituisce la shell empty con una sola vera postazione

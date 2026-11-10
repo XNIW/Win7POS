@@ -3,10 +3,10 @@
 <!-- ASUS019_CURRENT_START -->
 ## Stato corrente — ASUS019 carrello reale e sync automatica, ACTIVE
 
-Successore WIP del ramo PR136; installato2ad42ca conservato, POS chiuso. Ingresso
+Codice congelato cc6128f nel ramo PR136; installato2ad42ca conservato, POS chiuso. Ingresso
 con vera VM/scanner dopo autorizzazione locale, supervisor automatico, stato
 pubblicato distinto dai tentativi, provenienza locale/manuale e guard al commit.
-Core175/175, required50/50, AUTH69 assert, integrated/F05 e storico8/52 PASS di
+Core: 175 prove; gate obbligatori: 50; shell: 69 verifiche; integrated/F05 e storico8/52 PASS di
 sviluppo; precedenti FAIL conservati. Build08 net48/x860warning. Qualifica
 congelata, CI/pacchetto e consegna nuovi aperti, nessun PASS trasferito.
 [Execution](plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md) e
