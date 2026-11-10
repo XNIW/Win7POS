@@ -89,7 +89,25 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     test.Check("reopened_records", c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1") == 5 && c.ExecuteScalar<long>("SELECT SUM(signed_amount_clp) FROM historical_transactions WHERE is_active=1") == 3380);
                 test.Check("operational_invariants", before == NativeState(f));
             }
-            test.Check("durable_receipt", durable && await ViewModelReceiptAsync(data, test));
+            // The existing UI receipt case now also proves the server write gate.
+            // Keep the canonical 8 cases/52 assertions and its original time budget.
+            test.Check("durable_receipt", durable && await CloudWriterDenialsAsync(data, test) && await ViewModelReceiptAsync(data, test));
+        }
+
+        private static async Task<bool> CloudWriterDenialsAsync(string data, HistoricalSalesQaCase test)
+        {
+            foreach (var reason in new[] { "frozen", "web", "offline", "wrong_operation", "expired" })
+            {
+                using var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data);
+                var plan = await f.PlanAsync(); var before = f.State(); var workflow = f.CreateWorkflow(reason); var denied = false;
+                try { await workflow.ApplyHistoricalSalesAsync(plan, f.Operator, CancellationToken.None); }
+                catch (InvalidOperationException) { denied = true; }
+                var expectedRequests = reason == "wrong_operation" || reason == "expired" ? 1 : 0;
+                var passed = denied && f.LocalWriteRequests == expectedRequests && f.State() == before && !workflow.IsHistoricalMaintenanceActive;
+                test.PrivateDiagnostic("synthetic_cloud_write_denial;case=" + reason + ";passed=" + passed);
+                if (!passed) return false;
+            }
+            return true;
         }
 
         private static async Task<bool> ViewModelReceiptAsync(string data, HistoricalSalesQaCase test)
@@ -97,7 +115,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
             {
-                var workflow = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                var workflow = f.CreateWorkflow();
                 using (var model = new HistoricalSalesImportViewModel(workflow, f.Operator))
                 {
                     var owner = new Window { Width = 1000, Height = 760, ShowInTaskbar = false };
@@ -156,7 +174,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             if (changeReview && (f.Count("historical_import_operation") != 0 || f.Count("historical_transactions") != 0 ||
                                 model.ApplyCommand.CanExecute(null) || model.Status != Win7POS.Wpf.Localization.PosLocalization.T("history.reviewStale"))) return false;
                         }
-                        return confirmationDeniedReentry && model.Batches.Count == 1 && model.Batches[0].Rows == 5 &&
+                        return confirmationDeniedReentry && f.LocalWriteRequests == 1 && model.Batches.Count == 1 && model.Batches[0].Rows == 5 &&
                             model.Status.Contains(model.Batches[0].ApplyOperationId) && f.Count("historical_import_operation") == 1;
                     }
                     finally
@@ -267,7 +285,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 await SeedReportAsync(f, true);
                 var source = WriteModern(f.Root, "report-positive", new[] { HistoricalSalesFixtureWriter.ModernRow("report-9000", 9000) });
                 await f.ApplyAsync(await f.PreparePlanAsync(Analyze(source)));
-                var workflow = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                var workflow = f.CreateWorkflow();
                 var context = await workflow.OpenAnalyticalReportAsync(Day, Day.AddDays(1), SalesReportOrigins.All, true, null, null, CancellationToken.None);
                 test.Check("signed_totals", context.Snapshot.Summary.BalanceClp == 10000 && context.Snapshot.Summary.CardClp == 10000, 10000L, context.Snapshot.Summary.BalanceClp);
                 test.Check("hourly_parity", context.Snapshot.HourlyAmounts.Sum() == 10000);
@@ -317,7 +335,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             foreach (var revokeAfter in new[] { false, true })
                 using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
                 {
-                    await f.ApplyAsync(await f.PlanAsync()); var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                    await f.ApplyAsync(await f.PlanAsync()); var service = f.CreateWorkflow();
                     var context = await service.OpenAnalyticalReportAsync(Day, Day.AddDays(1), SalesReportOrigins.Historical, true, null, null, CancellationToken.None);
                     var destination = Path.Combine(f.Root, "authority.csv");
                     try { var result = await ExportAsync(f, service, context, destination, true, revokeAfter); afterPublished |= revokeAfter && result.Outcome == SalesReportPublicationOutcome.Published && File.Exists(destination); }
@@ -325,7 +343,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             {
-                await f.ApplyAsync(await f.PlanAsync()); var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                await f.ApplyAsync(await f.PlanAsync()); var service = f.CreateWorkflow();
                 var context = await service.OpenAnalyticalReportAsync(Day, Day.AddDays(1), SalesReportOrigins.Historical, true, null, null, CancellationToken.None);
                 var destination = Path.Combine(f.Root, "view-all-revoked.csv");
                 PosOnlineSyncRevocationLatch.TryCaptureAuthorizationEpoch(out var beforeEpoch);
@@ -360,7 +378,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             {
                 await f.ApplyAsync(await f.PlanAsync());
-                var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                var service = f.CreateWorkflow();
                 var context = await service.OpenAnalyticalReportAsync(Day, Day.AddDays(1), SalesReportOrigins.Historical, true, null, null, CancellationToken.None);
                 var authority = f.Operator.CaptureSalesReportReadAuthority(context.Filter, PermissionCodes.DailyCloseView);
                 using (var report = new DailyReportViewModel(service, permissions: new PermissionService(f.Operator), session: f.Operator))
@@ -396,7 +414,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using (var release = new ManualResetEventSlim())
             {
                 await f.ApplyAsync(await f.PlanAsync());
-                var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                var service = f.CreateWorkflow();
                 var context = await service.OpenAnalyticalReportAsync(Day, Day.AddDays(1), SalesReportOrigins.Historical, true, null, null, deadline.Token);
                 await service.DemandAnalyticalReportCurrentAsync(context, deadline.Token);
                 var read = f.Operator.CaptureSalesReportReadAuthority(context.Filter, PermissionCodes.DailyCloseView);
@@ -444,7 +462,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 var source = WriteModern(f.Root, "signed", new[] { HistoricalSalesFixtureWriter.ModernRow("positive", 1000), HistoricalSalesFixtureWriter.ModernRow("negative", -700, 3600), HistoricalSalesFixtureWriter.ModernRow("negative-next", -700, 86400) });
                 await f.ApplyAsync(await f.PreparePlanAsync(Analyze(source)));
-                var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                var service = f.CreateWorkflow();
                 using (var vm = new DailyReportViewModel(service, permissions: new PermissionService(f.Operator), session: f.Operator))
                 {
                     vm.DateText = "2000-01-02"; vm.ReportOriginIndex = 2;
@@ -470,7 +488,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var onboardingVerified = await VerifyEmptyOnboardingAsync(data, test);
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             {
-                var plan = await f.PlanAsync(); var applied = await f.ApplyAsync(plan); var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                var plan = await f.PlanAsync(); var applied = await f.ApplyAsync(plan); var service = f.CreateWorkflow();
                 var model = new HistoricalSalesImportViewModel(service, f.Operator); var owner = new Window { Width = 1024, Height = 768, ShowInTaskbar = false };
                 var oldLanguage = Win7POS.Wpf.Localization.PosLocalization.Current.CurrentLanguage;
                 var oldCulture = Thread.CurrentThread.CurrentCulture;
@@ -547,7 +565,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         firstLoginSucceeded: false, trustedSessionPersisted: false, catalogStarted: true).CanPrepareEmptyShopHistory ||
                     await new CatalogShopStateRepository(f.Factory).IsSaleSafeForOfficialShopAsync()) return false;
                 test.PrivateDiagnostic("history_onboarding;subcase=dialog_keyboard_and_no_print;state=starting");
-                var service = new PosWorkflowService(f.Options, () => DateTimeOffset.UtcNow);
+                var service = f.CreateWorkflow();
                 // Keep this viewport fully on screen. The standard modal host
                 // intentionally uses the monitor work area if a cascaded owner
                 // extends outside it; that fallback is not a content-size failure.

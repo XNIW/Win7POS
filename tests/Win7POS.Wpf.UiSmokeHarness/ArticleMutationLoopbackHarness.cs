@@ -1790,6 +1790,34 @@ GROUP BY mutation_kind;")).ToDictionary(
                         .ConfigureAwait(false);
                         return;
                     }
+                    if (request.RequestLine.StartsWith("POST /api/pos/payment-history ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // The geometry scenario uses the real net48 HTTP client:
+                        // verify actual lease tokens and return only the local-write contract.
+                        var history = Deserialize<HistoricalCloudRequest>(request.Body);
+                        var lease = BuildFirstLoginResponse();
+                        if (history == null || history.DeviceId != DeviceId || history.SessionId != SessionId ||
+                            history.DeviceToken != lease.TrustedDeviceToken || history.SessionToken != lease.Session.SessionToken ||
+                            StaffRoleKey != "pos_admin")
+                        {
+                            await WriteResponseAsync(stream, 403, Encoding.UTF8.GetBytes("{\"ok\":false,\"code\":\"history_cloud_access_denied\"}"), cancellationToken).ConfigureAwait(false);
+                            return;
+                        }
+                        string result;
+                        if (history.Operation == "authority")
+                            result = "{\"dataset_id\":\"90000000-0000-4000-8000-000000000245\",\"revision\":\"0\",\"writer_epoch\":\"1\",\"writer_authority\":\"local\",\"inventory_verified\":false,\"protocol_version\":1}";
+                        else if (history.Operation == "local_write_grant" && history.Payload?.WriterEpoch == "1" &&
+                            (history.Payload.Kind == "Apply" || history.Payload.Kind == "Undo") && Guid.TryParseExact(history.Payload.OperationId, "D", out var operation))
+                            result = "{\"grant_id\":\"" + Guid.NewGuid().ToString("D") + "\",\"operation_id\":\"" + operation.ToString("D") + "\",\"writer_epoch\":\"1\",\"remaining_milliseconds\":60000}";
+                        else
+                        {
+                            await WriteResponseAsync(stream, 400, Encoding.UTF8.GetBytes("{\"ok\":false,\"code\":\"history_input_invalid\"}"), cancellationToken).ConfigureAwait(false);
+                            return;
+                        }
+                        var body = "{\"ok\":true,\"shop_id\":\"" + ShopId + "\",\"device_id\":\"" + DeviceId + "\",\"session_id\":\"" + SessionId + "\",\"result\":" + result + "}";
+                        await WriteResponseAsync(stream, 200, Encoding.UTF8.GetBytes(body), cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
                     if (request.RequestLine.StartsWith(
                             "POST /api/pos/catalog/pull ",
                             StringComparison.OrdinalIgnoreCase))

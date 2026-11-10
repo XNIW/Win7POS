@@ -56,3 +56,27 @@ review/nome postazioni sono una candidata successiva e non ereditano quei PASS.
 Nessun deployment, SQL live, UAC, avvio POS, login o operazione sul registro reale.
 Nuovo client non impacchettato/installato; qualificazione WPF completa, DPI e
 hardware Win7 restano NOT_RUN/BLOCKED_TARGET. Nessun DONE.
+
+## Verifica del client futuro e raccordo fixture
+
+Local sul commit1ccc5b23b65fd1924889e5cd097ca578d18618df PASS:7/7 passi,
+1760 Core/Data PASS,0 FAIL, restore/build/selftest CLI PASS. Sorgente pulita
+prima/dopo. Build WPF net48/x86 PASS,0 warning, dialog standards39/39 PASS.
+Nessuna finestra nativa aperta sul desktop dell'utente.
+
+Primo CI42777264224 FAIL conservato, artifact13745727577: Core/Data PASS,
+gate release-foundation FAIL (causa remota non determinata; eseguito localmente
+sullo stesso codice: PASS), functional21/22 con geometria FAIL, storico Smoke
+HIST02/HIST07/HIST08 FAIL, load NOT_RUN per dipendenza. Il rosso non è
+PASS_WITH_NOTES. Il nuovo grant HTTP era assente dal server loopback della
+geometria e la fixture storica usava ID non UUID; queste fixture non rispecchiavano
+il contratto nuovo. Nessun guard prodotto è stato allentato.
+
+Fixture aggiornata: identità UUID, ruolo pos_admin della sola fixture storica,
+risposte authority/grant legate all'actor attuale; server loopback verifica i
+veri token e prova la serializzazione HTTP net48. HIST02 conserva la conferma
+unica e aggiunge i rifiuti frozen/web/offline/operation mismatch/grant scaduto;
+la conferma positiva deve consumare esattamente un grant. Restano8case/52assertion
+e il budget originale, senza nuovi skip o soglie più larghe. Due build del harness
+PASS senza warning. Esecuzione nativa delle fixture corrette affidata alla CI
+isolata, non ancora qualificata da queste sole build.

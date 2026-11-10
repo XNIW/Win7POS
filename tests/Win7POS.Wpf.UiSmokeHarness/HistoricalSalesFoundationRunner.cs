@@ -190,7 +190,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 release.SetResult(true); await maintenance;
                 var reentered = false; await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() => { reentered = true; return Task.CompletedTask; });
                 test.Check("maintenance_cancel_no_orphan", maintenanceCancelled && reentered);
-                var workflow = new PosWorkflowService(fixture.Options, () => DateTimeOffset.UtcNow);
+                var workflow = fixture.CreateWorkflow();
                 var plan = await fixture.PlanAsync();
                 bool workflowCancelled;
                 using (await workflow.EnterHistoricalWorkflowGateForTestingAsync(CancellationToken.None))
@@ -331,6 +331,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private static PosFirstLoginResponse FreshFixtureResponse(out PosAuthoritativeReceiptClock receiptClock)
             {
                 var response = AuthorizationLeaseWpfSmoke.BuildResponse(true);
+                // Real history endpoints use UUID identities. Keep the older
+                // authorization-only fixture unchanged outside this history fixture.
+                response.Shop.ShopId = "10000000-0000-4000-8000-000000003019";
+                response.Device.ShopDeviceId = "20000000-0000-4000-8000-000000003019";
+                response.Staff.StaffId = "30000000-0000-4000-8000-000000003019";
+                response.Staff.RoleKey = "pos_admin";
+                response.Session.PosSessionId = "40000000-0000-4000-8000-000000003019";
                 var previousAnchor = DateTimeOffset.Parse(response.ServerTime, CultureInfo.InvariantCulture);
                 var offlineLifetime = DateTimeOffset.Parse(response.EffectiveOfflineAuthorizationExpiresAt, CultureInfo.InvariantCulture) - previousAnchor;
                 var sessionLifetime = DateTimeOffset.Parse(response.Session.ExpiresAt, CultureInfo.InvariantCulture) - previousAnchor;
@@ -361,6 +368,25 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (await f.Operator.LoginAsync(username, "2468") != LoginResult.Success) throw new InvalidOperationException("qa_history_login_failed");
                 f.Operator.CurrentUser.PermissionCodes = new[] { PermissionCodes.RegisterImportHistory, PermissionCodes.RegisterCancelHistory, PermissionCodes.RegisterViewAll, PermissionCodes.RegisterView, PermissionCodes.DailyCloseView, PermissionCodes.PosPay };
                 File.WriteAllText(Path.Combine(f.Root, "source.bin"), "synthetic-history-source-v1", new UTF8Encoding(false)); return f;
+            }
+            internal int LocalWriteRequests;
+            internal PosWorkflowService CreateWorkflow(string rejection = null)
+            {
+                var workflow = new PosWorkflowService(Options, () => DateTimeOffset.UtcNow);
+                workflow.SetHistoricalCloudRequestForTesting((actor, operation, payload, ct) =>
+                {
+                    ct.ThrowIfCancellationRequested(); actor.DemandCurrent();
+                    if (actor.Trusted.ShopId != ShopId) throw new InvalidOperationException("qa_history_cloud_scope_invalid");
+                    if (operation == "authority")
+                    {
+                        if (rejection == "offline") throw new InvalidOperationException("qa_history_cloud_offline");
+                        return Task.FromResult(new HistoricalCloudResult { DatasetId = "90000000-0000-4000-8000-000000003019", Revision = "0", WriterEpoch = "1", WriterAuthority = rejection == "frozen" || rejection == "web" ? rejection : "local", ProtocolVersion = 1 });
+                    }
+                    if (operation != "local_write_grant" || payload.WriterEpoch != "1" || (payload.Kind != "Apply" && payload.Kind != "Undo")) throw new InvalidOperationException("qa_history_cloud_operation_invalid");
+                    HistoricalReplicaProtocol.DemandId(payload.OperationId); LocalWriteRequests++;
+                    return Task.FromResult(new HistoricalCloudResult { GrantId = Guid.NewGuid().ToString("D"), OperationId = rejection == "wrong_operation" ? Guid.NewGuid().ToString("D") : payload.OperationId, WriterEpoch = "1", RemainingMilliseconds = rejection == "expired" ? 0 : 60000 });
+                });
+                return workflow;
             }
             internal async Task<HistoricalSalesImportPlan> PlanAsync(int count = 1, string id = "000123")
             {
