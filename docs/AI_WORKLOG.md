@@ -1,5 +1,21 @@
 # AI Worklog – Win7POS
 
+<!-- ASUS019_CURRENT_START -->
+## Stato corrente —5d8e704 qualificato, consegna reale aperta
+
+Stessa ASUS019/R3 ACTIVE: Windows-All15/15 PASS (Core1745, functional22,
+crash5, smoke8/52, load11), quattro workflow exact-SHA SUCCESS, pacchetto41/QA40
+verificati e34 byte comuni identici. Smoke scaricato8/52 PASS49.397s.
+Geometria nativa fixture200% PASS22; nuova matrice100/125 e basse risoluzioni aperta.
+Consenso UAC annullato prima dell'avvio: installato ancora a8286c6,10/10 file del
+profilo invariati. Installazione e percorso reale5d8e704 NOT_RUN, attesa operatore.
+Backup prodotto e riconciliazione registro reale PASS; una ricevuta/un lotto attivo,
+nessun nuovo Apply/undo. Win7 fisico NOT_RUN/BLOCKED_TARGET; kit5d8e704 pronto,
+vecchi kit invariati. Moderni C MISSING e CSV_INPUT BLOCKED_INPUT separati.
+Admin B/C soltanto Planning pubblicato d202332, nessun backend cambiato.
+Dettagli e riferimenti: [report canonico](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
+Le sezioni sotto sono checkpoint storici, non lo stato corrente. Nessun DONE.
+<!-- ASUS019_CURRENT_END -->
 Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significativa.
 
 ---

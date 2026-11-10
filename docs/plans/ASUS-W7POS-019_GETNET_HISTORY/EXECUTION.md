@@ -1,5 +1,53 @@
 # ASUS-W7POS-019 execution ledger
 
+<!-- ASUS019_CURRENT_START -->
+## Stato corrente — candidato finale qualificato, installazione in attesa
+
+ASUS019/R3 ACTIVE. Sorgente pubblicata `5d8e704b2d0027c4ee1d5a9f4cb6b10842b85b54`, fingerprint
+`2adbcf2a3244638d25e00897ecffa8af9972c6e0c3315b0566c3dc669d29b2dd` invariato prima/dopo la canonica.
+Il codice prodotto src e identico ad a397; la prova finale aggiunge pagamento nella
+MainWindow reale su fixture e guida all'ingresso volontario dal riepilogo.
+I PASS di a397/e6aa non sono trasferiti: qui sono riportate le prove di5d8e704.
+
+| Gate del candidato5d8e704 | Esito effettivo |
+| --- | --- |
+| Windows-All locale | PASS15/15, exit0, Core1745/1745, functional22/22, crash5, smoke8/52, load11; cleanup completo e pubblicazione evidence PASS |
+| Pipeline exact-SHA | CI42719698708, Security42719698588, WPF42719773542, Release42719699281 SUCCESS |
+| Pacchetto | ReleasePack13721564802 verificato dal validator canonico; prodotto41, QA40,34 file comuni byte-identici |
+| Setup | SHA256 `54e087cc3cf7e04b6ef7e26921a148290ec7431c0d0f3a164c4e58b3509fe044` |
+| QA scaricata | Smoke8/52 PASS in49.397s; non e una prova sul registro reale |
+| MainWindow fixture | Empty/admin e no-history, login pronto/scanner/carrello/pagamento/ricevuta, chiusure e sessione PASS; AUTH18.738s, nessuna mutazione reale |
+| Geometria nativa fixture | PASS22 osservazioni,192DPI (200%),work area2880x1704, titolo/footer contenuti e traversata focus;100/125 e basse risoluzioni del nuovo candidato NOT_RUN |
+| Installazione reale | Primo consenso UAC annullato prima dell'avvio, esito conservato; EXE a8286c6 e10/10 file profilo invariati. Nessun installer/POS nuovo avviato da questo tentativo |
+| Registro reale | Riconciliazione read-only di originali/ricevuta/invarianti PASS e backup prodotto fresco verificato; una ricevuta Apply/un lotto attivo per quattro originali legacy. Nessun nuovo Apply/undo |
+
+Pacchetto payload ZIP SHA256 `8912fbfb18ec4bcf6982e6d6f93db58dea8c5726a7d1b5656495fde10154f31a`.
+Qualifica locale: ux-canonical-03-roots.private.json; smoke scaricato:
+ux-final-downloaded-smoke-root.private.txt; prova macchina:
+ux-final-delivery-checkpoint.private.json. Primo e6aa13/15, timeout e failure di
+cleanup/probe, interruzioni desktop e tentativo UAC annullato restano conservati.
+Non sono riclassificati come PASS.
+
+Percorso reale5d8e704 ancora NOT_RUN: installazione verificata, avvio dal
+collegamento quotidiano, identita profilo prima del PIN mascherato, login -> shell
+-> riepilogo -> storico volontario -> chiusura -> riepilogo -> cassa con PID/sessione
+vivi. Solo lettura ricevuta/report e review legacy nuovi=0; mai Apply/undo originali.
+Vendite sempre negate con catalogo vuoto. Scala concordata200%/2880x1800 conservata;
+completare100/125 e1024x768,1024x600 best effort e ripristino concordato.
+
+Kit Win7 finale: `C:\Dev\U19K09fb63a7\Win7POS-ASUS019-5d8e704-Win7-transfer.zip`,
+SHA256 `0f6bb7d62496614e51a2f2b134d02109422aff71732bfb7f1f5ab79a88a95942`;9 file, template inerti, vecchi kit invariati.
+Target fisico/periferiche gia dichiarati indisponibili: NOT_RUN/BLOCKED_TARGET;
+nessuna nuova richiesta e nessun SDK moderno sul registratore. Secondo monitor
+assente NOT_RUN. Moderni C MISSING e CSV_INPUT BLOCKED_INPUT restano distinti.
+
+Admin: [piano B/C pubblicato](https://github.com/XNIW/merchandise-control-admin-web/blob/d20233220d451c4c8be4ffff5170e45ca224c7e6/docs/ARCHITECTURE/ASUS019-ADMIN-OPERATIONS-HISTORY-PLAN.md),
+READY_FOR_REVIEW / PLANNING_ONLY: matrice, reader staff mancanti, wizard tre passi,
+ledger cloud e cutover con unico writer. Nessun ruolo, credenziale, grant/RLS,
+schema, dato o deploy modificato. Stessa task, nessun DONE o secondo MasterPlan.
+
+I checkpoint sotto conservano la propria data; lo stato corrente e questo riquadro.
+<!-- ASUS019_CURRENT_END -->
 ## Qualifica a397 conclusa; estensione QA finale — 9 novembre
 
 Il candidato pubblicato a397a49 ha concluso Windows-All 15/15 PASS: Core1745,
