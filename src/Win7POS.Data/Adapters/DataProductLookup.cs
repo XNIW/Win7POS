@@ -11,6 +11,6 @@ namespace Win7POS.Data.Adapters
 
         public DataProductLookup(ProductRepository products) => _products = products;
 
-        public Task<Product> GetByBarcodeAsync(string barcode) => _products.GetByBarcodeAsync(barcode);
+        public Task<Product> GetByBarcodeAsync(string barcode) => _products.GetForSaleAsync(barcode);
     }
 }

@@ -359,7 +359,7 @@ $drainIndex = $supervisor.IndexOf("private async Task DrainLaneAsync", [System.S
 $queueBody = if ($queueIndex -ge 0 -and $drainIndex -gt $queueIndex) {
     $supervisor.Substring($queueIndex, $drainIndex - $queueIndex)
 } else { "" }
-if ($mainWindow -notmatch 'QueueBackgroundOnlineRefresh[\s\S]{0,450}_startupCoordinator\?\.StartBackground\(\)' -or
+if ($mainWindow -notmatch 'private\s+void\s+QueueBackgroundOnlineRefresh[\s\S]*?_startupCoordinator\?\.StartBackground\(\)' -or
     $startupCoordinator -notmatch 'PosOnlineSyncSignalBus\.Register' -or
     $startupCoordinator -notmatch 'public\s+void\s+StartBackground\s*\([\s\S]{0,420}PosStartupCoordinatorPolicy\.CanStartBackground[\s\S]{0,220}host\.StartContinuous\(\)' -or
     $hostStartBody -notmatch 'IsAuthorizationMaintenanceActive' -or
@@ -509,7 +509,8 @@ $queueRefreshBody = Get-MethodBody `
     "private\s+void\s+QueueBackgroundOnlineRefresh\s*\([^\)]*\)" `
     "private\s+void\s+StartAdaptiveOnlineScheduler"
 if ($mainWindow -match "TryOnlineBootstrapFirstRunAsync" -or
-    $loadedBody -notmatch "if\s*\(\s*!App\.IsSafeStart\s*\)[\s\S]{0,220}RunStartOfDaySyncAsync\(factory\)" -or
+    $loadedBody -match "RunStartOfDaySyncAsync\(factory\)" -or
+    $loadedBody -notmatch "RefreshShellReadinessAsync" -or
     [string]::IsNullOrWhiteSpace($queueRefreshBody) -or
     $queueRefreshBody -notmatch "if\s*\(\s*App\.IsSafeStart\s*\)[\s\S]{0,160}online refresh skipped: safe-start[\s\S]{0,160}return" -or
     $mainWindow -notmatch "online refresh skipped: safe-start") {

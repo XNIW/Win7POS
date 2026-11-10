@@ -129,13 +129,6 @@
             </TabControl.Template>
             <TabItem Header="POS">
                 <Grid x:Name="PosTabHost">
-                    <Border x:Name="EmptyCatalogPlaceholder" Visibility="Collapsed" Background="#F7F3FA" Padding="32">
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="620">
-                            <TextBlock Text="{loc:Loc history.shellCatalogEmpty}" FontSize="22" FontWeight="Bold" Foreground="#4B2E67" TextAlignment="Center" TextWrapping="Wrap"/>
-                            <Button Content="{loc:Loc sync.center.open}" Click="OnEmptyCatalogSyncClick" Margin="0,24,0,0" Height="44"
-                                    Style="{StaticResource DialogActionButtonStyle}" HorizontalAlignment="Center" MinWidth="220"/>
-                        </StackPanel>
-                    </Border>
                     <Border x:Name="RecoveryPlaceholder" Visibility="Collapsed" Background="#F7F3FA" Padding="32">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="620">
                             <Path Data="{StaticResource IconHelp}" Fill="#7B5A93" Width="44" Height="44" Stretch="Uniform" HorizontalAlignment="Center"/>

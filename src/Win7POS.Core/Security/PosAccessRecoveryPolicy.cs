@@ -210,7 +210,7 @@ namespace Win7POS.Core.Security
             PosAuthenticatedAccessMode accessMode,
             bool catalogSaleSafe)
         {
-            if (accessMode == PosAuthenticatedAccessMode.LocalRecovery || !catalogSaleSafe)
+            if (accessMode != PosAuthenticatedAccessMode.Normal)
             {
                 return PosShellMode.Recovery;
             }

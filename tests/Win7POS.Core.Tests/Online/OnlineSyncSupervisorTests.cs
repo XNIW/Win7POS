@@ -5,7 +5,7 @@ using Win7POS.Data.Online;
 namespace Win7POS.Core.Tests.Online;
 
 [TestClass]
-public sealed class OnlineSyncSupervisorTests
+public sealed partial class OnlineSyncSupervisorTests
 {
     [TestMethod]
     public void StartOfDayTreatsProductImageAuthenticationDenialAsGlobalAuthStop()

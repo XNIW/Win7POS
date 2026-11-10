@@ -60,7 +60,7 @@ Require-Match "POS access local login result" $dialog '"local_login_result"'
 Require-Match "POS access bootstrap result" $dialog '"online_bootstrap_result"'
 Require-Match "POS access catalog retry category" $dialog '"pos\.access\.catalog_retry"'
 Require-Match "POS bootstrap logs safe remote role key" $bootstrap 'role_key="\s*\+\s*SafeAuditValue\(response\.Staff\.RoleKey\)'
-Require-Match "Start-of-day blocked category" $mainWindow 'category=start_of_day result=blocked reason='
+Require-Match "Workstation blocked category" $mainWindow 'category=pos.workstation result=blocked reason='
 
 Require-Match "Operator switch category" $operatorSwitch 'category=operator\.switch'
 Require-Match "Operator switch attempt id field" $operatorSwitch 'attemptId='

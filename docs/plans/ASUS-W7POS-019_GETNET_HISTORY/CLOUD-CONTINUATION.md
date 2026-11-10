@@ -1,5 +1,23 @@
 # ASUS019 — continuazione client cloud, Execution isolata
 
+## Stato corrente — allineamento UX comune, qualifica del successore aperta
+
+La consegna corrente resta PR136, congelata su cc6128f; installato 2ad42ca.
+Questo ramo futuro PR135 deriva da b0307d4 e integra soltanto la patch comune
+src/scripts/tests del nuovo carrello, scanner, bootstrap e guard economici.
+Patch SHA256: 6b469de9becd74a343c6be5cc2405c35cbd92e00b05cbed8863030bd828f1d8a.
+Un conflitto nel server loopback è risolto mantenendo entrambi gli endpoint:
+heartbeat automatico e payment-history autenticato già presente nel cloud.
+Export, replica, grant e retention cloud restano separati dalla consegna ordinaria.
+
+I due FAIL b0307d4 nel budget storico di 60 secondi (42826371935, 42832581283)
+restano conservati. Nessun terzo retry di quel SHA. La nuova fixture separa
+trasferimento di autenticazione e preparazione catalogo QA; la prova pubblica
+attraversa invece MainWindow e supervisor automatico, senza scorciatoie manuali.
+Il successore richiede la propria CI e qualifica; nessun PASS di cc6128f trasferito.
+Admin151/6c2bd41 resta qualificato e non distribuito. Nessuna installazione del
+client cloud, migrazione SQL live, merge o DONE implicito.
+
 Il mandato dell'utente del9novembre abilita le implementazioni B/C senza
 operatore. Questa continuazione usa un ramo isolato da0378e17 e non modifica
 il candidato5d8e704, il pacchetto qualificato, l'installato a8286c6 o i profili.

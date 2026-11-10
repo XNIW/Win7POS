@@ -114,6 +114,7 @@ namespace Win7POS.Wpf.Pos
                 vm.AddBarcodeCommand.Execute(null);
                 e.Handled = true;
             }
+            else if (vm.TryQueueBarcodeSubmission()) e.Handled = true;
         }
 
         private void OnViewPreviewKeyDown(object sender, KeyEventArgs e)
@@ -254,8 +255,9 @@ namespace Win7POS.Wpf.Pos
                 _focusOperation = null;
                 var window = Window.GetWindow(this);
                 if (!IsLoaded || !IsEnabled || !BarcodeBox.IsVisible || window?.IsActive != true) return;
+                var alreadyTyping = BarcodeBox.IsKeyboardFocused && !string.IsNullOrEmpty(BarcodeBox.Text);
                 Keyboard.Focus(BarcodeBox);
-                BarcodeBox.SelectAll();
+                if (!alreadyTyping) BarcodeBox.SelectAll();
             }), DispatcherPriority.Input);
         }
 

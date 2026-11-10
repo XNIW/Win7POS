@@ -42,6 +42,7 @@ namespace Win7POS.Wpf.Pos
 
     public sealed partial class PosWorkflowService : IHeldCartWorkflow
     {
+        private readonly bool _schemaAlreadyInitialized;
         private const string KeyPrinterName = AppSettingKeys.PosPrinterReceiptName;
         private const string KeyPrinterCopies = AppSettingKeys.PosPrinterReceiptCopies;
         private const string KeyAutoPrint = AppSettingKeys.PosPrinterReceiptAutoPrintAfterSale;
@@ -160,6 +161,14 @@ namespace Win7POS.Wpf.Pos
             _heldCarts = new HeldCartRepository(_factory);
             _officialShopSnapshots = new ShopOfficialSnapshotRepository(_factory);
             _session = new PosSession(new DataProductLookup(_products));
+        }
+
+        internal PosWorkflowService(SqliteConnectionFactory initializedFactory, Func<DateTimeOffset> utcNow)
+            : this(new PosDbOptions(initializedFactory.DbPath, accessContext: initializedFactory.AccessContext), utcNow)
+        {
+            // The startup coordinator already recovered and validated this database
+            // under its authority lease. Do not reopen exclusive maintenance after login.
+            _schemaAlreadyInitialized = true;
         }
 
         public string DbPath => _options.DbPath;
@@ -968,10 +977,11 @@ namespace Win7POS.Wpf.Pos
 
         public async Task InitializeAsync()
         {
-            await new AtomicRestoreInstaller()
-                .RecoverInterruptedInstallAsync(_options.DbPath)
-                .ConfigureAwait(false);
-            await Task.Run(() => DbInitializer.EnsureCreated(_options)).ConfigureAwait(false);
+            if (!_schemaAlreadyInitialized)
+            {
+                await new AtomicRestoreInstaller().RecoverInterruptedInstallAsync(_options.DbPath).ConfigureAwait(false);
+                await Task.Run(() => DbInitializer.EnsureCreated(_options)).ConfigureAwait(false);
+            }
 
             await _gate.WaitAsync().ConfigureAwait(false);
             try
@@ -1263,6 +1273,7 @@ namespace Win7POS.Wpf.Pos
                 var saleLines = _session.Lines.Select(x => new SaleLine
                 {
                     ProductId = x.ProductId,
+                    ManualPriceEvidence = x.ManualPriceEvidence,
                     Barcode = x.Barcode,
                     Name = x.Name,
                     Quantity = x.Quantity,

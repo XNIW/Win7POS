@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Dapper;
 using Win7POS.Core.Models;
 using Win7POS.Core.Products;
+using Win7POS.Core.Pos;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
 {
@@ -14,6 +16,28 @@ namespace Win7POS.Data.Repositories
         private readonly SqliteConnectionFactory _factory;
 
         internal ProductQueryRepository(SqliteConnectionFactory factory) => _factory = factory;
+
+        internal async Task<Product> GetForSaleAsync(string barcode)
+        {
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            var safety = await CatalogShopStateRepository.EvaluateSaleSafetyAsync(conn, tx, true).ConfigureAwait(false);
+            SqliteWorkMetrics.ProductCommand();
+            var product = await conn.QuerySingleOrDefaultAsync<Product>(
+                "SELECT id,barcode,name,unitPrice FROM products WHERE barcode=@barcode AND COALESCE(is_active,1)=1 AND remote_deleted_at IS NULL;",
+                new { barcode }, tx).ConfigureAwait(false);
+            if (!safety.IsSaleSafe)
+            {
+                if (!CatalogShopStateRepository.AllowsLocalCatalogOperation(safety.ReasonCode))
+                    throw new InvalidOperationException(safety.ReasonCode);
+                if (product != null && !await CatalogShopStateRepository.HasLocalCreateEvidenceAsync(conn, tx, product.Id).ConfigureAwait(false))
+                    throw new PosException(PosErrorCode.ProductUnavailable);
+                if (product == null && safety.ReasonCode != CatalogShopStateRepository.FullRefreshRequiredAfterEmptyCode)
+                    throw new PosException(PosErrorCode.ProductNotYetAvailable);
+            }
+            tx.Commit();
+            return product;
+        }
 
         internal async Task<Product> GetByBarcodeAsync(string barcode)
         {

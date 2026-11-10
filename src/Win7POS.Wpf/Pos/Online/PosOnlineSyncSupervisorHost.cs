@@ -60,28 +60,30 @@ namespace Win7POS.Wpf.Pos.Online
         private readonly FileLogger _logger;
         private readonly ProductImageSyncService _productImageSyncService;
         private readonly PosTrustedDeviceStore _store;
+        private readonly IOnlineSyncClock _clock;
         private OnlineSyncSupervisor _supervisor;
         private OnlineSyncGeneration _generation;
         private int _fullCatalogRuns;
         private bool _continuousStarted;
         private bool _disposed;
 
-        public PosOnlineSyncSupervisorHost(SqliteConnectionFactory factory)
+        public PosOnlineSyncSupervisorHost(SqliteConnectionFactory factory, IOnlineSyncClock clock = null)
             : this(
                 factory,
                 new PosTrustedDeviceStore(),
-                new FileLogger("PosOnlineSyncSupervisorHost"))
+                new FileLogger("PosOnlineSyncSupervisorHost"), clock)
         {
         }
 
         internal PosOnlineSyncSupervisorHost(
             SqliteConnectionFactory factory,
             PosTrustedDeviceStore store,
-            FileLogger logger)
+            FileLogger logger, IOnlineSyncClock clock = null)
         {
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _clock = clock;
             _productImageSyncService = new ProductImageSyncService(_factory);
         }
 
@@ -96,6 +98,11 @@ namespace Win7POS.Wpf.Pos.Online
 
         public bool IsFullCatalogSyncInProgress =>
             Volatile.Read(ref _fullCatalogRuns) > 0;
+
+        public bool IsContinuousRunning
+        {
+            get { lock (_stateGate) return !_disposed && _continuousStarted && _supervisor != null; }
+        }
 
         public OnlineSyncSupervisorSnapshot GetSnapshot()
         {
@@ -490,6 +497,7 @@ namespace Win7POS.Wpf.Pos.Online
                 supervisor = _supervisor;
             }
             supervisor.Start();
+            supervisor.Signal(OnlineSyncLane.CatalogDelta, OnlineSyncLaneTrigger.FirstBootstrap);
         }
 
         public void Signal(OnlineSyncLane lane, OnlineSyncLaneTrigger trigger)
@@ -1512,6 +1520,7 @@ namespace Win7POS.Wpf.Pos.Online
                     .IsCurrentAndActiveAsync(current),
                 StopAuthenticationAsync,
                 networkConcurrency: 2,
+                clock: _clock,
                 credentialProvider: ReadCredentialsAsync);
         }
 

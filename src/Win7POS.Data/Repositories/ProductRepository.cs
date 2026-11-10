@@ -41,6 +41,7 @@ namespace Win7POS.Data.Repositories
         }
 
         public Task<Product> GetByBarcodeAsync(string barcode) => _queries.GetByBarcodeAsync(barcode);
+        public Task<Product> GetForSaleAsync(string barcode) => _queries.GetForSaleAsync(barcode);
 
         /// <summary>Batch lookup per ridurre query N+1. Dedup + chunking per evitare limite parametri SQLite.</summary>
         public Task<IReadOnlyDictionary<string, Product>> GetByBarcodesAsync(IEnumerable<string> barcodes) =>

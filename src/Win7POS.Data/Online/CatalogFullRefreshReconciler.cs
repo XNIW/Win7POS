@@ -325,9 +325,8 @@ namespace Win7POS.Data.Online
                         .ConfigureAwait(false))
                     throw new InvalidOperationException("Catalog authoritative empty scope mismatch.");
 
-                // A newer attempt replaces the observation even when it fails.
-                await CatalogShopStateRepository.ClearAuthoritativeEmptyWithinTransactionAsync(conn, tx)
-                    .ConfigureAwait(false);
+                // Validate the replacement before publication. An incomplete attempt
+                // does not invalidate a previously committed observation.
                 var code = PosOnlineCompatibilityValidator.ValidateCatalogSummary(summary);
                 if (string.IsNullOrWhiteSpace(code) &&
                     !CatalogPaginationSafetyPolicy.HasCompleteValidSummary(summary))

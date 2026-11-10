@@ -10,6 +10,9 @@ namespace Win7POS.Data.Online
 {
     public sealed partial class CatalogShopStateRepository
     {
+        public static bool IsUnusableDatabase(Exception error) =>
+            error is SqliteException sqlite && (sqlite.SqliteErrorCode == 11 || sqlite.SqliteErrorCode == 26);
+
         // An observation, never a sale-safety or authentication capability. Keeping
         // it under exactness also invalidates it on repair, relink and restore.
         public const string AuthoritativeEmptyPrefix = ExactnessPrefix + "empty.";
@@ -17,7 +20,7 @@ namespace Win7POS.Data.Online
         // pull, repair, restore, relink and generation change. Only an atomic
         // verified nonempty full replacement can remove it.
         public const string FullRefreshRequiredAfterEmptyKey = "pos.catalog.full_refresh_required_after_empty";
-        public const string FullRefreshRequiredAfterEmptyCode = "catalog_full_refresh_required_after_empty";
+        public const string FullRefreshRequiredAfterEmptyCode = PosCatalogOperationPolicy.FullRefreshRequiredAfterEmptyCode;
 
         public async Task<bool> RequiresFullRefreshAfterEmptyAsync()
         {
@@ -51,6 +54,15 @@ namespace Win7POS.Data.Online
             if (generation == null) return false;
             using var conn = _factory.Open();
             using var tx = conn.BeginTransaction();
+            var empty = await IsAuthoritativelyEmptyWithinTransactionAsync(conn, tx, generation).ConfigureAwait(false);
+            tx.Commit();
+            return empty;
+        }
+
+        private static async Task<bool> IsAuthoritativelyEmptyWithinTransactionAsync(
+            SqliteConnection conn, SqliteTransaction tx, OnlineSyncGeneration generation)
+        {
+            if (generation == null) return false;
             var proof = await conn.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
 FROM pos_sync_session_generation current
@@ -89,8 +101,39 @@ WHERE current.singleton_id = 1 AND current.active = 1
                     epochKey = TransitionEpochKey, cursorKey = LastSyncCursorKey,
                     modeKey = LastSyncModeKey, revisionKey = CommittedRevisionKey
                 }, tx).ConfigureAwait(false);
-            tx.Commit();
             return proof == 1;
+        }
+
+        // One SQLite read snapshot: never join the network pull's transition barrier.
+        // Attempt status is separate; failed/in-progress pulls do not unpublish data.
+        public async Task<PosPublishedCatalogState> ReadPublishedSnapshotAsync(OnlineSyncGeneration generation)
+        {
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            var safety = await EvaluateSaleSafetyAsync(conn, tx, false).ConfigureAwait(false);
+            var empty = await IsAuthoritativelyEmptyWithinTransactionAsync(conn, tx, generation).ConfigureAwait(false);
+            var restore = await conn.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = 'pos.restore.needs_sync_review';", transaction: tx).ConfigureAwait(false);
+            tx.Commit();
+            return new PosPublishedCatalogState(safety.IsSaleSafe, empty, restore == "1");
+        }
+
+        public async Task StoreAttemptExactnessAsync(string trustedShopId, string trustedShopCode,
+            CatalogExactnessResult rejected, long expectedEpoch, string previousCursor, string previousMode,
+            OnlineSyncGeneration generation)
+        {
+            if (rejected == null) throw new ArgumentNullException(nameof(rejected));
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction(deferred: false);
+            await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
+            await RequireCommitStateAsync(conn, tx, trustedShopId, trustedShopCode, expectedEpoch,
+                previousCursor, previousMode).ConfigureAwait(false);
+            // These keys describe the rejected candidate, never the live snapshot.
+            const string prefix = "pos.catalog.attempt.exactness.";
+            await SetAsync(conn, tx, prefix + "code", rejected.Code ?? string.Empty).ConfigureAwait(false);
+            await SetAsync(conn, tx, prefix + "status", rejected.Status.ToString()).ConfigureAwait(false);
+            await SetAsync(conn, tx, prefix + "at", DateTimeOffset.UtcNow.ToString("O")).ConfigureAwait(false);
+            tx.Commit();
         }
 
         internal static Task<int> ClearAuthoritativeEmptyWithinTransactionAsync(
@@ -131,6 +174,7 @@ WHERE current.singleton_id = 1 AND current.active = 1
             await conn.ExecuteAsync("DELETE FROM app_settings WHERE key = @key;",
                 new { key = SaleSafeAtKey }, tx).ConfigureAwait(false);
             await SetAsync(conn, tx, FullRefreshRequiredAfterEmptyKey, "1").ConfigureAwait(false);
+            await conn.ExecuteAsync("DELETE FROM app_settings WHERE key LIKE 'pos.catalog.attempt.exactness.%';", transaction: tx).ConfigureAwait(false);
             var prefix = AuthoritativeEmptyPrefix;
             await SetAsync(conn, tx, prefix + "generation_id", fence.GenerationId).ConfigureAwait(false);
             await SetAsync(conn, tx, prefix + "generation_fingerprint", fence.GenerationFingerprint).ConfigureAwait(false);

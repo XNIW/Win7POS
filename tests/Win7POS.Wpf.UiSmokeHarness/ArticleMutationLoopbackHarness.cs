@@ -77,6 +77,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             Credential = "synthetic-loopback-credential", ShopCode = ShopCode, StaffCode = "ARTICLEPOS",
                             Device = new PosFirstLoginDevice { AppVersion = "empty-history-loopback", DeviceIdentifier = "synthetic-empty-history-device", DisplayName = "Synthetic empty history" }
                         }, "2468", timeout.Token).ConfigureAwait(true);
+                    if (!result.CanEnterWorkstation || result.CatalogCompleted || server.CatalogRequestCount != 0)
+                        throw new InvalidOperationException("bootstrap_must_transfer_before_catalog");
+                    // Component qualification of the empty proof, separate from the
+                    // public automatic-entry acceptance in AuthenticatedShellUxSmoke.
+                    result=await CompleteCatalogForQaAsync(result,host,timeout.Token);
                     if (!result.CanPrepareEmptyShopHistory || result.CanOpenPos || result.CatalogSaleSafe ||
                         !result.FirstLoginSucceeded || !result.TrustedSessionPersisted || !result.CatalogCompleted ||
                         server.CatalogRequestCount != 1 || !store.TryRead(out var trusted))
@@ -239,240 +244,129 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
         }
 
-        private static async Task VerifyCatalogRetryUiCaseAsync(SqliteConnectionFactory factory, string variant,
-            CatalogRetryUiProof proof, Action persist, CancellationToken cancellationToken, OperatorDialogGeometrySmoke geometry = null)
+        // Component authority-transfer matrix. Public automatic-workstation acceptance
+        // runs separately in AUTHENTICATED_SHELL_UX with MainWindow + real supervisor.
+        private static async Task VerifyCatalogRetryUiCaseAsync(SqliteConnectionFactory factory,string variant,
+            CatalogRetryUiProof proof,Action persist,CancellationToken cancellationToken,OperatorDialogGeometrySmoke geometry=null)
         {
-            var previousOperator = OperatorSessionHolder.Current;
-            var previousBaseUrl = Environment.GetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable);
-            var store = new PosTrustedDeviceStore();
-            store.Clear();
-            using (var server = new ArticleLoopbackServer(authoritativelyEmptyCatalog: true, failFirstCatalog: true))
-            using (var host = new PosOnlineSyncSupervisorHost(factory))
+            var previousOperator=OperatorSessionHolder.Current;
+            var previousUrl=Environment.GetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable);
+            var store=new PosTrustedDeviceStore(); store.Clear();
+            using(var server=new ArticleLoopbackServer(authoritativelyEmptyCatalog:true))
+            using(var host=new PosOnlineSyncSupervisorHost(factory))
             {
-                long clockAdvance = 0;
-                var session = new OperatorSession(new UserRepository(factory), new SecurityRepository(factory),
-                    new PosOfflineAuthorizationLeaseGuard(store, () => DateTimeOffset.UtcNow.AddSeconds(
-                        Interlocked.Read(ref clockAdvance) / (double)Stopwatch.Frequency), async current =>
-                        PosOnlineSyncSupervisorHost.TryCreateGeneration(current, out var currentGeneration) &&
-                        await new OnlineSyncGenerationRepository(factory).IsCurrentAndActiveAsync(currentGeneration),
-                        () => checked(Stopwatch.GetTimestamp() + Interlocked.Read(ref clockAdvance)), Stopwatch.Frequency));
-                OperatorSessionHolder.Current = session;
-                Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, server.BaseUrl);
-                var owner = new Window { Width = 1024, Height = 768, ShowInTaskbar = false,
-                    WindowStartupLocation = WindowStartupLocation.CenterScreen };
+                long clockAdvance=0;
+                var session=new OperatorSession(new UserRepository(factory),new SecurityRepository(factory),
+                    new PosOfflineAuthorizationLeaseGuard(store,()=>DateTimeOffset.UtcNow.AddSeconds(
+                        Interlocked.Read(ref clockAdvance)/(double)Stopwatch.Frequency),async current=>
+                        PosOnlineSyncSupervisorHost.TryCreateGeneration(current,out var g) &&
+                        await new OnlineSyncGenerationRepository(factory).IsCurrentAndActiveAsync(g),
+                        ()=>checked(Stopwatch.GetTimestamp()+Interlocked.Read(ref clockAdvance)),Stopwatch.Frequency));
+                OperatorSessionHolder.Current=session;
+                Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable,server.BaseUrl);
+                var owner=new Window{Width=1024,Height=768,ShowInTaskbar=false,WindowStartupLocation=WindowStartupLocation.CenterScreen};
                 geometry?.ConfigureOwner(owner);
-                var dialog = new PosOnlineFirstLoginDialog(factory, false, host);
-                geometry?.ObserveOpening(dialog, "access");
-                var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                var rendered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                dialog.ContentRendered += (_, __) => rendered.TrySetResult(true);
-                Exception primaryFailure = null;
-                var settingsRenamed = false;
-                Exception finalizationFaultInjectionError = null;
-                Action injectFinalizationFault = () =>
-                {
-                    if (variant != "normal_finalization_fault" || !session.IsLoggedIn || settingsRenamed) return;
-                    try
-                    {
-                        using (var connection = factory.Open())
-                            connection.Execute("ALTER TABLE app_settings RENAME TO qa_settings_finalization_fault;");
-                        settingsRenamed = true;
-                    }
-                    catch (Exception error) { finalizationFaultInjectionError = error; }
-                };
-                session.SessionChanged += injectFinalizationFault;
+                PosOnlineFirstLoginDialog dialog=null;
+                var settingsRenamed=false;
                 try
                 {
-                    owner.Show(); dialog.Owner = owner ?? DialogOwnerHelper.GetSafeOwner();
-                    _ = dialog.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(async () =>
+                    var result=await new PosOnlineBootstrapService(factory,store,host).BootstrapAsync(
+                        new PosAdminWebOptions(new Uri(server.BaseUrl)),new PosFirstLoginRequest
+                        {ShopCode=ShopCode,StaffCode="ARTICLEPOS",Credential="2468",Device=new PosFirstLoginDevice
+                          {DeviceIdentifier="synthetic-component-device",DisplayName="Synthetic component",AppVersion="1.0"}},
+                        "2468",cancellationToken);
+                    CheckCatalogRetryUi(proof,persist,"auth_transfer_does_not_wait_for_catalog",
+                        result.CanEnterWorkstation && !result.CatalogStarted && server.CatalogRequestCount==0 && !session.IsLoggedIn);
+                    owner.Show();
+                    dialog=new PosOnlineFirstLoginDialog(factory,false,host){Owner=owner};
+                    geometry?.ObserveOpening(dialog,"access");
+                    var finished=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var injected=false; Exception completionFailure=null; bool accepted=false;
+                    Func<CancellationToken,Task> finalAuthority=async token=>
+                    {
+                        if(variant=="lease_expired") Interlocked.Exchange(ref clockAdvance,checked(5L*60*60*Stopwatch.Frequency));
+                        else if(variant=="revoked") PosOnlineSyncRevocationLatch.Revoke(host.CurrentGeneration);
+                        else if(variant=="generation_changed" || variant=="normal_late_generation")
+                        {
+                            var old=host.CurrentGeneration;
+                            var next=new OnlineSyncGeneration(OnlineSyncGeneration.CreateGenerationId(),old.PosSessionId,
+                                old.ShopDeviceId,old.ShopId,old.ShopCode,old.StaffId,old.StaffCredentialVersion);
+                            await new OnlineSyncGenerationRepository(factory).ActivateAndRecoverAsync(next,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                            if(variant=="generation_changed") store.SaveFirstLogin(server.FirstLoginFixtureResponse(),next.GenerationId);
+                        }
+                        else if(variant=="normal_late_operator")
+                        {
+                            if(await session.LoginAsync(session.CurrentUser.Username,"2468")!=LoginResult.Success)
+                                throw new InvalidOperationException("retry_replacement_operator_failed");
+                        }
+                        else if(variant=="normal_finalization_fault")
+                        {
+                            using(var c=factory.Open())c.Execute("ALTER TABLE app_settings RENAME TO qa_settings_finalization_fault;");
+                            settingsRenamed=true;proof.FinalizationFaultInjected=true;
+                        }
+                        else if(variant=="cancelled") dialog.Close();
+                        injected=true;
+                    };
+                    dialog.ContentRendered+=async (_,__)=>
                     {
                         try
                         {
-                            await WaitCatalogRetryUiAsync(() => rendered.Task.IsCompleted && AccessDialogInitialized(dialog) &&
-                                !AccessDialogBusy(dialog), cancellationToken);
-                            AccessControl<TextBox>(dialog, "ShopCodeBox").Text = ShopCode;
-                            AccessControl<TextBox>(dialog, "StaffCodeBox").Text = "ARTICLEPOS";
-                            AccessControl<PasswordBox>(dialog, "CredentialBox").Password = "2468";
-                            AccessClick(dialog, "ConnectButton");
-                            await WaitCatalogRetryUiAsync(() => !AccessDialogBusy(dialog) && server.CatalogRequestCount >= 1, cancellationToken);
-                            proof.FirstLoginRequests = server.FirstLoginRequestCount; proof.CatalogRequests = server.CatalogRequestCount;
-                            CheckCatalogRetryUi(proof, persist, "connect_catalog_failure_no_automatic_retry",
-                                server.FirstLoginRequestCount == 1 && server.CatalogRequestCount == 1 &&
-                                !session.IsLoggedIn && AccessControl<Button>(dialog, "RetryDownloadButton").IsVisible &&
-                                dialog.FindName("HistoryButton") == null);
-                            using (var password = AccessControl<PasswordBox>(dialog, "CredentialBox").SecurePassword)
-                                CheckCatalogRetryUi(proof, persist, "connect_clears_masked_password", password.Length == 0);
-                            var pendingLogin = AccessDialogPendingLogin(dialog);
-                            var pendingCredential = pendingLogin?.GetType().GetField("_credential", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(pendingLogin) as SecureString;
-                            CheckCatalogRetryUi(proof, persist, "connect_retains_only_readonly_protected_continuation",
-                                pendingCredential != null && pendingCredential.IsReadOnly());
-
-                            var normalCompletionCase = variant == "normal_ready" || variant == "normal_late_generation" || variant == "normal_late_operator" || variant == "normal_finalization_fault";
-                            if (normalCompletionCase) server.UseCatalogSnapshot(empty: false);
-                            var lateAuthorityInjected = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                            if (variant == "normal_late_generation" || variant == "normal_late_operator")
-                            {
-                                _ = dialog.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(async () =>
-                                {
-                                    try
-                                    {
-                                        await WaitCatalogRetryUiAsync(() => session.IsLoggedIn &&
-                                            AccessControl<ProgressBar>(dialog, "SetupProgressBar").Value == 100 &&
-                                            !AccessControl<ProgressBar>(dialog, "SetupProgressBar").IsIndeterminate, cancellationToken);
-                                        if (!dialog.IsVisible) throw new InvalidOperationException("retry_normal_late_phase_not_reached");
-                                        if (variant == "normal_late_operator")
-                                        {
-                                            var olderVersion = session.CurrentOperatorAuthorityVersion;
-                                            var replacement = await session.LoginAsync(session.CurrentUser.Username, "2468");
-                                            if (replacement != LoginResult.Success || session.CurrentOperatorAuthorityVersion <= olderVersion)
-                                                throw new InvalidOperationException("retry_newer_operator_not_committed");
-                                            lateAuthorityInjected.TrySetResult(true);
-                                            return;
-                                        }
-                                        var previous = host.CurrentGeneration;
-                                        var next = new OnlineSyncGeneration(OnlineSyncGeneration.CreateGenerationId(), previous.PosSessionId,
-                                            previous.ShopDeviceId, previous.ShopId, previous.ShopCode, previous.StaffId, previous.StaffCredentialVersion);
-                                        // Replace only the durable generation: no trusted-file
-                                        // notification/timer can substitute for the final DB check.
-                                        await new OnlineSyncGenerationRepository(factory).ActivateAndRecoverAsync(next, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                                        lateAuthorityInjected.TrySetResult(true);
-                                    }
-                                    catch (Exception error) { lateAuthorityInjected.TrySetException(error); }
-                                }));
-                            }
-                            if (variant != "retry_empty") server.HoldNextCatalogResponse();
-                            AccessClick(dialog, "RetryDownloadButton");
-                            CheckCatalogRetryUi(proof, persist, "retry_claims_busy_before_async_preflight",
-                                AccessDialogBusy(dialog) && !AccessDialogOperationFinished(dialog) &&
-                                !AccessControl<Button>(dialog, "RetryDownloadButton").IsEnabled);
-                            // A queued second click must be ignored by the real
-                            // handler, even when raised after the button disables.
-                            AccessClick(dialog, "RetryDownloadButton");
-                            if (variant != "retry_empty")
-                            {
-                                await WaitCatalogRetryUiAsync(() => server.NextCatalogRequestBlocked.IsCompleted, cancellationToken);
-                                if (variant == "lease_expired")
-                                    Interlocked.Exchange(ref clockAdvance, checked(5L * 60L * 60L * Stopwatch.Frequency));
-                                else if (variant == "revoked") PosOnlineSyncRevocationLatch.Revoke(host.CurrentGeneration);
-                                else if (variant == "generation_changed")
-                                {
-                                    var response = server.FirstLoginFixtureResponse();
-                                    var nextId = OnlineSyncGeneration.CreateGenerationId();
-                                    var next = new OnlineSyncGeneration(nextId, response.Session.PosSessionId, response.Device.ShopDeviceId,
-                                        response.Shop.ShopId, response.Shop.ShopCode, response.Staff.StaffId, response.Staff.CredentialVersion);
-                                    await new OnlineSyncGenerationRepository(factory).ActivateAndRecoverAsync(next, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                                    store.SaveFirstLogin(response, nextId);
-                                }
-                                else if (variant == "cancelled") AccessClick(dialog, "CancelButton");
-                                server.ReleaseNextCatalogResponse();
-                            }
-                            await WaitCatalogRetryUiAsync(() => AccessDialogOperationFinished(dialog) &&
-                                (variant == "cancelled" || ((normalCompletionCase || variant == "retry_empty") && !dialog.IsVisible) || !AccessDialogBusy(dialog)), cancellationToken);
-                            if (variant == "normal_late_generation" || variant == "normal_late_operator")
-                                CheckCatalogRetryUi(proof, persist, "retry_normal_late_authority_injected", await lateAuthorityInjected.Task.ConfigureAwait(true));
-                            if (variant == "normal_finalization_fault")
-                            {
-                                proof.FirstLoginRequests = server.FirstLoginRequestCount; proof.CatalogRequests = server.CatalogRequestCount;
-                                proof.FinalizationFaultInjected = settingsRenamed;
-                                proof.FaultInjectionExceptionType = finalizationFaultInjectionError?.GetType().Name;
-                                proof.FaultInjectionSqliteCode = (finalizationFaultInjectionError as Microsoft.Data.Sqlite.SqliteException)?.SqliteErrorCode;
-                                proof.FaultInjectionSqliteExtendedCode = (finalizationFaultInjectionError as Microsoft.Data.Sqlite.SqliteException)?.SqliteExtendedErrorCode;
-                                persist();
-                                CheckCatalogRetryUi(proof, persist, "retry_normal_finalization_fault_injected",
-                                    settingsRenamed && finalizationFaultInjectionError == null);
-                                using (var connection = factory.Open())
-                                    connection.Execute("ALTER TABLE qa_settings_finalization_fault RENAME TO app_settings;");
-                                settingsRenamed = false;
-                            }
-                            proof.FirstLoginRequests = server.FirstLoginRequestCount; proof.CatalogRequests = server.CatalogRequestCount;
-                            CheckCatalogRetryUi(proof, persist, "retry_does_not_repeat_first_login", server.FirstLoginRequestCount == 1);
-                            using (var password = AccessControl<PasswordBox>(dialog, "CredentialBox").SecurePassword)
-                                CheckCatalogRetryUi(proof, persist, "retry_has_no_password_in_masked_field", password.Length == 0);
-                            var protectedContinuationDisposed = false;
-                            try { _ = pendingCredential.Length; }
-                            catch (ObjectDisposedException) { protectedContinuationDisposed = true; }
-                            CheckCatalogRetryUi(proof, persist, "retry_destroys_protected_continuation",
-                                AccessDialogPendingLogin(dialog) == null && protectedContinuationDisposed);
-
-                            if (variant == "retry_empty")
-                            {
-                                CheckCatalogRetryUi(proof, persist, "retry_receives_authoritative_empty",
-                                    server.CatalogRequestCount == 2 && await new CatalogShopStateRepository(factory).IsAuthoritativelyEmptyAsync(host.CurrentGeneration));
-                                CheckCatalogRetryUi(proof, persist, "retry_empty_completes_authenticated_shell_transfer",
-                                    dialog.DialogResult == true && session.IsLoggedIn && session.EnsureAuthorizationValid() && dialog.FindName("HistoryButton") == null);
-                                CheckCatalogRetryUi(proof, persist, "retry_does_not_admit_sales",
-                                    !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory));
-                                if (geometry != null)
-                                {
-                                    // This explicit legacy capability fixture tests shared geometry only.
-                                    // Actual ordinary MainWindow navigation has its own bounded worker.
-                                    var capability = await HistoricalOnboardingAccess.CreateAsync(factory, session, host.CurrentGeneration, cancellationToken);
-                                    var service = new Win7POS.Wpf.Pos.PosWorkflowService(new PosDbOptions(factory.DbPath, accessContext: factory.AccessContext), () => DateTimeOffset.UtcNow);
-                                    var workspace = new HistoricalOnboardingDialog(capability, service) { Owner = owner };
-                                    workspace.Show(); await Dispatcher.Yield(DispatcherPriority.ContextIdle);
-                                    await geometry.VerifyWorkspaceAsync(workspace, factory, cancellationToken); workspace.Close();
-                                }
-                                CheckCatalogRetryUi(proof, persist, "retry_has_no_compulsory_historical_workspace",
-                                    !dialog.IsVisible && session.IsLoggedIn && !owner.OwnedWindows.OfType<HistoricalOnboardingDialog>().Any());
-                            }
-                            else if (variant == "normal_ready")
-                            {
-                                var expectedUsername = await new UserRepository(factory).FindTrustedRemoteStaffUsernameAsync(
-                                    ShopId, ShopCode, StaffId, "ARTICLEPOS", 7);
-                                CheckCatalogRetryUi(proof, persist, "retry_normal_ready_admits_verified_operator",
-                                    server.FirstLoginRequestCount == 1 && server.CatalogRequestCount == 2 &&
-                                    dialog.DialogResult == true && dialog.AccessMode == PosAuthenticatedAccessMode.Normal &&
-                                    session.IsLoggedIn && session.TryGetAuthorizationBoundUser(out var boundUser) &&
-                                    boundUser.Username == expectedUsername && await PosCatalogPullService.IsCatalogSaleSafeAsync(factory) &&
-                                    dialog.FindName("HistoryButton") == null);
-                            }
-                            else if (variant == "normal_late_operator")
-                                CheckCatalogRetryUi(proof, persist, "retry_stale_callback_preserves_newer_operator",
-                                    dialog.DialogResult != true && session.IsLoggedIn && session.EnsureAuthorizationValid() &&
-                                    session.CurrentOperatorAuthorityVersion >= 2);
-                            else if (normalCompletionCase)
-                                CheckCatalogRetryUi(proof, persist, variant == "normal_late_generation" ?
-                                    "retry_normal_late_authority_cannot_commit_operator" : "retry_normal_fault_cannot_leave_operator_logged_in",
-                                    !session.IsLoggedIn && dialog.DialogResult != true);
-                            else
-                                CheckCatalogRetryUi(proof, persist, "retry_authority_transition_denies_history_and_sales",
-                                    dialog.FindName("HistoryButton") == null && !session.IsLoggedIn &&
-                                    dialog.DialogResult != true && !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory));
-                            completed.TrySetResult(true);
+                            await WaitCatalogRetryUiAsync(()=>AccessDialogInitialized(dialog) && !AccessDialogBusy(dialog),cancellationToken);
+                            var method=typeof(PosOnlineFirstLoginDialog).GetMethod("CompleteOnlineSignInAsync",BindingFlags.Instance|BindingFlags.NonPublic);
+                            try {accepted=await (Task<bool>)method.Invoke(dialog,new object[]{ShopCode,"ARTICLEPOS","2468","component","online",cancellationToken,finalAuthority});}
+                            catch(Exception error){completionFailure=error;}
+                            finished.TrySetResult(true);
                         }
-                        catch (Exception error) { completed.TrySetException(error); }
-                        finally { server.ReleaseNextCatalogResponse(); if (dialog.IsVisible) dialog.Close(); }
-                    }));
-                    dialog.ShowDialog();
-                    await completed.Task.ConfigureAwait(true);
+                        catch(Exception error){finished.TrySetException(error);}
+                        finally{if(dialog.IsVisible)dialog.Close();}
+                    };
+                    dialog.ShowDialog(); await finished.Task;
+                    if(settingsRenamed)
+                    {
+                        proof.FaultInjectionExceptionType=completionFailure?.GetType().Name;
+                        proof.FaultInjectionSqliteCode=(completionFailure as Microsoft.Data.Sqlite.SqliteException)?.SqliteErrorCode;
+                        proof.FaultInjectionSqliteExtendedCode=(completionFailure as Microsoft.Data.Sqlite.SqliteException)?.SqliteExtendedErrorCode;
+                        using(var c=factory.Open())c.Execute("ALTER TABLE qa_settings_finalization_fault RENAME TO app_settings;");
+                        settingsRenamed=false;
+                        CheckCatalogRetryUi(proof,persist,"retry_normal_finalization_fault_injected",proof.FinalizationFaultInjected && completionFailure!=null);
+                    }
+                    CheckCatalogRetryUi(proof,persist,"retry_final_authority_boundary_executed",injected);
+                    var positive=variant=="retry_empty" || variant=="normal_ready";
+                    if(positive)
+                        CheckCatalogRetryUi(proof,persist,"retry_normal_authority_transfers_without_catalog",
+                            accepted && dialog.DialogResult==true && session.IsLoggedIn && session.EnsureAuthorizationValid() &&
+                            dialog.AccessMode==PosAuthenticatedAccessMode.Normal && !dialog.IsVisible);
+                    else if(variant=="normal_late_operator")
+                        CheckCatalogRetryUi(proof,persist,"retry_stale_callback_preserves_newer_operator",
+                            !accepted && dialog.DialogResult!=true && session.IsLoggedIn && session.EnsureAuthorizationValid() && session.CurrentOperatorAuthorityVersion>=2);
+                    else
+                        CheckCatalogRetryUi(proof,persist,"retry_changed_authority_never_transfers_operator",
+                            !accepted && dialog.DialogResult!=true && !session.IsLoggedIn);
+                    using(var password=AccessControl<PasswordBox>(dialog,"CredentialBox").SecurePassword)
+                        CheckCatalogRetryUi(proof,persist,"retry_no_retained_masked_or_pending_credential",password.Length==0 && AccessDialogPendingLogin(dialog)==null);
+                    CheckCatalogRetryUi(proof,persist,"retry_no_compulsory_history_or_catalog_request",
+                        dialog.FindName("HistoryButton")==null && server.CatalogRequestCount==0 && server.FirstLoginRequestCount==1);
+                    if(geometry!=null && positive)
+                    {
+                        var catalog=await host.TriggerAsync(OnlineSyncLane.CatalogDelta,OnlineSyncLaneTrigger.FirstBootstrap,cancellationToken);
+                        CheckCatalogRetryUi(proof,persist,"geometry_component_has_verified_empty",catalog.Code=="catalog_authoritatively_empty");
+                        var access=await HistoricalOnboardingAccess.CreateAsync(factory,session,host.CurrentGeneration,cancellationToken);
+                        var service=new Win7POS.Wpf.Pos.PosWorkflowService(factory,()=>DateTimeOffset.UtcNow);
+                        var workspace=new HistoricalOnboardingDialog(access,service){Owner=owner};
+                        workspace.Show();await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                        await geometry.VerifyWorkspaceAsync(workspace,factory,cancellationToken);workspace.Close();
+                    }
+                    proof.FirstLoginRequests=server.FirstLoginRequestCount;proof.CatalogRequests=server.CatalogRequestCount;persist();
                 }
-                catch (Exception error) { primaryFailure = error; throw; }
                 finally
                 {
-                    server.ReleaseNextCatalogResponse();
                     try
                     {
-                        if (dialog.IsVisible) dialog.Close(); owner.Close();
-                        session.SessionChanged -= injectFinalizationFault;
-                        if (settingsRenamed)
-                        {
-                            using (var connection = factory.Open())
-                                connection.Execute("ALTER TABLE qa_settings_finalization_fault RENAME TO app_settings;");
-                            settingsRenamed = false;
-                        }
-                        await host.StopAsync().ConfigureAwait(true);
+                        if(settingsRenamed){using(var c=factory.Open())c.Execute("ALTER TABLE qa_settings_finalization_fault RENAME TO app_settings;");}
+                        if(dialog?.IsVisible==true)dialog.Close();owner.Close();await host.StopAsync();
                     }
-                    catch (Exception cleanup)
-                    {
-                        proof.CleanupFailure = cleanup.GetType().Name; persist();
-                        if (primaryFailure == null) throw;
-                    }
-                    finally
-                    {
-                        session.LogoutForced(); store.Clear();
-                        OperatorSessionHolder.Current = previousOperator;
-                        Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, previousBaseUrl);
-                    }
+                    finally{session.LogoutForced();store.Clear();OperatorSessionHolder.Current=previousOperator;
+                        Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable,previousUrl);}
                 }
             }
         }
@@ -518,6 +412,22 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var recovered = await host.TriggerAsync(OnlineSyncLane.CatalogDelta, OnlineSyncLaneTrigger.Manual, cancellationToken);
             if (!recovered.Success || !recovered.CatalogSaleSafe || !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory))
                 throw new InvalidOperationException("empty_history_nonempty_full_recovery_failed");
+        }
+
+        // Existing staging/component fixtures require a fully qualified catalog
+        // before exercising mutations. This explicit QA step is not login UX.
+        internal static async Task<PosOnlineBootstrapResult> CompleteCatalogForQaAsync(PosOnlineBootstrapResult authenticated,
+            PosOnlineSyncSupervisorHost host,CancellationToken token)
+        {
+            if(authenticated?.CanEnterWorkstation!=true)return authenticated;
+            var lane=await host.TriggerAsync(OnlineSyncLane.CatalogDelta,OnlineSyncLaneTrigger.FirstBootstrap,token).ConfigureAwait(true);
+            if(lane.Success && lane.CatalogSaleSafe)
+                return PosOnlineBootstrapResult.Ok(PosCatalogPullOutcome.CompletedOk(lane.CatalogPagesProcessed,diagnostic:lane.CatalogDiagnostic),
+                    authenticated.ClientRequestId,authenticated.ServerRequestId,authenticated.CfRay,authenticated.HttpStatus);
+            var outcome=lane.Success && lane.Code=="catalog_authoritatively_empty"
+                ? PosCatalogPullOutcome.AuthoritativelyEmpty(lane.CatalogPagesProcessed)
+                : PosCatalogPullOutcome.Failure(lane.Code,lane.AuthenticationDenied,lane.CatalogHasMore,lane.CatalogPagesProcessed,diagnostic:lane.CatalogDiagnostic);
+            return PosOnlineBootstrapResult.CatalogIncomplete(lane.Code,"QA catalog preparation",lane.AuthenticationDenied,lane.CatalogHasMore,outcome);
         }
 
         private const string ShopCode = "ARTICLELOOP";
@@ -616,6 +526,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                     .WriteRunConsumedMarkerAtomically(
                                         markerDirectory,
                                         "ASUSART_POST_PR68_CALLBACK_REGRESSION"));
+                    var authenticated=await bootstrapTask.ConfigureAwait(true);
+                    Require(authenticated.CanEnterWorkstation && File.Exists(markerPath) && server.CatalogRequestCount==0,
+                        "authentication_or_run_consumed_marker_waited_for_catalog");
+                    var catalogTask=CompleteCatalogForQaAsync(authenticated,host,timeout.Token);
                     var catalogBlocked = await Task.WhenAny(
                             server.FirstCatalogRequestBlocked,
                             Task.Delay(
@@ -627,10 +541,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             catalogBlocked,
                             server.FirstCatalogRequestBlocked) &&
                         File.Exists(markerPath) &&
-                        !bootstrapTask.IsCompleted,
+                        !catalogTask.IsCompleted,
                         "run_consumed_marker_not_durable_before_catalog_return");
                     server.ReleaseCatalogResponse();
-                    var bootstrap = await bootstrapTask.ConfigureAwait(true);
+                    var bootstrap = await catalogTask.ConfigureAwait(true);
                     Require(
                         bootstrap.Success &&
                         bootstrap.FirstLoginSucceeded &&
@@ -1563,9 +1477,9 @@ GROUP BY mutation_kind;")).ToDictionary(
                 _releaseCatalogResponse =
                     new TaskCompletionSource<bool>(
                         TaskCreationOptions.RunContinuationsAsynchronously);
-            private readonly TaskCompletionSource<bool> _nextCatalogRequestBlocked =
+            private TaskCompletionSource<bool> _nextCatalogRequestBlocked =
                 new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            private readonly TaskCompletionSource<bool> _releaseNextCatalogResponse =
+            private TaskCompletionSource<bool> _releaseNextCatalogResponse =
                 new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             private readonly TcpListener _listener;
             private readonly Task _serverTask;
@@ -1585,6 +1499,8 @@ GROUP BY mutation_kind;")).ToDictionary(
             private int _catalogRequestCount;
             private int _firstLoginRequestCount;
             private int _holdNextCatalogResponse;
+            private int _nextCatalogFault;
+            private int _allowCancelledCatalogPeer;
             private readonly bool _failFirstCatalog;
             private readonly string _cursorScope;
             private int _duplicateReplayCount;
@@ -1665,7 +1581,17 @@ GROUP BY mutation_kind;")).ToDictionary(
                 Volatile.Read(ref _catalogRequestCount);
             internal int FirstLoginRequestCount => Volatile.Read(ref _firstLoginRequestCount);
             internal Task NextCatalogRequestBlocked => _nextCatalogRequestBlocked.Task;
-            internal void HoldNextCatalogResponse() => Interlocked.Exchange(ref _holdNextCatalogResponse, 1);
+            internal void HoldNextCatalogResponse()
+            {
+                lock (_gate)
+                {
+                    _nextCatalogRequestBlocked=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _releaseNextCatalogResponse=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    Interlocked.Exchange(ref _holdNextCatalogResponse,1);
+                }
+            }
+            internal void FailNextCatalogResponse(bool disconnect) => Interlocked.Exchange(ref _nextCatalogFault,disconnect?2:1);
+            internal void AllowCancelledCatalogPeer() => Interlocked.Exchange(ref _allowCancelledCatalogPeer,1);
             internal void ReleaseNextCatalogResponse() => _releaseNextCatalogResponse.TrySetResult(true);
             internal PosFirstLoginResponse FirstLoginFixtureResponse() => BuildFirstLoginResponse();
             internal string LastCatalogRequestCursor { get { lock (_gate) return _lastCatalogRequestCursor; } }
@@ -1753,6 +1679,10 @@ GROUP BY mutation_kind;")).ToDictionary(
                                 cancellationToken)
                             .ConfigureAwait(false);
                     }
+                    catch (IOException) when (Interlocked.Exchange(ref _allowCancelledCatalogPeer,0)==1)
+                    {
+                        client?.Dispose(); // Explicit close-during-catalog fixture; client cancellation is expected.
+                    }
                     catch (ObjectDisposedException)
                     {
                         client?.Dispose();
@@ -1818,6 +1748,17 @@ GROUP BY mutation_kind;")).ToDictionary(
                         await WriteResponseAsync(stream, 200, Encoding.UTF8.GetBytes(body), cancellationToken).ConfigureAwait(false);
                         return;
                     }
+                    if (request.RequestLine.StartsWith("POST /api/pos/session/heartbeat ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var authenticated=BuildFirstLoginResponse();
+                        await WriteResponseAsync(stream,200,Serialize(new PosHeartbeatResponse
+                        {
+                            Ok=true,ServerTime=authenticated.ServerTime,Session=authenticated.Session,
+                            CatalogRevision=_catalogRevision.ToString(CultureInfo.InvariantCulture),
+                            CatalogChangesAvailable=true,NextPollAfterSeconds=30
+                        }),cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
                     if (request.RequestLine.StartsWith(
                             "POST /api/pos/catalog/pull ",
                             StringComparison.OrdinalIgnoreCase))
@@ -1825,6 +1766,13 @@ GROUP BY mutation_kind;")).ToDictionary(
                         var catalogRequest = Deserialize<PosCatalogPullRequest>(request.Body);
                         lock (_gate) _lastCatalogRequestCursor = catalogRequest.SyncCursor ?? string.Empty;
                         var catalogRequestNumber = Interlocked.Increment(ref _catalogRequestCount);
+                        var fault=Interlocked.Exchange(ref _nextCatalogFault,0);
+                        if(fault==2) return; // Controlled transport loss, not a fabricated catalog response.
+                        if(fault==1)
+                        {
+                            await WriteResponseAsync(stream,503,Encoding.UTF8.GetBytes("{\"ok\":false,\"code\":\"temporarily_unavailable\"}"),cancellationToken).ConfigureAwait(false);
+                            return;
+                        }
                         if (_failFirstCatalog && catalogRequestNumber == 1)
                         {
                             await WriteResponseAsync(stream, 409, Encoding.UTF8.GetBytes("{\"ok\":false,\"code\":\"unmapped\"}"), cancellationToken)

@@ -395,7 +395,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         progress).ConfigureAwait(true);
 
                     LogAccessBootstrapResult(attemptId, result);
-                    if (result.CanOpenPos)
+                    if (result.CanEnterWorkstation)
                     {
                         if (await CompleteOnlineSignInAsync(shopCode, staffCode, credential, attemptId, "online", _activeCts.Token).ConfigureAwait(true))
                         {
@@ -632,7 +632,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (!await EnsureShellAdmissionForAccessAsync(logoutOnBlock: false, attemptId: attemptId, mode: mode).ConfigureAwait(true)) return false;
                 await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
                 MarkSetupReady();
-                await Task.Delay(450, cancellationToken).ConfigureAwait(true);
+                // Transfer promptly; full catalog population is owned by the shell supervisor.
                 if (demandFinalAuthority != null)
                     await demandFinalAuthority(cancellationToken).ConfigureAwait(true);
                 else if (expectedGeneration == null ||
@@ -2026,7 +2026,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void LogAccessBootstrapResult(string attemptId, PosOnlineBootstrapResult result)
         {
-            var normalizedResult = result != null && result.CanOpenPos
+            var normalizedResult = result != null && result.CanEnterWorkstation
                 ? "success"
                 : result != null && result.Denied
                     ? "denied"
@@ -2053,7 +2053,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 " httpStatus=" + (result?.Diagnostic?.HttpStatus?.ToString() ?? "none") +
                 " supportId=" + SafeAuditValue(result?.Diagnostic?.SupportId);
 
-            if (result != null && result.CanOpenPos)
+            if (result != null && result.CanEnterWorkstation)
             {
                 LogAccessInfo(attemptId, "online_bootstrap_result", details);
                 return;

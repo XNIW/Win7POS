@@ -193,6 +193,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                         outputDirectory,
                                         report.RunId))
                             .ConfigureAwait(true);
+                        bootstrap=await ArticleMutationLoopbackHarness.CompleteCatalogForQaAsync(bootstrap,host,timeout.Token);
                     }
                     request.Credential = string.Empty;
 
