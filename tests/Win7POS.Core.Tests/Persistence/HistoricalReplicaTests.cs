@@ -1,0 +1,109 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using Dapper;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Win7POS.Core.Import;
+using Win7POS.Core.Online;
+using Win7POS.Core.Reports;
+using Win7POS.Data.Import;
+using Win7POS.Data.Reports;
+using Win7POS.Data.Repositories;
+
+namespace Win7POS.Core.Tests.Persistence;
+
+[TestClass]
+public sealed class HistoricalReplicaTests
+{
+    const string Shop=HistoricalCloudExportTests.Fixture.Shop,Dataset="90000000-0000-4000-8000-000000003019",Batch="80000000-0000-4000-8000-000000003019",Merchant="70000000-0000-4000-8000-000000003019",Cursor="60000000-0000-4000-8000-000000003019";
+    static readonly CancellationToken Ct=CancellationToken.None;
+    [TestMethod]
+    public async Task CompleteReplica_PublishesOnceWithoutAddingTheLocalLegacyTotals()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var original=f.ReadFacts();var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});
+        var source=Entities(f);await store.ObserveAuthorityAsync(Shop,Authority(),Ct);
+        Assert.AreEqual(SalesReportCoverageStatus.CloudReplicaRequired,(await Report(f)).Coverage.Status);
+        var manifest=Manifest(source);var generation=await store.BeginAsync(Shop,manifest,Ct);
+        var first=Page(manifest,source.Take(2).ToArray(),Cursor,"61000000-0000-4000-8000-000000003019");
+        await store.StageAsync(generation,first,Ct);await store.StageAsync(generation,first,Ct);
+        var pending=await new HistoricalReplicaStore(f.Db.Factory,()=>{}).ReadPendingAsync(Shop,Ct);
+        Assert.AreEqual(generation,pending.GenerationId);Assert.AreEqual(first.NextCursor,pending.Manifest.Cursor);Assert.IsFalse(pending.Complete);
+        Assert.IsFalse((await Report(f)).Coverage.CanPublish,"Partial data cannot be reported as empty or combined with the legacy source.");
+        await store.StageAsync(generation,Page(manifest,source.Skip(2).ToArray(),first.NextCursor,null),Ct);
+        await store.PublishAsync(generation,Ct);
+        Assert.IsNull((await store.ReadPendingAsync(Shop,Ct)).GenerationId);
+        var report=await Report(f);Assert.AreEqual(3380L,report.Summary.BalanceClp);Assert.AreEqual(5L,report.Summary.HistoricalMovementCount);
+        Assert.AreEqual(SalesReportCoverageStatus.CloudReplicaCached,report.Coverage.Status);Assert.IsTrue(report.Coverage.CanPublish);
+        Assert.AreEqual(original,f.ReadFacts(),"Replica metadata must not change the retained bank/native ledger or receipt counts.");
+        Assert.AreEqual(0L,(await Report(f,1001)).Summary.HistoricalMovementCount,"Unknown original cashiers never become the current operator.");
+        await store.MarkStaleAsync(Shop,Ct);Assert.AreEqual(3380L,(await Report(f)).Summary.BalanceClp);
+    }
+    [TestMethod]
+    public async Task UndoDelta_IsAtomicAndRollbackNeverRevealsTheOldLocalTotals()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});var source=Entities(f);
+        await store.ObserveAuthorityAsync(Shop,Authority(),Ct);var manifest=Manifest(source);var g=await store.BeginAsync(Shop,manifest,Ct);
+        await store.StageAsync(g,Page(manifest,source,Cursor,null),Ct);await store.PublishAsync(g,Ct);var before=await Report(f);
+        foreach(var entity in source){if(entity.Kind=="movement")entity.Payload.Active=false;else{entity.Payload.State="cancelled";entity.Payload.CancelledRevision="2";}entity.Digest=HistoricalReplicaProtocol.EntityDigest(entity);}
+        await store.ObserveAuthorityAsync(Shop,Authority(revision:"2"),Ct);var delta=Manifest(source,revision:"2",mode:"delta");var stage=await store.BeginAsync(Shop,delta,Ct);
+        await store.StageAsync(stage,Page(delta,source,Cursor,null),Ct);Assert.AreEqual(3380L,(await Report(f)).Summary.BalanceClp);
+        await store.PublishAsync(stage,Ct);Assert.AreEqual(0L,(await Report(f)).Summary.BalanceClp);
+        await Assert.ThrowsAsync<ReportSnapshotStaleException>(()=>Query(f).ValidateAsync(before.Token,Filter(),null,Ct));
+        await store.ObserveAuthorityAsync(Shop,Authority("frozen","3","2"),Ct);Assert.AreEqual(0L,(await Report(f)).Summary.BalanceClp);
+        using var c=f.Db.Factory.Open();Assert.AreEqual(5L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1"));
+    }
+    [TestMethod]
+    public async Task BadChecksumAndRevocation_LeaveTheLastCompleteGenerationUntouched()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var revoked=false;var store=new HistoricalReplicaStore(f.Db.Factory,()=>{if(revoked)throw new InvalidOperationException("revoked");});var source=Entities(f);
+        await store.ObserveAuthorityAsync(Shop,Authority(),Ct);var manifest=Manifest(source);var g=await store.BeginAsync(Shop,manifest,Ct);
+        await store.StageAsync(g,Page(manifest,source,Cursor,null),Ct);await store.PublishAsync(g,Ct);var prior=(await store.ReadAsync(Shop,Ct)).GenerationId;
+        manifest.Checksum=new string('f',64);g=await store.BeginAsync(Shop,manifest,Ct);await store.StageAsync(g,Page(manifest,source,Cursor,null),Ct);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>store.PublishAsync(g,Ct));Assert.AreEqual(prior,(await store.ReadAsync(Shop,Ct)).GenerationId);
+        revoked=true;await Assert.ThrowsAsync<InvalidOperationException>(()=>store.PublishAsync(g,Ct));revoked=false;
+        Assert.AreEqual(3380L,(await Report(f)).Summary.BalanceClp);
+    }
+    [TestMethod]
+    public async Task PageScopeAndEpochChanges_CannotPublishACopiedReplica()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});var source=Entities(f);await store.ObserveAuthorityAsync(Shop,Authority(),Ct);
+        var manifest=Manifest(source);var g=await store.BeginAsync(Shop,manifest,Ct);var page=Page(manifest,source,Cursor,null);page.WriterEpoch="99";
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>store.StageAsync(g,page,Ct));page.WriterEpoch="2";await store.StageAsync(g,page,Ct);
+        await store.ObserveAuthorityAsync(Shop,Authority("frozen","3"),Ct);await Assert.ThrowsAsync<InvalidOperationException>(()=>store.PublishAsync(g,Ct));
+        Assert.IsNull((await store.ReadAsync(Shop,Ct)).GenerationId);
+    }
+    [TestMethod]
+    public void LocalGrant_UsesAMonotonicDeadlineAndNeverSurvivesActorRevocation()
+    {
+        long clock=1000;var revoked=false;var grant=new HistoricalLocalWriteGrant(Cursor,"1",60000,100,()=>{if(revoked)throw new InvalidOperationException("revoked");},()=>clock,1000);
+        clock=50899;grant.DemandStillValid();clock=50900;Assert.Throws<InvalidOperationException>(grant.DemandStillValid);
+        clock=1000;revoked=true;Assert.Throws<InvalidOperationException>(grant.DemandStillValid);
+        Assert.Throws<InvalidOperationException>(()=>new HistoricalLocalWriteGrant(Cursor,"1",10000,100,()=>{}));
+    }
+    [TestMethod]
+    public void ReplicaIntegerProtocol_PreservesInt64AndRejectsRoundedOrNoncanonicalValues()
+    {
+        Assert.AreEqual(long.MaxValue,HistoricalReplicaProtocol.Integer("9223372036854775807"));
+        foreach(var value in new[]{"9223372036854775808","1e3","01","-0","1.0"})Assert.Throws<InvalidOperationException>(()=>HistoricalReplicaProtocol.Integer(value));
+    }
+    static HistoricalCloudResult Authority(string writer="web",string epoch="2",string revision="1")=>new(){DatasetId=Dataset,Revision=revision,WriterEpoch=epoch,WriterAuthority=writer,ProtocolVersion=1};
+    static HistoricalCloudResult Manifest(HistoricalReplicaEntity[] rows,string revision="1",string mode="snapshot")=>new(){DatasetId=Dataset,Revision=revision,WriterEpoch="2",Mode=mode,Cursor=Cursor,Movements=rows.Count(r=>r.Kind=="movement"),Batches=rows.Count(r=>r.Kind=="batch"),Checksum=HistoricalReplicaProtocol.SnapshotChecksum(Shop,Dataset,long.Parse(revision),2,rows)};
+    static HistoricalCloudResult Page(HistoricalCloudResult manifest,HistoricalReplicaEntity[] rows,string cursor,string? next)=>new(){DatasetId=manifest.DatasetId,Revision=manifest.Revision,WriterEpoch=manifest.WriterEpoch,Cursor=cursor,NextCursor=next,Done=next==null,Checksum=manifest.Checksum,Movements=manifest.Movements,Batches=manifest.Batches,Entities=rows};
+    static SalesReportFilter Filter(int? cashier=null)=>new(Shop,new DateTime(2024,1,1),new DateTime(2025,1,1),SalesReportOrigins.Historical,!cashier.HasValue,cashier,NativeSalesOwnershipRepository.PolicyHash,"");
+    static SalesReportQuery Query(HistoricalCloudExportTests.Fixture f)=>new(f.Db.Factory,()=>f.Db.Factory.AuthorityStamp,SalesReportSnapshotCoordinator.ForDatabase(f.Db.Factory.DbPath));
+    static Task<SalesReportSnapshot> Report(HistoricalCloudExportTests.Fixture f,int? cashier=null)=>Query(f).OpenAsync(Filter(cashier),null,200,Ct);
+    static string Hash(string value)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    static HistoricalReplicaEntity[] Entities(HistoricalCloudExportTests.Fixture f)
+    {
+        var list=new List<HistoricalReplicaEntity>{new(){Kind="batch",Id=Batch,Payload=new(){Id=Batch,Origin="local_migration",State="active",ApplyOperationId="51000000-0000-4000-8000-000000003019",CreatedRevision="1",CreatedUtcMs="1706745600000"}}};
+        using var c=f.Db.Factory.Open();var rows=c.Query("SELECT * FROM historical_transactions ORDER BY id").ToArray();var i=0;
+        foreach(var r in rows)
+        {
+            var id=$"40000000-0000-4000-8000-{++i:000000000000}";
+            var p=new HistoricalReplicaValue{Id=id,MerchantId=Merchant,BatchId=Batch,IdentityKey=Hash(Shop+"\u001fgetnet\u001f"+Merchant+"\u001f"+(string)r.external_namespace+"\u001f"+(string)r.external_id),Active=true,BusinessTicks=((long)r.business_ticks).ToString(CultureInfo.InvariantCulture),GrossClp=((long)r.signed_amount_clp).ToString(CultureInfo.InvariantCulture),FeeClp=((long?)r.signed_fee_clp)?.ToString(CultureInfo.InvariantCulture),FeeVatClp=((long?)r.signed_fee_vat_clp)?.ToString(CultureInfo.InvariantCulture),NetClp=((long?)r.signed_net_clp)?.ToString(CultureInfo.InvariantCulture),MovementKind=(string)r.movement_kind,TransactionState=HistoricalSalesValueRules.NormalizeHeader((string)r.state),ExternalNamespace=(string)r.external_namespace,ExternalId=(string)r.external_id,SourceSheet=(string)r.source_sheet,SourceRow=((long)r.source_row).ToString(CultureInfo.InvariantCulture),TimestampRaw=(string)r.timestamp_raw,OffsetMinutes=((long?)r.offset_minutes)?.ToString(CultureInfo.InvariantCulture),TimeInterpretation=r.offset_minutes==null?"Unresolved":"IsoUtc",TimePolicyVersion="synthetic-fixed-offset-v1",TimeEvidenceReference="synthetic evidence",CardSubtype=(string)r.card_subtype,CreatedRevision="1"};
+            p.EconomicDigest=new HistoricalSalesEconomicValue((long)r.business_ticks,(long)r.signed_amount_clp,(long?)r.signed_fee_clp,(long?)r.signed_fee_vat_clp,(long?)r.signed_net_clp,p.MovementKind,p.TransactionState).Fingerprint;
+            list.Add(new(){Kind="movement",Id=id,Payload=p});
+        }
+        foreach(var entity in list)entity.Digest=HistoricalReplicaProtocol.EntityDigest(entity);return list.ToArray();
+    }
+}

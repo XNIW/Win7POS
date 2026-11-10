@@ -31,7 +31,7 @@ namespace Win7POS.Data.Repositories
             var plan = CreatePlan(filter, nativeTimePolicy);
             if (plan == null) return FinishUnavailable(token, SalesReportCoverageStatus.PolicyRequired, transaction);
             var coverage = await GetCoverageAsync(connection, transaction, filter, plan, cancellationToken).ConfigureAwait(false);
-            if (coverage == SalesReportCoverageStatus.PendingOwnershipVerification) return FinishUnavailable(token, coverage, transaction);
+            if (!new SalesReportCoverage(coverage).CanPublish) return FinishUnavailable(token, coverage, transaction);
             var total = await connection.QuerySingleAsync<AggregateRow>(Command(plan.Sql + AggregateSql, plan.Parameters, transaction, cancellationToken)).ConfigureAwait(false);
             var summary = total.ToSummary();
             var dayRows = (await connection.QueryAsync<DayRow>(Command(plan.Sql + "SELECT CAST(BusinessTicks/864000000000 AS INTEGER) AS DayNumber," + AggregateColumns + " FROM report_entries GROUP BY DayNumber ORDER BY DayNumber", plan.Parameters, transaction, cancellationToken)).ConfigureAwait(false)).ToArray();
@@ -52,7 +52,7 @@ namespace Win7POS.Data.Repositories
             using var transaction = connection.BeginTransaction(deferred: true);
             await DemandTokenAsync(connection, transaction, token, filter, cancellationToken).ConfigureAwait(false);
             var plan = CreatePlan(filter, nativeTimePolicy) ?? throw new InvalidOperationException("report_time_policy_required");
-            if (await GetCoverageAsync(connection, transaction, filter, plan, cancellationToken).ConfigureAwait(false) == SalesReportCoverageStatus.PendingOwnershipVerification) throw new ReportSnapshotStaleException();
+            if (!new SalesReportCoverage(await GetCoverageAsync(connection, transaction, filter, plan, cancellationToken).ConfigureAwait(false)).CanPublish) throw new ReportSnapshotStaleException();
             var page = await ReadPageAsync(connection, transaction, token, plan, cursor, pageSize, null, cancellationToken).ConfigureAwait(false);
             transaction.Commit(); return page;
         }
@@ -64,6 +64,7 @@ namespace Win7POS.Data.Repositories
             using var transaction = connection.BeginTransaction(deferred: true);
             await DemandTokenAsync(connection, transaction, token, filter, cancellationToken).ConfigureAwait(false);
             var plan = CreatePlan(filter, nativeTimePolicy) ?? throw new InvalidOperationException("report_time_policy_required");
+            if(!new SalesReportCoverage(await GetCoverageAsync(connection,transaction,filter,plan,cancellationToken).ConfigureAwait(false)).CanPublish)throw new ReportSnapshotStaleException();
             var page = await ReadPageAsync(connection, transaction, token, plan, null, 1, key, cancellationToken).ConfigureAwait(false);
             transaction.Commit(); return page.Entries.SingleOrDefault();
         }
@@ -73,7 +74,8 @@ namespace Win7POS.Data.Repositories
             using var connection = await _factory.OpenAsync(cancellationToken).ConfigureAwait(false);
             using var transaction = connection.BeginTransaction(deferred: true);
             await DemandTokenAsync(connection, transaction, token, filter, cancellationToken).ConfigureAwait(false);
-            if (CreatePlan(filter, nativeTimePolicy) == null) throw new ReportSnapshotStaleException();
+            var plan=CreatePlan(filter,nativeTimePolicy);
+            if (plan==null||!new SalesReportCoverage(await GetCoverageAsync(connection,transaction,filter,plan,cancellationToken).ConfigureAwait(false)).CanPublish) throw new ReportSnapshotStaleException();
             transaction.Commit();
         }
 
@@ -88,7 +90,7 @@ namespace Win7POS.Data.Repositories
         {
             if (filter == null) throw new ArgumentNullException(nameof(filter));
             var authority = _authority() ?? throw new InvalidOperationException("report_authority_unavailable");
-            var state = await connection.QuerySingleAsync<StateRow>(Command("SELECT dataset_id AS DatasetId,data_revision AS DataRevision FROM historical_import_dataset WHERE singleton_id=1", null, transaction, cancellationToken)).ConfigureAwait(false);
+            var state = await connection.QuerySingleAsync<StateRow>(Command("SELECT dataset_id AS DatasetId,data_revision+(SELECT revision FROM historical_cloud_cache_revision WHERE singleton_id=1) AS DataRevision FROM historical_import_dataset WHERE singleton_id=1", null, transaction, cancellationToken)).ConfigureAwait(false);
             return new SalesReportReadToken(state.DatasetId, authority.RestoreEpoch, authority.AuthorityInstanceEpoch, state.DataRevision, filter.Fingerprint, filter.OwnershipPolicyHash, filter.NativeTimePolicyHash);
         }
         private async Task DemandTokenAsync(SqliteConnection connection, SqliteTransaction transaction, SalesReportReadToken token, SalesReportFilter filter, CancellationToken cancellationToken)
@@ -151,7 +153,7 @@ WHERE " + range);
 h.signed_amount_clp AS SignedAmountClp,0 AS CashTenderedClp,0 AS ChangeClp,0 AS CashClp,h.signed_amount_clp AS CardClp,h.original_cashier_id AS OriginalCashierId,
 h.external_id AS Reference,h.provider AS Provider,h.external_namespace AS ExternalNamespace,h.external_id AS ExternalId,h.batch_id AS BatchId,h.source_sheet AS SourceSheet,h.source_row AS SourceRow,
 0 AS IsVoided,NULL AS RelatedNativeSaleId,h.timestamp_raw AS RawTimestamp,h.offset_minutes AS OffsetMinutes,h.card_subtype AS CardSubtype
-FROM historical_transactions h WHERE " + where);
+FROM historical_cloud_report_movements h WHERE " + where);
             }
             if (branches.Count == 0) branches.Add(EmptyBranch);
             return new QueryPlan { Sql = "WITH report_entries AS (" + string.Join(" UNION ALL ", branches) + ") ", Parameters = parameters,
@@ -160,11 +162,13 @@ FROM historical_transactions h WHERE " + where);
 
         private static async Task<SalesReportCoverageStatus> GetCoverageAsync(SqliteConnection connection, SqliteTransaction transaction, SalesReportFilter filter, QueryPlan plan, CancellationToken cancellationToken)
         {
-            if (plan.CandidateSql == null) return SalesReportCoverageStatus.VerifiedForScope;
+            var cloud = (filter.Origins & SalesReportOrigins.Historical) != 0 ? await connection.QuerySingleOrDefaultAsync<CloudCoverageRow>(Command("SELECT generation_id GenerationId FROM historical_cloud_state WHERE shop_id=@shop COLLATE NOCASE AND ever_web=1",new{shop=filter.ShopId},transaction,cancellationToken)).ConfigureAwait(false) : null;
+            if(cloud!=null&&cloud.GenerationId==null)return SalesReportCoverageStatus.CloudReplicaRequired;
+            if (plan.CandidateSql == null) return cloud!=null?SalesReportCoverageStatus.CloudReplicaCached:SalesReportCoverageStatus.VerifiedForScope;
             var row = await connection.QuerySingleAsync<CoverageRow>(Command(plan.CandidateSql + @"SELECT
 COALESCE(MAX(CASE WHEN state IS NULL OR state='Dirty' OR policy_hash IS NOT @ownershipPolicy THEN 1 ELSE 0 END),0) AS Pending,
 COALESCE(MAX(CASE WHEN state IN ('Unknown','CodeOnly','Conflict') THEN 1 ELSE 0 END),0) AS Subset FROM candidates", plan.Parameters, transaction, cancellationToken)).ConfigureAwait(false);
-            return row.Pending != 0 ? SalesReportCoverageStatus.PendingOwnershipVerification : row.Subset != 0 ? SalesReportCoverageStatus.VerifiedSubset : SalesReportCoverageStatus.VerifiedForScope;
+            return row.Pending != 0 ? SalesReportCoverageStatus.PendingOwnershipVerification : row.Subset != 0 ? SalesReportCoverageStatus.VerifiedSubset : cloud!=null?SalesReportCoverageStatus.CloudReplicaCached:SalesReportCoverageStatus.VerifiedForScope;
         }
 
         private static async Task<SalesReportPage> ReadPageAsync(SqliteConnection connection, SqliteTransaction transaction, SalesReportReadToken token, QueryPlan plan,
@@ -203,6 +207,7 @@ COUNT(CASE WHEN (CashClp+CardClp)<>SignedAmountClp OR typeof(CashClp)<>'integer'
         private sealed class QueryPlan { internal string Sql { get; set; } internal string CandidateSql { get; set; } internal DynamicParameters Parameters { get; set; } internal IReadOnlyList<string> Branches { get; set; } }
         private sealed class StateRow { public string DatasetId { get; set; } public long DataRevision { get; set; } }
         private sealed class CoverageRow { public int Pending { get; set; } public int Subset { get; set; } }
+        private sealed class CloudCoverageRow { public string GenerationId { get; set; } }
         private sealed class HourRow { public int Hour { get; set; } public long Amount { get; set; } }
         private class AggregateRow
         {

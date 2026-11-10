@@ -273,8 +273,16 @@ postcondition=current-structural-schema",
                     "9e04be2f76ee6ec7e7bd1eee99c4be59ee93e137277a0314747180274d0d720e",
                     "1.0.0",
                     "Additive local history; downgrade requires the verified backup.",
-                    true, HistoricalSalesSchema.Apply, IsCurrentSchemaStructurallyValid,
-                    IsRecognizedHistoricalSalesBaseline)
+                    true, HistoricalSalesSchema.Apply, IsPostHistoricalSchemaStructurallyValid,
+                    IsRecognizedHistoricalSalesBaseline),
+                new SchemaMigration(
+                    "0016-historical-cloud-replica",
+                    "Add a dedicated read-only cloud history replica and writer epoch cache.",
+                    "0016-historical-cloud-replica/v1\n" + HistoricalCloudSchema.Sql,
+                    "fdcb306ee7c0a7223938c3f6a40bfdf2b49330e628ea02320c4a32c3a1a84cb3",
+                    "1.0.0",
+                    "Additive replica cache; rollback requires the verified backup and server reconciliation. Never re-enable an old local writer.",
+                    true,HistoricalCloudSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalCloudBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -303,7 +311,20 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+            => IsPostHistoricalSchemaStructurallyValid(detector) && HistoricalCloudSchema.IsSatisfied(detector);
+        private static bool IsPostHistoricalSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostCatalogPlanSchemaStructurallyValid(detector) && HistoricalSalesSchema.IsSatisfied(detector);
+
+        private static bool IsRecognizedHistoricalCloudBaseline(LegacySchemaDetector detector)
+        {
+            if(detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'historical_cloud_%' OR name LIKE '%_historical_cloud_%'",transaction:detector.Transaction)==0)return false;
+            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalSalesBaseline(detector)
+                ||detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_cloud_cache_revision WHERE singleton_id=1 AND typeof(revision)='integer' AND revision>=0",transaction:detector.Transaction)!=1
+                ||!detector.NoRows(@"SELECT 1 FROM historical_cloud_state s WHERE s.generation_id IS NOT NULL AND NOT EXISTS(
+SELECT 1 FROM historical_cloud_generation g WHERE g.generation_id=s.generation_id AND g.shop_id=s.shop_id AND g.dataset_id=s.dataset_id AND g.complete=1 AND g.revision=s.published_revision AND g.checksum=s.checksum) LIMIT 1")
+                ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Cloud history cache baseline is incomplete or inconsistent.");
+            return true;
+        }
 
         private static bool IsRecognizedHistoricalSalesBaseline(LegacySchemaDetector detector)
         {
@@ -316,7 +337,7 @@ postcondition=current-structural-schema",
             // This is an additive 0015 baseline. The published 0014 recognizer
             // remains unchanged and is not allowed to adopt a partial 0015 as
             // though its historical tables did not exist.
-            if (!IsCurrentSchemaStructurallyValid(detector) ||
+            if (!IsPostHistoricalSchemaStructurallyValid(detector) ||
                 !IsRecognizedCatalogImportPlanBaseline(detector) ||
                 detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_dataset", transaction: detector.Transaction) != 1 ||
                 !detector.NoRows(@"SELECT 1 FROM historical_import_dataset

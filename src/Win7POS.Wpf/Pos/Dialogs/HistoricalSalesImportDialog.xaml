@@ -12,6 +12,7 @@
    <TabItem Header="{loc:Loc history.importTab}">
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
      <StackPanel Margin="12">
+      <TextBlock Text="{loc:Loc history.localWriterClosed}" TextWrapping="Wrap" Margin="0,0,0,8"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding LocalHistoryWriterClosed}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
       <TextBlock Text="{loc:Loc history.instructions}" TextWrapping="Wrap" Margin="0,0,0,8"/>
       <StackPanel Orientation="Horizontal"><Button Content="{loc:Loc history.select}" Command="{Binding SelectCommand}" MinHeight="36"/><TextBlock Text="{Binding SelectedFiles}" Margin="12,0" VerticalAlignment="Center"/></StackPanel>
       <StackPanel IsEnabled="{Binding CanEdit}" Margin="0,8,0,0">
@@ -52,11 +53,22 @@
    </TabItem>
    <TabItem Header="{loc:Loc history.batchesTab}">
     <DockPanel Margin="12">
+     <TextBlock DockPanel.Dock="Top" Text="{loc:Loc history.localReceiptsNotice}" TextWrapping="Wrap" Margin="0,0,0,8"/>
      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8"><Button Content="{loc:Loc history.refreshBatches}" Command="{Binding RefreshBatchesCommand}"/><Button Content="{loc:Loc history.viewReceipt}" Command="{Binding ViewReceiptCommand}" Margin="8,0"/><Button Content="{loc:Loc history.undo}" Command="{Binding UndoCommand}" Margin="8,0"/></StackPanel>
      <DataGrid ItemsSource="{Binding Batches}" SelectedItem="{Binding SelectedBatch}" IsReadOnly="True" AutoGenerateColumns="False" EnableRowVirtualization="True" EnableColumnVirtualization="True" AutomationProperties.Name="{loc:Loc history.batchesTab}">
       <DataGrid.Columns><DataGridTextColumn Header="{loc:Loc history.batch}" Binding="{Binding Id}" Width="*"/><DataGridTextColumn Header="{loc:Loc history.state}" Binding="{Binding State}"/><DataGridTextColumn Header="{loc:Loc history.rows}" Binding="{Binding Rows}"/><DataGridTextColumn Header="CLP" Binding="{Binding AmountClp}"/></DataGrid.Columns>
      </DataGrid>
     </DockPanel>
+   </TabItem>
+   <TabItem Header="{loc:Loc history.cloudTab}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="12">
+      <TextBlock Text="{loc:Loc history.cloudInstructions}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+      <Button Content="{loc:Loc history.cloudPrepare}" Command="{Binding PrepareCloudCommand}" MinHeight="42" HorizontalAlignment="Left" AutomationProperties.Name="{loc:Loc history.cloudPrepare}"/>
+      <TextBlock Text="{loc:Loc history.cloudSyncInstructions}" TextWrapping="Wrap" Margin="0,20,0,12"/>
+      <Button Content="{loc:Loc history.cloudSync}" Command="{Binding SyncCloudCommand}" MinHeight="42" HorizontalAlignment="Left" AutomationProperties.Name="{loc:Loc history.cloudSync}"/>
+     </StackPanel>
+    </ScrollViewer>
    </TabItem>
   </TabControl>
   <ScrollViewer Grid.Row="2" MaxHeight="160" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4" AutomationProperties.LiveSetting="Assertive"/></ScrollViewer>

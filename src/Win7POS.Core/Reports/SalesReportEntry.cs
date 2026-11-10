@@ -9,13 +9,13 @@ namespace Win7POS.Core.Reports
     [Flags]
     public enum SalesReportOrigins { Native = 1, Historical = 2, All = Native | Historical }
     public enum SalesReportMovementKind { Sale, Refund, Void, Cancellation }
-    public enum SalesReportCoverageStatus { PolicyRequired, PendingOwnershipVerification, VerifiedSubset, VerifiedForScope, VerifiedEmpty }
+    public enum SalesReportCoverageStatus { PolicyRequired, PendingOwnershipVerification, VerifiedSubset, VerifiedForScope, VerifiedEmpty, CloudReplicaRequired, CloudReplicaCached }
 
     public sealed class SalesReportCoverage
     {
         public SalesReportCoverage(SalesReportCoverageStatus status) { Status = status; }
         public SalesReportCoverageStatus Status { get; }
-        public bool CanPublish { get { return Status != SalesReportCoverageStatus.PolicyRequired && Status != SalesReportCoverageStatus.PendingOwnershipVerification; } }
+        public bool CanPublish { get { return Status != SalesReportCoverageStatus.PolicyRequired && Status != SalesReportCoverageStatus.PendingOwnershipVerification && Status != SalesReportCoverageStatus.CloudReplicaRequired; } }
         public bool IsCompleteForSelectedScope { get { return Status == SalesReportCoverageStatus.VerifiedForScope || Status == SalesReportCoverageStatus.VerifiedEmpty; } }
     }
 

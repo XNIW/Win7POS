@@ -129,10 +129,12 @@ namespace Win7POS.Wpf.Pos
             {
                 using var backupLease = await _backupAutomation.EnterMaintenanceAsync(admission.Token).ConfigureAwait(false);
                 await _gate.WaitAsync(admission.Token).ConfigureAwait(false); ownsGate = true;
+                var writerGrant = await AcquireHistoricalLocalWriteAsync(session,shopId,op,kind,admission.Token).ConfigureAwait(false);
                 var expectedAuthority = _factory.AuthorityStamp;
                 using var authorization = await session.BeginHistoricalAuthorizationUseAsync(kind, op, fingerprint, dataset, epoch, () =>
                 {
                     var current = _factory.AuthorityStamp;
+                    writerGrant.DemandStillValid();
                     if (current.RestoreEpoch != epoch || current.AuthorityInstanceEpoch != expectedAuthority.AuthorityInstanceEpoch) throw new InvalidOperationException("historical_database_authority_changed");
                 }, admission.Token).ConfigureAwait(false);
                 using var catalog = await new CatalogShopTransitionBarrier(_factory).EnterAsync(admission.Token).ConfigureAwait(false);
