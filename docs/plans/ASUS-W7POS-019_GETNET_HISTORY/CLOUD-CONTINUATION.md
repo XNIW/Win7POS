@@ -80,3 +80,10 @@ la conferma positiva deve consumare esattamente un grant. Restano8case/52asserti
 e il budget originale, senza nuovi skip o soglie più larghe. Due build del harness
 PASS senza warning. Esecuzione nativa delle fixture corrette affidata alla CI
 isolata, non ancora qualificata da queste sole build.
+
+Diagnosi successiva: la proiezione pubblica iniziale indicava release-foundation,
+ma il replay locale completo49/50 identifica il guard legacy-db-migrations fermo
+alla baseline0015. Release-foundation eseguito realmente PASS; la causa del suo
+identificativo diagnostico errato resta distinta. Guard aggiornato alla sequenza
+append-only0016, nuovo checksum pin e recognizer cloud; i15 checksum precedenti e
+le prove negative restano invariati. Nessun allentamento del controllo schema.
