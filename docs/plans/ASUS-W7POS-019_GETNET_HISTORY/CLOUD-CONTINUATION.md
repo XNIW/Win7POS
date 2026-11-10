@@ -116,3 +116,15 @@ cambio epoch, revisione concorrente, checksum errato e revoca prima del commit.
 Qualifica CI del nuovo commit ancora da acquisire; i PASS9d47f28 restano storici.
 Pacchetto5d8e704/installato a828 invariati. Nessuna finestra POS, installazione,
 Apply/Undo reale o modifica del lotto legacy. Operatore e targetWin7 restano aperti.
+
+## Dipendenza dal correttivo shell emerso nella prova reale5d
+
+La qualifica247d6f4 è conclusa: CI42819603512/Security42819603578 SUCCESS,
+15/15 passi, smoke8/52 e load11 PASS, artefatto13768027872 scaricato/verificato.
+La prova reale del prodotto5d installato ha però rilevato la lettura della prova
+empty durante il refresh periodico. Il correttivo di produzione4righe del
+draft136 viene incluso anche qui, con la stessa regressione controllata del
+reader. Nessuna modifica ulteriore alla replica, al protocollo o al grant locale.
+La nuova qualifica del successore è PENDING, senza trasferire i PASS247d6f4.
+Nessun nuovo installer di questo client cloud. Il candidato prodotto2ad42ca
+rimane separato dal ramo futuro; installato5d e ricevuta legacy conservati.
