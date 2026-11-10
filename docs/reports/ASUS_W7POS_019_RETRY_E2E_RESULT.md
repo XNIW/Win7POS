@@ -3,6 +3,15 @@
 <!-- ASUS019_CURRENT_START -->
 ## Stato corrente — postazione reale, sviluppo verificato; qualifica finale aperta
 
+Correzione di sola qualifica: il gate supply-chain conservava il numero chiuso
+precedente di20 eccezioni storiche. È aggiornato a21 richiedendo espressamente
+anche la sola impronta cc6128f del testo di worklog; formato e divieto wildcard
+restano invariati. Gate mirato PASS. La canonica0c prosegue sul checkout congelato
+con quel singolo gate FAIL preservato; nessun suo file viene modificato. Il follow-up
+non cambia src: solo controllo di qualifica e contesto diagnostico della shell.
+La suite completa non sarà ripetuta localmente per il solo elenco/diagnostico;
+le nuove pipeline e il pacchetto conserveranno comunque SHA propri.
+
 ### Consolidamento dopo la prima qualifica completa
 
 Windows-All cc6128f conclusa:13/15 PASS; Core1765 PASS/2 FAIL su fixture prive

@@ -30,6 +30,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
     {
         internal static async Task<string> VerifyAuthenticatedShellUxAsync(string data)
         {
+            TypedQaDiagnosticWriter.BeginScenario("AUTHENTICATED_SHELL_UX", "functional-completion");
             var options = PosDbOptions.Default();
             using (var authority = PosDatabaseAuthorityLease.AcquireSyntheticNew(options))
             using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(52)))
@@ -244,7 +245,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         var workflow = new PosWorkflowService(maintenance.Options, () => DateTimeOffset.UtcNow);
                         check("import_blocks_commands_then_restores_cart", await HistoricalSalesCartMaintenanceProbe.RunAsync(maintenance, workflow));
                     }
-                    proofs.Status = "PASS"; save(); return "PASS: authenticated_shell_ux";
+                    proofs.Status = "PASS"; save(); TypedQaDiagnosticWriter.CompleteScenario(true); return "PASS: authenticated_shell_ux";
                 }
                 catch (Exception error)
                 {
