@@ -949,6 +949,38 @@ new artifact verification/reader and document-only closeout.
 
 ## 8Nov2026 — server409 fix applied, HTTP/UI pending policy
 
+## 10Nov2026 — prova reale5d, race del refresh catalogo
+
+Stessa Execution ACTIVE. Installazione5d8e704 effettiva,41/41 file confrontati
+con lo ZIP qualificato,10/10 file profilo invariati prima del login. Utente ha
+avviato dal menu Start e inserito personalmente il PIN: shell autenticata,
+Online, catalogo vuoto esplicito e nessun popup storico automatico.
+Menu→riepilogo→History→Import history apre volontariamente il form vuoto,
+titolo/footer contenuti al200%;0file,Analyze/Confirm disabilitati. Escape chiude
+la secondaria e il processo19404 resta vivo con la sessione.
+
+Il rientro NON è qualificato: la shell viene portata ai Products in recovery.
+Log10:21:02.836 inizio pull periodico,10:21:03.321 recovery catalog_not_sale_safe,
+senza completamento del pull. La lettura dello stato shell può osservare la
+cancellazione transitoria della prova empty prima della pubblicazione finale;
+l'ingresso recovery ferma poi il publisher. Non è dimostrato un difetto di Escape.
+Nessun retry live, Apply/Undo o file storico selezionato per questa diagnosi.
+
+Correzione isolata da0378e17 in codex/asus019-catalog-refresh-shell-race: il reader
+shell acquisisce il CatalogShopTransitionBarrier già detenuto dal pull. Legge
+il risultato completo e rivalida comunque sessione/generazione; una pull fallita
+senza nuova prova rimane Recovery, la cancellazione del wait è rispettata.
+Non conserva prove invalidabili né abilita vendita/pagamento. Fixture WPF estesa
+con refresh sospeso, successo, fallimento e cancellazione; esecuzione PENDING.
+Build Release/net48/x86 prodotto+harness PASS0warning; dialog standard39/39 PASS.
+Primo build fixture FAIL per binding dynamic non referenziato, conservato:
+risolto con DTO tipizzato senza aggiungere dipendenze. Nessun test UI locale
+con POS reale aperto; prova nativa demandata alla CI isolata.
+UI live lasciata protetta in recovery, installato5d invariato. DPI100/125,
+focus visuale affidabile e nuovo rientro richiedono il successore qualificato.
+
+Le righe sotto restano il checkpoint8novembre, non lo stato corrente.
+
 Admin candidate d864c740 / normal merge1a35034a, CI42451262145/CF42451262142 PASS.
 67 file / 4.375 test pgTAP, foundation1.131 PASS / 14 SKIP / 0 FAIL, UI48/pairing2. First555f502
 preparation hash failure preserved; canonical LF pin fixed without changing SQL/tests.

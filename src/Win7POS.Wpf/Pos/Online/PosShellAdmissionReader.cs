@@ -27,6 +27,10 @@ namespace Win7POS.Wpf.Pos.Online
             if (!authorized)
                 return PosStartupCoordinatorPolicy.EvaluateAdmission(mode, false, false, false, false);
 
+            // A pull clears the empty observation before publishing its verified result.
+            // Read the completed transition; entering recovery mid-pull would stop its publisher.
+            using var catalogTransition = await new CatalogShopTransitionBarrier(factory)
+                .EnterAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             var currentGeneration = generation != null &&
                 new PosTrustedDeviceStore().TryReadGeneration(generation, out _, out _) &&

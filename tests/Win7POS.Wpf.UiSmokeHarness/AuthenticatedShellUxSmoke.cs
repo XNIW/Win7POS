@@ -95,6 +95,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                     c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation") == 0);
                             if (reopen == 0) Program.HarnessWindow.SaveVisual(shell.Content as FrameworkElement,
                                 Path.Combine(data, "authenticated-shell-empty-render.png"));
+                            if (reopen == 0)
+                                await VerifyShellCatalogTransitionAsync(shell, factory, check, deadline.Token);
                             var permissions = new PermissionService(session);
                             if (reopen == 0)
                             {
@@ -331,6 +333,81 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 await workflow.GetFiscalBoletaNumberAsync() == fiscalBefore);
         }
 
+        private static async Task VerifyShellCatalogTransitionAsync(MainWindow shell, SqliteConnectionFactory factory,
+            Action<string, bool> check, CancellationToken cancellationToken)
+        {
+            var coordinator = ShellField<PosStartupCoordinator>(shell, "_startupCoordinator");
+            var state = new CatalogShopStateRepository(factory);
+            var generation = coordinator.Host.CurrentGeneration;
+            var refreshFlag = typeof(MainWindow).GetField("_shellReadinessRefreshing", BindingFlags.Instance | BindingFlags.NonPublic);
+            var priorRefresh = (bool)refreshFlag.GetValue(shell);
+            // The fixture controls intermediate metadata; the ordinary UI timer must not consume it.
+            refreshFlag.SetValue(shell, true);
+            try
+            {
+                using var c = factory.Open();
+                var proof = c.Query<ShellCatalogProofSetting>("SELECT key,value FROM app_settings WHERE key LIKE @prefix",
+                    new { prefix = CatalogShopStateRepository.AuthoritativeEmptyPrefix + "%" })
+                    .ToDictionary(row => row.Key, row => row.Value);
+                Action restoreProof = () =>
+                {
+                    using var tx = c.BeginTransaction();
+                    c.Execute("DELETE FROM app_settings WHERE key LIKE @prefix",
+                        new { prefix = CatalogShopStateRepository.AuthoritativeEmptyPrefix + "%" }, tx);
+                    foreach (var item in proof)
+                        c.Execute("INSERT INTO app_settings(key,value) VALUES(@key,@value)",
+                            new { key = item.Key, value = item.Value }, tx);
+                    tx.Commit();
+                };
+                Task<PosShellAdmission> read;
+                using (await new CatalogShopTransitionBarrier(factory).EnterAsync(cancellationToken))
+                {
+                    await state.ClearAuthoritativeEmptyAsync(generation);
+                    check("refresh_without_proof_never_authorizes_sales",
+                        !await state.IsAuthoritativelyEmptyAsync(generation) && !await state.IsSaleSafeForOfficialShopAsync());
+                    read = coordinator.ReadShellAdmissionAsync(cancellationToken);
+                    check("shell_admission_waits_for_atomic_catalog_transition",
+                        await Task.WhenAny(read, Task.Delay(60, cancellationToken)) != read);
+                    restoreProof(); // Synthetic successful publication within the same transition.
+                }
+                check("shell_admission_observes_completed_empty_refresh",
+                    (await read).Readiness == PosShellReadiness.AuthenticatedEmpty);
+                try
+                {
+                    using (await new CatalogShopTransitionBarrier(factory).EnterAsync(cancellationToken))
+                    {
+                        await state.ClearAuthoritativeEmptyAsync(generation);
+                        read = coordinator.ReadShellAdmissionAsync(cancellationToken);
+                    }
+                    check("failed_refresh_with_no_new_proof_remains_recovery",
+                        (await read).Readiness == PosShellReadiness.Recovery);
+                }
+                finally
+                {
+                    using (await new CatalogShopTransitionBarrier(factory).EnterAsync(cancellationToken))
+                        restoreProof();
+                }
+                using (await new CatalogShopTransitionBarrier(factory).EnterAsync(cancellationToken))
+                using (var cancel = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    read = coordinator.ReadShellAdmissionAsync(cancel.Token);
+                    cancel.Cancel();
+                    var cancelled = false;
+                    try { await read; } catch (OperationCanceledException) { cancelled = true; }
+                    check("shell_admission_wait_is_cancellable", cancelled);
+                }
+                check("completed_refresh_keeps_shell_without_sale_authority",
+                    shell.IsVisible && !coordinator.IsRecoveryMode &&
+                    !ShellField<bool>(shell, "_shellCanSell") && !await state.IsSaleSafeForOfficialShopAsync());
+            }
+            finally { refreshFlag.SetValue(shell, priorRefresh); }
+        }
+
+        private sealed class ShellCatalogProofSetting
+        {
+            public string Key { get; set; }
+            public string Value { get; set; }
+        }
         private static T ShellField<T>(MainWindow shell, string field) => (T)typeof(MainWindow).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(shell);
         private static object ShellInvoke(MainWindow shell, string method, params object[] args) => typeof(MainWindow).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(shell, args);
     }
