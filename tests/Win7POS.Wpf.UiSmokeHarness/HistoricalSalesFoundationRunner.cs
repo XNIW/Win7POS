@@ -336,7 +336,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 response.Shop.ShopId = "10000000-0000-4000-8000-000000003019";
                 response.Device.ShopDeviceId = "20000000-0000-4000-8000-000000003019";
                 response.Staff.StaffId = "30000000-0000-4000-8000-000000003019";
-                response.Staff.RoleKey = "pos_admin";
+                // A delegated manager keeps permission-removal probes meaningful: no local admin bypass.
+                response.Staff.RoleKey = "manager";
                 response.Session.PosSessionId = "40000000-0000-4000-8000-000000003019";
                 var previousAnchor = DateTimeOffset.Parse(response.ServerTime, CultureInfo.InvariantCulture);
                 var offlineLifetime = DateTimeOffset.Parse(response.EffectiveOfflineAuthorizationExpiresAt, CultureInfo.InvariantCulture) - previousAnchor;

@@ -87,3 +87,9 @@ alla baseline0015. Release-foundation eseguito realmente PASS; la causa del suo
 identificativo diagnostico errato resta distinta. Guard aggiornato alla sequenza
 append-only0016, nuovo checksum pin e recognizer cloud; i15 checksum precedenti e
 le prove negative restano invariati. Nessun allentamento del controllo schema.
+
+Ulteriore controllo della fixture: pos_admin viene mappato al ruolo admin locale,
+che intenzionalmente include tutti i permessi. La fixture storica è quindi un
+manager delegato con permessi espliciti: la rimozione di un singolo permesso deve
+continuare a negare l'operazione. Il percorso HTTP di geometria rimane pos_admin.
+Nessuna modifica ai ruoli o ai permessi del prodotto, nessun negativo eliminato.
