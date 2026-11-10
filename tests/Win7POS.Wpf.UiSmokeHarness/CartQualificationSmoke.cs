@@ -62,6 +62,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             scans.WriteLine("cycle,mode,ordinal,service_ms,ui_return_ms,apply_ms,layout_ms,bitmap_ms,command_overhead_ms,gate_wait_ms,worker_queue_ms,product_lookup_update_ms,snapshot_query_map_ms,snapshot_projection_ms,realized_rows,realized_grid,collection_changes,row_notifications,product_commands,commands_on_dispatcher,focus_scroll_wait_ms");
             idle.WriteLine("cycle,elapsed_s,private_bytes,managed_bytes,pending,oldest_ms,focus_pending,focus_oldest_ms,scroll_pending,scroll_oldest_ms,closed_rooted_windows,cache_bytes,input_ms,render_ms,databind_ms,background_ms,observer_dropped,environment_valid,suspended,inactive_pending,oldest_posted_ms,handles,threads,gc0,gc1,gc2,metadata_entries,peak_observed_dispatcher,focus_peak,scroll_peak,focus_maximum_wait_ms,scroll_maximum_wait_ms");
             var view = new PosView();
+            observer.SetPrimaryVisual(view);
             var vm = (PosViewModel)view.DataContext;
             var barcode = (TextBox)view.FindName("BarcodeBox");
             DispatcherHookEventHandler focusStarted = (_, args) =>
@@ -122,13 +123,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     ";context=" + System.Threading.SynchronizationContext.Current?.GetType().FullName);
                 do
                 {
+                    observer.SetPhase(cycle,"cycle-start");
                     if (vm.CartItems.Count != 500) throw new InvalidOperationException("qualification_cart_size_mismatch");
                     var modes = cycle % 2 == 0 ? new[] { CartViewMode.Rows, CartViewMode.Grid } : new[] { CartViewMode.Grid, CartViewMode.Rows };
                     foreach (var mode in modes)
                     {
+                        observer.SetPhase(cycle,"mode-"+mode);
                         await vm.SetCartViewModeAsync(mode);
                         for (var ordinal = 1; ordinal <= 10; ordinal++)
                         {
+                            observer.SetPhase(cycle,"scan-"+mode+"-"+ordinal);
                             changes = notifications = 0;
                             var expectedQuantity = vm.CartItems[0].Quantity + 1;
                             var inputEntryTick = traceEnabled ? Stopwatch.GetTimestamp() : 0;
@@ -205,6 +209,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             }
                             if (traceEnabled) trace.Checkpoint("input_probe_complete;wait_ms=" + visualWait.ToString("F3", Invariant));
                             var returned = Stopwatch.GetTimestamp();
+                            observer.SetPhase(cycle,"bitmap-"+mode+"-"+ordinal);
                             view.UpdateLayout();
                             var layout = Stopwatch.GetTimestamp();
                             var bitmap = new RenderTargetBitmap(1024, 768, 96, 96, PixelFormats.Pbgra32);
@@ -225,6 +230,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             completedScans++;
                             if (scanLimit > 0 && completedScans == scanLimit)
                             {
+                                BoundedDispatcherObservation.WriteVisualWaitMaxima(operations,observer.Snapshot());
                                 WriteExecutionWindow();
                                 scans.Flush(); operations.Flush(); environment.Flush();
                                 File.WriteAllText(Path.Combine(directory, "diagnostic-scans.json"),
@@ -234,8 +240,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             }
                         }
                     }
+                    observer.SetPhase(cycle,"discount");
                     var discount = new DiscountDialog(null, true, service, vm, 100, () => Task.FromResult(false)) { Owner = DialogOwnerHelper.GetSafeOwner() };
                     discount.Show(); discount.UpdateLayout(); discount.Close();
+                    observer.SetPhase(cycle,"image-ui");
                     var imageResult = await ProductImageUiWpfSmoke.RunAsync(Path.Combine(directory, "images"), traceEnabled ? trace : null, cycle);
                     if (!imageResult.StartsWith("PASS", StringComparison.Ordinal)) throw new InvalidOperationException(imageResult);
                     // Normal QA workflow returns from its auxiliary windows to
@@ -243,6 +251,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     // never repeatedly overridden to conceal user interaction.
                     host.Activate();
                     if (traceEnabled) CartPerformanceDiagnostics.ObserveScene(host, trace, cycle);
+                    observer.SetPhase(cycle,"idle");
                     for (var second = 0; second < 20; second++)
                     {
                         if (traceEnabled) trace.Checkpoint("idle_sample_begin;cycle=" + cycle + ";second=" + second);
@@ -256,6 +265,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (traceEnabled) trace.Checkpoint("final_sample_end;cycle=" + cycle);
                     trace.SampleTimers("before_snapshot");
                     var state = observer.Snapshot(); // Before probes can help work progress.
+                    BoundedDispatcherObservation.WriteVisualWaitMaxima(operations,state);
                     if (traceEnabled) trace.Checkpoint("snapshot_end;cycle=" + cycle + ";oldest_ms=" + state.OldestMs.ToString("F3", Invariant));
                     if (traceEnabled) CartPerformanceDiagnostics.ObserveScene(host, trace, cycle, "after_idle");
                     var input = await ProbeAsync(DispatcherPriority.Input);

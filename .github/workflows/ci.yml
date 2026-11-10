@@ -40,6 +40,11 @@ on:
         required: false
         default: false
         type: boolean
+      cart_diagnostic_attribution:
+        description: Sixty-minute bounded callback attribution against the frozen149 product; Diagnostic only
+        required: false
+        default: false
+        type: boolean
       cart_qualification:
         description: Independent hosted Integrated qualification (never Asus or merge Final)
         required: false
@@ -251,7 +256,7 @@ jobs:
   cart-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.cart_diagnostic_only == true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none') }}
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: ${{ inputs.cart_diagnostic_attribution == true && 90 || 25 }}
     steps:
       - name: Checkout independent QA source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -266,6 +271,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Restore and build hosted QA harness
+        if: ${{ inputs.cart_diagnostic_attribution != true }}
         shell: pwsh
         run: |
           dotnet restore Win7POS.slnx --locked-mode
@@ -274,7 +280,49 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Hosted harness build failed.' }
           New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/cart-diagnostic" | Out-Null
           [ordered]@{ commit=$env:GITHUB_SHA; source='Independent GitHub-hosted Windows QA build; no Asus binaries transferred'; image=$env:ImageOS; imageVersion=$env:ImageVersion; system=(Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,TotalPhysicalMemory,NumberOfLogicalProcessors); cpu=(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors); qualifiesAsus=$false } | ConvertTo-Json -Depth 5 | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/host-provenance.json"
+      - name: Bind frozen product and build only the attribution harness
+        if: ${{ inputs.cart_diagnostic_attribution == true }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN: ${{ inputs.release_pack_run_id }}
+          IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
+          COLD_CONTROL: ${{ inputs.cart_diagnostic_cold }}
+        run: |
+          if ($env:IDLE_CONTROL -eq 'true' -or $env:COLD_CONTROL -eq 'true' -or $env:RELEASE_RUN -ne '42889654511') { throw 'Select only frozen149 attribution and its verified Release Pack.' }
+          $productCommit = '149c978c2c169dd8640e7e2d13c0e6ca151f2884'
+          & scripts/win7pos/windows/test-downloaded-release-pack.ps1 -RunId $env:RELEASE_RUN -ExpectedCommitSha $productCommit -OutputDirectory "$env:RUNNER_TEMP/attribution-release-pack"
+          $receiptPath = "$env:RUNNER_TEMP/attribution-release-pack/download-verification.json"
+          $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'PASS' -or $receipt.commitSha -cne $productCommit) { throw 'Frozen product verification failed.' }
+          $product = "$env:RUNNER_TEMP/attribution-release-pack/Win7POS-$($receipt.buildVersion)-ReleasePack-x86/Win7POS"
+          dotnet restore Win7POS.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
+          foreach ($binding in @(@{project='Win7POS.Core';framework='netstandard2.0';file='Win7POS.Core.dll'},@{project='Win7POS.Data';framework='netstandard2.0';file='Win7POS.Data.dll'},@{project='Win7POS.Wpf';framework='net48';file='Win7POS.Wpf.exe'})) {
+            $destination = "src/$($binding.project)/bin/x86/Release/$($binding.framework)"
+            New-Item -ItemType Directory -Path $destination -Force | Out-Null
+            Copy-Item -LiteralPath "$product/$($binding.file)" -Destination "$destination/$($binding.file)"
+          }
+          dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 -p:BuildProjectReferences=false --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Attribution harness build failed.' }
+          $harness = "$env:GITHUB_WORKSPACE/tests/Win7POS.Wpf.UiSmokeHarness/bin/x86/Release/net48"
+          if ((Get-FileHash -LiteralPath docs/reports/evidence/2026-09-26-post-pr111/preregistered-budget-v1.json).Hash.ToLowerInvariant() -cne '63970e308d0c0ee2e2e62504c5828f5863233a74e369bc63950714787d083398') { throw 'Frozen budget changed.' }
+          Import-Module ./scripts/qa/Win7PosQaPayload.psm1 -Force
+          $payload = @(Copy-Win7PosQaPayload -VerifiedPayloadDirectory $product -HarnessDirectory $harness)
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/cart-diagnostic" | Out-Null
+          [ordered]@{ productCommit=$productCommit;qaCommit=$env:GITHUB_SHA;releaseRunId=$env:RELEASE_RUN;productVerificationSha256=(Get-FileHash -LiteralPath $receiptPath).Hash.ToLowerInvariant();harnessSha256=(Get-FileHash -LiteralPath "$harness/Win7POS.Wpf.UiSmokeHarness.exe").Hash.ToLowerInvariant();payload=$payload;qualified=$false } | ConvertTo-Json -Depth 6 | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/product-binding.json"
+          [ordered]@{ productCommit=$productCommit;qaCommit=$env:GITHUB_SHA;source='Frozen verified149 product; diagnostic harness only rebuilt';image=$env:ImageOS;imageVersion=$env:ImageVersion;system=(Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,TotalPhysicalMemory,NumberOfLogicalProcessors);qualifiesAsus=$false;qualifiesMergeFinal=$false } | ConvertTo-Json -Depth 5 | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/host-provenance.json"
+      - name: Attribute the full unchanged workload for sixty minutes
+        if: ${{ inputs.cart_diagnostic_attribution == true }}
+        id: attribution
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          'Observe, without a product fix or a scanner-block assumption: record the maximum focus/scroll callback with cycle, phase, target flags and bounded overlapping Dispatcher callbacks. Same verified149 binaries,100000 products,500 cart lines,20-second idle and250ms budget. Diagnostic only, not Integrated/Final qualification.' | Set-Content "$env:RUNNER_TEMP/cart-diagnostic/hypothesis-attribution.txt"
+          $env:WIN7POS_ADMIN_WEB_BASE_URL = 'http://127.0.0.1:9'
+          & ./scripts/run-cart-performance.ps1 -Mode Diagnostic -DiagnosticExecutionCapture -SoakMinutes 60 -Products 100000 -BudgetPath docs/reports/evidence/2026-09-26-post-pr111/preregistered-budget-v1.json -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/attribution-60"
       - name: Public scans without trace
+        if: ${{ inputs.cart_diagnostic_attribution != true }}
         id: untraced
         continue-on-error: true
         shell: pwsh
@@ -300,7 +348,7 @@ jobs:
           $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/untraced"
       - name: Same public protocol with bounded timeline
-        if: ${{ inputs.cart_diagnostic_cold != true }}
+        if: ${{ inputs.cart_diagnostic_cold != true && inputs.cart_diagnostic_attribution != true }}
         id: traced
         continue-on-error: true
         shell: pwsh
@@ -313,7 +361,7 @@ jobs:
           $duration = if ($env:IDLE_CONTROL -eq 'true') { @{SoakMinutes=3} } else { @{DiagnosticScanCount=5} }
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @duration -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/traced"
       - name: Short Input comparison
-        if: ${{ inputs.cart_diagnostic_idle != true && inputs.cart_diagnostic_cold != true }}
+        if: ${{ inputs.cart_diagnostic_idle != true && inputs.cart_diagnostic_cold != true && inputs.cart_diagnostic_attribution != true }}
         id: input_dispatch
         continue-on-error: true
         shell: pwsh
@@ -326,7 +374,7 @@ jobs:
           $control = @{DiagnosticScanCount=5;DiagnosticInputDispatch=$true}
           & ./scripts/run-cart-performance.ps1 -Mode Diagnostic @control -Products 100000 -OutputDirectory "$env:RUNNER_TEMP/cart-diagnostic/input-dispatch"
       - name: Reintroduce only the former image editor indicator
-        if: ${{ inputs.cart_diagnostic_idle == true && inputs.cart_diagnostic_cold != true }}
+        if: ${{ inputs.cart_diagnostic_idle == true && inputs.cart_diagnostic_cold != true && inputs.cart_diagnostic_attribution != true }}
         id: legacy_progress
         continue-on-error: true
         shell: pwsh
@@ -344,6 +392,7 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/cart-diagnostic/host-provenance.json
+            ${{ runner.temp }}/cart-diagnostic/product-binding.json
             ${{ runner.temp }}/cart-diagnostic/hypothesis-*.txt
             ${{ runner.temp }}/cart-diagnostic/*/protocol.json
             ${{ runner.temp }}/cart-diagnostic/*/performance-result.json
@@ -366,7 +415,14 @@ jobs:
           LEGACY_OUTCOME: ${{ steps.legacy_progress.outcome }}
           IDLE_CONTROL: ${{ inputs.cart_diagnostic_idle }}
           COLD_CONTROL: ${{ inputs.cart_diagnostic_cold }}
+          ATTRIBUTION_CONTROL: ${{ inputs.cart_diagnostic_attribution }}
+          ATTRIBUTION_OUTCOME: ${{ steps.attribution.outcome }}
         run: |
+          if ($env:ATTRIBUTION_CONTROL -eq 'true') {
+            Write-Output "Attribution=$env:ATTRIBUTION_OUTCOME; STABILITY_PASS=false (Diagnostic only, product149)."
+            if ($env:ATTRIBUTION_OUTCOME -ne 'success') { throw 'Attribution run did not complete; preserved samples are not qualification.' }
+            return
+          }
           Write-Output "Untraced=$env:UNTRACED_OUTCOME; Traced=$env:TRACED_OUTCOME; Input=$env:INPUT_OUTCOME; STABILITY_PASS=false (Diagnostic only; independent hosted machine)."
           if ($env:COLD_CONTROL -eq 'true') {
             if ($env:UNTRACED_OUTCOME -ne 'success') { throw 'At least one fixed cold trial failed; inspect retained windows.' }

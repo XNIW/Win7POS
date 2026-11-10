@@ -24,7 +24,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($DiagnosticPublicInput -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount)) { throw 'Public input comparison requires short Diagnostic scans.' }
 if ($DiagnosticLegacyFixtureSetup -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount -or $DiagnosticTimerControl)) { throw 'Legacy fixture setup requires short Diagnostic scans.' }
-if ($DiagnosticExecutionCapture -and ($Mode -ne 'Diagnostic' -or -not $DiagnosticScanCount -or $DisableObserver -or $DiagnosticTimerControl)) { throw 'Execution capture requires short Diagnostic scans with the observer enabled.' }
+if ($DiagnosticExecutionCapture -and ($Mode -ne 'Diagnostic' -or (-not $DiagnosticScanCount -and ($SoakMinutes -lt 1 -or $SoakMinutes -gt 60)) -or $DisableObserver -or $DiagnosticTimerControl)) { throw 'Execution capture requires bounded Diagnostic scans or a1..60 minute Diagnostic with the observer enabled.' }
 if ($DiagnosticLegacyImageProgress -and ($Mode -ne 'Diagnostic' -or $DiagnosticTimerControl -or $SoakMinutes -lt 1 -or $SoakMinutes -gt 5)) { throw 'Legacy image progress requires full Diagnostic and 1..5 minutes.' }
 if ($DiagnosticTimerWakeup -and -not $DiagnosticTimerControl) { throw 'Diagnostic timer wakeup requires the minimal control.' }
 if ($DiagnosticTimerControl -and ($Mode -ne 'Diagnostic' -or $SoakMinutes -lt 1 -or $SoakMinutes -gt 5 -or $DiagnosticScanCount -or $DiagnosticInputDispatch)) { throw 'Minimal timer control requires Diagnostic and 1..5 minutes.' }
@@ -38,6 +38,7 @@ if (-not $HarnessDirectory) {
 $exe = Join-Path $HarnessDirectory 'Win7POS.Wpf.UiSmokeHarness.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Build the Release x86 harness first.' }
 $budget = $null
+if ($BudgetPath) { $budget = Get-Content -LiteralPath $BudgetPath -Raw | ConvertFrom-Json }
 $binding = $null
 if ($Mode -eq 'Qualification') {
     if ($DiagnosticScanCount) { throw 'Short scan reproduction is diagnostic only.' }

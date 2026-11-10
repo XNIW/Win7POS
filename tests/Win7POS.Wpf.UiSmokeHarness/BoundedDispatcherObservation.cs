@@ -20,9 +20,60 @@ namespace Win7POS.Wpf.UiSmokeHarness
         // not a performance acceptance budget; exceeding it invalidates data.
         private const int Capacity = 16384;
         private sealed class Entry
-        { public long Id, Posted, Eligible, PriorityChangedAt, ExecutionStarted; public DispatcherPriority Priority; public WeakReference Operation; public byte VisualCategory; public bool Started, VisualReleased, Inconsistent, PriorityChangePending; }
-        private struct Execution
+        { public long Id, Posted, Eligible, PriorityChangedAt, ExecutionStarted; public DispatcherPriority Priority; public WeakReference Operation; public byte VisualCategory; public bool Started, VisualReleased, Inconsistent, PriorityChangePending; public int PostedCycle, VisualId,PostedState=-1; public string PostedPhase; public VisualWait VisualRecord; }
+        internal struct Execution
         { internal long Id, Posted, Start, End; internal DispatcherPriority Priority; internal MethodInfo Method; }
+        internal sealed class VisualWait
+        {
+            internal long Id,Posted,Eligible,Start;internal int PostedCycle,StartedCycle,VisualId,PostedState,Before,After=-1;
+            internal bool Primary;internal string PostedPhase,StartedPhase,Callback;internal DispatcherPriority Priority;
+            internal double WaitMs,RunMs;internal Execution[] Blockers=Array.Empty<Execution>();
+            internal VisualWait Copy()=>(VisualWait)MemberwiseClone();
+        }
+        private WeakReference _primaryVisual;
+        private int _cycle=-1;private string _phase="setup";
+        private VisualWait _focusDiagnostic,_scrollDiagnostic;
+        internal void SetPrimaryVisual(Win7POS.Wpf.Pos.PosView view)=>_primaryVisual=new WeakReference(view);
+        internal void SetPhase(int cycle,string phase)
+        {
+            if(string.IsNullOrEmpty(phase)||phase.Length>80||phase.Any(char.IsControl))throw new ArgumentException("diagnostic_phase_invalid");
+            lock(_sync){_cycle=cycle;_phase=phase;}
+        }
+        private static int VisualState(Win7POS.Wpf.Pos.PosView view)
+        {
+            if(view==null||!view.Dispatcher.CheckAccess())return -1;
+            var window=Window.GetWindow(view);var barcode=view.FindName("BarcodeBox") as System.Windows.Controls.TextBox;
+            // Flags only: loaded/enabled/visible/active/barcode-focused. No input
+            // text, operation argument, target or window is retained by the trace.
+            return (view.IsLoaded?1:0)|(view.IsEnabled?2:0)|(view.IsVisible?4:0)|(window?.IsActive==true?8:0)|(barcode?.IsKeyboardFocused==true?16:0);
+        }
+        private VisualWait CaptureVisualWait(Entry entry,DispatcherOperation operation,double wait)
+        {
+            var callback=Method.GetValue(operation) as Delegate;var view=callback?.Target as Win7POS.Wpf.Pos.PosView;var start=_clock();
+            var result=new VisualWait{Id=entry.Id,Posted=entry.Posted,Eligible=entry.Eligible,Start=start,PostedCycle=entry.PostedCycle,
+                StartedCycle=_cycle,VisualId=entry.VisualId,PostedState=entry.PostedState,Before=VisualState(view),Primary=view!=null&&ReferenceEquals(view,_primaryVisual?.Target),
+                PostedPhase=entry.PostedPhase,StartedPhase=_phase,Callback=callback?.Method.Name??"unknown",Priority=operation.Priority,WaitMs=wait};
+            // Existing bounded completed-callback capture, enabled only for a
+            // diagnostic run. Keep only callbacks overlapping a slow visual wait.
+            if(_executions!=null&&wait>=100)
+                result.Blockers=Enumerable.Range(Math.Max(0,_executionCount-_executions.Length),Math.Min(_executionCount,_executions.Length))
+                    .Select(i=>_executions[i%_executions.Length]).Where(e=>e.End>=entry.Eligible&&e.Start<=start)
+                    .OrderByDescending(e=>e.End-e.Start).Take(32).OrderBy(e=>e.Start).ToArray();
+            return result;
+        }
+        internal static void WriteVisualWaitMaxima(TextWriter writer,State state)
+        {
+            foreach(var pair in new[]{new{Kind="focus",Value=state.FocusWait},new{Kind="scroll",Value=state.ScrollWait}})
+            {
+                var v=pair.Value;if(v==null)continue;
+                writer.WriteLine(string.Format(CultureInfo.InvariantCulture,
+                    "VISUAL_WAIT_MAX,kind={0},id={1},posted_cycle={2},started_cycle={3},posted_phase={4},started_phase={5},visual_id={6},primary={7},callback={8},priority={9},posted_tick={10},eligible_tick={11},start_tick={12},wait_ms={13:F3},run_ms={14:F3},before_flags={15},after_flags={16},frequency={17},posted_flags={18}",
+                    pair.Kind,v.Id,v.PostedCycle,v.StartedCycle,v.PostedPhase,v.StartedPhase,v.VisualId,v.Primary,v.Callback,v.Priority,v.Posted,v.Eligible,v.Start,v.WaitMs,v.RunMs,v.Before,v.After,Stopwatch.Frequency,v.PostedState));
+                foreach(var e in v.Blockers)writer.WriteLine(string.Format(CultureInfo.InvariantCulture,
+                    "VISUAL_WAIT_OVERLAP,visual_id={0},callback_id={1},start_tick={2},end_tick={3},duration_ms={4:F3},priority={5},method={6}.{7}",
+                    v.Id,e.Id,e.Start,e.End,(e.End-e.Start)*1000d/Stopwatch.Frequency,e.Priority,e.Method?.DeclaringType?.FullName,e.Method?.Name));
+            }
+        }
         private Execution[] _executions;
         private int _executionCount;
         internal void EnableExecutionCapture() { lock (_sync) _executions = new Execution[256]; }
@@ -53,6 +104,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             public double FocusMaximumWaitMs, ScrollMaximumWaitMs;
             public int FocusPeak, ScrollPeak;
             public string Detail;
+            internal VisualWait FocusWait,ScrollWait;
         }
         private readonly Dispatcher _dispatcher;
         private readonly bool _enabled;
@@ -115,11 +167,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                 }
                 var now = _clock();
-                var entry = new Entry { Id = ++_next, Posted = now, Eligible = now, Priority = operation.Priority, Operation = new WeakReference(operation) };
+                var entry = new Entry { Id = ++_next, Posted = now, Eligible = now, Priority = operation.Priority, Operation = new WeakReference(operation),PostedCycle=_cycle,PostedPhase=_phase };
                 // Inspect only Input work for the two application-owned visual
                 // categories; never retain the delegate or its target.
                 if (operation.Priority == DispatcherPriority.Input && Method.GetValue(operation) is Delegate callback && callback.Target is Win7POS.Wpf.Pos.PosView)
                 {
+                    entry.VisualId=RuntimeHelpers.GetHashCode(callback.Target);
+                    entry.PostedState=VisualState(callback.Target as Win7POS.Wpf.Pos.PosView);
                     if (callback.Method.Name.Contains("FocusBarcode")) { entry.VisualCategory = 1; _focusPeak = Math.Max(_focusPeak, ++_focusPending); }
                     if (callback.Method.Name.Contains("QueueSelectionScroll")) { entry.VisualCategory = 2; _scrollPeak = Math.Max(_scrollPeak, ++_scrollPending); }
                 }
@@ -177,6 +231,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             lock (_sync)
                 if (_index.TryGetValue(operation, out var entry))
                 {
+                    if(entry.VisualRecord!=null){entry.VisualRecord.RunMs=Age(entry.VisualRecord.Start);entry.VisualRecord.After=VisualState((Method.GetValue(operation) as Delegate)?.Target as Win7POS.Wpf.Pos.PosView);}
                     if (_executions != null && entry.ExecutionStarted != 0)
                     {
                         var end = _clock();
@@ -207,8 +262,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     entry.Started = true;
                     if (_executions != null) entry.ExecutionStarted = _clock();
                     RemoveVisualPending(entry);
-                    if (entry.VisualCategory == 1) _focusMaximumWait = Math.Max(_focusMaximumWait, Age(entry.Eligible));
-                    if (entry.VisualCategory == 2) _scrollMaximumWait = Math.Max(_scrollMaximumWait, Age(entry.Eligible));
+                    if (entry.VisualCategory == 1)
+                    {var wait=Age(entry.Eligible);if(wait>_focusMaximumWait){_focusMaximumWait=wait;entry.VisualRecord=_focusDiagnostic=CaptureVisualWait(entry,operation,wait);}}
+                    if (entry.VisualCategory == 2)
+                    {var wait=Age(entry.Eligible);if(wait>_scrollMaximumWait){_scrollMaximumWait=wait;entry.VisualRecord=_scrollDiagnostic=CaptureVisualWait(entry,operation,wait);}}
                 }
         }
         private double Age(long timestamp) => (_clock() - timestamp) * 1000d / Stopwatch.Frequency;
@@ -222,6 +279,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 result.FocusPeak = _focusPeak; result.ScrollPeak = _scrollPeak;
                 result.FocusMaximumWaitMs = _focusMaximumWait; result.ScrollMaximumWaitMs = _scrollMaximumWait;
+                result.FocusWait=_focusDiagnostic?.Copy();result.ScrollWait=_scrollDiagnostic?.Copy();_focusDiagnostic=_scrollDiagnostic=null;
                 _focusPeak = _focusPending; _scrollPeak = _scrollPending;
                 _focusMaximumWait = _scrollMaximumWait = 0;
                 foreach (var entry in _entries.Values.ToArray())
