@@ -3,6 +3,33 @@
 <!-- ASUS019_CURRENT_START -->
 ## Stato corrente — postazione reale, sviluppo verificato; qualifica finale aperta
 
+### Consolidamento dopo la prima qualifica completa
+
+Windows-All cc6128f conclusa:13/15 PASS; Core1765 PASS/2 FAIL su fixture prive
+ora del guard obbligatorio; functional21/22 (visual seed senza guard) FAIL.
+Autorizzazione, logging, paging, crash/storico8/52/load11 PASS. Publication PASS,
+nessun esito fallito cancellato. I due seed sono corretti con autorità valida:
+Core aggiunge il negativo esplicito, visuale usa vero login/lease sintetico.
+
+Ultimo delta prodotto: letture snapshot/prodotto con transazioni differite;
+lookup barcode sul worker perché SQLite async può attendere il file lock in
+modo sincrono. Nessun cambio journal policy, schema o budget. La fixture pubblica
+aggiunge un lock SQL esclusivo controllato con watchdog finito e cleanup posseduto.
+Target16:70 assert shell PASS24.516s; input durante lock7.4728ms≤250ms;
+visuale PASS31.888s; vendita integrata PASS2.357s, tutti cleanup veri. Core08:
+22/22 PASS, inclusi read durante writer e autorizzazione mancante. Build11 pulita.
+Target13/14 non eseguiti per errori compile di fixture,15 per selettore visuale
+non ammesso: conservati. Il runner ora seleziona anche il caso visuale già canonico;
+nessun nuovo scenario o cambio della matrice default. Errori shell entrano anche
+nei diagnostici tipizzati, senza esportare testi/importi.
+
+La sola correzione documentale82d11de ha scansioni pulite e codice identico a cc;
+non è il pacchetto da consegnare dopo il nuovo delta lock. WPF mirato remoto
+fc3a31d/42860115702:20/22 PASS, visuale e shell FAIL conservati. La shell locale
+successiva passa con ricevuta completa; la nuova CI deve produrre una diagnosi
+esatta anche in caso di failure sul runner indipendente. Qualifica finale,
+performance qualificata sul nuovo pacchetto e consegna rimangono aperte.
+
 Codice congelato in cc6128f448cd36089f1c470a21885091efa4de3c; Windows-All locale
 in corso, restore/gate/build PASS, Core ancora attivo. WPF42857545140 SUCCESS.
 Release42857518468 FAIL: generic-api-key sul conteggio test del worklog, falso

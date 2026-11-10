@@ -2,6 +2,7 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Core.Models;
+using Win7POS.Core.Pos;
 using Win7POS.Data;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
@@ -276,20 +277,21 @@ VALUES(@barcode, 10);",
     private static Task<long> InsertOrdinarySaleAsync(
         SqliteConnectionFactory factory,
         long productId,
-        string code)
+        string code,
+        bool authorized = true)
     {
-        return new SaleRepository(factory).InsertSaleAsync(
-            new Sale
+        var sale = new Sale
             {
                 Code = code,
+                OperatorId = 42,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Kind = (int)SaleKind.Sale,
                 Total = 1000,
                 PaidCash = 1000,
                 PaidCard = 0,
                 Change = 0
-            },
-            new[]
+            };
+        var lines = new[]
             {
                 new SaleLine
                 {
@@ -299,7 +301,23 @@ VALUES(@barcode, 10);",
                     Quantity = 1,
                     UnitPrice = 1000
                 }
-            });
+            };
+        var repository = new SaleRepository(factory);
+        if (!authorized) return repository.InsertSaleAsync(sale, lines);
+        var guard = new SaleAuthorizationCommitGuard(1, new string('a',64), "sale-safety-fixture",42,
+            ShopCode,"fixture-device",ShopId,1,"fixture-staff",()=>{},(_,commit)=>commit());
+        return repository.InsertAuthorizedSaleAsync(sale,lines,guard);
+    }
+
+    [TestMethod]
+    public async Task OrdinarySale_WithMatchingCatalogStillRequiresAuthorization()
+    {
+        using var db = TestDb.Create();
+        var fixture = await SeedSaleSafeFixtureAsync(db);
+        var denied = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            InsertOrdinarySaleAsync(db.Factory, fixture.ProductId, "SALE-UNAUTHORIZED", authorized:false));
+        Assert.AreEqual("sale_authorization_required",denied.Message);
+        await AssertNoSaleArtifactsAsync(db.Factory);
     }
 
     private static async Task AssertNoSaleArtifactsAsync(SqliteConnectionFactory factory)

@@ -3,6 +3,12 @@
 <!-- ASUS019_CURRENT_START -->
 ## Stato corrente — ASUS019 carrello reale e sync automatica, ACTIVE
 
+Ultimo consolidamento: lookup fuori Dispatcher e reader differiti; lock SQL
+esclusivo7.47ms, shell70 verifiche/24.516s, visuale31.888s, vendita2.357s PASS;
+Core mirato22 PASS. La prima canonica cc termina13/15: due fixture senza guard
+corrette, FAIL preservati. Nuova qualifica richiesta;82d11de solo-doc non è la
+consegna finale del nuovo delta. Nessun pacchetto nuovo installato.
+
 Codice congelato cc6128f nel ramo PR136; installato2ad42ca conservato, POS chiuso. Ingresso
 con vera VM/scanner dopo autorizzazione locale, supervisor automatico, stato
 pubblicato distinto dai tentativi, provenienza locale/manuale e guard al commit.

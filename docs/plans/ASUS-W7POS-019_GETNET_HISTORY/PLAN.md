@@ -3,6 +3,12 @@
 <!-- ASUS019_CURRENT_START -->
 ## Stato corrente — POS reale e sync in background, ACTIVE (10 novembre)
 
+Consolidamento: nuova prova apply con lock esclusivo, input7.47ms≤250ms,
+shell70 verifiche, visuale/vendita integrata e Core22 mirati PASS. Il primo
+Windows-All cc conserva13PASS/2FAIL su fixture ora corrette; il successore include
+worker lookup e letture differite. Una nuova qualifica completa è necessaria per
+questo delta runtime, non per la sola correzione documentale82d11de.
+
 Addendum operativo: dopo autenticazione normale valida, ambiente locale valido e
 policy/lease verificati, mostrare la vera PosView con carrello e scanner anche
 prima della popolazione del catalogo. Il requisito precedente di shell empty

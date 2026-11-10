@@ -248,6 +248,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 catch (Exception error)
                 {
+                    TypedQaDiagnosticWriter.RecordException(error);
                     proofs.Status = "FAIL"; proofs.Failure = error.ToString(); save(); return "FAIL: authenticated_shell_ux; " + error.GetType().Name;
                 }
                 finally

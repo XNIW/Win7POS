@@ -96,8 +96,9 @@ if (-not $HarnessDirectory) {
 }
 $exe = [IO.Path]::GetFullPath((Join-Path $HarnessDirectory 'Win7POS.Wpf.UiSmokeHarness.exe'))
 $scenarios = @('OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
+$selectableScenarios = @('FUNCTIONAL_VISUAL') + $scenarios
 foreach ($selected in $Scenario) {
-    if ($selected -cnotin $scenarios) { throw "Unknown functional scenario: $selected" }
+    if ($selected -cnotin $selectableScenarios) { throw "Unknown functional scenario: $selected" }
 }
 if (@($Scenario | Select-Object -Unique).Count -ne $Scenario.Count) { throw 'Duplicate functional scenario.' }
 $runId = 'Win7POS.Functional.' + [Guid]::NewGuid().ToString('N')
