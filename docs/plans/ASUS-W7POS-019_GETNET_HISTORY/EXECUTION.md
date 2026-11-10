@@ -1106,3 +1106,23 @@ body unchanged. V3 with current real lease returns ok/shop_scoped/done/0counts.
 No Worker or Windows code change. App launch rejected by tool policy, no process
 and no new pull verified; explicit authorization pending, no alternative launcher.
 No Getnet apply/sale/reset/revocation. New report holds evidence and next step.
+# Correttivo isolato alla consegna quotidiana — 10 novembre
+
+Il frozen f87dd7c conserva gli esiti reali: CI42864189139 FAIL (functional21/22,
+solo AUTHENTICATED_SHELL_UX), Security42864189296 SUCCESS,
+WPF42864444597 SUCCESS e Release42864438219 SUCCESS. Windows-All locale0c:
+14/15 PASS, solo gate statico del conteggio eccezioni; Core1768/1768 e
+functional22/22 PASS. Il gate corretto separatamente è PASS, senza trasformare
+la run originale in verde. Il diagnostico pubblico remoto non contiene una
+asserzione FAIL della shell; causa non ancora attribuita, nessun retry cieco.
+
+Successore in worktree distinto: lettura snapshot richiede nella stessa TX
+generazione attiva e identità shop ufficiale/bound coerenti; due regressioni
+empty/nonempty incluse nel Core mirato13/13 PASS, shell70 PASS32.939s e build
+net48/x86 PASS. Il writer diagnostico ora conserva ogni checkpoint booleano
+tipizzato anche se il processo termina prima di catch/finally, senza copiare
+importi o proof private. Budget52/60s e assert invariati. Qualifica remota del
+successore ancora NOT_RUN; installato2ad42ca, nessun dato reale modificato.
+
+Gli addenda cloud/bilaterali si implementano separatamente in PR135/Admin151:
+non sono incorporati in questo candidato di consegna PR136.

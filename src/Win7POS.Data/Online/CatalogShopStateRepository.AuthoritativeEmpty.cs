@@ -114,8 +114,14 @@ WHERE current.singleton_id = 1 AND current.active = 1
             var empty = await IsAuthoritativelyEmptyWithinTransactionAsync(conn, tx, generation).ConfigureAwait(false);
             var restore = await conn.ExecuteScalarAsync<string>(
                 "SELECT value FROM app_settings WHERE key = 'pos.restore.needs_sync_review';", transaction: tx).ConfigureAwait(false);
+            var scoped = generation != null &&
+                await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(conn, tx, generation).ConfigureAwait(false) &&
+                string.Equals(await GetAsync(conn, tx, OutboxShopBinding.OfficialShopIdKey).ConfigureAwait(false), generation.ShopId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(await GetAsync(conn, tx, OutboxShopBinding.OfficialShopCodeKey).ConfigureAwait(false), generation.ShopCode, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(await GetAsync(conn, tx, BoundShopIdKey).ConfigureAwait(false), generation.ShopId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(await GetAsync(conn, tx, BoundShopCodeKey).ConfigureAwait(false), generation.ShopCode, StringComparison.OrdinalIgnoreCase);
             tx.Commit();
-            return new PosPublishedCatalogState(safety.IsSaleSafe, empty, restore == "1");
+            return new PosPublishedCatalogState(scoped && safety.IsSaleSafe, scoped && empty, restore == "1" || !scoped);
         }
 
         public async Task StoreAttemptExactnessAsync(string trustedShopId, string trustedShopCode,
