@@ -248,6 +248,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 catch (Exception error)
                 {
+                    TypedQaDiagnosticWriter.RecordException(error);
                     proofs.Status = "FAIL"; proofs.Failure = error.ToString(); save(); return "FAIL: authenticated_shell_ux; " + error.GetType().Name;
                 }
                 finally
@@ -422,6 +423,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var view=ShellField<PosView>(shell,"PosViewControl");var model=(PosViewModel)view.DataContext;
             var box=(TextBox)view.FindName("BarcodeBox");
             var coordinator=ShellField<PosStartupCoordinator>(shell,"_startupCoordinator");
+            await VerifyExclusiveCatalogApplyInputAsync(shell,factory,check,token,data);
             server.HoldNextCatalogResponse();await PulseShellCatalogAsync(shell,clock,token);
             await WaitCatalogRetryUiAsync(()=>server.NextCatalogRequestBlocked.IsCompleted,token);
             var count=model.ItemsCount;SubmitShellBarcode(view,"LOOP-REMOTE");
@@ -474,6 +476,51 @@ namespace Win7POS.Wpf.UiSmokeHarness
             check("close_during_network_pull_joins_owned_work",ShellField<bool>(shell,"_ownedWorkStopped") &&
                 coordinator.GetSnapshot()==null && before.SequenceEqual(ReadShellCommercialCounts(factory)));
             server.ReleaseNextCatalogResponse();
+        }
+
+        private static async Task VerifyExclusiveCatalogApplyInputAsync(MainWindow shell,SqliteConnectionFactory factory,
+            Action<string,bool> check,CancellationToken token,string data)
+        {
+            var entered=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task watchdog=Task.CompletedTask;
+            var publisher=Task.Run(async()=>
+            {
+                using(var connection=factory.Open())
+                {
+                    connection.Execute("BEGIN EXCLUSIVE;");
+                    try{entered.TrySetResult(true);await release.Task.ConfigureAwait(false);}
+                    finally{connection.Execute("ROLLBACK;");}
+                }
+            });
+            try
+            {
+                await WaitCatalogRetryUiAsync(()=>entered.Task.IsCompleted || publisher.IsCompleted,token);
+                if(publisher.IsFaulted)await publisher;
+                var view=ShellField<PosView>(shell,"PosViewControl");var model=(PosViewModel)view.DataContext;
+                var before=model.ItemsCount;var timer=Stopwatch.StartNew();
+                var probe=new TaskCompletionSource<double>(TaskCreationOptions.RunContinuationsAsynchronously);
+                // A bounded independent watchdog releases the fixture's SQL lock
+                // even if a regression blocks the Dispatcher in the public scan.
+                watchdog=Task.Run(async()=>
+                {
+                    await Task.WhenAny(probe.Task,Task.Delay(250)).ConfigureAwait(false);
+                    release.TrySetResult(true);
+                });
+                SubmitShellBarcode(view,"LOOP-REMOTE");
+                _=shell.Dispatcher.BeginInvoke(DispatcherPriority.Input,new Action(()=>probe.TrySetResult(timer.Elapsed.TotalMilliseconds)));
+                await watchdog;await publisher;
+                var latency=await probe.Task;
+                await WaitCatalogRetryUiAsync(()=>!model.IsBusy && model.ItemsCount==before+1,token);
+                check("input_during_exclusive_catalog_apply_within_250ms",latency<=250);
+                WriteJson(Path.Combine(data,"shell-apply-input-latency.private.json"),new ShellLatencyProof{InputCompletionMilliseconds=latency});
+            }
+            finally
+            {
+                release.TrySetResult(true);
+                await publisher; // Own the fixture's connection through release, including failures.
+                await watchdog;
+            }
         }
 
         private static async Task ClickShellMenuAsync(MainWindow shell,string tag,CancellationToken token)

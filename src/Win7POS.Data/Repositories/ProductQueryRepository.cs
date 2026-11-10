@@ -20,7 +20,7 @@ namespace Win7POS.Data.Repositories
         internal async Task<Product> GetForSaleAsync(string barcode)
         {
             using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction();
+            using var tx = conn.BeginTransaction(deferred: true);
             var safety = await CatalogShopStateRepository.EvaluateSaleSafetyAsync(conn, tx, true).ConfigureAwait(false);
             SqliteWorkMetrics.ProductCommand();
             var product = await conn.QuerySingleOrDefaultAsync<Product>(

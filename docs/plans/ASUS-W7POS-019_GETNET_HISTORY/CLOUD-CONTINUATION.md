@@ -1,5 +1,22 @@
 # ASUS019 — continuazione client cloud, Execution isolata
 
+## Follow-up del consolidamento quotidiano
+
+Il client corrente congela 0c9809047024751b130e41d141780763f94949b0 dopo il delta
+SQLite: letture differite e lookup fuori Dispatcher. La patch comune di follow-up
+(src/scripts/tests più sola impronta storica gitleaks) è applicata qui a tre vie
+senza conflitti; SHA256 66e76334a4b1327c7e6c8ee02839c99924abb067addb59b96981b7d3375ec6db.
+Include le fixture sale-safe/visuale ora autorizzate, il negativo esplicito senza
+guard e il probe pubblico durante lock esclusivo. Nessun nuovo endpoint cloud.
+
+Le due CI 9cfe193 (42858379704 e 42858313174) sono FAIL e restano conservate;
+Security 42858388684/42858313637 FAIL sul solo falso positivo storico del worklog
+cc6128f visibile nella storia completa. Dir scan 9cfe193 senza finding; history
+scan riproduce la sola impronta esatta ora registrata, nessuna esclusione ampia.
+CodeQL 42858388684 PASS. Non si attribuisce qui una causa ulteriore alla CI prima
+della lettura dei relativi diagnostici. Nuova qualifica propria richiesta sul
+successore; niente retry dello stesso SHA e nessun PASS Windows trasferito.
+
 ## Stato corrente — allineamento UX comune, qualifica del successore aperta
 
 La consegna corrente resta PR136, congelata su cc6128f; installato 2ad42ca.

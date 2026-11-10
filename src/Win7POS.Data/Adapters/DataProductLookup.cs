@@ -11,6 +11,8 @@ namespace Win7POS.Data.Adapters
 
         public DataProductLookup(ProductRepository products) => _products = products;
 
-        public Task<Product> GetByBarcodeAsync(string barcode) => _products.GetForSaleAsync(barcode);
+        // SQLite's async API can wait synchronously for the publisher's file lock.
+        // Keep that bounded wait off the operator's Dispatcher, including Open().
+        public Task<Product> GetByBarcodeAsync(string barcode) => Task.Run(() => _products.GetForSaleAsync(barcode));
     }
 }

@@ -7256,16 +7256,30 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 var sales = new SaleRepository(factory);
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 var saleIds = new List<long>();
+                await SeedOfflineSalesOperatorAsync(factory).ConfigureAwait(false);
+                SeedTrustedDeviceSession();
+                var fixtureUsers = new UserRepository(factory);
+                var fixtureUsername = await fixtureUsers.FindTrustedRemoteStaffUsernameAsync(QaShopId,QaShopCode,
+                    QaOfflineStaffId,QaOfflineStaffCode,1).ConfigureAwait(false);
+                var fixtureSession = new OperatorSession(fixtureUsers,new SecurityRepository(factory),
+                    new PosOfflineAuthorizationLeaseGuard(new PosTrustedDeviceStore(),()=>DateTimeOffset.UtcNow));
+                if(await fixtureSession.LoginAsync(fixtureUsername,QaOfflineCredential).ConfigureAwait(false)!=LoginResult.Success)
+                    throw new InvalidOperationException("visual_fixture_authorization_failed");
+                var fixtureUse = await fixtureSession.BeginAuthorizationUseAsync(PermissionCodes.PosSell,"Visual fixture seed").ConfigureAwait(false);
+                try
+                {
+                var fixtureAuthority = fixtureUse.CommitGuard;
                 for (var i = 0; i < 4; i++)
                 {
                     var product = products[i];
                     var total = product.UnitPrice * (i + 1);
-                    saleIds.Add(await sales.InsertSaleAsync(
+                    saleIds.Add(await sales.InsertAuthorizedSaleAsync(
                         new Sale
                         {
                             Code = "QA-SALE-" + (i + 1).ToString("D3", CultureInfo.InvariantCulture),
                             CreatedAt = now - (i * 60000),
                             Kind = (int)SaleKind.Sale,
+                            OperatorId = fixtureSession.CurrentUser.Id,
                             Total = total,
                             PaidCash = i % 2 == 0 ? total : 0,
                             PaidCard = i % 2 == 0 ? 0 : total,
@@ -7281,7 +7295,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                                 Quantity = i + 1,
                                 UnitPrice = product.UnitPrice
                             }
-                        }).ConfigureAwait(false));
+                        },fixtureAuthority).ConfigureAwait(false));
                 }
 
                 var originalLines = await sales.GetLinesBySaleIdAsync(saleIds[0]).ConfigureAwait(false);
@@ -7313,12 +7327,13 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                     }).ConfigureAwait(false);
 
                 var voidSourceProduct = products[4];
-                var voidSourceId = await sales.InsertSaleAsync(
+                var voidSourceId = await sales.InsertAuthorizedSaleAsync(
                     new Sale
                     {
                         Code = "QA-SALE-VOID-SOURCE",
                         CreatedAt = now + 2000,
                         Kind = (int)SaleKind.Sale,
+                        OperatorId = fixtureSession.CurrentUser.Id,
                         Total = voidSourceProduct.UnitPrice,
                         PaidCash = 0,
                         PaidCard = voidSourceProduct.UnitPrice,
@@ -7334,7 +7349,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                             Quantity = 1,
                             UnitPrice = voidSourceProduct.UnitPrice
                         }
-                    }).ConfigureAwait(false);
+                    },fixtureAuthority).ConfigureAwait(false);
                 var voidSourceLine = (await sales.GetLinesBySaleIdAsync(voidSourceId).ConfigureAwait(false)).Single();
                 await sales.InsertSaleAsync(
                     new Sale
@@ -7361,6 +7376,8 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                             RelatedOriginalLineId = voidSourceLine.Id
                         }
                     }).ConfigureAwait(false);
+                }
+                finally { fixtureUse.Dispose(); fixtureSession.LogoutForced(); }
             }
 
             private static async Task SeedHeldCartsAsync(SqliteConnectionFactory factory)

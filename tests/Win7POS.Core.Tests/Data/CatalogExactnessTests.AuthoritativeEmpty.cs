@@ -451,6 +451,18 @@ WHERE key IN (@safe, @completed) AND TRIM(value) <> '';",
         await state.StoreSaleSafeAsync(stage.ShopId, stage.ShopCode, "2026-11-07T01:00:00Z",
             stage.Fence.ExpectedEpoch, generation: stage.Generation);
         Assert.IsTrue((await state.ReadPublishedSnapshotAsync(stage.Generation)).RemoteSaleSafe);
+        Task<PosPublishedCatalogState> pending;
+        bool readBeforeWriterCompleted;
+        using (var writer = db.Factory.Open())
+        using (var transaction = writer.BeginTransaction(deferred: false))
+        {
+            await writer.ExecuteAsync("UPDATE products SET name=name || '-candidate';", transaction: transaction);
+            pending = Task.Run(() => state.ReadPublishedSnapshotAsync(stage.Generation));
+            readBeforeWriterCompleted = await Task.WhenAny(pending, Task.Delay(250)) == pending;
+            transaction.Rollback();
+        }
+        Assert.IsTrue((await pending.WaitAsync(TimeSpan.FromSeconds(3))).RemoteSaleSafe);
+        Assert.IsTrue(readBeforeWriterCompleted, "Published readers must not acquire a writer reservation.");
         await state.StoreAttemptExactnessAsync(stage.ShopId, stage.ShopCode, new CatalogExactnessResult
         { Code = "candidate_count_mismatch", Status = CatalogCompletenessStatus.Mismatch, RepairRequired = true },
             stage.Fence.ExpectedEpoch, stage.Fence.ExpectedPreviousCursor, stage.Fence.ExpectedPreviousMode, stage.Generation);
