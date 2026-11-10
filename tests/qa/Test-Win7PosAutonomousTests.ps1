@@ -294,7 +294,7 @@ New-Item -ItemType Directory -Path $functionalData | Out-Null
 $functionalEvidence = Join-Path $unicode 'functional evidence'
 New-Item -ItemType Directory -Path $functionalEvidence | Out-Null
 Assert-QaTest ($functionalData.Length -le 89 -and -not (Test-QaWithin $functionalData $functionalEvidence)) 'Functional SQLite data inherited the report path length'
-$functionalDiagnostics = @('functional-completion.txt','measurements.csv','sync-backup-load.json','capture.png')
+$functionalDiagnostics = @('functional-completion.txt','measurements.csv','sync-backup-load.json','capture.png','qa-diagnostics.json')
 $functionalPrivateFiles = @('entry.json','pos-trusted-device.json','trusted-device-profile.json','synthetic.db','memory.dmp','token.dat')
 foreach ($name in ($functionalDiagnostics + $functionalPrivateFiles)) { [IO.File]::WriteAllText((Join-Path $functionalData $name),'synthetic') }
 Copy-FunctionalEvidence $functionalData $functionalEvidence

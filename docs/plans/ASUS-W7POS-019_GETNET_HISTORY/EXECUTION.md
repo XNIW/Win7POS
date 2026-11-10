@@ -1126,3 +1126,14 @@ successore ancora NOT_RUN; installato2ad42ca, nessun dato reale modificato.
 
 Gli addenda cloud/bilaterali si implementano separatamente in PR135/Admin151:
 non sono incorporati in questo candidato di consegna PR136.
+
+Qualifica7d4529d: WPF42873989282 e Release42875543336 SUCCESS,
+Security42875498374 SUCCESS; CI42875498214 FAIL soltanto shell21/22.
+Il sidecar tipizzato non era incluso nella copia functional verso il report
+canonico: causa della diagnostica assente, non ancora causa del FAIL shell.
+Successore QA: whitelist qa-diagnostics.json, osservazioni chiuse senza ID
+privati e caller line distinta anche attraverso i delegate AUTH. Test runner
+statico e projection PASS; build net48/x86 zero warning/error; AUTH mirato nel
+contesto TEMP canonico PASS24.439s,70 checkpoint/40callsite distinti, bundle
+pubblico verificato. Nessun assert o budget52/60s cambiato. Il tentativo auth02
+si ferma prima del figlio per output già creato; conservato, non prova runtime.

@@ -221,7 +221,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [System.Runtime.CompilerServices.CallerLineNumber] int sourceLine=0)
         {
             proof.Assertions.Add(new CatalogRetryUiAssertion { Id = id, Passed = passed }); persist();
-            TypedQaDiagnosticWriter.RecordAssertion(passed,true,passed,sourceFile,sourceLine,id);
+            TypedQaDiagnosticWriter.RecordAssertion(passed,true,passed,sourceFile,sourceLine);
             // A process deadline can terminate before catch/finally. Preserve the
             // last completed checkpoint without exporting private proof contents.
             TypedQaDiagnosticWriter.FlushCheckpoint();

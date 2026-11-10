@@ -28,6 +28,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
 {
     internal static partial class ArticleMutationLoopbackHarness
     {
+        private delegate void CatalogRetryUiCheck(string id, bool ok,
+            [System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "",
+            [System.Runtime.CompilerServices.CallerLineNumber] int sourceLine = 0);
+
         internal static async Task<string> VerifyAuthenticatedShellUxAsync(string data)
         {
             TypedQaDiagnosticWriter.BeginScenario("AUTHENTICATED_SHELL_UX", "functional-completion");
@@ -42,7 +46,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Win7POS.Data.Backup.BackupAutomationService ownedBackup = null;
                 var receipt = Path.Combine(data, "authenticated-shell-ux.private.json");
                 Action save = () => WriteJson(receipt, proofs);
-                Action<string, bool> check = (id, ok) => CheckCatalogRetryUi(proofs, save, id, ok);
+                CatalogRetryUiCheck check = (id, ok, sourceFile, sourceLine) =>
+                    CheckCatalogRetryUi(proofs, save, id, ok, sourceFile, sourceLine);
                 try
                 {
                     Environment.SetEnvironmentVariable(PosAdminWebOptions.BaseUrlEnvironmentVariable, server.BaseUrl);
@@ -274,7 +279,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
             }
         }
-        private static async Task VerifyShellScannerAndReturnAsync(MainWindow shell, Action<string, bool> check, CancellationToken token, string phase)
+        private static async Task VerifyShellScannerAndReturnAsync(MainWindow shell, CatalogRetryUiCheck check, CancellationToken token, string phase)
         {
             var view = ShellField<PosView>(shell, "PosViewControl");
             var vm = (PosViewModel)view.DataContext;
@@ -304,7 +309,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 ReferenceEquals(originalInitialization, vm.InitializationTask));
         }
         private static async Task VerifyShellPaymentAsync(MainWindow shell, SqliteConnectionFactory factory,
-            Action<string, bool> check, CancellationToken token, string stockBarcode="LOOP-REMOTE", string phase="ready")
+            CatalogRetryUiCheck check, CancellationToken token, string stockBarcode="LOOP-REMOTE", string phase="ready")
         {
             var pos = (PosViewModel)ShellField<PosView>(shell, "PosViewControl").DataContext;
             var workflow = ShellField<PosWorkflowService>(shell, "_reportService");
@@ -353,7 +358,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 .Select(table=>c.ExecuteScalar<long>("SELECT COUNT(*) FROM "+table)).ToArray();
         }
 
-        private static async Task VerifyShellUnknownEditorAsync(MainWindow shell,bool cancel,Action<string,bool> check,CancellationToken token)
+        private static async Task VerifyShellUnknownEditorAsync(MainWindow shell,bool cancel,CatalogRetryUiCheck check,CancellationToken token)
         {
             var view=ShellField<PosView>(shell,"PosViewControl");var model=(PosViewModel)view.DataContext;
             var before=model.ItemsCount;
@@ -384,7 +389,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 model.ItemsCount==before+(cancel?0:1) && !shell.OwnedWindows.OfType<ProductEditDialog>().Any());
         }
 
-        private static async Task VerifyShellPermissionDeniedAsync(MainWindow shell,SqliteConnectionFactory factory,Action<string,bool> check,CancellationToken token)
+        private static async Task VerifyShellPermissionDeniedAsync(MainWindow shell,SqliteConnectionFactory factory,CatalogRetryUiCheck check,CancellationToken token)
         {
             var view=ShellField<PosView>(shell,"PosViewControl");var model=(PosViewModel)view.DataContext;
             var before=ReadShellCommercialCounts(factory);var count=model.ItemsCount;
@@ -419,7 +424,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
 
         private static async Task VerifyPublishedSnapshotContinuityAsync(MainWindow shell,SqliteConnectionFactory factory,
-            ArticleLoopbackServer server,ShellSyncClock clock,Action<string,bool> check,CancellationToken token,string data)
+            ArticleLoopbackServer server,ShellSyncClock clock,CatalogRetryUiCheck check,CancellationToken token,string data)
         {
             var view=ShellField<PosView>(shell,"PosViewControl");var model=(PosViewModel)view.DataContext;
             var box=(TextBox)view.FindName("BarcodeBox");
@@ -480,7 +485,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
 
         private static async Task VerifyExclusiveCatalogApplyInputAsync(MainWindow shell,SqliteConnectionFactory factory,
-            Action<string,bool> check,CancellationToken token,string data)
+            CatalogRetryUiCheck check,CancellationToken token,string data)
         {
             var entered=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var release=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -545,7 +550,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Environment.TickCount,Key.Enter){RoutedEvent=Keyboard.KeyDownEvent});
         }
 
-        private static async Task VerifyHeldCatalogInputAsync(MainWindow shell,Action<string,bool> check,CancellationToken token,string data)
+        private static async Task VerifyHeldCatalogInputAsync(MainWindow shell,CatalogRetryUiCheck check,CancellationToken token,string data)
         {
             var view=ShellField<PosView>(shell,"PosViewControl");
             var model=(PosViewModel)view.DataContext;

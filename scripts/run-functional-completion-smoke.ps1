@@ -80,9 +80,10 @@ function Copy-FunctionalEvidence([string]$DataDirectory, [string]$EvidenceDirect
     # Only bounded, top-level diagnostics are exported. SQLite data stays in its
     # unique owned directory, retained for inspection without recursive cleanup.
     # JSON is also used for trust profiles. Export only the known functional
-    # measurement receipt; unknown JSON stays with the owned source data.
+    # measurement receipts and typed assertion sidecar; unknown JSON stays
+    # with the owned source data. Public projection still validates each event.
     $files = @(Get-ChildItem -LiteralPath $DataDirectory -File | Where-Object {
-        $_.Extension -in @('.txt','.log','.csv','.png') -or $_.Name -in @('sync-backup-load.json','operator-dialog-geometry.private.json','authenticated-shell-ux.private.json')
+        $_.Extension -in @('.txt','.log','.csv','.png') -or $_.Name -in @('sync-backup-load.json','operator-dialog-geometry.private.json','authenticated-shell-ux.private.json','qa-diagnostics.json')
     })
     if ($files.Count -gt 256) { throw 'Functional diagnostic file count exceeds export bound.' }
     foreach ($file in $files) {
