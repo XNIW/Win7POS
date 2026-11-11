@@ -132,6 +132,10 @@ WHERE operation_id=@op AND status='uncertain' AND attempt_count=@attempt",new{st
             HistoricalReplicaProtocol.DemandId(r.BatchId);
             if(HistoricalReplicaProtocol.Integer(r.Revision)<0)throw new InvalidOperationException("history_publication_receipt_mismatch");
             HistoricalReplicaProtocol.Integer(r.SignedGrossClp);
+            var decision=p.CanonicalDecision;
+            if(r.BatchId!=decision.BatchId||r.Revision!=decision.Revision||r.Inserted!=decision.Inserted||r.Duplicates!=decision.Duplicates||
+                r.Deactivated!=decision.Deactivated||r.SignedGrossClp!=decision.SignedGrossClp)
+                throw new InvalidOperationException("history_publication_receipt_mismatch");
         }
         private static string Digest(string text){using var sha=System.Security.Cryptography.SHA256.Create();return Hex(sha.ComputeHash(Encoding.UTF8.GetBytes(text)));}
         private static T Deserialize<T>(string text){if(string.IsNullOrEmpty(text))throw new InvalidOperationException("history_publication_proof_missing");using var stream=new MemoryStream(Encoding.UTF8.GetBytes(text));return (T)new DataContractJsonSerializer(typeof(T)).ReadObject(stream);}

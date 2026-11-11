@@ -25,7 +25,8 @@ public sealed partial class HistoricalLedgerTests
             mismatch=="device"?Guid.NewGuid().ToString("D"):draft.DeviceId,mismatch=="dataset"?"other-dataset":draft.DatasetId,
             mismatch=="server"?Guid.NewGuid().ToString("D"):PreparationServerDataset,
             mismatch=="lineage"?Guid.NewGuid().ToString("D"):draft.RestoreLineageId,draft.RestoreEpoch,mismatch=="epoch"?2:1,
-            mismatch=="root"?new string('f',64):draft.ContentDigest,mismatch=="request"?new string('e',64):draft.RequestFingerprint,"content_authorized_v2");
+            mismatch=="root"?new string('f',64):draft.ContentDigest,mismatch=="request"?new string('e',64):draft.RequestFingerprint,"content_authorized_v2",
+            new HistoricalPublicationLocalDecision(0,0,0,0,0,0,0),new HistoricalPublicationCanonicalDecision(Guid.NewGuid().ToString("D"),1,0,0,0,0));
         return new(){State="authorized",OperationId=op,ContentDigest=draft.ContentDigest,GrantId=grant,WriterEpoch="1",RemainingMilliseconds=60000,PublicationProof=proof};
     }
 

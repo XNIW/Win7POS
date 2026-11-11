@@ -427,7 +427,7 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 }
                 result = new HistoricalSalesOperationReceipt { OperationId = plan.OperationId, OperationKind = "Apply", BatchId = batch, InsertedCount = inserted, DuplicateCount = duplicates, RejectedCount = plan.Analysis.RejectedRows.Count, SignedAmountClp = amount, CorrectionCount = approvedCorrections.Count, CorrectionApprovals = approvedCorrections.ToArray(), CurrentBatchState = "Active", CurrentBatchRevision = 1 };
                 InsertReceipt(c, tx, guard, result, now);
-                HistoricalPublicationOutbox.Enqueue(c,tx,guard,publicationDraft,publicationProof,Serialize(result),null,now,ct);
+                HistoricalPublicationOutbox.Enqueue(c,tx,guard,publicationDraft,publicationProof,result,null,now,ct);
                 _testHooks?.AtPhase?.Invoke("before_commit", c, tx);
                 ct.ThrowIfCancellationRequested();
                 guard.DemandStillValid();
@@ -475,7 +475,7 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 var applyOperation=c.ExecuteScalar<string>("SELECT apply_operation_id FROM historical_import_batch WHERE id=@batchId",new{batchId},tx);
                 using var ownedDraft=publicationDraft==null?HistoricalPublicationDraft.ForUndo(guard.OperationId,guard.ShopId,guard.DeviceId,guard.DatasetId,guard.RestoreEpoch,
                     baseRevision,batchId,expectedBatchRevision,applyOperation,c.ExecuteScalar<string>("SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id'",transaction:tx)):null;
-                HistoricalPublicationOutbox.Enqueue(c,tx,guard,publicationDraft??ownedDraft,publicationProof,Serialize(result),applyOperation,now,ct);
+                HistoricalPublicationOutbox.Enqueue(c,tx,guard,publicationDraft??ownedDraft,publicationProof,result,applyOperation,now,ct);
                 _testHooks?.AtPhase?.Invoke("before_undo_commit", c, tx); ct.ThrowIfCancellationRequested(); guard.DemandStillValid();
                 using (await _coordinator.EnterPublicationAsync(ct).ConfigureAwait(false))
                     _coordinator.CommitAndPublishReportRevision(c, tx, () => guard.CommitIfStillValid(SqliteConnectionFactory.DurableCommitSafetyBudget, tx.Commit), _authority());

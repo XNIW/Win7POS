@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Import;
+using Win7POS.Core.Online;
 
 namespace Win7POS.Data.Import
 {
@@ -30,7 +31,7 @@ namespace Win7POS.Data.Import
         public HistoricalPublicationOutbox(SqliteConnectionFactory factory)=>_factory=factory??throw new ArgumentNullException(nameof(factory));
 
         internal static void Enqueue(SqliteConnection c,SqliteTransaction t,HistoricalImportAuthorizationCommitGuard guard,
-            HistoricalPublicationDraft draft,HistoricalPublicationProof proof,string receiptJson,string dependsOn,long now,CancellationToken ct)
+            HistoricalPublicationDraft draft,HistoricalPublicationProof proof,HistoricalSalesOperationReceipt receipt,string dependsOn,long now,CancellationToken ct)
         {
             draft.DemandMatches(guard);
             proof?.DemandValid();
@@ -40,6 +41,17 @@ namespace Win7POS.Data.Import
                 proof.DatasetId!=guard.DatasetId||proof.RestoreLineageId!=draft.RestoreLineageId||proof.RestoreEpoch!=guard.RestoreEpoch||proof.ContentDigest!=draft.ContentDigest||proof.RequestFingerprint!=guard.RequestFingerprint||proof.Decision!="content_authorized_v2"))
                 throw new InvalidOperationException("history_publication_proof_mismatch");
             var revision=c.ExecuteScalar<long>("SELECT data_revision FROM historical_import_dataset WHERE singleton_id=1",transaction:t);
+            if(proof!=null)
+            {
+                var decision=proof.LocalDecision;var apply=guard.Kind==HistoricalImportOperationKind.Apply;
+                if(receipt==null||receipt.OperationId!=guard.OperationId||receipt.OperationKind!=guard.Kind.ToString()||
+                    decision.Inserted!=(apply?receipt.InsertedCount:0)||decision.Deactivated!=(apply?0:receipt.InsertedCount)||
+                    decision.Duplicates!=receipt.DuplicateCount||decision.Rejected!=receipt.RejectedCount||decision.Corrections!=receipt.CorrectionCount||
+                    HistoricalReplicaProtocol.Integer(decision.SignedGrossClp)!=receipt.SignedAmountClp||
+                    HistoricalReplicaProtocol.Integer(decision.RevisionDelta)!=checked(revision-draft.BaseRevision))
+                    throw new InvalidOperationException("history_publication_local_decision_mismatch");
+            }
+            var receiptJson=Serialize(receipt);
             c.Execute(@"INSERT INTO historical_publication_outbox(operation_id,shop_id,device_id,local_dataset_id,restore_epoch,local_revision,operation_kind,request_fingerprint,content_digest,protocol_version,writer_epoch,grant_id,proof_json,depends_on_operation_id,receipt_json,page_count,created_at)
 VALUES(@OperationId,@ShopId,@DeviceId,@DatasetId,@RestoreEpoch,@revision,@kind,@RequestFingerprint,@digest,2,@epoch,@grant,@proof,@dependsOn,@receiptJson,@pages,@now)",
                 new{guard.OperationId,guard.ShopId,guard.DeviceId,guard.DatasetId,guard.RestoreEpoch,revision,kind=guard.Kind.ToString(),guard.RequestFingerprint,
