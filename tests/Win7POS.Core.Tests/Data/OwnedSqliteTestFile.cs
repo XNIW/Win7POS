@@ -19,8 +19,8 @@ internal sealed class OwnedSqliteTestFile : IDisposable
     internal static OwnedSqliteTestFile Create(string path) => new(path);
     internal static OwnedSqliteTestFile Reopen(string path,string fixtureToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fixtureToken);
-        if(!Path.IsPathFullyQualified(path)||!File.Exists(path))throw new InvalidOperationException("history_test_owned_database_missing");
+        if(string.IsNullOrWhiteSpace(fixtureToken))throw new ArgumentException("Fixture capability required.",nameof(fixtureToken));
+        if(!Path.IsPathRooted(path)||Path.GetFullPath(path)!=path||!File.Exists(path))throw new InvalidOperationException("history_test_owned_database_missing");
         return new(path,fixtureToken);
     }
     public void Dispose() { SqliteConnectionFactory.ClearAllPools(); _owner.Dispose(); }
