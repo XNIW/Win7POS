@@ -14,7 +14,7 @@ using Win7POS.Data.Online;
 namespace Win7POS.Core.Tests.Persistence;
 
 [TestClass]
-public sealed class HistoricalReplicaTests
+public sealed partial class HistoricalReplicaTests
 {
     const string Shop=HistoricalCloudExportTests.Fixture.Shop,Dataset="90000000-0000-4000-8000-000000003019",Batch="80000000-0000-4000-8000-000000003019",Merchant="70000000-0000-4000-8000-000000003019",Cursor="60000000-0000-4000-8000-000000003019";
     static readonly CancellationToken Ct=CancellationToken.None;

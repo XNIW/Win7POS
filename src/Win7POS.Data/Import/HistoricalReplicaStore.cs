@@ -21,7 +21,7 @@ namespace Win7POS.Data.Import
         public string ShopId { get; set; } public string DatasetId { get; set; } public long WriterEpoch { get; set; }
         public long ServerRevision { get; set; } public string WriterAuthority { get; set; } public string GenerationId { get; set; }
         public long? PublishedRevision { get; set; } public string Checksum { get; set; } public long? LastSuccessUtcMs { get; set; }
-        public string StaleReason { get; set; } public int EverWeb { get; set; }
+        public string StaleReason { get; set; } public int EverWeb { get; set; } public int CanonicalReadEnabled { get; set; }
     }
     public sealed class HistoricalReplicaStore
     {
@@ -59,7 +59,7 @@ ORDER BY g.created_utc_ms DESC,g.generation_id DESC LIMIT 1",new{shop,oldest=Dat
         public async Task<HistoricalReplicaState> ReadAsync(string shop,CancellationToken ct)
         {
             HistoricalReplicaProtocol.DemandId(shop);_demandCurrent();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);
-            var state=await c.QuerySingleOrDefaultAsync<HistoricalReplicaState>(Command("SELECT shop_id ShopId,dataset_id DatasetId,writer_epoch WriterEpoch,server_revision ServerRevision,writer_authority WriterAuthority,generation_id GenerationId,published_revision PublishedRevision,checksum Checksum,last_success_utc_ms LastSuccessUtcMs,stale_reason StaleReason,ever_web EverWeb FROM historical_cloud_state WHERE shop_id=@shop",new{shop},null,ct)).ConfigureAwait(false);_demandCurrent();return state;
+            var state=await c.QuerySingleOrDefaultAsync<HistoricalReplicaState>(Command("SELECT shop_id ShopId,dataset_id DatasetId,writer_epoch WriterEpoch,server_revision ServerRevision,writer_authority WriterAuthority,generation_id GenerationId,published_revision PublishedRevision,checksum Checksum,last_success_utc_ms LastSuccessUtcMs,stale_reason StaleReason,ever_web EverWeb,CASE WHEN s.ever_web=1 OR EXISTS("+HistoricalBaselineReadMode.LocalScope+") THEN 1 ELSE 0 END CanonicalReadEnabled FROM historical_cloud_state s WHERE shop_id=@shop",new{shop},null,ct)).ConfigureAwait(false);_demandCurrent();return state;
         }
         public async Task ObserveAuthorityAsync(string shop,HistoricalCloudResult authority,CancellationToken ct)
         {
@@ -155,11 +155,12 @@ ON CONFLICT(generation_id,entity_kind,entity_id) DO UPDATE SET entity_digest=exc
                 var changed=await c.ExecuteAsync(Command(@"UPDATE historical_cloud_state SET generation_id=@generation,published_revision=@revision,server_revision=MAX(server_revision,@revision),checksum=@checksum,last_success_utc_ms=@utc,stale_reason=NULL
     WHERE shop_id=@shop AND dataset_id=@dataset AND writer_epoch=@epoch AND generation_id IS @source AND (published_revision IS NULL OR published_revision<=@revision)",new{generation=published,revision=g.Revision,checksum,utc=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),shop=g.Shop,dataset=g.DatasetId,epoch=g.Epoch,source=g.SourceGeneration},t,ct)).ConfigureAwait(false);
                 if(changed!=1)throw new InvalidOperationException("history_replica_publication_changed");
+                var canonicalReadChanged=HistoricalBaselineReadMode.TryActivate(c,t,g.Shop,_factory.AuthorityStamp.RestoreEpoch)>0;
                 // The empty candidate carries only the resumable cursor; no full copy survives publication.
                 if(emptyDelta)await c.ExecuteAsync(Command("DELETE FROM historical_cloud_generation WHERE generation_id=@generation",new{generation},t,ct)).ConfigureAwait(false);
                 // Reclaim obsolete generations only after pointer publication has
                 // committed, in the existing cleanup's separate transaction.
-                if(prior.GenerationId!=published||prior.Revision!=g.Revision||prior.StaleReason!=null)
+                if(canonicalReadChanged||prior.GenerationId!=published||prior.Revision!=g.Revision||prior.StaleReason!=null)
                 {
                     await Bump(c,t,ct).ConfigureAwait(false);
                     await CommitReportChangeAsync(c,t,ct).ConfigureAwait(false);

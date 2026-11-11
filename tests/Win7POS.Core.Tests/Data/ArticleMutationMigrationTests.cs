@@ -39,6 +39,7 @@ public sealed class ArticleMutationMigrationTests
             HistoricalPublicationSchema.Apply(connection, transaction);
             HistoricalPreparationSchema.Apply(connection, transaction);
             HistoricalOutcomeSchema.Apply(connection, transaction);
+            HistoricalBaselineSchema.Apply(connection, transaction);
             transaction.Commit();
         }
 
@@ -80,7 +81,7 @@ public sealed class ArticleMutationMigrationTests
             SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(detector),
             "Fresh schema does not satisfy the current migration invariant.");
         Assert.AreEqual(
-            "0019-historical-outcome-witnesses",
+            "0020-historical-baseline-flow",
             SchemaMigrationRegistry.Latest.MigrationId);
     }
 

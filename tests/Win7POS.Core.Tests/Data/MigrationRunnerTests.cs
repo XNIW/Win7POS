@@ -38,11 +38,12 @@ public sealed class MigrationRunnerTests
             ["0016-historical-cloud-replica"] = "fdcb306ee7c0a7223938c3f6a40bfdf2b49330e628ea02320c4a32c3a1a84cb3",
             ["0017-historical-publication-outbox"] = "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b",
             ["0018-historical-preparation-journal"] = "2f02c30616730d50bc23c37e123a97407753b693f25c7f6bf0326e0e79160712",
-            ["0019-historical-outcome-witnesses"] = "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee"
+            ["0019-historical-outcome-witnesses"] = "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee",
+            ["0020-historical-baseline-flow"] = "19a11ab260c75a25ac1ab407697216aa0790534e6f2d4d7fc4679bbb0cfadce9"
         };
 
-        Assert.AreEqual(19, migrations.Count);
-        Assert.AreEqual("0019-historical-outcome-witnesses", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(20, migrations.Count);
+        Assert.AreEqual("0020-historical-baseline-flow", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -156,7 +157,7 @@ WHERE code = 'SNAPSHOT-BASELINE';"),
             OptionsThatCountBackups(() => backups++)).Run();
         Assert.AreEqual(1, backups);
         CollectionAssert.AreEqual(SchemaMigrationRegistry.All.Take(14).Select(x => x.MigrationId).ToArray(), result.BootstrappedMigrationIds.ToArray());
-        CollectionAssert.AreEqual(new[] { "0015-historical-card-imports","0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses" }, result.AppliedMigrationIds.ToArray());
+        CollectionAssert.AreEqual(new[] { "0015-historical-card-imports","0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow" }, result.AppliedMigrationIds.ToArray());
         AssertLatestLedger(database.Factory);
         using var verify = database.Factory.Open();
         Assert.AreEqual(1L, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_dataset"));
@@ -232,7 +233,7 @@ VALUES('PRE-0007', 2, 750, 750, 0, 0);");
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow"
             },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
@@ -282,7 +283,7 @@ VALUES('perf2a.migration-probe', 'preserve-before-0009');");
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow"
             },
             first.AppliedMigrationIds.ToArray());
         Assert.IsTrue(second.WasNoOp);
@@ -623,6 +624,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
     [DataRow(16,"0017-historical-publication-outbox")]
     [DataRow(17,"0018-historical-preparation-journal")]
     [DataRow(18,"0019-historical-outcome-witnesses")]
+    [DataRow(19,"0020-historical-baseline-flow")]
     public void CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor(int prefix,string successor)
     {
         using var database = MigrationDatabase.Create();

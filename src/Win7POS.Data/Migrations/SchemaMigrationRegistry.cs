@@ -306,7 +306,15 @@ postcondition=current-structural-schema",
                     "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee",
                     "1.0.0",
                     "Additive outcome evidence; restore requires a verified backup and resolution of every original server intent.",
-                    true,HistoricalOutcomeSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalOutcomeBaseline)
+                    true,HistoricalOutcomeSchema.Apply,IsPostHistoricalOutcomeSchemaStructurallyValid,IsRecognizedHistoricalOutcomeBaseline),
+                new SchemaMigration(
+                    "0020-historical-baseline-flow",
+                    "Persist selective baseline progress and enable canonical reads only after a verified source and complete replica.",
+                    "0020-historical-baseline-flow/v1\n" + HistoricalBaselineSchema.Sql,
+                    "19a11ab260c75a25ac1ab407697216aa0790534e6f2d4d7fc4679bbb0cfadce9",
+                    "1.0.0",
+                    "Additive baseline and sticky read selection; restore requires verified backup and reconciliation of original outcomes.",
+                    true,HistoricalBaselineSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalBaselineFlow)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -335,6 +343,8 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+            => IsPostHistoricalOutcomeSchemaStructurallyValid(detector) && HistoricalBaselineSchema.IsSatisfied(detector);
+        private static bool IsPostHistoricalOutcomeSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalPreparationSchemaStructurallyValid(detector) && HistoricalOutcomeSchema.IsSatisfied(detector);
         private static bool IsPostHistoricalPreparationSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalPublicationSchemaStructurallyValid(detector) && HistoricalPreparationSchema.IsSatisfied(detector);
@@ -385,7 +395,7 @@ OR (s.state='committed' AND (EXISTS(SELECT 1 FROM historical_preparation_page p 
         private static bool IsRecognizedHistoricalOutcomeBaseline(LegacySchemaDetector detector)
         {
             if(detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'historical_commit_%'",transaction:detector.Transaction)==0)return false;
-            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalPreparationBaseline(detector)
+            if(!IsPostHistoricalOutcomeSchemaStructurallyValid(detector)||!IsRecognizedHistoricalPreparationBaseline(detector)
                 ||!detector.NoRows(@"SELECT 1 FROM historical_commit_witness w LEFT JOIN historical_preparation_outcome s ON s.operation_id=w.operation_id
 WHERE s.operation_id IS NULL OR s.state<>w.outcome
  OR (w.outcome='committed' AND (NOT EXISTS(SELECT 1 FROM historical_import_operation h WHERE h.operation_id=w.operation_id)
@@ -393,6 +403,17 @@ WHERE s.operation_id IS NULL OR s.state<>w.outcome
  OR (w.outcome='aborted' AND (EXISTS(SELECT 1 FROM historical_import_operation h WHERE h.operation_id=w.operation_id)
  OR EXISTS(SELECT 1 FROM historical_publication_outbox o WHERE o.operation_id=w.operation_id))) LIMIT 1")
                 ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Historical outcome baseline is incomplete or inconsistent.");
+            return true;
+        }
+
+        private static bool IsRecognizedHistoricalBaselineFlow(LegacySchemaDetector detector)
+        {
+            if(detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'historical_baseline_%'",transaction:detector.Transaction)==0)return false;
+            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalOutcomeBaseline(detector)
+                ||!detector.NoRows(@"SELECT 1 FROM historical_baseline_read_mode m LEFT JOIN historical_baseline_flow f ON f.flow_id=m.flow_id
+WHERE f.flow_id IS NULL OR f.state<>'applied' OR f.shop_id<>m.shop_id OR f.local_dataset_id<>m.local_dataset_id
+ OR f.restore_lineage_id<>m.restore_lineage_id OR f.server_dataset_id<>m.server_dataset_id LIMIT 1")
+                ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Historical baseline flow is incomplete or inconsistent.");
             return true;
         }
 

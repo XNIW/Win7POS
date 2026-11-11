@@ -153,7 +153,7 @@ WHERE " + range);
 h.signed_amount_clp AS SignedAmountClp,0 AS CashTenderedClp,0 AS ChangeClp,0 AS CashClp,h.signed_amount_clp AS CardClp,h.original_cashier_id AS OriginalCashierId,
 h.external_id AS Reference,h.provider AS Provider,h.external_namespace AS ExternalNamespace,h.external_id AS ExternalId,h.batch_id AS BatchId,h.source_sheet AS SourceSheet,h.source_row AS SourceRow,
 0 AS IsVoided,NULL AS RelatedNativeSaleId,h.timestamp_raw AS RawTimestamp,h.offset_minutes AS OffsetMinutes,h.card_subtype AS CardSubtype
-FROM historical_cloud_report_movements h WHERE " + where);
+FROM historical_baseline_report_movements h WHERE " + where);
             }
             if (branches.Count == 0) branches.Add(EmptyBranch);
             return new QueryPlan { Sql = "WITH report_entries AS (" + string.Join(" UNION ALL ", branches) + ") ", Parameters = parameters,
@@ -162,7 +162,7 @@ FROM historical_cloud_report_movements h WHERE " + where);
 
         private static async Task<SalesReportCoverageStatus> GetCoverageAsync(SqliteConnection connection, SqliteTransaction transaction, SalesReportFilter filter, QueryPlan plan, CancellationToken cancellationToken)
         {
-            var cloud = (filter.Origins & SalesReportOrigins.Historical) != 0 ? await connection.QuerySingleOrDefaultAsync<CloudCoverageRow>(Command("SELECT generation_id GenerationId FROM historical_cloud_state WHERE shop_id=@shop COLLATE NOCASE AND ever_web=1",new{shop=filter.ShopId},transaction,cancellationToken)).ConfigureAwait(false) : null;
+            var cloud = (filter.Origins & SalesReportOrigins.Historical) != 0 ? await connection.QuerySingleOrDefaultAsync<CloudCoverageRow>(Command("SELECT CASE WHEN s.ever_web=1 OR EXISTS("+Win7POS.Data.Import.HistoricalBaselineReadMode.CurrentServerScope+") THEN s.generation_id END GenerationId FROM historical_cloud_state s WHERE shop_id=@shop COLLATE NOCASE AND (s.ever_web=1 OR EXISTS("+Win7POS.Data.Import.HistoricalBaselineReadMode.LocalScope+"))",new{shop=filter.ShopId},transaction,cancellationToken)).ConfigureAwait(false) : null;
             if(cloud!=null&&cloud.GenerationId==null)return SalesReportCoverageStatus.CloudReplicaRequired;
             if (plan.CandidateSql == null) return cloud!=null?SalesReportCoverageStatus.CloudReplicaCached:SalesReportCoverageStatus.VerifiedForScope;
             var row = await connection.QuerySingleAsync<CoverageRow>(Command(plan.CandidateSql + @"SELECT
