@@ -55,8 +55,9 @@ internal static class AuthenticatedHistoryServiceHarness
             Demand(_scope.actorA.deviceId!=_scope.actorB.deviceId&&_scope.credentialVersion>0&&System.Text.RegularExpressions.Regex.IsMatch(_scope.clientSha,"^[0-9a-f]{40}$"),"history_test_scope_invalid");
             using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(_scope.extendedCases?6:4));var ct=deadline.Token;
             await using var a=await Session.Create(_scope.actorA,true);await using var b=await Session.Create(_scope.actorB,false);
+            var original=a.LocalFacts();Demand(original.Length>0&&b.LocalFacts().Length==0,"history_test_initial_ledger");
             _phase="initial_baseline";await a.Until(a.HasBaseline,ct);await b.Until(b.HasBaseline,ct);await a.Turn(ct);
-            var before=a.Facts();Demand(before.Length>0,"history_test_baseline_empty");Same(before,b.Facts());a.NoNative();b.NoNative();
+            var before=a.Facts();Same(original,before);Same(before,b.Facts());a.NoNative();b.NoNative();
             var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
             var state=await a.Fixture.Service.ReadDatasetAsync(ct);
             var assignments=ReadAssignments(a,analysis);
@@ -261,7 +262,12 @@ internal static class AuthenticatedHistoryServiceHarness
             AuthenticatedHistoryServiceHarness.Demand(facts.Select(f=>f.BasicKey).OrderBy(x=>x,StringComparer.Ordinal).SequenceEqual(visible.Select(f=>f.BasicKey).OrderBy(x=>x,StringComparer.Ordinal)),"history_test_report_replica_mismatch");
             return facts;
         }
-        internal void NoNative(){using var c=Fixture.Db.Factory.Open();AuthenticatedHistoryServiceHarness.Demand(c.ExecuteScalar<long>("SELECT (SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM sales_sync_outbox)+(SELECT COUNT(*) FROM local_stock_movements)")==0,"history_test_native_effect");}
+        internal Fact[] LocalFacts(){using var c=Fixture.Db.Factory.Open();return c.Query<Fact>("SELECT external_namespace Namespace,external_id Id,CAST(business_ticks AS TEXT) Ticks,CAST(signed_amount_clp AS TEXT) Gross,CAST(signed_fee_clp AS TEXT) Fee,CAST(signed_fee_vat_clp AS TEXT) Vat,CAST(signed_net_clp AS TEXT) Net FROM historical_transactions WHERE shop_id=@shop AND is_active=1",new{shop=_scope.shopId}).ToArray();}
+        internal void NoNative()
+        {
+            using var c=Fixture.Db.Factory.Open();AuthenticatedHistoryServiceHarness.Demand(c.ExecuteScalar<long>("SELECT (SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM sales_sync_outbox)+(SELECT COUNT(*) FROM local_stock_movements)")==0,"history_test_native_effect");
+            if(Fixture.OriginalReceipt!="")AuthenticatedHistoryServiceHarness.Demand(c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation WHERE receipt_json=@receipt",new{receipt=Fixture.OriginalReceipt})==1,"history_test_original_audit_changed");
+        }
         public void Dispose(){_active=false;_supervisor?.Dispose();_client?.Dispose();Fixture?.Dispose();}
         public async ValueTask DisposeAsync()
         {
