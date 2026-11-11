@@ -538,6 +538,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 .Single(x=>string.Equals(x.Tag as string,tag,StringComparison.Ordinal)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var expected=tag=="Pos"?0:2;
             await WaitCatalogRetryUiAsync(()=>((TabControl)shell.FindName("MainTabControl")).SelectedIndex==expected &&
+                ((FrameworkElement)shell.FindName("SideMenuOverlay")).Visibility!=Visibility.Visible &&
                 (expected!=0 || ShellField<PosView>(shell,"PosViewControl")?.IsVisible==true),token);
             await Dispatcher.Yield(DispatcherPriority.ContextIdle);
         }

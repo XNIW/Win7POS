@@ -1,6 +1,47 @@
 # AI Worklog – Win7POS
 
 <!-- ASUS019_CURRENT_START -->
+## ASUS019 cassa — richiesta di focus ridondante, 11 novembre UTC
+
+Stessa Execution, nessuna funzione nuova. Sorgente congelata149c978 e precedente
+soak42897760117 FAIL conservati: Integrated12PASS, focus258.573/258.382ms nei
+cicli116/118; quella traccia non contiene attribuzione retrospettiva di fase.
+
+Diagnostica successore42924975778, QA6533c71d68cb15d30ad94f7b809e54a37a721c0e
+contro gli esatti41file prodotto149 verificati:162cicli, ambiente valido,
+measurementCompleted true, STABILITY_PASS false perché Diagnostic. Artifact
+13816767268, digest GitHub bca4f7878fe13fd9bc3f90258d33e965e305a8c0ea141f496adb4466782ad85e.
+Massimo osservato604.718ms nel ciclo0, post scan-Grid-10→start image-ui:
+barcode già focalizzato al post (flags31); al callback owner inattivo e barcode
+non focalizzato (flags7), durata0.026ms, nessuno spostamento del focus. Una
+continuazione Send si sovrappone per569.235ms. Massimo caldo237.637ms nel ciclo126
+con lo stesso stato; non si attribuiscono per assunzione gli originali116/118.
+Nessuna prova di scanner bloccato o causa legata al carico del PC ASUS.
+
+Fix minimo PosView: nessuna richiesta Dispatcher quando BarcodeBox è già
+focalizzato; testo/selezione e richieste di ripristino necessarie restano nel
+contratto esistente. Nessuna modifica a soglia250ms, carico100k/500linee,
+20scan/ciclo,20s idle o classificazione dell'osservatore.
+
+Build net48/x86 PASS zero warning/error; visual/public-command regression
+PASS21.881s, include scanner/coalescing/editor attivo/Unicode/chiusura. Gate
+standard dialog39/39 PASS. Recovery include il successore diagnostico qualificato
+sul ramo135: cinque cicli e raccolta a pari età dopo il timer framework2s, stessi
+60s/8MiB; fixture shell attende l'overlay realmente chiuso prima dell'Escape.
+Nessun PASS di qualifica trasferito: CI/Security/WPF/Release e pacchetto esatto,
+Integrated e Final60 restano da raccogliere sul nuovo SHA.
+
+Copia prove privata U19Focus149Hosted01. Installato2ad42ca e ledger Minimondo
+invariati; nessun nuovo Apply/Undo/vendita reale o installazione.200% preservato,
+100/125 USER_DEFERRED, Win7 BLOCKED_TARGET, Getnet moderno C MISSING. Nessun
+merge/deploy/DONE. MainWindow focus dopo animazione menu è un residuo separato
+con patch pronta e chiarimento sul limite dei file pendente. Storico bilaterale
+rimane sul ramo135/Admin151; questo fix non ne attesta la catena v2 operativa.
+<!-- ASUS019_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente alla diagnostica del focus, conservato</summary>
+
 ## Stato corrente — ASUS019 carrello reale e sync automatica, ACTIVE
 
 Ultimo consolidamento: lookup fuori Dispatcher e reader differiti; lock SQL
@@ -38,7 +79,8 @@ Dettagli e riferimenti: [report canonico](reports/ASUS_W7POS_019_RETRY_E2E_RESUL
 Le sezioni sotto sono checkpoint storici, non lo stato corrente. Nessun DONE.
 
 </details>
-<!-- ASUS019_CURRENT_END -->
+
+</details>
 Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significativa.
 
 ---

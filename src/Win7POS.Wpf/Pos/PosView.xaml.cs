@@ -250,6 +250,10 @@ namespace Win7POS.Wpf.Pos
         private void FocusBarcode()
         {
             if (!IsLoaded || _focusOperation?.Status == DispatcherOperationStatus.Pending) return;
+            // An already focused scanner needs no deferred restoration. Keep
+            // its current text/selection and avoid a redundant callback that
+            // could otherwise wait behind the next modal/render transition.
+            if (BarcodeBox.IsKeyboardFocused) return;
             _focusOperation = Dispatcher.BeginInvoke((Action)(() =>
             {
                 _focusOperation = null;
