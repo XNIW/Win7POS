@@ -11,92 +11,52 @@ cloud. Installato verificato2ad42ca; nuovi gate bilaterali NOT_RUN, nessun DONE.
 ## Convergenza corrente — stessa Execution ASUS-W7POS-019
 
 Due consegne: cassa quotidiana e storico bilaterale, senza nuove funzioni.
-Stato ACTIVE; nessun DONE, merge, deploy, installazione o nuova mutazione reale.
+Stato ACTIVE; nessun DONE, merge main, deploy, installazione o nuova mutazione reale.
+L'utente autorizza tutti i file necessari ai residui; soglie e workload invariati.
 
 | Scenario | SHA / binding | Comando e ambiente | Esito | Evidence | Prossimo gate |
 |---|---|---|---|---|---|
-| Cassa PR136 | b76238d2aac2adf7ed69ee749b7d1e8157407262 | CI42933914161; Security42933914165; WPF42934216716; Release42934061207 | PASS | U19ReleaseB76201, 41file prodotto /110checksum, installer596ca74d /payload96cbde92 | ritorno menu Cassa e candidato integrato finale |
-| Focus originario | prodotto149c978; qualifica42897760117 | Integrated12 +soak60, budget250ms invariato | Integrated PASS; soak FAIL conservato | artifact13807390665; cicli116/118,258.573/258.382ms | non promuovere il successore senza nuova prova |
-| Focus attribuito | prodotto149 invariato, harness6533c71 | Diagnostic60, run42924975778,162cicli | misurazione completa; non qualifica | U19Focus149Hosted01, artifact13816767268 | causa riprodotta: callback focus superfluo già focalizzato in coda dietro Send |
-| Qualifica cassa successore | b76238d, Release42934061207; binding41/41 verificato | hosted42937991969, Integrated12 +soak60; stessi budget e workload | PASS entrambi, ambiente valido | U19CartB762Qual01; artifact13823212154, digest550a502d009879483d9d7913e505dfd81518e2aa87cb2a179cfeda9d62eda138;32/159cicli, focus massimo28.354/14.428ms | hosted non qualifica ASUS o merge Final |
-| Windows-All locale | f4ea8e2125fbc0421aec2e49bf98a2700e4de94f, clean e immutabile | Windows -HistoricalSalesMode All, root corte nuove | PASS16/16 passaggi; functional22/22 | U19CloudAll03, run003136206Z.ce587d99, fingerprint fbecb1bd82fc2ea4724c06e637dd944ca4e8221b76a13b171539bfd668cb6703 | nuova suite sul candidato finale compatibile |
-| Windows remoto | stesso f4ea8e2 | CI42931948198 | FAIL Smoke, HIST08 parziale; pubblicazione evidence PASS | artifact13819185163, digest2afdf66539f22be84d31a0fc97afe48baf0c16f43a8c02d62219a9776e940676; U19WinF4Remote01 | qualifica successore fixture; nessun retry cieco |
-| Smoke successore locale | 136088b6e61e39babd8c03db9456fa8036dfe3ce, fingerprint5a682e7e | harness canonico, budget60s invariato | PASS8gruppi/52verifiche,33142.398ms | U19SmokeSchema02 | schema vuoto immutabile per Smoke; inizializzazione completa resta nelle prove migrazione |
-| Recovery | fixture9a/f4, prodotto invariato | identificazione finestre +root dump; età minima identica2100ms | mirato PASS; Windows-All03 PASS | U19RecoveryHeap03/04, U19RecoveryRetirement04, U19CloudAll03 | nessuna attestazione rilascio assoluto/Win7 fisico |
-| WPF v2 | f4ea8e2 | prepare/stage/authorize prima delle gate e outbox atomico | Smoke/CloudSync componenti PASS, fallbackv1 negato | U19WireV2Smoke02, CoreLedger68, Shell03; All03 | backend v2 completo e E2E reale |
-| Baseline v2 | client136088b /Admin fe6 +lettore/Worker v2 | export da backup verificato, lineage live/backup/finale; lettore con versione scelta dal server | export9PASS, reader18PASS, Worker+reader43PASS; typecheck03 PASS; foundation1553PASS/7SKIP locale | U19BaselineExport02, baseline-reader03, U19BaselineCorpus01 | collegare ammissione/ingest senza frozen→local o lineage inventata |
-| Admin qualificato | e85b1e36acab6b3407bd48a57928a190410ff642; merge 2a816b6, stesso tree 0dee7a1d7df48e002914a9bf14ac13a7ecc7a9d8 | CI 42950686840; Cloudflare 42950686851 | PASS; SQL 83 file/4859 assert; deploy staging/prod e TASK094 SKIPPED | U19AdminE8501, Worker 13824722757, digest 8452586dedab713f8088b9fdccaa84ce0cafb2a84eb391fc99d1bfc0bdc31612, 58 hash verificati | servizio storico operativo distinto dal packaging |
-| SQL baseline interno | fe6ca45ba82928762cf8b3ba04bc54b88551b26a | replay isolato42941427654 | PASS82file/4827assert | U19BaselineSqlContext03, artifact13821491017, digestaf0c6031ac6911e68b1bc7bae7d69625cffd4d4ff27c0e1d328c8c228c87e13b | nessuna API esposta; primo FAIL preparazione e secondo FAIL fixture immutabile conservati |
-| Pipeline baseline POS | 830313664120405e4942e42c116b82addfb2eee7; integrato localmente Admin f335f2f0bf429785bf26e02c0319be16730349e6 | replay isolato42944030772;32nuovi assert con archivio CLR/reader Node,14oggetti/5movimenti | PASS83file/4859assert | U19BaselinePipeline01, artifact13821923421, digest89a6c07d4bed091900ecde1b9d2cd892690cf57f5a2d0586b3c0fae392335b91 | API privata; nessuna prova E2E distribuita trasferita; CI candidato integrato da eseguire |
-| CI Windows successore | 136088b6e61e39babd8c03db9456fa8036dfe3ce | CI42939260104; Security42939259973 | PASS16/16; Smoke8gruppi/52verifiche,27537.647ms | U19Win136Remote02, artifact13820224048, digestf7a0e603888dca45b529d3fc0c5cc8c1a24b72c39993402cbabf366440f42f5a | non cancella f4 remoto FAIL; nuova coppia finale ancora da congelare |
-| Contratti Admin | ca08bb7dee3b63da28f4138886a3ba2ebbb89e9f isolato; integrato localmente 3523653cd33c9ee9c4570c8bfd1d11c8abd86bab | Node decisioni 19; typecheck; foundation02 | PASS 1555/7 SKIP su 1562 locale, mirati sovrapposti | decisions-node03 (21 con 2 test pinning); decisions-typecheck01; decisions-foundation02 | CI del successore integrato da eseguire; API v2 ancora chiuse |
-| Cleanup TASK094 | fixture ee788ef4-591b-45a4-86f3-90d28a77e12d e codice/data esatti | sole query read-only, progetto staging autorizzato | PASS_SCOPED_READONLY: tutti gli attivi0 | task094-readonly-cleanup-20261110.private.json | non riscrive il FAIL originario42896389034 né attesta altri fixture |
-| Proiezione locale server | 82dec507559ab80456e63e35b2ed94e05e1ba3ed, integrato in 6a8918e | replay isolato 42952263404 | PASS 84 file/4892 assert, 33 nuove prove | U19ProjectionSql01, artifact 13825732659, digest 74d12f78e92680be80d876842de3ab2a617f97222754f650f339d9bfc6eb282a | stato locale da fonti immutabili, distinto da ownership/active canonici; nessun grant/API esposto |
-| Decisioni client | 176eaa8, codice client e fixture, checkout isolato A19PubClient01 | Core ledger05; build harness; Smoke successore | 97 Core PASS; build zero warning PASS; Smoke03 PASS 8/52 in 31298.714ms; CloudSync01 PASS 1/1 in 3127.859ms | U19DecisionsLedger05; U19DecisionsSmoke03; Smoke01/02 FAIL 51/52 conservati | suite completa sul checkpoint integrato da eseguire; non è E2E distribuito |
-| Catena bilaterale | coppia futura non congelata | POS A→server→Admin aperto→POS B→POS A; origine Admin web | INCOMPLETE / E2E autenticato NOT_RUN | V2-REMAINING-INVARIANTS.private.md | baseline, review paginata, grant fresco, proiezione locale/canonica, consegna/ricevuta e riconciliazione |
-| Ritorno menu Cassa | MainWindow.xaml.cs, fuori dalla lista file dell'ultimo addendum | prova focus e patch privata git apply --check | causa dimostrata; modifica NON applicata | MainWindow-menu-focus.private.patch | risposta alla chiarificazione di perimetro già inviata |
-| Mobile / Win7 fisico | TASK146 / target assente | nessun build mobile; hardware non disponibile | NOT_RUN / BLOCKED_TARGET | commento6722613449 esistente | nessun PASS trasferito da Windows11 |
+| Cassa PR136 | b76238d2aac2adf7ed69ee749b7d1e8157407262 | CI42933914161, Security42933914165, WPF42934216716, Release42934061207 | PASS | U19ReleaseB76201, 41 file prodotto/110 checksum; installer596ca74d, payload96cbde92 | delta menu Cassa e candidato integrato finale |
+| Focus originario | prodotto149c978 | Integrated12 +soak60, run42897760117, budget250ms | Integrated PASS; soak FAIL conservato | artifact13807390665, cicli116/118:258.573/258.382ms | nessuna attribuzione retroattiva senza fasi originali |
+| Diagnosi focus | prodotto149, harness6533c71 | Diagnostic60, run42924975778,162cicli | completa; non qualifica | U19Focus149Hosted01, artifact13816767268 | callback focus superfluo già focalizzato, in coda dietro Send; nessun blocco scanner/ASUS presunto |
+| Qualifica cassa b762 | pacchetto Release42934061207; 41/41 file corrispondenti | hosted42937991969, Integrated12 +soak60 | PASS entrambi, ambiente valido | U19CartB762Qual01, artifact13823212154, digest550a502d009879483d9d7913e505dfd81518e2aa87cb2a179cfeda9d62eda138; focus max28.354/14.428ms,32/159cicli | non attesta ASUS, Win7 o coppia finale |
+| Ritorno menu Cassa | b762 +sola nuova regressione | AUTHENTICATED_SHELL_UX, net48/x86, 200% | FAIL riprodotto sul ritorno menu | U19MenuFocusRed01:29 assert precedenti PASS, focus ritorno FAIL; cleanup confermato | patch MainWindow ripristina scanner dopo la chiusura menu; successore in verifica |
+| Windows-All locale | b976fc70873866dd38344124e04e29006dead5f5, clean | Windows -HistoricalSalesMode All, root nuove | PASS16/16, Core1885/1885 | U19CloudAll04; fingerprint33775364553bd1366310ac894ecaba96c7b3b54a04d1888dc65dc6223f062e5e; Load caldo304.8777ms | candidato query successore da qualificare |
+| Windows remoto b976 | stesso b976 | CI42954896078; Security42954896096 | CI FAIL Load; Security PASS | U19WinB976Remote01, artifact13828441507, digestbaa623481ec22dffc879b6946adfe42599c649c9e412d020b9030598b58484c7 | tre query calde572–574.2707ms oltre500; altri15 passaggi PASS, ambiente Load valido |
+| Correzione lettura mista | delta SalesReportQuery su b976 | aggregazione giorni/totale unica; test Reports+HistoricalReplica | PASS74 mirati; Load/All successori NOT_RUN | U19QueryRollup01, report-rollup01.trx | compilare/qualificare net48/x86, nessuna soglia cambiata |
+| Precedenti Windows | f4ea8e2/136088b | localeAll03; CI42931948198 e42939260104 | f4 locale PASS/remoto Smoke FAIL;136 remoto PASS16/16 | U19CloudAll03, U19WinF4Remote01, U19Win136Remote02 | non cancellare FAIL storici, non sommare rerun |
+| Recovery | fixture9a/f4, prodotto invariato | root dump +ritiro dopo2100ms, stessa regola controllo/Recovery | mirato eAll04 PASS | U19RecoveryHeap03/04, U19RecoveryRetirement04, U19CloudAll04 | root TextBoxView throttle timer2s; non semplice cambio5/3 |
+| Decisioni client v2 | codice176eaa8 integrato b976 | Core ledger05, Smoke03, CloudSync01 | PASS97 Core; Smoke8gruppi/52verifiche; Cloud1/1 | U19DecisionsLedger05/Smoke03/Cloud01; Smoke31.299s, Cloud3.128s | esiti locale/canonico separati; nessun PASS E2E trasferito |
+| Baseline v2 | client136, Adminfe6/830/815 | backup verificato, exportCLR, lettore Node, replaySQL isolato | componenti PASS | U19BaselineExport02, U19BaselineSqlContext03(82/4827), U19BaselinePipeline01(83/4859) | collegare baseline automatica e WPF senza ricaduta v1 |
+| Admin qualificato | 6c57134428f59b2192d3afe5608892c7ce717230; merge885ffe8, stesso treea05ade3f | CI42954903731; Cloudflare42954903836 | PASS; foundation1498/14SKIP; SQL84file/4892assert; deploy staging/prod SKIPPED | U19Admin6c01, Worker13826612587, digest530a897a792ad9d94b6d0c08d1f3870d320adbe14921bd93d0ab43c38547dcc9;58hash verificati | packaging distinto da servizio storico operativo |
+| Contratti Node | ca08 integrato3523653/6c | typecheck, foundation02 locale | PASS1555/7SKIP su1562;19 mirati sovrapposti | decisions-foundation02; primoFAIL pinning CRLF conservato, byteGit verificati senza diff | API v2 ancora chiuse |
+| Proiezione locale server | 82dec507 integrato6a8918e/6c | replay isolato42952263404 | PASS84file/4892assert,33 nuove prove | U19ProjectionSql01, artifact13825732659, digest74d12f78e92680be80d876842de3ab2a617f97222754f650f339d9bfc6eb282a | importi dalle fonti immutabili; duplicato non acquisisce ownership |
+| Indice review server | 254d2f6264895dc133a584bb33c6c53d998878a8; integrato localmente b9882c7 | replay isolato42955496895 | PASS85file/4929assert,37 nuove prove | U19ReviewIndexSql01, artifact13827456115, digestddb608cee7bd58d0088cf4af35fff67c2daff87bb6a10ff2945d2dda771fe49d | b988 non ancora pubblicato/qualificato come candidato integrato |
+| Corpus CLR→Node | client eab54ae; server118f858 locale | servizi dati reali,9draft/receipt,37record,1correzione | PASS1 CLR +2 Node mirati distinti | U19PublicationCorpus02, U19PublicationCorpusTests02, publication-node02 | non è E2E SQL/WPF distribuito; reviewer privato incompleto |
+| Catena bilaterale | reviewer SQL WIP privato, migrazione20261111041740 | review/grant/delivery/journal/reconciliation da completare | NOT_RUN E2E autenticato POS A→server→Admin aperto→POS B→A | V2-REMAINING-INVARIANTS.private.md; APIv2 chiuse | niente primitive incomplete, echo o effetti native/stock/ricevute |
+| Cleanup TASK094 | fixtureee788ef4-591b-45a4-86f3-90d28a77e12d, codice/data esatti | query scoped read-only staging | PASS_SCOPED_READONLY, tutti gli attivi0 | task094-readonly-cleanup-20261110.private.json | FAIL42896389034 e cleanup originaleNOT_ATTESTED conservati |
+| Installato / dati reali | 2ad42ca9ac5601d7da9555996c1642263252b6e0 | verifica EXE e profilo conservato | invariato; nessun nuovo Apply/Undo | EXE33a73a2c51e6fbe3082081ed787d6421da6641359f6222faf7f566538593eb0f | consegna finale distinta da build/CI |
+| Mobile / Win7 / DPI / GetnetC | handoffTASK146 esistente | target Win7 assente; 200%2880×1800 | Win7BLOCKED_TARGET;100/125USER_DEFERRED; moderniC MISSING | commento6722613449, prove private originali | nessun PASS mobile/Win7 trasferito da Windows11 |
 
-Focus: nel successore diagnostico il massimo604.718ms parte da ciclo0/scan-Grid-10
-con barcode già focalizzato, entra in image-ui ed è sovrapposto a un callback
-Send569.235ms; il focus esegue in0.026ms. Il campione caldo237.637ms ripete
-lo stesso accodamento superfluo. b762 evita questa richiesta quando il barcode
-ha già focus, preservando testo/selezione e le protezioni dell'editor. La trace
-originaria non contiene le fasi: nessuna attribuzione retroattiva dei cicli116/118,
-nessun blocco scanner o carico ASUS presunto.
+Il Load remoto fallisce su due assertion che condividono il limite delle query
+a caldo; cancellazione, memoria, Dispatcher e conteggi di import passano. Le
+misure non dimostrano una causa hardware o una regressione delle nuove prove.
+Il prototipo SQL e la patch eliminano una lettura aggregata ripetuta; soltanto
+le nuove prove sul prodotto possono qualificare il limite di500ms.
 
-Smoke remoto: i sette gruppi iniziali sono PASS, HIST08 rimane parziale al budget
-complessivo60s. Misura locale su32fixture: schema24252ms, mirror2318ms,
-login3655ms; dopo riuso del solo schema pristine schema1527ms, mirror2248ms,
-login3511ms. Tutti i database restano distinti, con propria autorità e nuovi
-dataset/lineage; credenziali/login reali e52verifiche invariati. Le suite di
-inizializzazione/migrazione non usano questa copia. Successore CI42939260104 PASS su136088b.
+Sono conservati i FAIL originali149, f4 remoto, All01/02, Smoke01/02 e il primo
+corpusCLR con percorso export non valido. Fixture corretti senza cambiare le
+guardie prodotto. Le vecchie run non diventano PASS e i test sovrapposti non si sommano.
 
-Recovery: root privata DispatcherTimer.FireTick→TextBoxView.OnThrottleBackgroundTimeout
-→TextEditor/TextAdaptor/DataGridCellItemAutomationPeer→DataGrid→Recovery.
-Timer interno net48 da2s, raccolta precedente troppo precoce; stesso minimo2100ms
-per controllo e Recovery, invariati dieci tentativi, deadline60s e8MiB. I FAIL
-iniziali5/3, timeout intermedi, All02 e CI9a restano archiviati; non sommare rerun.
+Review, grant fresco legato al contenuto, proprietà di Apply/Undo, delivery
+atomica, ricevuta canonica, journal prima di authorize e riconciliazione dei
+grant ignoti restano gate critici prima dell'API e della coppia finale. Le prove
+SQL/Node/loopback e il Worker impacchettato non attestano il servizio operativo.
+Baseline da backup completo verificato locale; soltanto export storico selettivo
+online. Profilo Minimondo, ledger originale e sette XLSX restano conservati.
 
-Installato attestato2ad42ca e profilo/ledger Minimondo/quattro XLSX conservati.
-200% e2880×1800 preservati;100/125 USER_DEFERRED, Getnet moderni prova C MISSING.
-Baseline v2 e primitive SQL rimangono interne: nessuna esposizione incompleta,
-nessun grant o cutover reale. La coppia f4/b0 non è pronta per nuove mutazioni
-distribuite, benché le singole prove componenti siano PASS.
-
-Qualifica b762: misurazione completa, ambiente valido e stabilità PASS in entrambi
-i modi. Integrated12 dura729.185s/32cicli; soak60 dura3603.917s/159cicli.
-Scroll massimo134.079/123.896ms; nessun campione osservatore perso o sospeso.
-Il pacchetto prodotto corrisponde in tutti41file al Release verificato.
-La qualifica originale149 resta FAIL; questa prova hosted non attesta ASUS,
-Win7 fisico o il candidato bilaterale finale. Il ritorno menu resta pendente.
-
-Decisione economica client: delta isolato A19PubClient01, non pubblicato.
-La prova ora distingue esito locale e canonico, verifica il risultato locale
-prima del commit/outbox e confronta la ricevuta server con l’esito autorizzato.
-Prima run Core68:67PASS/1FAIL fixture che alterava la revisione dopo il grant;
-fixture corretto e prove di rollback/duplicato canonico in esecuzione.
-Contratto ancora incompleto lato server/WPF: nessuna API esposta.
-
-Proiezione privata: il map canonico conserva coordinate pagina/record/binding e
-local_inserted, non una copia degli importi. Gli importi provengono dagli originali
-source_objects o dalle pagine immutabili. Proprio Undo locale, stato canonico e
-proprietà del duplicato sono verificati separatamente. La cache/review paginata,
-il grant fresco e la delivery restano da completare prima di esporre la boundary.
-
-Foundation01 conserva un FAIL di pinning: checkout CRLF diverso dai byte canonici
-dei sette vecchi SQL. Verificati hash manifest e blob Git, ripristinati soltanto
-i byte canonici nel checkout; nessun diff SQL, pin o test atteso cambiato.
-Foundation02 PASS. Smoke01 conserva un FAIL nel fixture VM: il piano creato dalla
-VM non era nel registro del fake. Il successore dichiara esplicitamente quel solo
-fixture a ledger vuoto e lo verifica prima del grant; nessun fallback prodotto.
-
-Checkpoint UTC 2026-11-11T03:41:39.193557+00:00.
-Smoke02 ha riusato il vecchio binario del fixture (stesso hash della prima run):
-non qualifica il sorgente d2fd907. Il runner privato ora compila il harness prima
-di acquisire binding e context. Smoke03 PASS sul binario ricostruito176eaa8,
-fingerprint 0b305cd1e07dda26cd711fdd39c13b1ae18b7b14532b1d00afce4c9a56305700.
-
+Checkpoint UTC 20261111T050409Z. I dettagli dei checkpoint precedenti rimangono nella
+cronologia Git e nelle evidence private originali; nessuna approvazione operativa implicita.
 <!-- ASUS019_CURRENT_END -->
 
 <details>

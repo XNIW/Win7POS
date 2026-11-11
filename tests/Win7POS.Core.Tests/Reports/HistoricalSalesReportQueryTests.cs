@@ -65,6 +65,73 @@ public sealed class HistoricalSalesReportQueryTests
         Assert.IsFalse(policyMissing.Coverage.CanPublish);
     }
 
+    [TestMethod]
+    [DataRow(SalesReportOrigins.Native, false, false)]
+    [DataRow(SalesReportOrigins.Historical, false, false)]
+    [DataRow(SalesReportOrigins.All, false, false)]
+    [DataRow(SalesReportOrigins.All, true, false)]
+    [DataRow(SalesReportOrigins.All, false, true)]
+    [DataRow(SalesReportOrigins.All, true, true)]
+    public async Task SummaryAndDays_MatchEntriesAcrossOriginsDatesAndReferenceFilters(
+        SalesReportOrigins origins, bool selectedDates, bool referenceFilter)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        using (var connection = fixture.Db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"INSERT INTO sales VALUES
+(3,'client-3','MATCH-CASH',@utc,0,3000,3500,0,500,7,NULL,NULL),
+(4,'client-4','MATCH-RETURN',@utc,3,-500,0,-500,0,7,NULL,1),
+(5,'client-5','ANOMALY',@utc+86400000,0,200,0,201,0,7,NULL,NULL);
+INSERT INTO sales_report_native_ownership SELECT id,'Verified','shop-a','source-'||id,@policy FROM sales WHERE id>=3;
+INSERT INTO historical_transactions VALUES
+(2,'batch-b','shop-a','Getnet',@ticks,9007199254740993,NULL,'financial-id','MATCH-LARGE','Transactions',3,1,'raw',-240,'Debit'),
+(3,'batch-b','shop-a','Getnet',@ticks+1,-700,NULL,'financial-id','MATCH-CANCEL','Transactions',4,1,'raw',-240,'Debit'),
+(4,'batch-c','other-shop','Getnet',@ticks,8888,NULL,'financial-id','MATCH-OTHER','Transactions',5,1,'raw',-240,'Debit'),
+(5,'batch-d','shop-a','Getnet',@ticks,7777,NULL,'financial-id','MATCH-INACTIVE','Transactions',6,0,'raw',-240,'Debit');",
+                new { utc = new DateTimeOffset(2026, 2, 4, 14, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(),
+                    ticks = new DateTime(2026, 2, 4, 10, 0, 0).Ticks, policy = NativeSalesOwnershipRepository.PolicyHash });
+        }
+        var filter = new SalesReportFilter("shop-a", new DateTime(2026, 2, 3), new DateTime(2026, 2, 6),
+            origins, true, null, NativeSalesOwnershipRepository.PolicyHash, fixture.Policy.Hash,
+            referenceFilter ? "MATCH" : null,
+            selectedDates ? new[] { new DateTime(2026, 2, 3), new DateTime(2026, 2, 5) } : null);
+        var snapshot = await fixture.Query.OpenAsync(filter, fixture.Policy, 200, CancellationToken.None);
+        Assert.IsTrue(snapshot.Coverage.CanPublish);
+        Assert.IsFalse(snapshot.FirstPage.HasMore);
+        var entries = snapshot.FirstPage.Entries;
+        AssertSummaryEqual(entries.Select(SalesReportSummary.FromEntry).Aggregate(SalesReportSummary.Empty, (a, b) => a.Add(b)), snapshot.Summary);
+        var groups = entries.GroupBy(e => new DateTime(e.BusinessTicks).Date).OrderBy(g => g.Key).ToArray();
+        CollectionAssert.AreEqual(groups.Select(g => g.Key).ToArray(), snapshot.Days.Select(d => d.Date).ToArray());
+        foreach (var group in groups)
+            AssertSummaryEqual(group.Select(SalesReportSummary.FromEntry).Aggregate(SalesReportSummary.Empty, (a, b) => a.Add(b)),
+                snapshot.Days.Single(d => d.Date == group.Key).Summary);
+        if (origins == SalesReportOrigins.All && !selectedDates && !referenceFilter)
+            Assert.AreEqual(9007199254752993L, snapshot.Summary.BalanceClp);
+    }
+
+    [TestMethod]
+    public async Task EmptyFilteredReport_HasZeroTotalAndNoArtificialCalendarDay()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        var filter = new SalesReportFilter("shop-a", new DateTime(2026, 2, 3), new DateTime(2026, 2, 4),
+            SalesReportOrigins.All, true, null, NativeSalesOwnershipRepository.PolicyHash, fixture.Policy.Hash, "absent-reference");
+        var snapshot = await fixture.Query.OpenAsync(filter, fixture.Policy, 200, CancellationToken.None);
+        Assert.AreEqual(SalesReportCoverageStatus.VerifiedEmpty, snapshot.Coverage.Status);
+        AssertSummaryEqual(SalesReportSummary.Empty, snapshot.Summary);
+        Assert.AreEqual(0, snapshot.Days.Count);
+        Assert.AreEqual(0, snapshot.FirstPage.Entries.Count);
+        Assert.IsTrue(snapshot.HourlyAmounts.All(amount => amount == 0));
+    }
+
+    private static void AssertSummaryEqual(SalesReportSummary expected, SalesReportSummary actual)
+    {
+        static long[] Values(SalesReportSummary s) => new[] { s.GrossPositiveClp, s.ReversalsClp, s.BalanceClp,
+            s.CashTenderedClp, s.ChangeClp, s.CashClp, s.CardClp, s.NativePositiveSalesClp, s.NativePositiveReceiptCount,
+            s.NativeNegativeMovementCount, s.HistoricalMovementCount, s.HistoricalCancellationCount, s.ReconciliationAnomalyCount };
+        CollectionAssert.AreEqual(Values(expected), Values(actual));
+        Assert.AreEqual(expected.NativeAverageReceiptClp, actual.NativeAverageReceiptClp);
+    }
+
     private sealed class Fixture : IDisposable
     {
         internal OwnedSqliteTestFile Db { get; private set; } = null!;
