@@ -294,9 +294,13 @@ internal static class AuthenticatedHistoryServiceHarness
     }
     static async Task ConflictingPeerImport(Session a,Session b,Fact[] wanted,string existingId,CancellationToken ct)
     {
+        _phase="conflict_peer_invariant";
         Demand(b.LocalFacts().Length==0,"history_test_conflict_peer_not_empty");var before=await b.Fixture.Service.ReadDatasetAsync(ct);
+        _phase="conflict_source_create";
         var source=CorrectionSource(b.Fixture,NewSource(b.Fixture),existingId);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
+        _phase="conflict_source_analysis";
         var divergent=analysis.AcceptedTransactions.Single(t=>t.ExternalId==existingId);Demand(divergent.GrossClp.ToString(CultureInfo.InvariantCulture)!=wanted.Single(f=>f.Id==existingId).Gross,"history_test_conflict_not_divergent");
+        _phase="conflict_mapping_plan";
         var assignments=analysis.AcceptedTransactions.Select(t=>t.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select((g,i)=>new HistoricalMerchantAssignment(g.First(),"conflict-scope-"+i,"conflict-binding-"+i,"Synthetic independent mapping")).ToArray();
         var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,before.DatasetId,before.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
         _phase="conflict_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourceSha=Hash(await File.ReadAllBytesAsync(source)),operation=Guid.Parse(plan.OperationId).ToString("D")},ct);await WaitSignal("allow_conflict_prepare",ct);
