@@ -1495,7 +1495,7 @@ GROUP BY mutation_kind;")).ToDictionary(
                 new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             private readonly TcpListener _listener;
             private readonly HistoricalPublicationAdmissionFixture _historicalPublication =
-                new HistoricalPublicationAdmissionFixture(ShopId,DeviceId,"90000000-0000-4000-8000-000000000245");
+                new HistoricalPublicationAdmissionFixture(ShopId,DeviceId,"90000000-0000-4000-8000-000000000245",allNewFixture:true);
             private readonly Task _serverTask;
             private readonly Dictionary<string, RemoteProduct> _products =
                 new Dictionary<string, RemoteProduct>(

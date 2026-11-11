@@ -52,7 +52,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             await outbox.ConfirmAsync(attempt,new HistoricalPublicationServerReceipt{OperationId=proof.OperationId,GrantId=proof.GrantId,ShopId=proof.ShopId,DeviceId=proof.DeviceId,
                 DatasetId=proof.ServerDatasetId,LocalDatasetId=proof.DatasetId,RestoreEpoch=proof.RestoreEpoch.ToString(CultureInfo.InvariantCulture),RestoreLineageId=proof.RestoreLineageId,
                 WriterEpoch=proof.WriterEpoch.ToString(CultureInfo.InvariantCulture),Revision=serverReceiptRevision,ContentDigest=proof.ContentDigest,LocalReceiptSha256=Hash(attempt.ReceiptJson),
-                BatchId=Guid.Parse(original.BatchId).ToString("D"),Kind="Apply",Inserted=original.InsertedCount,Duplicates=original.DuplicateCount,SignedGrossClp=original.SignedAmountClp.ToString(CultureInfo.InvariantCulture)},f.Generation,()=>{},1001,CancellationToken.None);
+                BatchId=proof.CanonicalDecision.BatchId,Kind="Apply",Inserted=original.InsertedCount,Duplicates=original.DuplicateCount,SignedGrossClp=original.SignedAmountClp.ToString(CultureInfo.InvariantCulture)},f.Generation,()=>{},1001,CancellationToken.None);
             var deliveryClock=Stopwatch.StartNew();
             while(deliveryClock.ElapsedMilliseconds<3000&&(import.IsBusy||!import.PublicationStatus.Contains(serverReceiptRevision)))await Task.Delay(10);
             var confirmedSeen=!import.IsBusy&&import.PublicationStatus!=pendingText&&import.PublicationStatus.Contains(serverReceiptRevision)&&import.SelectedBatch?.ApplyOperationId==original.OperationId&&before==f.State();
@@ -103,9 +103,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {"shop_id",f.ShopId},{"device_id",f.Generation.ShopDeviceId},{"local_dataset_id",plan.DatasetId},{"server_dataset_id","90000000-0000-4000-8000-000000003019"},
                 {"restore_lineage_id",draft.RestoreLineageId},{"restore_epoch",plan.RestoreEpoch.ToString(CultureInfo.InvariantCulture)},{"writer_epoch","1"},
                 {"content_digest",draft.ContentDigest},{"request_fingerprint",plan.RequestFingerprint},{"decision","content_authorized_v2"}};
-            using var stream=new MemoryStream();
-            new DataContractJsonSerializer(typeof(Dictionary<string,string>),new DataContractJsonSerializerSettings{UseSimpleDictionaryFormat=true}).WriteObject(stream,fields);
-            stream.Position=0;var proof=(HistoricalPublicationProof)new DataContractJsonSerializer(typeof(HistoricalPublicationProof)).ReadObject(stream);proof.DemandValid();
+            var preview=await f.Service.PreviewAsync(plan,CancellationToken.None);
+            var proof=HistoricalPublicationAdmissionFixture.MakeProof(fields,new HistoricalPublicationAdmissionFixture.Decision{Inserted=preview.NewCount,
+                Duplicates=preview.DuplicateCount,Rejected=plan.Analysis.RejectedRows.Count,Corrections=plan.CorrectionApprovals.Count,Gross=preview.NewGrossClp},"9007199254740993");
             using var use=await f.Operator.BeginHistoricalAuthorizationUseAsync(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,plan.DatasetId,plan.RestoreEpoch,
                 ()=>f.Factory.AccessContext.DemandPath(f.Factory.DbPath),CancellationToken.None);
             var receipt=await f.Service.ApplyAsync(plan,use.Guard,f.Backup(),CancellationToken.None,publicationDraft:draft,publicationProof:proof);
