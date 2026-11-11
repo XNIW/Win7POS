@@ -51,8 +51,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
         [DataContract] private sealed class Record
         {
-            [DataMember(Name="kind")] internal string Kind;
-            [DataMember(Name="fields")] internal Dictionary<string,string> Fields;
+            [DataMember(Name="kind")] internal string Kind{get;set;}
+            [DataMember(Name="fields")] internal Dictionary<string,string> Fields{get;set;}
         }
         internal int Authorizations{get;private set;}
         internal HistoricalCloudResult Request(string operation,HistoricalCloudPayload payload,string rejection=null)
