@@ -317,6 +317,44 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal sealed class Fixture : IDisposable
         {
+            private static string _smokeTemplate, _smokeTemplateHash;
+            private static FileStream _smokeTemplateHold;
+            internal static bool ReuseEmptySchemaForSmoke { get; set; }
+            internal static void ReleaseSmokeTemplate()
+            {
+                _smokeTemplateHold?.Dispose(); _smokeTemplateHold = null;
+                _smokeTemplate = null; _smokeTemplateHash = null; ReuseEmptySchemaForSmoke = false;
+            }
+            private static void InitializeFixtureSchema(PosDbOptions options, string data)
+            {
+                if (!ReuseEmptySchemaForSmoke) { DbInitializer.EnsureCreated(options); return; }
+                if (_smokeTemplate == null)
+                {
+                    DbInitializer.EnsureCreated(options);
+                    // Capture only the pristine, closed DELETE-journal schema,
+                    // before any actor, generation, source file or ledger fact.
+                    var template = Path.Combine(data, "empty-history-schema-" + Guid.NewGuid().ToString("N") + ".db");
+                    File.Copy(options.DbPath, template, overwrite: false);
+                    _smokeTemplateHold = new FileStream(template, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    _smokeTemplateHash = HashFile(template); _smokeTemplate = template;
+                    return;
+                }
+                // AcquireSyntheticNew already established this new fixture's
+                // own authority. Copies never share connections or mutable data.
+                File.Copy(_smokeTemplate, options.DbPath, overwrite: false);
+                if (HashFile(options.DbPath) != _smokeTemplateHash) throw new InvalidOperationException("qa_history_schema_copy_changed");
+                using (var c = new SqliteConnectionFactory(options).Open())
+                {
+                    if (c.ExecuteScalar<long>("SELECT (SELECT COUNT(*) FROM users)+(SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM historical_import_operation)+(SELECT COUNT(*) FROM historical_transactions)+(SELECT COUNT(*) FROM pos_sync_session_generation WHERE active=1)") != 0)
+                        throw new InvalidOperationException("qa_history_schema_template_not_empty");
+                    c.Execute("UPDATE historical_import_dataset SET dataset_id=@dataset WHERE singleton_id=1; UPDATE app_settings SET value=@lineage WHERE key='pos.history.restore_lineage_id'",
+                        new { dataset = Guid.NewGuid().ToString("N"), lineage = Guid.NewGuid().ToString("N") });
+                }
+            }
+            private static long _schemaMs, _mirrorMs, _loginMs, _fixtureCount;
+            internal static string SetupTimings() => "fixtures=" + Interlocked.Read(ref _fixtureCount) +
+                ";schema_ms=" + Interlocked.Read(ref _schemaMs) + ";mirror_ms=" + Interlocked.Read(ref _mirrorMs) +
+                ";login_ms=" + Interlocked.Read(ref _loginMs);
             internal string Root; internal PosDbOptions Options; internal PosDatabaseAuthorityLease Owner; internal SqliteConnectionFactory Factory;
             internal HistoricalSalesImportTestHooks Hooks = new HistoricalSalesImportTestHooks(); internal HistoricalSalesImportService Service; internal OperatorSession Operator;
             internal OnlineSyncGeneration Generation; internal string ShopId; internal string ShopCode; private PosTrustedDeviceStore _store; private long _expiryTicks;
@@ -354,19 +392,23 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal static Task<Fixture> CreateAsync(string data, string name) => CreateAsync(data);
             internal static async Task<Fixture> CreateAsync(string data)
             {
+                var setup = Stopwatch.StartNew();
                 var f = new Fixture { Root = Path.Combine(data, "B." + Guid.NewGuid().ToString("N").Substring(0, 10)) }; Directory.CreateDirectory(f.Root);
-                f.Options = PosDbOptions.ForPath(Path.Combine(f.Root, "pos.db")); f.Owner = PosDatabaseAuthorityLease.AcquireSyntheticNew(f.Options); f.Options = f.Options.WithAccessContext(f.Owner.AccessContext); DbInitializer.EnsureCreated(f.Options);
+                f.Options = PosDbOptions.ForPath(Path.Combine(f.Root, "pos.db")); f.Owner = PosDatabaseAuthorityLease.AcquireSyntheticNew(f.Options); f.Options = f.Options.WithAccessContext(f.Owner.AccessContext); InitializeFixtureSchema(f.Options, data);
                 f.Factory = new SqliteConnectionFactory(f.Options); f.Service = new HistoricalSalesImportService(f.Factory, () => f.Factory.AuthorityStamp, f.Hooks);
+                Interlocked.Add(ref _schemaMs, setup.ElapsedMilliseconds); setup.Restart();
                 var response = FreshFixtureResponse(out var receiptClock); f.ShopId = response.Shop.ShopId; f.ShopCode = response.Shop.ShopCode;
                 await new ShopOfficialSnapshotRepository(f.Factory).SaveAsync(new OfficialShopSnapshot { ShopId = f.ShopId, ShopCode = f.ShopCode, ShopName = "Synthetic QA", ShopStatus = "active", Source = "qa_harness" });
                 var users = new UserRepository(f.Factory);
                 await users.UpsertRemoteStaffMirrorAsync(new RemoteStaffMirrorInput { Credential = "2468", CredentialVersion = response.Staff.CredentialVersion, DisplayName = response.Staff.DisplayName, RemoteRoleKey = response.Staff.RoleKey, RemoteShopId = f.ShopId, RemoteStaffId = response.Staff.StaffId, ShopCode = f.ShopCode, StaffCode = response.Staff.StaffCode });
+                Interlocked.Add(ref _mirrorMs, setup.ElapsedMilliseconds); setup.Restart();
                 f._store = new PosTrustedDeviceStore(FixtureTicks, TimeSpan.TicksPerSecond, FixtureClockDomain); f._store.Clear(); f._store.SaveFirstLogin(response, "qa-history-session-" + Guid.NewGuid().ToString("N"), receiptClock);
                 if (!f._store.TryRead(out var trusted) || !PosOnlineSyncSupervisorHost.TryCreateGeneration(trusted, out f.Generation)) throw new InvalidOperationException("qa_history_trust_setup_failed");
                 f._expiryTicks = checked(receiptClock.MonotonicTimestamp + (DateTimeOffset.Parse(trusted.EffectiveOfflineAuthorizationExpiresAt, CultureInfo.InvariantCulture) - DateTimeOffset.Parse(trusted.LastOkServerAt, CultureInfo.InvariantCulture)).Ticks);
                 f.Operator = new OperatorSession(users, new SecurityRepository(f.Factory), new PosOfflineAuthorizationLeaseGuard(f._store, FixtureNow, FixtureTicks, TimeSpan.TicksPerSecond));
                 var username = await users.FindTrustedRemoteStaffUsernameAsync(f.ShopId, f.ShopCode, response.Staff.StaffId, response.Staff.StaffCode, response.Staff.CredentialVersion);
                 if (await f.Operator.LoginAsync(username, "2468") != LoginResult.Success) throw new InvalidOperationException("qa_history_login_failed");
+                Interlocked.Add(ref _loginMs, setup.ElapsedMilliseconds); Interlocked.Increment(ref _fixtureCount);
                 f.Operator.CurrentUser.PermissionCodes = new[] { PermissionCodes.RegisterImportHistory, PermissionCodes.RegisterCancelHistory, PermissionCodes.RegisterViewAll, PermissionCodes.RegisterView, PermissionCodes.DailyCloseView, PermissionCodes.PosPay };
                 File.WriteAllText(Path.Combine(f.Root, "source.bin"), "synthetic-history-source-v1", new UTF8Encoding(false)); return f;
             }

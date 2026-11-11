@@ -22,10 +22,12 @@ public sealed class HistoricalCloudExportTests
         var receipt = await new HistoricalCloudExporter(f.Db.Factory).ExportAsync(f.Archive, f.Backup, await f.Guard(), CancellationToken.None);
         Assert.AreEqual("history-local-export-v1", receipt.Manifest.SchemaVersion);
         Assert.AreEqual("legacy_attested", receipt.Manifest.EvidenceLevel);
+        Assert.IsNull(receipt.Manifest.RestoreLineageId);
         Assert.AreEqual(before, f.ReadFacts(), "Export must not mutate native or historical data.");
         Assert.AreEqual(Hex(File.ReadAllBytes(f.Backup)), receipt.Manifest.BackupSha256);
         Assert.AreEqual(Hex(File.ReadAllBytes(f.Archive)), receipt.ArchiveSha256);
         using var zip = ZipFile.OpenRead(f.Archive);
+        Assert.IsFalse(Encoding.UTF8.GetString(Read(zip.GetEntry("manifest.json")!)).Contains("restoreLineageId"), "Frozen v1 keeps its closed manifest contract.");
         Assert.AreEqual(8, zip.Entries.Count);
         foreach (var entry in receipt.Manifest.Entries)
         {
@@ -101,6 +103,64 @@ public sealed class HistoricalCloudExportTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => new HistoricalCloudExporter(f.Db.Factory).ExportAsync(f.Archive, f.Backup, f.Guard().GetAwaiter().GetResult(), CancellationToken.None));
         Assert.AreEqual("synthetic-existing-output", File.ReadAllText(f.Archive));
         await Assert.ThrowsAsync<InvalidOperationException>(() => new HistoricalCloudExporter(f.Db.Factory).ExportAsync(Path.Combine(Path.GetDirectoryName(f.Db.Factory.DbPath)!, "invalid.w7history.zip"), f.Backup, f.Guard().GetAwaiter().GetResult(), CancellationToken.None));
+    }
+    [TestMethod]
+    public async Task LocalBaseline_PreservesTheLiveLineageAndLeavesAllLedgersUnchanged()
+    {
+        using var f = await Fixture.CreateAsync();
+        var state = await f.Service.ReadDatasetAsync(CancellationToken.None);
+        var lineage = Guid.Parse(state.RestoreLineageId).ToString("D");
+        var facts = f.ReadFacts();
+        var receipt = await new HistoricalCloudExporter(f.Db.Factory).ExportBaselineAsync(f.Archive, f.Backup, await f.Guard(), lineage, CancellationToken.None);
+        Assert.AreEqual("history-local-export-v2", receipt.Manifest.SchemaVersion);
+        Assert.AreEqual(lineage, receipt.Manifest.RestoreLineageId);
+        Assert.AreEqual(state.DataRevision.ToString(), receipt.Manifest.DataRevision);
+        Assert.AreEqual(facts, f.ReadFacts());
+        using var source = PosDatabaseAccessContext.SelectedSource(f.Backup);
+        var backup = new SqliteConnectionFactory(new PosDbOptions(f.Backup, accessContext: source));
+        using var c = backup.Open();
+        Assert.AreEqual(state.RestoreLineageId, c.ExecuteScalar<string>("SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id'"));
+        using var zip = ZipFile.OpenRead(f.Archive);
+        Assert.AreEqual(f.OriginalReceipt, Rows(zip, "operations.ndjson").Single()["receipt_json"]);
+        var corpus = Environment.GetEnvironmentVariable("WIN7POS_QA_BASELINE_EXPORT_CORPUS");
+        if (!string.IsNullOrEmpty(corpus))
+        {
+            Directory.CreateDirectory(corpus);
+            File.Copy(f.Archive, Path.Combine(corpus, "synthetic-local-baseline.w7history.zip"), overwrite: false);
+            File.WriteAllText(Path.Combine(corpus, "export-provenance.json"), JsonSerializer.Serialize(new {
+                source = "HistoricalCloudExporter.ExportBaselineAsync", syntheticOnly = true,
+                archiveSha256 = receipt.ArchiveSha256, backupSha256 = receipt.Manifest.BackupSha256,
+                manifestSha256 = receipt.ManifestSha256, restoreLineageId = lineage, datasetId = state.DatasetId
+            }), new UTF8Encoding(false));
+        }
+    }
+    [TestMethod]
+    public async Task LocalBaseline_RejectsMissingOrChangedLineageBeforePublishingOrBackingUp()
+    {
+        using var f = await Fixture.CreateAsync();
+        var guard = await f.Guard();
+        var exporter = new HistoricalCloudExporter(f.Db.Factory);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => exporter.ExportBaselineAsync(f.Archive, f.Backup, guard, Guid.NewGuid().ToString("D"), CancellationToken.None));
+        using (var c = f.Db.Factory.Open()) c.Execute("DELETE FROM app_settings WHERE key='pos.history.restore_lineage_id'");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => exporter.ExportBaselineAsync(f.Archive, f.Backup, guard, Guid.NewGuid().ToString("D"), CancellationToken.None));
+        Assert.IsFalse(File.Exists(f.Archive)); Assert.IsFalse(File.Exists(f.Backup));
+    }
+    [TestMethod]
+    public async Task LocalBaseline_RejectsLineageChangedAfterTheVerifiedBackup()
+    {
+        using var f = await Fixture.CreateAsync();
+        var state = await f.Service.ReadDatasetAsync(CancellationToken.None);
+        var original = await f.Guard(); var changed = false;
+        var guard = new HistoricalCloudExportGuard(Fixture.Shop, Fixture.Device, state.DatasetId, state.DataRevision, original.RestoreEpoch, () => {
+            if (!changed && File.Exists(f.Backup))
+            {
+                changed = true;
+                using var c = f.Db.Factory.Open();
+                c.Execute("UPDATE app_settings SET value=@lineage WHERE key='pos.history.restore_lineage_id'", new { lineage = Guid.NewGuid().ToString("N") });
+            }
+        });
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new HistoricalCloudExporter(f.Db.Factory).ExportBaselineAsync(f.Archive, f.Backup, guard, state.RestoreLineageId, CancellationToken.None));
+        Assert.IsTrue(changed); Assert.IsTrue(File.Exists(f.Backup)); Assert.IsFalse(File.Exists(f.Archive));
     }
     private static string Hex(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private static byte[] Read(ZipArchiveEntry entry) { using var s = entry.Open(); using var output = new MemoryStream(); s.CopyTo(output); return output.ToArray(); }

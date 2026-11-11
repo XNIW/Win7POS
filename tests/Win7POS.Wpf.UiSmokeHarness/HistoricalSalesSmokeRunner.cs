@@ -38,22 +38,29 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var data = Arg(args, "--data-dir");
             var receipt = new HistoricalSalesQaReceipt(Arg(args, "--context-file"), "Smoke", Arg(args, "--receipt"));
             var visuals = new SyntheticQaVisualWriter(receipt.Context, data, Path.GetDirectoryName(Arg(args, "--receipt")));
-            foreach (var id in HistoricalSalesQaReceipt.Contract("Smoke").Keys)
-                await receipt.RunAsync(id, async test =>
-                {
-                    switch (id)
+            HistoricalSalesFoundationRunner.Fixture.ReuseEmptySchemaForSmoke = true;
+            try
+            {
+                foreach (var id in HistoricalSalesQaReceipt.Contract("Smoke").Keys)
+                    await receipt.RunAsync(id, async test =>
                     {
-                        case "HIST01_PROFILES_PREVIEW": Profiles(data, test); break;
-                        case "HIST02_APPLY_REOPEN": await ApplyReopenAsync(data, test); break;
-                        case "HIST03_IDENTITY_DEDUP": await DedupAsync(data, test); break;
-                        case "HIST04_STALE_AUTH_SCOPE": await StaleAsync(data, test); break;
-                        case "HIST05_ATOMIC_CANCEL_RECOVERY": await AtomicAsync(data, test); break;
-                        case "HIST06_BATCH_CANCEL_REIMPORT": await UndoAsync(data, test); break;
-                        case "HIST07_REPORTS_EXPORT": await ReportsAsync(data, test, visuals); break;
-                        case "HIST08_UI_LIFECYCLE": await UiAsync(data, test, visuals); break;
-                    }
-                });
-            return receipt.Complete();
+                        test.PrivateDiagnostic("fixture_setup_before;" + HistoricalSalesFoundationRunner.Fixture.SetupTimings());
+                        switch (id)
+                        {
+                            case "HIST01_PROFILES_PREVIEW": Profiles(data, test); break;
+                            case "HIST02_APPLY_REOPEN": await ApplyReopenAsync(data, test); break;
+                            case "HIST03_IDENTITY_DEDUP": await DedupAsync(data, test); break;
+                            case "HIST04_STALE_AUTH_SCOPE": await StaleAsync(data, test); break;
+                            case "HIST05_ATOMIC_CANCEL_RECOVERY": await AtomicAsync(data, test); break;
+                            case "HIST06_BATCH_CANCEL_REIMPORT": await UndoAsync(data, test); break;
+                            case "HIST07_REPORTS_EXPORT": await ReportsAsync(data, test, visuals); break;
+                            case "HIST08_UI_LIFECYCLE": await UiAsync(data, test, visuals); break;
+                        }
+                        test.PrivateDiagnostic("fixture_setup_after;" + HistoricalSalesFoundationRunner.Fixture.SetupTimings());
+                    });
+                return receipt.Complete();
+            }
+            finally { HistoricalSalesFoundationRunner.Fixture.ReleaseSmokeTemplate(); }
         }
 
         private static HistoricalSalesImportOptions Options() => new HistoricalSalesImportOptions { LegacyClpConfirmed = true, ModernTimeInterpretation = HistoricalSalesModernTimeInterpretation.IsoUtc, TemporalPolicyVersion = "synthetic-fixed-offset-v1", TemporalEvidenceReference = "synthetic-explicit-UTC-evidence" };

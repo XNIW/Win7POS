@@ -32,6 +32,7 @@ namespace Win7POS.Data.Import
         [DataMember(Name = "localDatasetId")] public string LocalDatasetId { get; internal set; }
         [DataMember(Name = "dataRevision")] public string DataRevision { get; internal set; }
         [DataMember(Name = "restoreEpoch")] public string RestoreEpoch { get; internal set; }
+        [DataMember(Name = "restoreLineageId", EmitDefaultValue = false)] public string RestoreLineageId { get; internal set; }
         [DataMember(Name = "createdAtUtc")] public string CreatedAtUtc { get; internal set; }
         [DataMember(Name = "backupSha256")] public string BackupSha256 { get; internal set; }
         [DataMember(Name = "backupByteLength")] public string BackupByteLength { get; internal set; }
@@ -62,19 +63,27 @@ namespace Win7POS.Data.Import
             ("observations.ndjson", "SELECT o.id,o.batch_id,o.file_id,o.source_row,o.observation_kind,o.code,o.existing_transaction_id FROM historical_import_observation o JOIN historical_import_batch b ON b.id=o.batch_id WHERE b.shop_id=@shop ORDER BY o.id")
         };
         public HistoricalCloudExporter(SqliteConnectionFactory live) { _live = live ?? throw new ArgumentNullException(nameof(live)); }
-        public async Task<HistoricalCloudExportReceipt> ExportAsync(string archivePath, string backupPath, HistoricalCloudExportGuard guard, CancellationToken ct)
+        public Task<HistoricalCloudExportReceipt> ExportAsync(string archivePath, string backupPath, HistoricalCloudExportGuard guard, CancellationToken ct)
+            => ExportCoreAsync(archivePath, backupPath, guard, null, ct);
+
+        // The local v2 baseline attests the existing live lineage. Never derive
+        // it by initializing/migrating a copy, which would create a new lineage.
+        public Task<HistoricalCloudExportReceipt> ExportBaselineAsync(string archivePath, string backupPath, HistoricalCloudExportGuard guard, string restoreLineageId, CancellationToken ct)
+            => ExportCoreAsync(archivePath, backupPath, guard, HistoricalPublicationDraft.NormalizeLineage(restoreLineageId), ct);
+
+        private async Task<HistoricalCloudExportReceipt> ExportCoreAsync(string archivePath, string backupPath, HistoricalCloudExportGuard guard, string lineage, CancellationToken ct)
         {
             if (guard == null) throw new ArgumentNullException(nameof(guard));
             guard.DemandStillValid(); ct.ThrowIfCancellationRequested();
             archivePath = ValidateOutput(archivePath); backupPath = ValidateOutput(backupPath);
             if (!archivePath.EndsWith(".w7history.zip", StringComparison.OrdinalIgnoreCase) || string.Equals(archivePath, backupPath, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("history_cloud_export_path_invalid");
-            await DemandCurrentAsync(guard, ct).ConfigureAwait(false);
+            await DemandCurrentAsync(guard, lineage, ct).ConfigureAwait(false);
             // Uses the same backup protocol as Apply, including integrity/FK validation.
             var validation = await new SqliteOnlineBackup(_live).CreateVerifiedAsync(backupPath, ct).ConfigureAwait(false);
             if (!validation.IsValid) throw new InvalidOperationException("history_cloud_export_backup_invalid");
             guard.DemandStillValid();
-            return await Task.Run(() => ExportSnapshot(archivePath, backupPath, guard, ct), ct).ConfigureAwait(false);
+            return await Task.Run(() => ExportSnapshot(archivePath, backupPath, guard, lineage, ct), ct).ConfigureAwait(false);
         }
         private string ValidateOutput(string path)
         {
@@ -85,16 +94,22 @@ namespace Win7POS.Data.Import
             PosDatabasePathIdentity.RejectReparseComponents(full);
             return full;
         }
-        private async Task DemandCurrentAsync(HistoricalCloudExportGuard guard, CancellationToken ct)
+        private async Task DemandCurrentAsync(HistoricalCloudExportGuard guard, string lineage, CancellationToken ct)
         {
             guard.DemandStillValid();
             using var c = await _live.OpenExistingForRecoveryAsync(ct).ConfigureAwait(false);
-            var state = await c.QuerySingleAsync<HistoricalSalesDatasetState>(new CommandDefinition("SELECT dataset_id DatasetId,data_revision DataRevision FROM historical_import_dataset WHERE singleton_id=1", cancellationToken: ct)).ConfigureAwait(false);
+            var state = await c.QuerySingleAsync<HistoricalSalesDatasetState>(new CommandDefinition("SELECT dataset_id DatasetId,data_revision DataRevision,(SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id') RestoreLineageId FROM historical_import_dataset WHERE singleton_id=1", cancellationToken: ct)).ConfigureAwait(false);
             if (state.DatasetId != guard.DatasetId || state.DataRevision != guard.DataRevision || _live.AuthorityStamp.RestoreEpoch != guard.RestoreEpoch)
                 throw new InvalidOperationException("history_cloud_export_snapshot_stale");
+            DemandLineage(state, lineage);
             guard.DemandStillValid();
         }
-        private HistoricalCloudExportReceipt ExportSnapshot(string destination, string backupPath, HistoricalCloudExportGuard guard, CancellationToken ct)
+        private static void DemandLineage(HistoricalSalesDatasetState state, string expected)
+        {
+            if (expected != null && HistoricalPublicationDraft.NormalizeLineage(state.RestoreLineageId) != expected)
+                throw new InvalidOperationException("history_cloud_export_lineage_stale");
+        }
+        private HistoricalCloudExportReceipt ExportSnapshot(string destination, string backupPath, HistoricalCloudExportGuard guard, string lineage, CancellationToken ct)
         {
             var partial = destination + ".partial." + Guid.NewGuid().ToString("N");
             Directory.CreateDirectory(Path.GetDirectoryName(destination));
@@ -103,8 +118,9 @@ namespace Win7POS.Data.Import
             using var context = PosDatabaseAccessContext.SelectedSource(backupPath);
             var snapshot = new SqliteConnectionFactory(new PosDbOptions(backupPath, accessContext: context));
             using var db = snapshot.Open(); using var tx = db.BeginTransaction(deferred: true);
-            var state = db.QuerySingle<HistoricalSalesDatasetState>("SELECT dataset_id DatasetId,data_revision DataRevision FROM historical_import_dataset WHERE singleton_id=1", transaction: tx);
+            var state = db.QuerySingle<HistoricalSalesDatasetState>("SELECT dataset_id DatasetId,data_revision DataRevision,(SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id') RestoreLineageId FROM historical_import_dataset WHERE singleton_id=1", transaction: tx);
             if (state.DatasetId != guard.DatasetId || state.DataRevision != guard.DataRevision) throw new InvalidOperationException("history_cloud_export_snapshot_stale");
+            DemandLineage(state, lineage);
             if (db.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE shop_id=@shop", new { shop = guard.ShopId }, tx) > 100000)
                 throw new InvalidOperationException("history_cloud_export_row_limit");
             var entries = new List<HistoricalCloudExportEntry>(); long expanded = 0;
@@ -135,7 +151,8 @@ namespace Win7POS.Data.Import
                         }
                         entries.Add(new HistoricalCloudExportEntry { Name = table.Name, Rows = count.ToString(CultureInfo.InvariantCulture), ByteLength = hashed.Bytes.ToString(CultureInfo.InvariantCulture), Sha256 = hashed.FinishHash() });
                     }
-                    var manifest = new HistoricalCloudExportManifest { ShopId = guard.ShopId, DeviceId = guard.DeviceId, LocalDatasetId = guard.DatasetId,
+                    var manifest = new HistoricalCloudExportManifest { SchemaVersion = lineage == null ? "history-local-export-v1" : "history-local-export-v2",
+                        RestoreLineageId = lineage, ShopId = guard.ShopId, DeviceId = guard.DeviceId, LocalDatasetId = guard.DatasetId,
                         DataRevision = guard.DataRevision.ToString(CultureInfo.InvariantCulture), RestoreEpoch = guard.RestoreEpoch.ToString(CultureInfo.InvariantCulture),
                         CreatedAtUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture), BackupSha256 = backupHash,
                         BackupByteLength = heldBackup.Length.ToString(CultureInfo.InvariantCulture), Entries = entries.ToArray() };
@@ -145,7 +162,7 @@ namespace Win7POS.Data.Import
             }
             tx.Commit(); heldBackup.Position = 0;
             if (Hash(heldBackup) != backupHash) throw new InvalidOperationException("history_cloud_export_backup_changed");
-            DemandCurrentAsync(guard, ct).GetAwaiter().GetResult(); guard.DemandStillValid(); ct.ThrowIfCancellationRequested();
+            DemandCurrentAsync(guard, lineage, ct).GetAwaiter().GetResult(); guard.DemandStillValid(); ct.ThrowIfCancellationRequested();
             if (new FileInfo(partial).Length > MaximumArchiveBytes) throw new InvalidOperationException("history_cloud_export_size_limit");
             ValidateOutput(destination); File.Move(partial, destination);
             using var archive = new FileStream(destination, FileMode.Open, FileAccess.Read, FileShare.Read);
