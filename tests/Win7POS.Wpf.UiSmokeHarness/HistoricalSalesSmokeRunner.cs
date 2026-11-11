@@ -122,7 +122,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
             {
-                var workflow = f.CreateWorkflow();
+                var workflow = f.CreateWorkflow(allNewHistoryFixture:true);
                 using (var model = new HistoricalSalesImportViewModel(workflow, f.Operator))
                 {
                     var owner = new Window { Width = 1000, Height = 760, ShowInTaskbar = false };

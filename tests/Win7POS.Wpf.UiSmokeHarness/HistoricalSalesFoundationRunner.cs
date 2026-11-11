@@ -414,7 +414,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             internal int LocalWriteRequests;
             private readonly Dictionary<string,HistoricalSalesImportPlan> _decisionPlans=new Dictionary<string,HistoricalSalesImportPlan>(StringComparer.Ordinal);
-            internal PosWorkflowService CreateWorkflow(string rejection = null)
+            internal PosWorkflowService CreateWorkflow(string rejection = null,bool allNewHistoryFixture=false)
             {
                 var workflow = new PosWorkflowService(Options, () => DateTimeOffset.UtcNow);
                 var publication=new HistoricalPublicationAdmissionFixture(ShopId,Generation.ShopDeviceId,"90000000-0000-4000-8000-000000003019",(operation,kind,batch)=>
@@ -422,14 +422,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     // Local preview is fixture input, not a claimed server E2E.
                     if(kind=="Apply")
                     {
-                        var plan=_decisionPlans[Guid.Parse(operation).ToString("N")];var preview=Service.PreviewAsync(plan,CancellationToken.None).GetAwaiter().GetResult();
+                        if(!_decisionPlans.TryGetValue(Guid.Parse(operation).ToString("N"),out var plan))
+                        {
+                            if(allNewHistoryFixture&&Count("historical_transactions")==0)return null;
+                            throw new InvalidOperationException("qa_history_decision_plan_required");
+                        }
+                        var preview=Service.PreviewAsync(plan,CancellationToken.None).GetAwaiter().GetResult();
                         return new HistoricalPublicationAdmissionFixture.Decision{Inserted=preview.NewCount,Duplicates=preview.DuplicateCount,
                             Rejected=plan.Analysis.RejectedRows.Count,Corrections=plan.CorrectionApprovals.Count,Gross=preview.NewGrossClp};
                     }
                     using var c=Factory.Open();return new HistoricalPublicationAdmissionFixture.Decision{
                         Deactivated=checked((int)c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE batch_id=@batch AND is_active=1",new{batch})),
                         Gross=c.ExecuteScalar<long>("SELECT COALESCE(SUM(signed_amount_clp),0) FROM historical_transactions WHERE batch_id=@batch AND is_active=1",new{batch})};
-                });
+                },allNewFixture:allNewHistoryFixture);
                 workflow.SetHistoricalCloudRequestForTesting((actor, operation, payload, ct) =>
                 {
                     ct.ThrowIfCancellationRequested(); actor.DemandCurrent();
