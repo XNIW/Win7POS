@@ -106,6 +106,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var preview=await f.Service.PreviewAsync(plan,CancellationToken.None);
             var proof=HistoricalPublicationAdmissionFixture.MakeProof(fields,new HistoricalPublicationAdmissionFixture.Decision{Inserted=preview.NewCount,
                 Duplicates=preview.DuplicateCount,Rejected=plan.Analysis.RejectedRows.Count,Corrections=plan.CorrectionApprovals.Count,Gross=preview.NewGrossClp},"9007199254740993");
+            var journal=new HistoricalPublicationJournal(f.Factory);
+            var nonce=await journal.SaveIntentAsync(draft,proof.ServerDatasetId,proof.WriterEpoch,()=>f.Factory.AccessContext.DemandPath(f.Factory.DbPath),CancellationToken.None);
+            await journal.SaveGrantAsync(draft.OperationId,nonce,proof,()=>f.Factory.AccessContext.DemandPath(f.Factory.DbPath),CancellationToken.None);
             using var use=await f.Operator.BeginHistoricalAuthorizationUseAsync(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,plan.DatasetId,plan.RestoreEpoch,
                 ()=>f.Factory.AccessContext.DemandPath(f.Factory.DbPath),CancellationToken.None);
             var receipt=await f.Service.ApplyAsync(plan,use.Guard,f.Backup(),CancellationToken.None,publicationDraft:draft,publicationProof:proof);
