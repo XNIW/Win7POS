@@ -13,6 +13,35 @@ namespace Win7POS.Core.Tests.Persistence;
 public sealed partial class HistoricalReplicaTests
 {
     [TestMethod]
+    [DataRow("2")]
+    [DataRow("3")]
+    public async Task BaselineRead_AdvancedEmptyDeltaResnapshotsBeforeEnablingOriginalAppliedBaseline(string revision)
+    {
+        // Component transport fixture, not an authenticated service claim.
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var facts=f.ReadFacts();var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});
+        var rows=RowsWithOtherPos(f);await store.ObserveAuthorityAsync(Shop,Authority("local"),Ct);var flow=await SeedBaselineFlow(f);
+        var first=Manifest(rows);var original=await store.BeginAsync(Shop,first,Ct);await store.StageAsync(original,Page(first,rows,Cursor,null),Ct);await store.PublishAsync(original,Ct);
+        CompleteBaselineFlow(f,flow,serverRevision:long.Parse(revision,CultureInfo.InvariantCulture));
+        var requests=new List<string>();var snapshot=false;
+        Task<HistoricalCloudResult> Request(string operation,HistoricalCloudPayload payload,CancellationToken ct)
+        {
+            requests.Add(operation);
+            return Task.FromResult(operation switch{
+                "authority"=>Authority("local",revision:revision),
+                "delta_start"=>Manifest(rows,revision:revision,mode:"delta"),
+                "snapshot_start"=>StartSnapshot(),
+                "page"=>Page(Manifest(rows,revision:revision,mode:snapshot?"snapshot":"delta"),snapshot?rows:Array.Empty<HistoricalReplicaEntity>(),Cursor,null),
+                "replica_ack"=>new HistoricalCloudResult{Acknowledged=true,Revision=revision,WriterEpoch="2"},
+                _=>throw new AssertFailedException("Unexpected component operation.")});
+        }
+        HistoricalCloudResult StartSnapshot(){Assert.IsFalse(snapshot);snapshot=true;return Manifest(rows,revision:revision);}
+        await new HistoricalReplicaSynchronizer(store,()=>{},Request).RunAsync(Shop,new string('a',40),Ct);
+        Assert.IsTrue(snapshot,"An older physical generation cannot prove a newer baseline revision.");
+        CollectionAssert.AreEqual(new[]{"authority","delta_start","page","snapshot_start","page","replica_ack"},requests);
+        Assert.AreEqual(1,(await store.ReadAsync(Shop,Ct)).CanonicalReadEnabled);Assert.AreEqual(3457L,(await Report(f)).Summary.BalanceClp);
+        Assert.AreEqual(facts,f.ReadFacts());
+    }
+    [TestMethod]
     public async Task BaselineRead_ActivatesOnCompleteReplicaAndOriginalReceiptIncludingEmptyDeltaWithoutEcho()
     {
         using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var facts=f.ReadFacts();var store=new HistoricalReplicaStore(f.Db.Factory,()=>{});
@@ -77,15 +106,15 @@ VALUES(@flow,@Shop,@device,'30000000-0000-4000-8000-000000000019',@dataset,@line
             new{flow,Shop,device=HistoricalCloudExportTests.Fixture.Device,dataset=state.DatasetId,lineage=Guid.Parse(state.RestoreLineageId).ToString("D"),revision=state.DataRevision,Dataset,hash=new string('a',64),start=Guid.NewGuid().ToString("D"),apply=Guid.NewGuid().ToString("D")});
         return flow;
     }
-    static void CompleteBaselineFlow(HistoricalCloudExportTests.Fixture f,string flow,bool badHash=false)
+    static void CompleteBaselineFlow(HistoricalCloudExportTests.Fixture f,string flow,bool badHash=false,long serverRevision=1)
     {
         const string receipt="{\"synthetic_sql_receipt\":true}";using var c=f.Db.Factory.Open();using var t=c.BeginTransaction();
         c.Execute("UPDATE historical_baseline_flow SET state='upload_created',upload_id=@id WHERE flow_id=@flow",new{flow,id=Guid.NewGuid().ToString("D")},t);
         c.Execute("UPDATE historical_baseline_flow SET state='upload_ready' WHERE flow_id=@flow",new{flow},t);
         c.Execute("UPDATE historical_baseline_flow SET state='run_started',run_id=@id,run_session_id=@id,run_credential_version=7 WHERE flow_id=@flow",new{flow,id=Guid.NewGuid().ToString("D")},t);
         c.Execute("UPDATE historical_baseline_flow SET review_digest=@hash WHERE flow_id=@flow",new{flow,hash=new string('a',64)},t);
-        c.Execute("UPDATE historical_baseline_flow SET state='applied',receipt_json=@receipt,receipt_sha256=@hash,source_snapshot_id=@id,server_revision=1 WHERE flow_id=@flow",
-            new{flow,receipt,hash=badHash?new string('e',64):Hash(receipt),id=Guid.NewGuid().ToString("D")},t);t.Commit();
+        c.Execute("UPDATE historical_baseline_flow SET state='applied',receipt_json=@receipt,receipt_sha256=@hash,source_snapshot_id=@id,server_revision=@serverRevision WHERE flow_id=@flow",
+            new{flow,receipt,serverRevision,hash=badHash?new string('e',64):Hash(receipt),id=Guid.NewGuid().ToString("D")},t);t.Commit();
     }
     static HistoricalReplicaEntity[] RowsWithOtherPos(HistoricalCloudExportTests.Fixture f)
     {
