@@ -82,7 +82,7 @@ VALUES(@flow,@Shop,@device,'30000000-0000-4000-8000-000000000019',@dataset,@line
         const string receipt="{\"synthetic_sql_receipt\":true}";using var c=f.Db.Factory.Open();using var t=c.BeginTransaction();
         c.Execute("UPDATE historical_baseline_flow SET state='upload_created',upload_id=@id WHERE flow_id=@flow",new{flow,id=Guid.NewGuid().ToString("D")},t);
         c.Execute("UPDATE historical_baseline_flow SET state='upload_ready' WHERE flow_id=@flow",new{flow},t);
-        c.Execute("UPDATE historical_baseline_flow SET state='run_started',run_id=@id WHERE flow_id=@flow",new{flow,id=Guid.NewGuid().ToString("D")},t);
+        c.Execute("UPDATE historical_baseline_flow SET state='run_started',run_id=@id,run_session_id=@id,run_credential_version=7 WHERE flow_id=@flow",new{flow,id=Guid.NewGuid().ToString("D")},t);
         c.Execute("UPDATE historical_baseline_flow SET review_digest=@hash WHERE flow_id=@flow",new{flow,hash=new string('a',64)},t);
         c.Execute("UPDATE historical_baseline_flow SET state='applied',receipt_json=@receipt,receipt_sha256=@hash,source_snapshot_id=@id,server_revision=1 WHERE flow_id=@flow",
             new{flow,receipt,hash=badHash?new string('e',64):Hash(receipt),id=Guid.NewGuid().ToString("D")},t);t.Commit();

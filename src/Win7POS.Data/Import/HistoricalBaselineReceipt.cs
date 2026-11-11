@@ -21,11 +21,7 @@ namespace Win7POS.Data.Import
         {
             try
             {
-                var bytes=new UTF8Encoding(false,true).GetBytes(json??string.Empty);
-                if(bytes.Length==0||bytes.Length>65536)throw Invalid();
-                var quotas=new XmlDictionaryReaderQuotas{MaxDepth=8,MaxStringContentLength=65536,MaxArrayLength=64,MaxNameTableCharCount=4096};
-                XElement root;
-                using(var reader=JsonReaderWriterFactory.CreateJsonReader(bytes,quotas))root=XElement.Load(reader);
+                var root=ReadRoot(json,65536);
                 var r=Closed(root,"operation_id","kind","source_run_id","source_snapshot_id","dataset_id","revision","writer_epoch",
                     "new_active","new_inactive","duplicates","new_batches","original_evidence_level","baseline_context");
                 Id(Text(r,"operation_id"));var snapshot=Text(r,"source_snapshot_id");Id(snapshot);
@@ -47,14 +43,21 @@ namespace Win7POS.Data.Import
             catch(Exception e) when(e is XmlException||e is ArgumentException||e is FormatException||e is OverflowException||e is InvalidOperationException)
             {throw Invalid();}
         }
-        private static Dictionary<string,XElement> Closed(XElement root,params string[] keys)
+        internal static XElement ReadRoot(string json,int maximumBytes)
+        {
+            var bytes=new UTF8Encoding(false,true).GetBytes(json??string.Empty);
+            if(bytes.Length==0||bytes.Length>maximumBytes)throw Invalid();
+            var quotas=new XmlDictionaryReaderQuotas{MaxDepth=8,MaxStringContentLength=maximumBytes,MaxArrayLength=64,MaxNameTableCharCount=4096};
+            using var reader=JsonReaderWriterFactory.CreateJsonReader(bytes,quotas);return XElement.Load(reader);
+        }
+        internal static Dictionary<string,XElement> Closed(XElement root,params string[] keys)
         {
             if((string)root.Attribute("type")!="object")throw Invalid();
             var elements=root.Elements().ToArray();
             if(elements.Length!=keys.Length||elements.Any(e=>!keys.Contains(e.Name.LocalName))||elements.Select(e=>e.Name.LocalName).Distinct(StringComparer.Ordinal).Count()!=keys.Length)throw Invalid();
             return elements.ToDictionary(e=>e.Name.LocalName,StringComparer.Ordinal);
         }
-        private static string Text(Dictionary<string,XElement> fields,string key)
+        internal static string Text(Dictionary<string,XElement> fields,string key)
         {var e=fields[key];if((string)e.Attribute("type")!="string"||e.HasElements)throw Invalid();return e.Value;}
         private static long Integer(string value,long minimum)
         {if(!Regex.IsMatch(value??"","^(0|[1-9][0-9]{0,18})$",RegexOptions.CultureInvariant)||!long.TryParse(value,NumberStyles.None,CultureInfo.InvariantCulture,out var n)||n<minimum)throw Invalid();return n;}

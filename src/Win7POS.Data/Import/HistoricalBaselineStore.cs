@@ -23,10 +23,11 @@ namespace Win7POS.Data.Import
         public string ArchiveSha256{get;set;} public string ManifestSha256{get;set;} public string BackupSha256{get;set;} public string ManifestJson{get;set;}
         public string StartRequestId{get;set;} public string ApplyRequestId{get;set;} public string State{get;set;} public string UploadId{get;set;}
         public string RunId{get;set;} public string ReviewDigest{get;set;} public string ReceiptJson{get;set;} public string ReasonCode{get;set;}
+        public string RunSessionId{get;set;} public int? RunCredentialVersion{get;set;}
     }
 
     /// <summary>Durable transfer identity and original acknowledgements. No HTTP or ledger mutation.</summary>
-    public sealed class HistoricalBaselineStore
+    public sealed partial class HistoricalBaselineStore
     {
         private readonly SqliteConnectionFactory _factory;
         private readonly OnlineSyncGeneration _generation;
@@ -40,7 +41,7 @@ namespace Win7POS.Data.Import
         private const string Select=@"SELECT flow_id FlowId,shop_id ShopId,device_id DeviceId,staff_id StaffId,local_dataset_id LocalDatasetId,
 restore_lineage_id RestoreLineageId,restore_epoch RestoreEpoch,local_revision LocalRevision,server_dataset_id ServerDatasetId,writer_epoch WriterEpoch,
 archive_path ArchivePath,backup_path BackupPath,archive_sha256 ArchiveSha256,manifest_sha256 ManifestSha256,backup_sha256 BackupSha256,manifest_json ManifestJson,
-start_request_id StartRequestId,apply_request_id ApplyRequestId,state State,upload_id UploadId,run_id RunId,review_digest ReviewDigest,receipt_json ReceiptJson,reason_code ReasonCode
+start_request_id StartRequestId,apply_request_id ApplyRequestId,state State,upload_id UploadId,run_id RunId,run_session_id RunSessionId,run_credential_version RunCredentialVersion,review_digest ReviewDigest,receipt_json ReceiptJson,reason_code ReasonCode
 FROM historical_baseline_flow ";
 
         public async Task<HistoricalBaselineFlow> ReadAsync(string serverDataset,long writerEpoch,CancellationToken ct)
@@ -81,7 +82,7 @@ VALUES(@FlowId,@ShopId,@DeviceId,@StaffId,@LocalDatasetId,@RestoreLineageId,@Res
         {HistoricalReplicaProtocol.DemandId(upload);return Change(flow,"prepared","state='upload_created',upload_id=@value",upload,ct);}
         public Task SaveReadyAsync(string flow,CancellationToken ct)=>Change(flow,"upload_created","state='upload_ready'",null,ct);
         public Task SaveRunAsync(string flow,string run,CancellationToken ct)
-        {HistoricalReplicaProtocol.DemandId(run);return Change(flow,"upload_ready","state='run_started',run_id=@value",run,ct);}
+        {HistoricalReplicaProtocol.DemandId(run);return Change(flow,"upload_ready","state='run_started',run_id=@value,run_session_id=@session,run_credential_version=@version",run,ct);}
         public Task SealReviewAsync(string flow,string digest,CancellationToken ct)
         {HistoricalReplicaProtocol.DemandHash(digest);return Change(flow,"run_started","review_digest=@value",digest,ct);}
 
@@ -99,22 +100,28 @@ VALUES(@FlowId,@ShopId,@DeviceId,@StaffId,@LocalDatasetId,@RestoreLineageId,@Res
         {
             _demand();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();
             await DemandGeneration(c,t,ct).ConfigureAwait(false);var f=ReadFlow(c,t,id);DemandFlow(c,t,f,false);
-            var receipt=HistoricalBaselineReceipt.Read(json,f);
+            ApplyReceipt(c,t,f,json);
+            _demand();ct.ThrowIfCancellationRequested();t.Commit();
+        }
+        private void ApplyReceipt(SqliteConnection c,SqliteTransaction t,HistoricalBaselineFlow f,string json)
+        {
+            var receipt=HistoricalBaselineReceipt.Read(json,f);var id=f.FlowId;
             if(f.State=="applied")
-            {if(f.ReceiptJson!=json)throw new InvalidOperationException("history_baseline_receipt_changed");_demand();ct.ThrowIfCancellationRequested();return;}
+            {if(f.ReceiptJson!=json)throw new InvalidOperationException("history_baseline_receipt_changed");return;}
             if(f.State!="run_started"||f.ReviewDigest==null)throw new InvalidOperationException("history_baseline_phase_invalid");
             c.Execute(@"UPDATE historical_baseline_flow SET state='applied',receipt_json=@json,receipt_sha256=@hash,source_snapshot_id=@snapshot,server_revision=@revision WHERE flow_id=@id",
                 new{id,json,hash=Hash(Encoding.UTF8.GetBytes(json)),snapshot=receipt.Snapshot,revision=receipt.Revision},t);
-            _demand();ct.ThrowIfCancellationRequested();t.Commit();
         }
         private async Task Change(string id,string state,string update,string value,CancellationToken ct)
         {
             _demand();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();
             await DemandGeneration(c,t,ct).ConfigureAwait(false);var f=ReadFlow(c,t,id);DemandFlow(c,t,f,true);
             if(f.State!=state)throw new InvalidOperationException("history_baseline_phase_invalid");
+            if(update=="review_digest=@value"&&(f.RunSessionId!=_generation.PosSessionId||f.RunCredentialVersion!=_generation.StaffCredentialVersion))
+                throw new InvalidOperationException("history_baseline_session_changed");
             if(update=="review_digest=@value"&&f.ReviewDigest!=null)
             {if(f.ReviewDigest!=value)throw new InvalidOperationException("history_baseline_review_changed");_demand();ct.ThrowIfCancellationRequested();return;}
-            c.Execute("UPDATE historical_baseline_flow SET "+update+" WHERE flow_id=@id",new{id,value},t);
+            c.Execute("UPDATE historical_baseline_flow SET "+update+" WHERE flow_id=@id",new{id,value,session=_generation.PosSessionId,version=_generation.StaffCredentialVersion},t);
             _demand();ct.ThrowIfCancellationRequested();t.Commit();
         }
         private HistoricalBaselineFlow ReadFlow(SqliteConnection c,SqliteTransaction t,string id)

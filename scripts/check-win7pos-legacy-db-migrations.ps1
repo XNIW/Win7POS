@@ -175,7 +175,7 @@ $expectedChecksums = @(
     "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b",
     "2f02c30616730d50bc23c37e123a97407753b693f25c7f6bf0326e0e79160712",
     "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee",
-    "c6527cbfdf9d438da6852f9a3f44b4e24340d60ad3d2800e6fa66ceeea50f16f"
+    "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or

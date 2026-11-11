@@ -18,7 +18,7 @@ namespace Win7POS.Data.Import
     /// <summary>One recoverable bounded baseline step in the existing history lane.</summary>
     public sealed class HistoricalBaselineSynchronizer
     {
-        private readonly SqliteConnectionFactory _factory;private readonly HistoricalBaselineStore _store;private readonly Action _demand;
+        private readonly SqliteConnectionFactory _factory;private readonly HistoricalBaselineStore _store;private readonly Action _demand;private readonly OnlineSyncGeneration _generation;
         private readonly Func<string,HistoricalCloudPayload,CancellationToken,Task<HistoricalCloudResult>> _request;
         private readonly Func<HistoricalBaselineContext,HistoricalSalesDatasetState,CancellationToken,Task<HistoricalBaselinePreparation>> _prepare;
         private readonly Func<string,HistoricalBaselineFlow,CancellationToken,Task> _upload;
@@ -26,7 +26,7 @@ namespace Win7POS.Data.Import
             Func<string,HistoricalCloudPayload,CancellationToken,Task<HistoricalCloudResult>> request,
             Func<HistoricalBaselineContext,HistoricalSalesDatasetState,CancellationToken,Task<HistoricalBaselinePreparation>> prepare,
             Func<string,HistoricalBaselineFlow,CancellationToken,Task> upload)
-        {_factory=factory??throw new ArgumentNullException(nameof(factory));_store=new HistoricalBaselineStore(factory,generation,demand);_demand=demand??throw new ArgumentNullException(nameof(demand));
+        {_factory=factory??throw new ArgumentNullException(nameof(factory));_store=new HistoricalBaselineStore(factory,generation,demand);_generation=generation;_demand=demand??throw new ArgumentNullException(nameof(demand));
          _request=request??throw new ArgumentNullException(nameof(request));_prepare=prepare??throw new ArgumentNullException(nameof(prepare));_upload=upload??throw new ArgumentNullException(nameof(upload));}
 
         public async Task<bool> RunAsync(CancellationToken ct)
@@ -80,6 +80,19 @@ namespace Win7POS.Data.Import
                 await _store.SaveRunAsync(flow.FlowId,run.RunId,ct).ConfigureAwait(false);return true;
             }
             if(flow.State!="run_started")throw Invalid();
+            var pending=await _store.ReadPendingRecoveryAsync(flow.FlowId,ct).ConfigureAwait(false);
+            if(pending!=null)
+            {
+                var resolved=await Request("recover",new HistoricalCloudPayload{RecoveryRequestKey=pending.RequestId,RunId=flow.RunId,
+                    ApplyRequestKey=flow.ApplyRequestId,PreviousReviewDigest=pending.PreviousReviewDigest},ct).ConfigureAwait(false);
+                await _store.ResolveRecoveryAsync(pending.RequestId,resolved.BaselineRecoveryAckJson,resolved.BaselineReceiptJson,ct).ConfigureAwait(false);return true;
+            }
+            if(flow.RunSessionId!=_generation.PosSessionId||flow.RunCredentialVersion!=_generation.StaffCredentialVersion)
+            {
+                var original=await Request("receipt",new HistoricalCloudPayload{RequestKey=flow.ApplyRequestId},ct).ConfigureAwait(false);
+                if(original.BaselineReceiptJson!=null){await _store.SaveReceiptAsync(flow.FlowId,original.BaselineReceiptJson,ct).ConfigureAwait(false);return true;}
+                await _store.PrepareRecoveryAsync(flow.FlowId,ct).ConfigureAwait(false);return true;
+            }
             if(flow.ReviewDigest==null)
             {
                 var run=await Request("status",new HistoricalCloudPayload{RunId=flow.RunId},ct).ConfigureAwait(false);if(run.RunId!=flow.RunId)throw Invalid();
@@ -93,7 +106,10 @@ namespace Win7POS.Data.Import
             }
             var recovered=await Request("receipt",new HistoricalCloudPayload{RequestKey=flow.ApplyRequestId},ct).ConfigureAwait(false);
             if(recovered.BaselineReceiptJson!=null){await _store.SaveReceiptAsync(flow.FlowId,recovered.BaselineReceiptJson,ct).ConfigureAwait(false);return true;}
-            var applied=await Request("apply",new HistoricalCloudPayload{RunId=flow.RunId,RequestKey=flow.ApplyRequestId,ReviewDigest=flow.ReviewDigest},ct).ConfigureAwait(false);
+            HistoricalCloudResult applied;
+            try{applied=await Request("apply",new HistoricalCloudPayload{RunId=flow.RunId,RequestKey=flow.ApplyRequestId,ReviewDigest=flow.ReviewDigest},ct).ConfigureAwait(false);}
+            catch(HistoricalCloudRequestException e) when(e.Code=="history_baseline_review_stale")
+            {await _store.PrepareRecoveryAsync(flow.FlowId,ct).ConfigureAwait(false);return true;}
             await _store.SaveReceiptAsync(flow.FlowId,applied.BaselineReceiptJson,ct).ConfigureAwait(false);return true;
         }
         private async Task<HistoricalCloudResult> Request(string operation,HistoricalCloudPayload payload,CancellationToken ct)

@@ -311,7 +311,7 @@ postcondition=current-structural-schema",
                     "0020-historical-baseline-flow",
                     "Persist selective baseline progress and enable canonical reads only after a verified source and complete replica.",
                     "0020-historical-baseline-flow/v1\n" + HistoricalBaselineSchema.Sql,
-                    "c6527cbfdf9d438da6852f9a3f44b4e24340d60ad3d2800e6fa66ceeea50f16f",
+                    "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1",
                     "1.0.0",
                     "Additive baseline and sticky read selection; restore requires verified backup and reconciliation of original outcomes.",
                     true,HistoricalBaselineSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalBaselineFlow)

@@ -20,7 +20,8 @@ CREATE TABLE historical_baseline_flow (
  manifest_json TEXT NOT NULL CHECK(length(CAST(manifest_json AS BLOB)) BETWEEN 1 AND 65536),
  start_request_id TEXT NOT NULL UNIQUE,apply_request_id TEXT NOT NULL UNIQUE,
  state TEXT NOT NULL CHECK(state IN('prepared','upload_created','upload_ready','run_started','applied','needs_attention')),
- upload_id TEXT NULL,run_id TEXT NULL,review_digest TEXT NULL CHECK(review_digest IS NULL OR (length(review_digest)=64 AND review_digest NOT GLOB '*[^0-9a-f]*')),
+ upload_id TEXT NULL,run_id TEXT NULL,run_session_id TEXT NULL,run_credential_version INTEGER NULL,
+ review_digest TEXT NULL CHECK(review_digest IS NULL OR (length(review_digest)=64 AND review_digest NOT GLOB '*[^0-9a-f]*')),
  receipt_json TEXT NULL,receipt_sha256 TEXT NULL,source_snapshot_id TEXT NULL,server_revision INTEGER NULL,
  reason_code TEXT NULL CHECK(reason_code IS NULL OR length(reason_code) BETWEEN 1 AND 64),
  CHECK(state='needs_attention' OR
@@ -30,12 +31,32 @@ CREATE TABLE historical_baseline_flow (
   (state='applied' AND upload_id IS NOT NULL AND run_id IS NOT NULL AND review_digest IS NOT NULL AND receipt_json IS NOT NULL AND receipt_sha256 IS NOT NULL AND source_snapshot_id IS NOT NULL
    AND typeof(server_revision)='integer' AND server_revision>0)),
  CHECK(receipt_json IS NULL OR length(CAST(receipt_json AS BLOB)) BETWEEN 1 AND 65536),
+ CHECK((run_id IS NULL AND run_session_id IS NULL AND run_credential_version IS NULL) OR
+  (run_id IS NOT NULL AND run_session_id IS NOT NULL AND typeof(run_credential_version)='integer' AND run_credential_version>0)),
  CHECK(length(archive_sha256)=64 AND archive_sha256 NOT GLOB '*[^0-9a-f]*'),
  CHECK(length(manifest_sha256)=64 AND manifest_sha256 NOT GLOB '*[^0-9a-f]*'),
  CHECK(length(backup_sha256)=64 AND backup_sha256 NOT GLOB '*[^0-9a-f]*'),
  CHECK(receipt_sha256 IS NULL OR (length(receipt_sha256)=64 AND receipt_sha256 NOT GLOB '*[^0-9a-f]*')),
  UNIQUE(shop_id,device_id,local_dataset_id,restore_lineage_id,server_dataset_id,writer_epoch)
 );
+CREATE TABLE historical_baseline_recovery (
+ request_id TEXT PRIMARY KEY NOT NULL,flow_id TEXT NOT NULL REFERENCES historical_baseline_flow(flow_id),
+ session_id TEXT NOT NULL,credential_version INTEGER NOT NULL CHECK(typeof(credential_version)='integer' AND credential_version>0),
+ previous_review_digest TEXT NULL CHECK(previous_review_digest IS NULL OR (length(previous_review_digest)=64 AND previous_review_digest NOT GLOB '*[^0-9a-f]*')),
+ state TEXT NOT NULL CHECK(state IN('prepared','acknowledged','consumed','superseded')),ack_json TEXT NULL,ack_sha256 TEXT NULL,
+ CHECK((state IN('prepared','superseded') AND ack_json IS NULL AND ack_sha256 IS NULL) OR
+  (state IN('acknowledged','consumed') AND ack_json IS NOT NULL AND ack_sha256 IS NOT NULL AND length(CAST(ack_json AS BLOB)) BETWEEN 1 AND 16384 AND length(ack_sha256)=64 AND ack_sha256 NOT GLOB '*[^0-9a-f]*'))
+);
+CREATE UNIQUE INDEX ux_historical_baseline_recovery_context ON historical_baseline_recovery(flow_id,session_id,credential_version,COALESCE(previous_review_digest,''));
+CREATE TRIGGER historical_baseline_recovery_delete BEFORE DELETE ON historical_baseline_recovery
+ BEGIN SELECT RAISE(ABORT,'history_baseline_recovery_immutable');END;
+CREATE TRIGGER historical_baseline_recovery_update BEFORE UPDATE ON historical_baseline_recovery
+ WHEN NEW.request_id IS NOT OLD.request_id OR NEW.flow_id IS NOT OLD.flow_id OR NEW.session_id IS NOT OLD.session_id
+ OR NEW.credential_version IS NOT OLD.credential_version OR NEW.previous_review_digest IS NOT OLD.previous_review_digest
+ OR (OLD.ack_json IS NOT NULL AND (NEW.ack_json IS NOT OLD.ack_json OR NEW.ack_sha256 IS NOT OLD.ack_sha256))
+ OR NOT ((OLD.state='prepared' AND NEW.state='acknowledged') OR (OLD.state='acknowledged' AND NEW.state='consumed') OR
+  (OLD.state='prepared' AND NEW.state='superseded' AND EXISTS(SELECT 1 FROM historical_baseline_recovery r WHERE r.flow_id=OLD.flow_id AND r.state='consumed')))
+ BEGIN SELECT RAISE(ABORT,'history_baseline_recovery_immutable');END;
 CREATE TRIGGER historical_baseline_flow_delete BEFORE DELETE ON historical_baseline_flow
  BEGIN SELECT RAISE(ABORT,'history_baseline_flow_immutable');END;
 CREATE TRIGGER historical_baseline_flow_update BEFORE UPDATE ON historical_baseline_flow
@@ -46,9 +67,15 @@ CREATE TRIGGER historical_baseline_flow_update BEFORE UPDATE ON historical_basel
  OR NEW.manifest_sha256 IS NOT OLD.manifest_sha256 OR NEW.backup_sha256 IS NOT OLD.backup_sha256 OR NEW.manifest_json IS NOT OLD.manifest_json
  OR NEW.start_request_id IS NOT OLD.start_request_id OR NEW.apply_request_id IS NOT OLD.apply_request_id
  OR (OLD.upload_id IS NOT NULL AND NEW.upload_id IS NOT OLD.upload_id) OR (OLD.run_id IS NOT NULL AND NEW.run_id IS NOT OLD.run_id)
- OR (OLD.review_digest IS NOT NULL AND NEW.review_digest IS NOT OLD.review_digest)
+ OR ((OLD.review_digest IS NOT NULL AND NEW.review_digest IS NOT OLD.review_digest) OR
+     (OLD.run_session_id IS NOT NULL AND (NEW.run_session_id IS NOT OLD.run_session_id OR NEW.run_credential_version IS NOT OLD.run_credential_version)))
+ AND NOT (NEW.review_digest IS NULL AND EXISTS(SELECT 1 FROM historical_baseline_recovery r WHERE r.flow_id=OLD.flow_id AND r.state='acknowledged'
+   AND r.previous_review_digest IS OLD.review_digest AND r.session_id=NEW.run_session_id AND r.credential_version=NEW.run_credential_version))
  OR OLD.state IN('applied','needs_attention') OR NOT (NEW.state='needs_attention'
  OR (OLD.state='run_started' AND NEW.state='run_started' AND OLD.review_digest IS NULL AND NEW.review_digest IS NOT NULL)
+ OR (OLD.state='run_started' AND NEW.state='run_started' AND NEW.review_digest IS NULL AND EXISTS(
+  SELECT 1 FROM historical_baseline_recovery r WHERE r.flow_id=OLD.flow_id AND r.state='acknowledged' AND r.previous_review_digest IS OLD.review_digest
+   AND r.session_id=NEW.run_session_id AND r.credential_version=NEW.run_credential_version))
  OR (OLD.state='prepared' AND NEW.state='upload_created') OR (OLD.state='upload_created' AND NEW.state='upload_ready')
  OR (OLD.state='upload_ready' AND NEW.state='run_started') OR (OLD.state='run_started' AND NEW.state='applied'))
  BEGIN SELECT RAISE(ABORT,'history_baseline_flow_immutable');END;
@@ -83,7 +110,7 @@ CREATE VIEW historical_baseline_report_movements AS
         internal static void Apply(SqliteConnection c,SqliteTransaction t)=>c.Execute(Sql,transaction:t);
         internal static bool IsSatisfied(LegacySchemaDetector d)
         {
-            if(!d.HasCanonicalTableDefinitions(Sql,"historical_baseline_flow","historical_baseline_read_mode"))return false;
+            if(!d.HasCanonicalTableDefinitions(Sql,"historical_baseline_flow","historical_baseline_read_mode","historical_baseline_recovery"))return false;
             const string query="SELECT type||'|'||name||'|'||sql FROM sqlite_master WHERE name LIKE 'historical_baseline_%' OR name LIKE '%_historical_baseline_%' ORDER BY type,name";
             using var expected=new SqliteConnection("Data Source=:memory:");expected.Open();expected.Execute(Sql);
             return expected.Query<string>(query).Select(Normalize).SequenceEqual(d.Connection.Query<string>(query,transaction:d.Transaction).Select(Normalize));

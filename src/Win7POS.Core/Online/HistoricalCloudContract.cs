@@ -65,6 +65,9 @@ namespace Win7POS.Core.Online
         [DataMember(Name="sha256",EmitDefaultValue=false)] public string Sha256 { get; set; }
         [DataMember(Name="byte_length",EmitDefaultValue=false)] public string ByteLength { get; set; }
         [DataMember(Name="review_digest",EmitDefaultValue=false)] public string ReviewDigest { get; set; }
+        [DataMember(Name="recovery_request_key",EmitDefaultValue=false)] public string RecoveryRequestKey { get; set; }
+        [DataMember(Name="apply_request_key",EmitDefaultValue=false)] public string ApplyRequestKey { get; set; }
+        [DataMember(Name="previous_review_digest",EmitDefaultValue=false)] public string PreviousReviewDigest { get; set; }
     }
     [DataContract]
     public sealed class HistoricalCloudResponse
@@ -115,6 +118,7 @@ namespace Win7POS.Core.Online
         [DataMember(Name="review_digest")] public string ReviewDigest { get; set; }
         [DataMember(Name="can_apply")] public bool? CanApply { get; set; }
         [DataMember(Name="receipt_json")] public string BaselineReceiptJson { get; set; }
+        [DataMember(Name="recovery_ack_json")] public string BaselineRecoveryAckJson { get; set; }
     }
     [DataContract]
     public sealed class HistoricalBaselineContext

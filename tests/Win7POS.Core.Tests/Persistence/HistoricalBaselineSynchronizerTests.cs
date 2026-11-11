@@ -14,11 +14,12 @@ public sealed partial class HistoricalBaselineStoreTests
     {
         internal readonly HistoricalCloudExportTests.Fixture F;
         internal OnlineSyncGeneration G;
-        internal bool LoseUpload,LoseApply,Verified,ReviewAllowed=true,UploadVerified=true,ChangeUpload,RevokeOnUpload;
+        internal bool LoseUpload,LoseApply,LoseRecovery,StaleApply,Verified,ReviewAllowed=true,UploadVerified=true,ChangeUpload,RevokeOnUpload;
         internal int PrepareCalls,UploadCalls,AdmissionCreates,ApplyCalls,StartCalls;
         internal readonly List<(string Operation,HistoricalCloudPayload Payload)> Requests=new();
         internal readonly string Upload=Guid.NewGuid().ToString("D"),Run=Guid.NewGuid().ToString("D");
         internal string? Ack;
+        internal readonly Dictionary<string,string> RecoveryAcks=new();internal int RecoveryCalls;
         internal BaselineTransport(HistoricalCloudExportTests.Fixture f,OnlineSyncGeneration g){F=f;G=g;}
         internal HistoricalBaselineSynchronizer Client()=>new(F.Db.Factory,G,()=>{},Request,async(_,state,ct)=>{
             PrepareCalls++;var guard=await F.Guard();var export=await new HistoricalCloudExporter(F.Db.Factory).ExportBaselineAsync(F.Archive,F.Backup,guard,Guid.Parse(state.RestoreLineageId).ToString("D"),ct);
@@ -42,11 +43,23 @@ public sealed partial class HistoricalBaselineStoreTests
                 FileName=Path.GetFileName(flow!.ArchivePath),Sha256=flow.ArchiveSha256,ByteLength=new FileInfo(flow.ArchivePath).Length.ToString()};
             if(operation=="baseline_start"){StartCalls++;Assert.AreEqual(flow!.StartRequestId,p.RequestKey);return new(){RunId=Run,State="queued"};}
             if(operation=="baseline_status")return new(){RunId=Run,State="review_ready"};
-            if(operation=="baseline_review")return new(){RunId=Run,CanApply=ReviewAllowed,ReviewDigest=new string('a',64)};
+            if(operation=="baseline_review")
+            {Assert.AreEqual(G.PosSessionId,flow!.RunSessionId);return new(){RunId=Run,CanApply=ReviewAllowed,ReviewDigest=new string(RecoveryAcks.Count==0?'a':'b',64)};}
             if(operation=="baseline_receipt"){Assert.AreEqual(flow!.ApplyRequestId,p.RequestKey);return new(){BaselineReceiptJson=Ack};}
+            if(operation=="baseline_recover")
+            {
+                RecoveryCalls++;var pending=(await Store(F,G).ReadPendingRecoveryAsync(flow!.FlowId,ct))!;
+                Assert.AreEqual(pending.RequestId,p.RecoveryRequestKey);Assert.AreEqual(flow.ApplyRequestId,p.ApplyRequestKey);Assert.AreEqual(pending.PreviousReviewDigest,p.PreviousReviewDigest);
+                if(Verified)return new(){BaselineRecoveryAckJson=RecoveryAck(flow,pending,G,true),BaselineReceiptJson=Ack};
+                if(!RecoveryAcks.TryGetValue(pending.RequestId,out var raw)){raw=RecoveryAck(flow,pending,G);RecoveryAcks.Add(pending.RequestId,raw);}
+                if(LoseRecovery){LoseRecovery=false;throw new HistoricalCloudRequestException("history_timeout",false,true);}
+                return new(){BaselineRecoveryAckJson=raw};
+            }
             if(operation=="baseline_apply")
             {
-                ApplyCalls++;Assert.AreEqual(flow!.ApplyRequestId,p.RequestKey);Assert.AreEqual(flow.ReviewDigest,p.ReviewDigest);Verified=true;Ack=Receipt(flow);
+                Assert.AreEqual(G.PosSessionId,flow!.RunSessionId);Assert.AreEqual(flow.ApplyRequestId,p.RequestKey);Assert.AreEqual(flow.ReviewDigest,p.ReviewDigest);
+                if(StaleApply){StaleApply=false;throw new HistoricalCloudRequestException("history_baseline_review_stale",false,false);}
+                ApplyCalls++;Verified=true;Ack=Receipt(flow);
                 if(LoseApply){LoseApply=false;throw new HistoricalCloudRequestException("history_timeout",false,true);}
                 return new(){BaselineReceiptJson=Ack};
             }
@@ -102,5 +115,53 @@ public sealed partial class HistoricalBaselineStoreTests
             SourceSnapshotId=Guid.NewGuid().ToString("D"),BaselineRevision="0",CanonicalRevision="1"}}),(_,_,_)=>{prepared=true;throw new AssertFailedException();},(_,_,_)=>throw new AssertFailedException());
         var error=await Assert.ThrowsAsync<HistoricalCloudRequestException>(()=>client.RunAsync(default));Assert.AreEqual("history_baseline_intent_missing",error.Code);Assert.IsFalse(prepared);
         using var c=f.Db.Factory.Open();Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_baseline_flow"));
+    }
+    [TestMethod]
+    public async Task BaselineSynchronizer_NewSessionBeforeReviewUsesBoundResumeBeforeReviewOrApply()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var g=Generation();var original=await Prepare(f,g);var t=new BaselineTransport(f,g);
+        for(var i=0;i<3;i++)Assert.IsTrue(await t.Client().RunAsync(default));
+        Assert.IsNull((await Store(f,g).ReadAsync(Server,1,default))!.ReviewDigest);
+        t.G=Generation();await new OnlineSyncGenerationRepository(f.Db.Factory).ActivateAndRecoverAsync(t.G,2);
+        for(var i=0;i<4;i++)Assert.IsTrue(await t.Client().RunAsync(default));
+        var applied=(await Store(f,t.G).ReadAsync(Server,1,default))!;Assert.AreEqual("applied",applied.State);Assert.AreEqual(t.G.PosSessionId,applied.RunSessionId);
+        Assert.AreEqual(original.ApplyRequestId,applied.ApplyRequestId);Assert.AreEqual(1,t.RecoveryCalls);Assert.AreEqual(1,t.ApplyCalls);
+    }
+    [TestMethod]
+    public async Task BaselineSynchronizer_LostRecoveryAckReplaysItsOriginalIntentAndPreservesThePriorReview()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var g=Generation();var original=await Prepare(f,g);var t=new BaselineTransport(f,g){LoseRecovery=true};
+        for(var i=0;i<4;i++)await t.Client().RunAsync(default);
+        t.G=Generation();await new OnlineSyncGenerationRepository(f.Db.Factory).ActivateAndRecoverAsync(t.G,2);
+        await t.Client().RunAsync(default);await Assert.ThrowsAsync<HistoricalCloudRequestException>(()=>t.Client().RunAsync(default));
+        Assert.AreEqual(new string('a',64),(await Store(f,t.G).ReadAsync(Server,1,default))!.ReviewDigest);
+        for(var i=0;i<3;i++)Assert.IsTrue(await t.Client().RunAsync(default));
+        var applied=(await Store(f,t.G).ReadAsync(Server,1,default))!;Assert.AreEqual("applied",applied.State);Assert.AreEqual(original.ApplyRequestId,applied.ApplyRequestId);
+        Assert.AreEqual(2,t.RecoveryCalls);Assert.AreEqual(1,t.RecoveryAcks.Count);Assert.AreEqual(1,t.ApplyCalls);
+        using var c=f.Db.Factory.Open();Assert.AreEqual(new string('a',64),c.ExecuteScalar<string>("SELECT previous_review_digest FROM historical_baseline_recovery"));
+        Assert.AreEqual("consumed",c.ExecuteScalar<string>("SELECT state FROM historical_baseline_recovery"));
+    }
+    [TestMethod]
+    public async Task BaselineSynchronizer_StaleReviewPreparesRecoveryBeforeAnotherEconomicAttemptWithTheSameApplyKey()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var g=Generation();var original=await Prepare(f,g);var t=new BaselineTransport(f,g){StaleApply=true};
+        for(var i=0;i<5;i++)Assert.IsTrue(await t.Client().RunAsync(default));
+        Assert.AreEqual(0,t.ApplyCalls);Assert.IsNotNull(await Store(f,g).ReadPendingRecoveryAsync(original.FlowId,default));
+        for(var i=0;i<3;i++)Assert.IsTrue(await t.Client().RunAsync(default));
+        Assert.AreEqual(1,t.ApplyCalls);Assert.AreEqual(1,t.RecoveryCalls);
+        var attempts=t.Requests.Where(x=>x.Operation=="baseline_apply").ToArray();Assert.AreEqual(2,attempts.Length);
+        Assert.IsTrue(attempts.All(x=>x.Payload.RequestKey==original.ApplyRequestId));Assert.AreNotEqual(attempts[0].Payload.ReviewDigest,attempts[1].Payload.ReviewDigest);
+    }
+    [TestMethod]
+    public async Task BaselineSynchronizer_OriginalCommitRacingPendingRecoveryReturnsReceiptWithoutAnotherApply()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var g=Generation();var original=await Prepare(f,g);var t=new BaselineTransport(f,g);
+        for(var i=0;i<4;i++)await t.Client().RunAsync(default);
+        t.G=Generation();await new OnlineSyncGenerationRepository(f.Db.Factory).ActivateAndRecoverAsync(t.G,2);await t.Client().RunAsync(default);
+        var flow=(await Store(f,t.G).ReadAsync(Server,1,default))!;
+        // Controlled response injection; actual job-lock races require SQL service E2E.
+        t.Verified=true;t.Ack=Receipt(flow);Assert.IsTrue(await t.Client().RunAsync(default));
+        var applied=(await Store(f,t.G).ReadAsync(Server,1,default))!;Assert.AreEqual("applied",applied.State);Assert.AreEqual(g.PosSessionId,applied.RunSessionId);
+        Assert.AreEqual(original.ApplyRequestId,applied.ApplyRequestId);Assert.AreEqual(t.Ack,applied.ReceiptJson);Assert.IsFalse(t.Requests.Any(x=>x.Operation=="baseline_apply"));
     }
 }

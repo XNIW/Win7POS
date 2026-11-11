@@ -283,7 +283,7 @@ plan_json,plan_hash,created_at,dispatch_started_at) VALUES(@id,@id,@PayloadHash,
             Assert.AreEqual(0L,conn.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_cloud_prepared_export"));
             conn.Execute(@"UPDATE catalog_import_outbox SET status='acked';
 DROP VIEW IF EXISTS historical_baseline_report_movements;
-DROP TABLE IF EXISTS historical_baseline_read_mode; DROP TABLE IF EXISTS historical_baseline_flow;
+DROP TABLE IF EXISTS historical_baseline_read_mode; DROP TABLE IF EXISTS historical_baseline_recovery; DROP TABLE IF EXISTS historical_baseline_flow;
 DROP TABLE historical_commit_witness;
 DROP TABLE historical_preparation_outcome; DROP TABLE historical_preparation_page; DROP TABLE historical_preparation_intent;
 DROP TABLE historical_publication_delivery; DROP TABLE historical_publication_page; DROP TABLE historical_publication_outbox;
