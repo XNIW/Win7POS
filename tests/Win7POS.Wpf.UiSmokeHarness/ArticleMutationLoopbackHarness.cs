@@ -1750,7 +1750,7 @@ GROUP BY mutation_kind;")).ToDictionary(
                         string result;
                         if (history.Operation == "authority")
                             result = "{\"dataset_id\":\"90000000-0000-4000-8000-000000000245\",\"revision\":\"0\",\"writer_epoch\":\"1\",\"writer_authority\":\"local\",\"inventory_verified\":false,\"protocol_version\":1}";
-                        else if (history.Operation == "local_prepare" || history.Operation == "local_stage" || history.Operation == "local_authorize")
+                        else if (history.Operation == "local_prepare" || history.Operation == "local_stage" || history.Operation == "local_review" || history.Operation == "local_authorize")
                         {
                             lock(_gate) result=HistoricalPublicationAdmissionFixture.Wire(history.Operation,_historicalPublication.Request(history.Operation,history.Payload));
                         }

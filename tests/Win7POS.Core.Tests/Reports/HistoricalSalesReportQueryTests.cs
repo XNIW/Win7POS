@@ -105,6 +105,9 @@ INSERT INTO historical_transactions VALUES
         foreach (var group in groups)
             AssertSummaryEqual(group.Select(SalesReportSummary.FromEntry).Aggregate(SalesReportSummary.Empty, (a, b) => a.Add(b)),
                 snapshot.Days.Single(d => d.Date == group.Key).Summary);
+        for (var hour = 0; hour < 24; hour++)
+            Assert.AreEqual(entries.Where(e => new DateTime(e.BusinessTicks).Hour == hour).Sum(e => e.SignedAmountClp),
+                snapshot.HourlyAmounts[hour], "Hourly rollup must match the independently read signed entries.");
         if (origins == SalesReportOrigins.All && !selectedDates && !referenceFilter)
             Assert.AreEqual(9007199254752993L, snapshot.Summary.BalanceClp);
     }

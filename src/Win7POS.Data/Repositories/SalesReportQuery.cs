@@ -32,12 +32,12 @@ namespace Win7POS.Data.Repositories
             if (plan == null) return FinishUnavailable(token, SalesReportCoverageStatus.PolicyRequired, transaction);
             var coverage = await GetCoverageAsync(connection, transaction, filter, plan, cancellationToken).ConfigureAwait(false);
             if (!new SalesReportCoverage(coverage).CanPublish) return FinishUnavailable(token, coverage, transaction);
-            var dayRows = (await connection.QueryAsync<DayRow>(Command(plan.Sql.TrimEnd() + DayAndTotalSql, plan.Parameters, transaction, cancellationToken)).ConfigureAwait(false)).ToArray();
-            var total = dayRows.Single(row => row.DayNumber == -1);
+            var groups = (await connection.QueryAsync<GroupRow>(Command(plan.Sql.TrimEnd() + DayHourAndTotalSql, plan.Parameters, transaction, cancellationToken)).ConfigureAwait(false)).ToArray();
+            var total = groups.Single(row => row.RollupKind == 2);
             var summary = total.ToSummary();
-            var days = dayRows.Where(row => row.DayNumber >= 0).Select(row => new SalesReportDaySummary(new DateTime(checked(row.DayNumber * TimeSpan.TicksPerDay), DateTimeKind.Unspecified), row.ToSummary())).ToArray();
+            var days = groups.Where(row => row.RollupKind == 0).Select(row => new SalesReportDaySummary(new DateTime(checked(row.DayNumber * TimeSpan.TicksPerDay), DateTimeKind.Unspecified), row.ToSummary())).ToArray();
             var hourly = new long[24];
-            foreach (var row in await connection.QueryAsync<HourRow>(Command(plan.Sql + "SELECT CAST((BusinessTicks/36000000000)%24 AS INTEGER) AS Hour,COALESCE(SUM(SignedAmountClp),0) AS Amount FROM report_entries GROUP BY Hour", plan.Parameters, transaction, cancellationToken)).ConfigureAwait(false)) hourly[row.Hour] = row.Amount;
+            foreach (var row in groups.Where(row => row.RollupKind == 1)) hourly[row.Hour] = row.BalanceClp;
             var page = await ReadPageAsync(connection, transaction, token, plan, null, pageSize, null, cancellationToken).ConfigureAwait(false);
             if (coverage == SalesReportCoverageStatus.VerifiedForScope && total.RowCount == 0) coverage = SalesReportCoverageStatus.VerifiedEmpty;
             transaction.Commit();
@@ -202,11 +202,9 @@ COUNT(CASE WHEN Origin=0 AND SignedAmountClp<0 THEN 1 END) AS NativeNegativeMove
 COUNT(CASE WHEN Origin=1 THEN 1 END) AS HistoricalMovementCount,
 COUNT(CASE WHEN Origin=1 AND SignedAmountClp<0 THEN 1 END) AS HistoricalCancellationCount,
 COUNT(CASE WHEN (CashClp+CardClp)<>SignedAmountClp OR typeof(CashClp)<>'integer' OR typeof(CardClp)<>'integer' OR typeof(SignedAmountClp)<>'integer' THEN 1 END) AS ReconciliationAnomalyCount";
-        // Aggregate the source rows once for both day summaries and the total.
-        // Day -1 is only the rollup marker; real .NET calendar days are >=0.
-        private const string DayAndTotalSql = @", report_days AS MATERIALIZED (SELECT CAST(BusinessTicks/864000000000 AS INTEGER) AS DayNumber," + AggregateColumns + @" FROM report_entries GROUP BY DayNumber)
-SELECT * FROM report_days UNION ALL SELECT -1 AS DayNumber,
-COALESCE(SUM(RowCount),0) AS RowCount,
+        // Scan the source once. The small day/hour cells retain exact integer
+        // aggregates for each axis, including reversals and reconciliation counts.
+        private const string RollupColumns = @"COALESCE(SUM(RowCount),0) AS RowCount,
 COALESCE(SUM(GrossPositiveClp),0) AS GrossPositiveClp,
 COALESCE(SUM(ReversalsClp),0) AS ReversalsClp,
 COALESCE(SUM(BalanceClp),0) AS BalanceClp,
@@ -219,14 +217,20 @@ COALESCE(SUM(NativePositiveReceiptCount),0) AS NativePositiveReceiptCount,
 COALESCE(SUM(NativeNegativeMovementCount),0) AS NativeNegativeMovementCount,
 COALESCE(SUM(HistoricalMovementCount),0) AS HistoricalMovementCount,
 COALESCE(SUM(HistoricalCancellationCount),0) AS HistoricalCancellationCount,
-COALESCE(SUM(ReconciliationAnomalyCount),0) AS ReconciliationAnomalyCount
-FROM report_days ORDER BY DayNumber";
+COALESCE(SUM(ReconciliationAnomalyCount),0) AS ReconciliationAnomalyCount";
+        private const string DayHourAndTotalSql = @", report_cells AS MATERIALIZED (
+SELECT CAST(BusinessTicks/864000000000 AS INTEGER) AS DayNumber,
+CAST((BusinessTicks/36000000000)%24 AS INTEGER) AS Hour," + AggregateColumns + @"
+FROM report_entries GROUP BY DayNumber,Hour)
+SELECT 0 AS RollupKind,DayNumber,-1 AS Hour," + RollupColumns + @" FROM report_cells GROUP BY DayNumber
+UNION ALL SELECT 1 AS RollupKind,-1 AS DayNumber,Hour," + RollupColumns + @" FROM report_cells GROUP BY Hour
+UNION ALL SELECT 2 AS RollupKind,-1 AS DayNumber,-1 AS Hour," + RollupColumns + @" FROM report_cells
+ORDER BY RollupKind,DayNumber,Hour";
         private const string EmptyBranch = @"SELECT 0 AS Origin,0 AS InternalId,0 AS BusinessTicks,0 AS MovementKind,0 AS SignedAmountClp,0 AS CashTenderedClp,0 AS ChangeClp,0 AS CashClp,0 AS CardClp,NULL AS OriginalCashierId,'' AS Reference,'' AS Provider,'' AS ExternalNamespace,'' AS ExternalId,'' AS BatchId,'' AS SourceSheet,NULL AS SourceRow,0 AS IsVoided,NULL AS RelatedNativeSaleId,'' AS RawTimestamp,NULL AS OffsetMinutes,'' AS CardSubtype WHERE 0";
         private sealed class QueryPlan { internal string Sql { get; set; } internal string CandidateSql { get; set; } internal DynamicParameters Parameters { get; set; } internal IReadOnlyList<string> Branches { get; set; } }
         private sealed class StateRow { public string DatasetId { get; set; } public long DataRevision { get; set; } }
         private sealed class CoverageRow { public int Pending { get; set; } public int Subset { get; set; } }
         private sealed class CloudCoverageRow { public string GenerationId { get; set; } }
-        private sealed class HourRow { public int Hour { get; set; } public long Amount { get; set; } }
         private class AggregateRow
         {
             public long RowCount { get; set; } public long GrossPositiveClp { get; set; } public long ReversalsClp { get; set; } public long BalanceClp { get; set; }
@@ -235,7 +239,7 @@ FROM report_days ORDER BY DayNumber";
             public long HistoricalMovementCount { get; set; } public long HistoricalCancellationCount { get; set; } public long ReconciliationAnomalyCount { get; set; }
             internal SalesReportSummary ToSummary() { return new SalesReportSummary(GrossPositiveClp, ReversalsClp, BalanceClp, CashTenderedClp, ChangeClp, CashClp, CardClp, NativePositiveSalesClp, NativePositiveReceiptCount, NativeNegativeMovementCount, HistoricalMovementCount, HistoricalCancellationCount, ReconciliationAnomalyCount); }
         }
-        private sealed class DayRow : AggregateRow { public long DayNumber { get; set; } }
+        private sealed class GroupRow : AggregateRow { public int RollupKind { get; set; } public long DayNumber { get; set; } public int Hour { get; set; } }
         private sealed class EntryRow
         {
             public int Origin { get; set; } public long InternalId { get; set; } public long BusinessTicks { get; set; } public int MovementKind { get; set; }
