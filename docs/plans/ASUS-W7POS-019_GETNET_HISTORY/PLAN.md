@@ -7,8 +7,40 @@ PR136 conserva qualifica/consegna propria; PR135/Admin151 implementano i nuovi
 contratti. Il riepilogo precedente sottostante è storico, non prova di rollout
 cloud. Installato verificato2ad42ca; nuovi gate bilaterali NOT_RUN, nessun DONE.
 
+<!-- ASUS019_COMPOSED_CURRENT_START -->
+## Composizione corrente — 20261111T152646Z, stessa ASUS-W7POS-019
+
+Execution ACTIVE: cassa quotidiana e storico bilaterale. L'utente autorizza
+tutti i file necessari; nessuna nuova funzione, infrastruttura o task.
+Codepoint candidati: Windows71eafda924c91bdbe121bbfa9b2cd054dffa3e77,
+Admin48093f3bf77ad6bbc07cd74d6e28df2e5c81ea5e (codice identico a33164d44).
+Il commit documentale successore non cambia tali componenti; richiede comunque
+binding e qualifica del proprio SHA. Nessun merge main, deploy o installazione.
+
+| Scenario | SHA / comando / ambiente | Esito ed evidence | Prossimo gate |
+|---|---|---|---|
+| Cassa qualificata precedentemente | d1b2bc3, pacchetto a07430ce /payload6b44ffe3; Integrated12 eFinal60 ASUS | PASS31cicli/max102.510ms e151/max97.826ms, budget63970e30 invariato | ripetere sul pacchetto composto finale |
+| Candidato precedente composto | c88b3614, Windows-All locale U19FinalWindows01 | FAIL2/16 (gates, Core); altri14PASS. Core1971PASS/11FAIL/1982; cleanup naturale e pubblicazione evidence PASS | FAIL conservato; nessun PASS trasferito al successore |
+| C88 prove mirate | fingerprint9ab866c4; geometria, Smoke, Load canonici | PASS U19FinalGeometry01; Smoke52/52 U19FinalSmoke01; Load11/11 U19FinalLoad01, queryMs196.5719 contro500 invariato | non è pacchetto finale o qualifica Win7 fisico |
+| Trasporto baseline corretto | componente3e4748b, composto71eafda; POST solo all'Admin configurato | Core/Data120/120 U19BffTransportTarget01; quattro gate prima falliti oraPASS; build net48/x86 eCloud1/1 U19BffCloud02 | suite completa sullo SHA finale |
+| Confine architetturale | c88 contattava Storage direttamente, respinto da4gate | il POS ora invia l'archivio al BFF esistente; target Storage solo server-side, hash/dimensione/lease controllati, niente allowlist client o indebolimento gate | E2E autenticato con Worker operativo di test |
+| Freeze legacy | regression U19CutoverCoverage01 FAIL riprodotto; 02 PASS dopo fix | copertura canonica verificata vale come drain dei soli legacy; audit incrementale originale invariato; journal/witness v2 incerti restano bloccanti | provare origine Admin nella modalità prevista |
+| Fixture report | c88 mancava schema baseline nelle fixture minime | schema20 canonico applicato senza ACK inventati; U19BaselineReports01 PASS10/10 | includere nella suite completa successore |
+| API e BFF Admin | privato33164d44, composto48093f3 | U19BffContract02: typecheckPASS, target40PASS, foundation1616PASS/7SKIP su1623; sourceStable b621fc93 | CI completa, browser e packaging sullo SHA pubblicato |
+| SQL pubblico v2 | bc6d061e, replay43044363336; migration141636 SHAba0992ab | PASS94file/5307assert +3concurrentcases, U19ComposedSql03; artifact13868405092 digesta20891af162ddef1ccc001b1bb508f4279e2bde780f536e6d79c8b70097bbada | tre race preesistenti non qualificano nuove race recovery |
+| FAIL SQL conservati | 63f69799 e9fbf9ae; replay43038705948/43041270226 | nuove fixture: policy indipendenti mancanti, negativo dopo cambio revisione, conteggio zero obsoleto dopo Apply. Guard finanziari invariati; successore bc6PASS | non sommare rerun o cancellare FAIL |
+| Baseline qualificata pubblicata | Windows6ce1f12 CI43023775479 eSecurity43023775383; Admin5895e17 CI43023787452/CF43023787441 | PASS; artifact Windows13860906046 digest155813f5, 8entry; Worker13856476824 digestee458ce8,58file; deploy SKIPPED e Worker non operativo | risultati precedenti distinti dalla coppia corrente |
+| Storico bilaterale completo | A→server→Admin già aperto→B→A senza eco; origine Admin; ACK perso/restart/correzione/Undo/revoca/conflitti | NOT_RUN come singola prova autenticata distribuita. I component test non la sostituiscono | completare harness con servizi reali isolati |
+| Consegna | installato2ad42ca invariato; profilo Minimondo e7originali conservati | pacchetto composto, Integrated/Final60 e consegna NOT_RUN; 200% invariato,100/125 USER_DEFERRED | Win7 fisico BLOCKED_TARGET; GetnetC MISSING |
+
+Nessun DONE. Worker impacchettato, servizio operativo, CI, deploy e installazione
+restano gate separati. Backup SQLite completo locale; si trasferisce soltanto
+l'archivio selettivo. Nessuna mutazione reale, vendita nativa, stock o ricevuta
+commerciale aggiunta da questa continuazione.
+<!-- ASUS019_COMPOSED_CURRENT_END -->
+
 <!-- ASUS019_CURRENT_START -->
-## Convergenza corrente — stessa Execution ASUS-W7POS-019
+## Qualifiche precedenti — evidence conservate
 
 Due consegne: cassa quotidiana e storico bilaterale. EXECUTION ACTIVE.
 L'utente autorizza tutti i file necessari; soglie e carico restano invariati.
