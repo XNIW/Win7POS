@@ -29,6 +29,27 @@ try {
     Require ($gates.results[0].sequence -eq 0 -and $gates.results[1].sequence -eq 2 -and $gates.results[2].sequence -eq 4) 'original_line_order'
     Require (-not $gates.projection.complete -and $gates.projection.withheld -eq 2) 'withheld_is_partial'
     Require (($gates|ConvertTo-Json -Depth 20) -notmatch 'private-secret') 'gate_privacy'
+    [IO.File]::WriteAllText((Join-Path $root 'scripts/check-migrations.ps1'),@'
+Require-Text $registry 'fixed-regex' 'published sequence is pinned'
+Fail 'append-only sequence mismatch'
+Fail $privateMessage
+Write-Host '=== RESULT: FAIL ==='
+'@)
+    [IO.File]::WriteAllText((Join-Path $root 'scripts/check-release.ps1'),"Write-Host '=== RESULT: FAIL ==='`n")
+    [IO.File]::WriteAllText($transcript,@'
+=== FAILED GATE: check-migrations.ps1 (exit 1) ===
+FAIL: published sequence is pinned
+FAIL: append-only sequence mismatch
+FAIL: private-secret dynamic failure
+=== RESULT: FAIL ===
+=== END FAILED GATE: check-migrations.ps1 ===
+=== RESULT: FAIL ===
+'@)
+    $scoped=ConvertFrom-QaGateTranscript $transcript $root $run $fingerprint
+    Require ($scoped.results.Count -eq 3) 'gate_command_literals_projected'
+    Require (@($scoped.results | Where-Object {$_.assertionId -cnotmatch '^GATE_check-migrations_L[124]$'}).Count -eq 0) 'failed_gate_source_scope'
+    Require ($scoped.projection.withheld -eq 2) 'ambiguous_summary_and_dynamic_message_withheld'
+    Require (($scoped|ConvertTo-Json -Depth 20) -notmatch 'private-secret|privateMessage|fixed-regex') 'scoped_gate_privacy'
     [IO.File]::WriteAllText($trx,'<!DOCTYPE x [<!ENTITY e SYSTEM "file:///C:/private-secret">]><TestRun>&e;</TestRun>')
     $denied=$false;try{$null=ConvertFrom-QaTrxDiagnostics $trx $root $run $fingerprint}catch{$denied=$true}
     Require $denied 'external_entity_denied'
