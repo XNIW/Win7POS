@@ -67,8 +67,9 @@ namespace Win7POS.Data.Online
                         async Task Upload(string url,HistoricalBaselineFlow flow,CancellationToken token)
                         {
                             demand();using var uploader=new HistoricalBaselineUploader(options);
-                            await context.ExecuteCredentialedRequestAsync(async(_,requestToken)=>
-                            {await uploader.UploadAsync(url,flow,demand,requestToken).ConfigureAwait(false);return true;},_=>string.Empty,token).ConfigureAwait(false);demand();
+                            var code=await context.ExecuteCredentialedRequestAsync((credentials,requestToken)=>uploader.UploadAsync(url,flow,credentials,demand,requestToken),
+                                value=>SharedAuthStopPolicy.IsAuthenticationDenied(value)?value:string.Empty,token).ConfigureAwait(false);demand();
+                            if(!string.IsNullOrEmpty(code))throw new HistoricalCloudRequestException(code,true,false);
                         }
                         outboundMore=await new HistoricalBaselineSynchronizer(_factory,context.Generation,demand,Request,_prepareBaseline,Upload).RunAsync(ct).ConfigureAwait(false)||outboundMore;
                     }

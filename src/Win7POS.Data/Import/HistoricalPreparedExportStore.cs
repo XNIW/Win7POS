@@ -21,7 +21,8 @@ namespace Win7POS.Data.Import
             guard.DemandStillValid();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);
             if(await c.ExecuteScalarAsync<long>(new CommandDefinition(@"SELECT (SELECT COUNT(*) FROM historical_publication_outbox o
 LEFT JOIN historical_publication_delivery d ON d.operation_id=o.operation_id
-WHERE o.shop_id=@shop AND (d.operation_id IS NULL OR d.status<>'synchronized'))+
+WHERE o.shop_id=@shop AND (d.operation_id IS NULL OR d.status<>'synchronized')
+AND NOT EXISTS(SELECT 1 FROM historical_legacy_baseline_confirmed b WHERE b.shop_id=o.shop_id AND b.operation_id=o.operation_id))+
 (SELECT COUNT(*) FROM historical_preparation_intent i JOIN historical_preparation_outcome s ON s.operation_id=i.operation_id WHERE i.shop_id=@shop AND s.state IN('staging','prepared','authorized')) +
 (SELECT COUNT(*) FROM historical_commit_witness w JOIN historical_preparation_intent i ON i.operation_id=w.operation_id WHERE i.shop_id=@shop AND w.server_resolution IS NULL)",new{shop=guard.ShopId},cancellationToken:ct)).ConfigureAwait(false)!=0)
                 throw new InvalidOperationException("history_cloud_history_sync_required");

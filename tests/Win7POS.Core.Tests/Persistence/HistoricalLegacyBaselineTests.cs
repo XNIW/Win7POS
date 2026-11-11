@@ -63,6 +63,25 @@ public sealed partial class HistoricalBaselineStoreTests
 
 public sealed partial class HistoricalReplicaTests
 {
+    [TestMethod]
+    public async Task LegacyBaseline_VerifiedCoverageDrainsFrozenExportWithoutRetiringAnyUnresolvedV2Intent()
+    {
+        // Metadata fixture; this exercises the actual product drain, not
+        // authenticated HTTP delivery or authority to activate a web writer.
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var flow=await SeedBaselineFlow(f);CaptureLegacyForSqlMetadataFixture(f,flow);
+        CompleteBaselineFlow(f,flow);var prepared=new HistoricalPreparedExportStore(f.Db.Factory);var guard=await f.Guard();
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>prepared.DemandHistoricalPublicationsDrainedAsync(guard,Ct));
+        var replica=new HistoricalReplicaStore(f.Db.Factory,()=>{});await replica.ObserveAuthorityAsync(Shop,Authority("local"),Ct);
+        var rows=Entities(f);var manifest=Manifest(rows);var stage=await replica.BeginAsync(Shop,manifest,Ct);
+        await replica.StageAsync(stage,Page(manifest,rows,Cursor,null),Ct);await replica.PublishAsync(stage,Ct);
+        await prepared.DemandHistoricalPublicationsDrainedAsync(guard,Ct);
+        var state=await f.Service.ReadDatasetAsync(Ct);using var c=f.Db.Factory.Open();var batch=c.QuerySingle("SELECT id,revision,apply_operation_id FROM historical_import_batch");
+        using var draft=HistoricalPublicationDraft.ForUndo(Guid.NewGuid().ToString("N"),Shop,HistoricalCloudExportTests.Fixture.Device,state.DatasetId,0,state.DataRevision,
+            (string)batch.id,(long)batch.revision,(string)batch.apply_operation_id,state.RestoreLineageId);
+        await new HistoricalPublicationJournal(f.Db.Factory).SaveIntentAsync(draft,Dataset,2,()=>{},Ct);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>prepared.DemandHistoricalPublicationsDrainedAsync(guard,Ct));
+    }
+
     static void CaptureLegacyForSqlMetadataFixture(HistoricalCloudExportTests.Fixture f,string flow)
     {
         using var c=f.Db.Factory.Open();c.Execute("INSERT INTO historical_legacy_baseline_operation SELECT @flow,operation_id FROM historical_import_operation",new{flow});

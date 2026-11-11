@@ -163,6 +163,11 @@ INSERT INTO sales_report_native_ownership VALUES(2,'Unknown',NULL,'source-2',@po
 INSERT INTO historical_transactions VALUES(1,'batch-a','shop-a','Getnet',@ticks,9000,NULL,'financial-id','000123','Transactions',2,1,'raw',-240,'Debit');",
                 new { utc = new DateTimeOffset(2026, 2, 3, 14, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(), ticks = new DateTime(2026, 2, 3, 10, 0, 0).Ticks, policy = NativeSalesOwnershipRepository.PolicyHash });
             connection.Execute(Win7POS.Data.Import.HistoricalCloudSchema.Sql);
+            // The report now reads the canonical baseline view introduced by
+            // migration20. Keep this minimal fixture on the real view/schema,
+            // with no applied baseline or synthetic acknowledgement.
+            connection.Execute("CREATE TABLE app_settings(key TEXT PRIMARY KEY,value TEXT);");
+            connection.Execute(Win7POS.Data.Import.HistoricalBaselineSchema.Sql);
             fixture.Query = new SalesReportQuery(fixture.Db.Factory, () => fixture.Db.Factory.AuthorityStamp, SalesReportSnapshotCoordinator.ForDatabase(fixture.Db.Factory.DbPath));
             return fixture;
         }
