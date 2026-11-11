@@ -1,7 +1,48 @@
 # ASUS019 — continuazione client cloud, Execution isolata
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
-## Composizione corrente — 20261111T171130Z, stessa ASUS-W7POS-019
+## Composizione verificata — 20261111T181007Z, stessa ASUS-W7POS-019
+
+Execution ACTIVE: cassa quotidiana e storico bilaterale, tutti i file necessari
+autorizzati. Qualifiche legate agli SHA indicati; successori e componenti WIP
+non ereditano il PASS. Nessun merge main, deploy o DONE.
+
+| Scenario | SHA / comando / ambiente | Esito ed evidence | Prossimo gate |
+|---|---|---|---|
+| Cassa precedente | d1b2bc3, pacchettoa07430ce/payload6b44ffe3; ASUS Integrated12/Final60 | PASS31cicli/max102.510ms e151/max97.826ms, budget63970e30 invariato | soaks del pacchetto finale composto |
+| Windows composto | 6228e6c3, CI43066448526 eSecurity43066448505 | PASS16/16; U19Win622Remote01 verifica8entry artifact13879850970 SHA256dd273615, fingerprintfd5bd3f0 | pacchetto esatto e consegna restano aperti |
+| Load composto | HIST_LOAD_50K, medesime soglie/carico | PASS11/11:578/578campioni, drop0, query408.476ms/500, cold429.4557, maxDispatcher osservato3.2664ms | non attribuisce una causa al vecchio FAIL |
+| Load059 precedente | CI43057322574, U19Win059RemoteFail01 | FAIL15/16 solo Load:393/394campioni e1drop iniziale; query283.8887ms PASS, maxosservato13.8919ms. Causa UNRESOLVED; nessun blocco host/UI dedotto | FAIL conservato; diagnostica bounded02f51b9 inclusa nel successore,83check puri PASS |
+| Windows anteriori | 791fc4f7 PASS16/16; c88 FAIL2/16 | artifact verificati U19Win791Remote01 eU19WinC88RemoteFail01; risultati separati | nessuna somma dei rerun |
+| Admin componenti | 8ccb5758, CI43066464128 eCF43066464229 | Verify/SQL/build PASS; U19Admin8cc01 verifica58file, lock/config/treeb116e1f7. Workerartifact13876372298 SHA2567a032d48 | entrambi i deploy SKIPPED, servizio operativo non attestato |
+| SQL composto | replay8cc, artifact13876623226 SHA25614fb3bc5 | PASS94file/5307assert+3race preesistenti, receipt verificata U19Admin8cc01 | nuove race recovery NOT_RUN |
+| Storage reale | helper996cd7b incluso8cc | riconosce solo SDK StorageApiError HTTP400/code404 oltre404; U19AuthenticatedContract03 typecheckPASS,42target inclusi nei1618foundationPASS/7SKIP | nessuna interpretazione permissiva di altri400/auth/rete |
+| E2E autenticato03 | client622/Admin8cc, run43066567889 | FAIL baseline_upload_target_invalid, U19AuthenticatedRemote03 artifact13876473338 SHA256f0d94772; NextRequest normalizza127.0.0.1→localhost, guardia origine correttamente chiusa | fixture configurata col nome canonico, controllo client invariato |
+| E2E autenticato04 | client622/Admin5bb98ff, run43070574083 | FAIL initial_baseline/convergence_timeout dopo limite invariato; ultimo turno history_replica_turn_complete, cleanup naturale. U19AuthenticatedRemote04 verifica artifact13877903598 SHA256a2a465ed. Browser NOT_RUN | diagnosticare stati baseline/Worker, nessun roundtrip PASS |
+| Casi distribuiti | client704e8ce/Admin49e4788, run43072749769 | in corso all'osservazione; ACK perso solo dopo ricevuta HTTP reale, pull prima ACK e nuovo processo sugli stessi DB posseduti | non qualificati fino al risultato reale |
+| Diagnostica distribuita | client6a82ad3/Adminf8f5388, run43073567207 | in corso all'osservazione; soli stati chiusi baseline/SQL/Worker, nessun aumento timeout/budget | attribuzione del punto fermo |
+| Origine Admin e revoca | componenti WIP A19HistoryCases01/A19HistoryE2e01 | build15/16PASS0warning/error, node syntaxPASS; inventario/freeze/export verificati/migrazione/import web e revoca sessione sintetica, esecuzione NOT_RUN | congelare coppia ed eseguire, conflitti e race ancora aperti |
+| Pacchetto precursore | Release05943057309469 | PASS scaricato e verificato U19Release05901:41file prodotto/110checksum, development-unsigned; QAbundle40file U19Cart05901 | non è il pacchetto finale; Integrated/Final60 finale NOT_RUN |
+| Vincoli esterni | installato2ad42ca e profilo Minimondo/originali conservati | 200%/2880×1800 invariati;100/125 USER_DEFERRED; Win7fisico BLOCKED_TARGET; GetnetC MISSING | nessuna nuova installazione o attestazione sostitutiva |
+
+Le prove E2E01/02 fallite e i FAIL DNS Chromium restano nella cronologia e negli
+artifact verificati Remote01/02; le qualifiche Admin3b eWindows791 sono storiche.
+Il test Core/Data usa servizi HTTP/Next/PostgreSQL/Storage/Worker reali di test,
+ma non attesta WPF, periferiche o Windows7 fisico. La versione/hash browser è
+raccolta solo quando si raggiunge effettivamente quella fase.
+
+Il solo archivio selettivo passa dal BFF configurato; il backup completo resta
+locale. Nessuna allowlist client Storage, ricevuta inventata, nuovo grant SDK o
+fallback v1. I legacy confermati drenano senza riscrivere l'audit; gli intenti
+e witness v2 incerti restano bloccanti. Checkpoint privato180532Z e handoff
+PR135/151/TASK146 aggiornati, coda storica TASK146 conservata esattamente.
+<!-- ASUS019_COMPOSED_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente171130Z conservato come storia</summary>
+
+
+## Composizione precedente — 20261111T171130Z, stessa ASUS-W7POS-019
 
 Execution ACTIVE, due consegne: cassa quotidiana e storico bilaterale.
 Autorizzati tutti i file necessari; nessuna nuova funzione o task.
@@ -41,7 +82,9 @@ Copertura baseline verificata e replica completa drenano i soli legacy senza
 riscriverne l'audit; journal/witness v2 incerti restano bloccanti.
 Nessun merge main, deploy, mutazione reale o DONE. Qualifica mobile e Win7
 fisico restano separate; il test Core/Data non attesta WPF o periferiche.
-<!-- ASUS019_COMPOSED_CURRENT_END -->
+
+
+</details>
 
 <!-- ASUS019_CURRENT_START -->
 ## Qualifiche precedenti — evidence conservate
