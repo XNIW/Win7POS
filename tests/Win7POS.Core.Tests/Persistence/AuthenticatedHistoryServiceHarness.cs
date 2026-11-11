@@ -29,7 +29,7 @@ internal static class AuthenticatedHistoryServiceHarness
         public string clientSha{get;set;}="";public string shopId{get;set;}="";public string staffId{get;set;}="";
         public int credentialVersion{get;set;}public Actor actorA{get;set;}=new();public Actor actorB{get;set;}=new();
         public bool extendedCases{get;set;}
-        public bool faultCases{get;set;}public bool adminOrigin{get;set;}public RestartCheckpoint? restart{get;set;}
+        public bool faultCases{get;set;}public bool adminOrigin{get;set;}public bool conflictCases{get;set;}public RestartCheckpoint? restart{get;set;}
     }
     sealed class Fact
     {
@@ -81,6 +81,7 @@ internal static class AuthenticatedHistoryServiceHarness
             _phase="source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,baselineCount=before.Length,sourceSha=Hash(await File.ReadAllBytesAsync(source)),expected},ct);
             await WaitSignal("allow_local_apply",ct);
             _phase="local_apply";var authority=await a.Request("authority",new(),ct);
+            using var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,plan.OperationId);
             using var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct);
             var admission=await new HistoricalPublicationPreparer(a.Fixture.Db.Factory,a.Demand,a.Request).PrepareAsync(draft,authority,ct);
             var live=new HistoricalLocalWriteGrant(Guid.Parse(plan.OperationId).ToString("D"),authority.WriterEpoch,admission.RemainingMilliseconds,
@@ -123,6 +124,7 @@ internal static class AuthenticatedHistoryServiceHarness
         var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
         var state=await a.Fixture.Service.ReadDatasetAsync(ct);
         var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,state.DatasetId,state.DataRevision,0,analysis,ReadAssignments(a,analysis),new DateTime(2025,1,1),"Synthetic service harness approved start");
+        using(var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,plan.OperationId))
         using(var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct))
         {
             var admission=await Admit(a,draft,ct);
@@ -131,6 +133,7 @@ internal static class AuthenticatedHistoryServiceHarness
         }
         await Converge(a,b,plan.OperationId,published,ct);await ObserveCase("duplicate",published,ct);
         _phase="undo";state=await a.Fixture.Service.ReadDatasetAsync(ct);var operation=Guid.NewGuid().ToString("N");
+        using(var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,operation))
         using(var draft=await a.Fixture.Service.PrepareUndoPublicationDraftAsync(operation,_scope.shopId,a.Generation.ShopDeviceId,state.DatasetId,0,first.BatchId,1,ct))
         {
             var admission=await Admit(a,draft,ct);
@@ -148,6 +151,7 @@ internal static class AuthenticatedHistoryServiceHarness
         var preview=await a.Fixture.Service.PreviewAsync(tentative,ct);
         Demand(preview.ConflictCount==0&&preview.CorrectionCount==1&&preview.Corrections.Count==1&&!preview.CorrectionsTruncated,"history_test_correction_preview");
         var correction=new HistoricalSalesImportPlan(operation,_scope.shopId,state.DatasetId,state.DataRevision,0,correctionAnalysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start",new[]{preview.Corrections[0].Approve("Synthetic correction after verified Undo")});
+        using(var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,correction.OperationId))
         using(var draft=await a.Fixture.Service.PreparePublicationDraftAsync(correction,a.Generation.ShopDeviceId,ct))
         {
             var admission=await Admit(a,draft,ct);
@@ -157,7 +161,7 @@ internal static class AuthenticatedHistoryServiceHarness
         var wanted=baseline.Concat(expected).ToArray();await Converge(a,b,operation,wanted,ct);await ObserveCase("correction",wanted,ct);
     }
     static Fact ToFact(HistoricalSalesTransaction t)=>new(){Namespace=t.ExternalNamespace,Id=t.ExternalId,Ticks=t.BusinessDateTime!.Value.Ticks.ToString(CultureInfo.InvariantCulture),Gross=t.GrossClp.ToString(CultureInfo.InvariantCulture),Fee=t.CommissionClp?.ToString(CultureInfo.InvariantCulture),Vat=t.CommissionVatClp?.ToString(CultureInfo.InvariantCulture),Net=t.NetClp?.ToString(CultureInfo.InvariantCulture)};
-    static string CorrectionSource(HistoricalCloudExportTests.Fixture fixture,string source)
+    static string CorrectionSource(HistoricalCloudExportTests.Fixture fixture,string source,string? replacementId=null)
     {
         var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
         var row=analysis.AcceptedTransactions.Single(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19);
@@ -166,14 +170,19 @@ internal static class AuthenticatedHistoryServiceHarness
         foreach(var entry in input.Entries)
         {
             var next=output.CreateEntry(entry.FullName,CompressionLevel.Optimal);using var read=entry.Open();using var write=next.Open();
-            if(entry.FullName=="xl/worksheets/sheet1.xml")
+            if(entry.FullName.StartsWith("xl/",StringComparison.Ordinal)&&entry.FullName.EndsWith(".xml",StringComparison.Ordinal))
             {
                 var xml=XDocument.Load(read);XNamespace ns="http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+                if(entry.FullName=="xl/worksheets/sheet1.xml")
+                {
                 var rows=xml.Descendants(ns+"row");var header=rows.Single(r=>(string?)r.Attribute("r")=="1");
                 Demand(header.Elements(ns+"c").Single(c=>(string?)c.Attribute("r")=="C1").Value.StartsWith("VALOR",StringComparison.Ordinal)&&header.Elements(ns+"c").Single(c=>(string?)c.Attribute("r")=="G1").Value.StartsWith("MONTO",StringComparison.Ordinal),"history_test_correction_fixture_layout");
                 var data=rows.Single(r=>(string?)r.Attribute("r")==row.Source.RowNumber.ToString(CultureInfo.InvariantCulture));
                 void Set(string column,long value){var cell=data.Elements(ns+"c").Single(c=>(string?)c.Attribute("r")==column+row.Source.RowNumber.ToString(CultureInfo.InvariantCulture));cell.SetAttributeValue("t","n");cell.RemoveNodes();cell.Add(new XElement(ns+"v",value.ToString(CultureInfo.InvariantCulture)));}
-                Set("C",checked(row.GrossClp+1));if(row.NetClp.HasValue)Set("G",checked(row.NetClp.Value+1));changed=true;xml.Save(write);
+                Set("C",checked(row.GrossClp+1));if(row.NetClp.HasValue)Set("G",checked(row.NetClp.Value+1));changed=true;
+                }
+                if(replacementId!=null)foreach(var value in xml.Descendants().Where(x=>x.Name.LocalName=="t"||x.Name.LocalName=="v"))if(value.Value==row.ExternalId)value.Value=replacementId;
+                xml.Save(write);
             }else read.CopyTo(write);
         }
         Demand(changed,"history_test_correction_sheet_missing");return target;
@@ -226,6 +235,7 @@ internal static class AuthenticatedHistoryServiceHarness
         // automatic lane is drained; recovery resumes via a new supervisor.
         await a.DrainAutomatic(ct);
         var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,dataset.DatasetId,dataset.DataRevision,0,analysis,ReadAssignments(a,analysis),new DateTime(2025,1,1),"Synthetic service harness approved start");
+        using(var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,plan.OperationId))
         using(var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct))
         {
             var admission=await Admit(a,draft,ct);await a.Fixture.Service.ApplyAsync(plan,admission.guard,Path.Combine(a.Fixture.Output,"lost-ack-apply.db"),ct,publicationDraft:draft,publicationProof:admission.admission.Proof);
@@ -261,8 +271,31 @@ internal static class AuthenticatedHistoryServiceHarness
         await Converge(a,b,checkpoint.operation,checkpoint.wanted,ct);
         _phase="restart_recovered";await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_LOST_ACK_RESTART_PULL_BEFORE_ACK",count=checkpoint.wanted.Length,operation=Guid.Parse(checkpoint.operation).ToString("D"),newIds=checkpoint.newIds,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",checkpoint.wanted.Select(f=>f.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);
         await WaitSignal("restart_observed",ct);
+        if(_scope.conflictCases)await ConflictingPeerImport(a,b,checkpoint.wanted,checkpoint.newIds.Single(),ct);
         if(_scope.adminOrigin)await AdminOrigin(a,b,checkpoint.wanted,ct);
         Console.WriteLine("authenticated_history_restarted_pass");return 0;
+    }
+    static async Task ConflictingPeerImport(Session a,Session b,Fact[] wanted,string existingId,CancellationToken ct)
+    {
+        Demand(b.LocalFacts().Length==0,"history_test_conflict_peer_not_empty");var before=await b.Fixture.Service.ReadDatasetAsync(ct);
+        var source=CorrectionSource(b.Fixture,NewSource(b.Fixture),existingId);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
+        var divergent=analysis.AcceptedTransactions.Single(t=>t.ExternalId==existingId);Demand(divergent.GrossClp.ToString(CultureInfo.InvariantCulture)!=wanted.Single(f=>f.Id==existingId).Gross,"history_test_conflict_not_divergent");
+        var assignments=analysis.AcceptedTransactions.Select(t=>t.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select((g,i)=>new HistoricalMerchantAssignment(g.First(),"conflict-scope-"+i,"conflict-binding-"+i,"Synthetic independent mapping")).ToArray();
+        var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,before.DatasetId,before.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
+        _phase="conflict_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourceSha=Hash(await File.ReadAllBytesAsync(source)),operation=Guid.Parse(plan.OperationId).ToString("D")},ct);await WaitSignal("allow_conflict_prepare",ct);
+        _phase="conflict_preparation";var denied=false;
+        using(var publicationUse=HistoricalPublicationOperationUse.Begin(b.Fixture.Db.Factory,plan.OperationId))
+        using(var draft=await b.Fixture.Service.PreparePublicationDraftAsync(plan,b.Generation.ShopDeviceId,ct))
+        {
+            try{await Admit(b,draft,ct);}
+            catch(InvalidOperationException e)when(e.Message=="history_test_http_request_rejected"&&b.LastRequestCode=="history_cloud_writer_closed"){denied=true;}
+        }
+        Demand(denied,"history_test_conflicting_grant_accepted");var after=await b.Fixture.Service.ReadDatasetAsync(ct);Demand(after.DatasetId==before.DatasetId&&after.DataRevision==before.DataRevision&&b.LocalFacts().Length==0,"history_test_conflict_changed_ledger");
+        // Once the same live operation ownership as WPF is released, the real
+        // supervisor seals and reconciles the negative outcome itself.
+        await b.Until(()=>{using var read=b.Fixture.Db.Factory.Open();return Task.FromResult(read.ExecuteScalar<string>("SELECT server_resolution FROM historical_commit_witness WHERE operation_id=@op",new{op=plan.OperationId})=="aborted");},ct);
+        Same(wanted,a.Facts());Same(wanted,b.Facts());a.NoNative();b.NoNative();
+        _phase="conflict";await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_CONFLICT_DENIED_ABORT_RECONCILED",operation=Guid.Parse(plan.OperationId).ToString("D"),count=wanted.Length,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",wanted.Select(f=>f.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);await WaitSignal("conflict_observed",ct);
     }
     static async Task AdminOrigin(Session a,Session b,Fact[] before,CancellationToken ct)
     {
@@ -320,6 +353,7 @@ internal static class AuthenticatedHistoryServiceHarness
     {
         internal HistoricalCloudExportTests.Fixture Fixture=null!;internal OnlineSyncGeneration Generation=null!;
         PosAdminWebClient _client=null!;OnlineSyncSupervisor _supervisor=null!;Actor _actor=new();bool _active=true;string _server="";long _epoch;
+        internal string LastRequestCode{get;private set;}="";
         internal static async Task<Session> Create(Actor actor,bool legacy,HistoricalCloudExportTests.Fixture? existing=null)
         {
             var s=new Session{_actor=actor};s.Fixture=existing??await HistoricalCloudExportTests.Fixture.CreateAsync(deviceId:actor.deviceId,seedLegacy:legacy);s.Fixture.KeepFiles=true;
@@ -342,7 +376,7 @@ internal static class AuthenticatedHistoryServiceHarness
         internal async Task<HistoricalCloudResult> Request(string operation,HistoricalCloudPayload payload,CancellationToken ct)
         {
             Demand();var result=await _client.HistoricalCloudAsync(new HistoricalCloudRequest{DeviceId=_actor.deviceId,SessionId=_actor.sessionId,DeviceToken=_actor.deviceToken,SessionToken=_actor.sessionToken,Operation=operation,Payload=payload},ct);
-            _lastCode=result.Code;
+            _lastCode=result.Code;LastRequestCode=result.Code;
             AuthenticatedHistoryServiceHarness.Demand(result.Success&&result.Value?.Ok==true&&result.Value.ShopId==_scope.shopId&&result.Value.DeviceId==_actor.deviceId&&result.Value.SessionId==_actor.sessionId,"history_test_http_request_rejected");return result.Value!.Result;
         }
         internal async Task<bool> HasBaseline()
