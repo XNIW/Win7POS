@@ -35,17 +35,18 @@ namespace Win7POS.Wpf.Pos
             }
             actor.DemandCurrent();ct.ThrowIfCancellationRequested();return value??throw new InvalidOperationException("history_cloud_response_invalid");
         }
-        private async Task<HistoricalLocalWriteGrant> AcquireHistoricalLocalWriteAsync(OperatorSession session,string shop,string operation,HistoricalImportOperationKind kind,CancellationToken ct)
+        private async Task<HistoricalLocalWriteGrant> AcquireHistoricalLocalWriteAsync(OperatorSession session,string shop,string operation,HistoricalImportOperationKind kind,HistoricalPublicationDraft draft,CancellationToken ct)
         {
-            var actor=session.CaptureHistoricalCloudActor(shop);var elapsed=Stopwatch.StartNew();
+            var actor=session.CaptureHistoricalCloudActor(shop);
+            if(draft==null||draft.ShopId!=shop||draft.DeviceId!=actor.Trusted.ShopDeviceId||draft.OperationId!=operation||draft.Kind!=kind.ToString())
+                throw new InvalidOperationException("history_publication_content_required");
             var authority=await RequestHistoricalCloudAsync(actor,"authority",null,ct).ConfigureAwait(false);
             await new HistoricalReplicaStore(_factory,actor.DemandCurrent).ObserveAuthorityAsync(shop,authority,ct).ConfigureAwait(false);
             if(authority.WriterAuthority!="local"||authority.ProtocolVersion!=1)throw new InvalidOperationException("history_local_writer_closed");
-            var id=Guid.Parse(operation).ToString("D");
-            var granted=await RequestHistoricalCloudAsync(actor,"local_write_grant",new HistoricalCloudPayload{OperationId=id,Kind=kind.ToString(),WriterEpoch=authority.WriterEpoch},ct).ConfigureAwait(false);
-            HistoricalReplicaProtocol.DemandId(granted.GrantId);
-            if(granted.OperationId!=id||granted.WriterEpoch!=authority.WriterEpoch)throw new InvalidOperationException("history_local_write_grant_invalid");
-            return new HistoricalLocalWriteGrant(id,granted.WriterEpoch,granted.RemainingMilliseconds,elapsed.ElapsedMilliseconds,actor.DemandCurrent);
+            var granted=await new HistoricalPublicationPreparer(actor.DemandCurrent,
+                (op,payload,token)=>RequestHistoricalCloudAsync(actor,op,payload,token)).PrepareAsync(draft,authority,ct).ConfigureAwait(false);
+            return new HistoricalLocalWriteGrant(Guid.Parse(operation).ToString("D"),authority.WriterEpoch,granted.RemainingMilliseconds,
+                granted.GrantRequestElapsedMilliseconds,actor.DemandCurrent,publicationProof:granted.Proof);
         }
         public async Task<HistoricalReplicaState> ReadHistoricalCloudStateAsync(OperatorSession session,CancellationToken ct)
         {

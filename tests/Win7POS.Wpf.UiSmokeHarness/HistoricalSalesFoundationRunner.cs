@@ -374,6 +374,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal PosWorkflowService CreateWorkflow(string rejection = null)
             {
                 var workflow = new PosWorkflowService(Options, () => DateTimeOffset.UtcNow);
+                var publication=new HistoricalPublicationAdmissionFixture(ShopId,Generation.ShopDeviceId,"90000000-0000-4000-8000-000000003019");
                 workflow.SetHistoricalCloudRequestForTesting((actor, operation, payload, ct) =>
                 {
                     ct.ThrowIfCancellationRequested(); actor.DemandCurrent();
@@ -383,9 +384,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         if (rejection == "offline") throw new InvalidOperationException("qa_history_cloud_offline");
                         return Task.FromResult(new HistoricalCloudResult { DatasetId = "90000000-0000-4000-8000-000000003019", Revision = "0", WriterEpoch = "1", WriterAuthority = rejection == "frozen" || rejection == "web" ? rejection : "local", ProtocolVersion = 1 });
                     }
-                    if (operation != "local_write_grant" || payload.WriterEpoch != "1" || (payload.Kind != "Apply" && payload.Kind != "Undo")) throw new InvalidOperationException("qa_history_cloud_operation_invalid");
-                    HistoricalReplicaProtocol.DemandId(payload.OperationId); LocalWriteRequests++;
-                    return Task.FromResult(new HistoricalCloudResult { GrantId = Guid.NewGuid().ToString("D"), OperationId = rejection == "wrong_operation" ? Guid.NewGuid().ToString("D") : payload.OperationId, WriterEpoch = "1", RemainingMilliseconds = rejection == "expired" ? 0 : 60000 });
+                    var result=publication.Request(operation,payload,rejection);LocalWriteRequests=publication.Authorizations;
+                    return Task.FromResult(result);
                 });
                 return workflow;
             }

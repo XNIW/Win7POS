@@ -107,7 +107,8 @@ namespace Win7POS.Wpf.Pos
         {
             return await RunHistoricalMutationAsync(HistoricalImportOperationKind.Apply, plan.OperationId, plan.RequestFingerprint, plan.ShopId,
                 plan.DatasetId, plan.RestoreEpoch, session, plan,
-                (guard, sources, admission, admitted) => HistoricalLedger.ApplyAsync(plan, guard, AllocateDbBackupPath("pos_pre_history_"), ct, sources, admission, admitted), ct).ConfigureAwait(false);
+                (device,token)=>HistoricalLedger.PreparePublicationDraftAsync(plan,device,token),
+                (guard, sources, admission, admitted, draft, proof) => HistoricalLedger.ApplyAsync(plan, guard, AllocateDbBackupPath("pos_pre_history_"), ct, sources, admission, admitted,draft,proof), ct).ConfigureAwait(false);
         }
         public async Task<HistoricalSalesOperationReceipt> UndoHistoricalSalesAsync(HistoricalSalesBatch batch, OperatorSession session, CancellationToken ct)
         {
@@ -118,14 +119,15 @@ namespace Win7POS.Wpf.Pos
             var op = Guid.NewGuid().ToString("N");
             var fingerprint = HistoricalSalesImportPlan.UndoFingerprint(op, shop.ShopId, state.DatasetId, batch.Id, batch.Revision, epoch);
             return await RunHistoricalMutationAsync(HistoricalImportOperationKind.Undo, op, fingerprint, shop.ShopId, state.DatasetId, epoch, session, null,
-                (guard, sources, admission, admitted) => HistoricalLedger.UndoAsync(batch.Id, batch.Revision, guard, AllocateDbBackupPath("pos_pre_history_undo_"), ct, admission, admitted), ct).ConfigureAwait(false);
+                (device,token)=>HistoricalLedger.PrepareUndoPublicationDraftAsync(op,shop.ShopId,device,state.DatasetId,epoch,batch.Id,batch.Revision,token),
+                (guard, sources, admission, admitted, draft, proof) => HistoricalLedger.UndoAsync(batch.Id, batch.Revision, guard, AllocateDbBackupPath("pos_pre_history_undo_"), ct, admission, admitted,draft,proof), ct).ConfigureAwait(false);
         }
         private async Task<HistoricalSalesOperationReceipt> RunHistoricalMutationAsync(HistoricalImportOperationKind kind, string op, string fingerprint, string shopId,
             string dataset, long epoch, OperatorSession session, HistoricalSalesImportPlan sourcePlan,
-            Func<HistoricalImportAuthorizationCommitGuard, HistoricalSalesVerifiedSources, CancellationToken, Action, Task<HistoricalSalesOperationReceipt>> mutation, CancellationToken ct)
+            Func<string,CancellationToken,Task<HistoricalPublicationDraft>> preparePublication,
+            Func<HistoricalImportAuthorizationCommitGuard, HistoricalSalesVerifiedSources, CancellationToken, Action, HistoricalPublicationDraft,HistoricalPublicationProof,Task<HistoricalSalesOperationReceipt>> mutation, CancellationToken ct)
         {
             using var admission = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            admission.CancelAfter(_historicalAdmissionBudget);
             var readAuthority = session.CaptureHistoricalReadAuthority(kind, shopId);
             var replay = await HistoricalLedger.TryReplayAsync(new HistoricalSalesOperationIdentity(kind, op, fingerprint, shopId, dataset), admission.Token).ConfigureAwait(false);
             if (replay != null)
@@ -141,7 +143,13 @@ namespace Win7POS.Wpf.Pos
             var expectedAuthority = _factory.AuthorityStamp;
             // All HTTP admission finishes before backup maintenance, workflow
             // serialization or the catalog barrier. Commit rechecks this stamp.
-            var writerGrant = await AcquireHistoricalLocalWriteAsync(session,shopId,op,kind,admission.Token).ConfigureAwait(false);
+            var actor=session.CaptureHistoricalCloudActor(shopId);
+            using var publication=await preparePublication(actor.Trusted.ShopDeviceId,admission.Token).ConfigureAwait(false);
+            actor.DemandCurrent();
+            var writerGrant = await AcquireHistoricalLocalWriteAsync(session,shopId,op,kind,publication,admission.Token).ConfigureAwait(false);
+            // Content staging precedes the short admission/maintenance window.
+            // No fallback can create a new commit with a v1 identity-only grant.
+            admission.CancelAfter(_historicalAdmissionBudget);
             readAuthority.DemandStillValid();
             if (Interlocked.CompareExchange(ref _historicalMaintenance, 1, 0) != 0) throw new InvalidOperationException("historical_maintenance_active");
             var ownsGate = false;
@@ -157,7 +165,7 @@ namespace Win7POS.Wpf.Pos
                 }, admission.Token).ConfigureAwait(false);
                 using var catalog = await new CatalogShopTransitionBarrier(_factory).EnterAsync(admission.Token).ConfigureAwait(false);
                 var receipt = await Task.Run(() => mutation(authorization.Guard, sources, admission.Token,
-                    () => admission.CancelAfter(Timeout.InfiniteTimeSpan)), ct).ConfigureAwait(false);
+                    () => admission.CancelAfter(Timeout.InfiniteTimeSpan),publication,writerGrant.PublicationProof), ct).ConfigureAwait(false);
                 SignalHistoricalPublication();
                 return receipt;
             }

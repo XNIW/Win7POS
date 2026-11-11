@@ -96,7 +96,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task<bool> CloudWriterDenialsAsync(string data, HistoricalSalesQaCase test)
         {
-            foreach (var reason in new[] { "frozen", "web", "offline", "wrong_operation", "expired" })
+            foreach (var reason in new[] { "frozen", "web", "offline", "wrong_operation", "expired", "v1_only" })
             {
                 using var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data);
                 var plan = await f.PlanAsync(); var before = f.State(); var workflow = f.CreateWorkflow(reason); var denied = false;
@@ -174,14 +174,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             if (changeReview && (f.Count("historical_import_operation") != 0 || f.Count("historical_transactions") != 0 ||
                                 model.ApplyCommand.CanExecute(null) || model.Status != Win7POS.Wpf.Localization.PosLocalization.T("history.reviewStale"))) return false;
                         }
-                        return confirmationDeniedReentry && f.LocalWriteRequests == 1 && model.Batches.Count == 1 && model.Batches[0].Rows == 5 &&
+                        var contentProofSaved=await Task.Run(()=>
+                        {
+                            using var c=f.Factory.Open();
+                            return c.ExecuteScalar<long>("SELECT count(*) FROM historical_publication_outbox WHERE proof_json IS NOT NULL AND grant_id IS NOT NULL AND writer_epoch=1 AND length(content_digest)=64")==1;
+                        });
+                        return contentProofSaved && confirmationDeniedReentry && f.LocalWriteRequests == 1 && model.Batches.Count == 1 && model.Batches[0].Rows == 5 &&
                             model.Status.Contains(model.Batches[0].ApplyOperationId) && f.Count("historical_import_operation") == 1;
                     }
                     finally
                     {
                         confirm?.Stop(); AppDomain.CurrentDomain.FirstChanceException -= failure;
                         foreach (var popup in Application.Current.Windows.OfType<Win7POS.Wpf.Import.ApplyConfirmDialog>().Where(w => w.Owner == dialog).ToArray()) popup.Close();
-                        dialog.Close(); owner.Close(); workflow.BackupAutomation.Dispose();
+                        dialog.Close();
+                        // Own the automatic read triggered by publication through
+                        // cancellation/close before retiring this fixture's DB.
+                        var cleanup=System.Diagnostics.Stopwatch.StartNew();
+                        while(model.IsBusy&&cleanup.Elapsed<TimeSpan.FromSeconds(2))await Dispatcher.Yield(DispatcherPriority.Background);
+                        if(dialog.IsVisible&&!model.IsBusy)dialog.Close();
+                        if(model.IsBusy||dialog.IsVisible)throw new InvalidOperationException("qa_history_receipt_cleanup_not_drained");
+                        owner.Close(); workflow.BackupAutomation.Dispose();
                     }
                 }
             }

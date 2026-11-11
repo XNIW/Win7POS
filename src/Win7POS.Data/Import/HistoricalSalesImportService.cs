@@ -227,6 +227,27 @@ WHERE t.id=@id AND t.shop_id=@ShopId AND b.dataset_id=@DatasetId AND t.is_active
                 // database lock spans serialization or later HTTP preparation.
                 return HistoricalPublicationDraft.ForApply(plan,device,lineage,owners,ct);
             },ct);
+        public Task<HistoricalPublicationDraft> PrepareUndoPublicationDraftAsync(string operation,string shop,string device,string dataset,long restore,
+            string batchId,long batchRevision,CancellationToken ct)
+            =>Task.Run(()=>
+            {
+                ct.ThrowIfCancellationRequested();var stamp=_authority();
+                if(stamp.RestoreEpoch!=restore)throw new InvalidOperationException("historical_plan_stale");
+                HistoricalSalesDatasetState state;PublicationOwnerRow batch;
+                using(var c=_factory.Open())
+                using(var tx=c.BeginTransaction(deferred:true))
+                {
+                    state=c.QuerySingle<HistoricalSalesDatasetState>("SELECT dataset_id AS DatasetId,data_revision AS DataRevision,(SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id') AS RestoreLineageId FROM historical_import_dataset WHERE singleton_id=1",transaction:tx);
+                    batch=c.QuerySingleOrDefault<PublicationOwnerRow>(@"SELECT b.id AS BatchId,b.apply_operation_id AS ApplyOperationId
+FROM historical_import_batch b JOIN historical_import_operation o ON o.operation_id=b.apply_operation_id AND o.batch_id=b.id AND o.shop_id=b.shop_id AND o.dataset_id=b.dataset_id AND o.operation_kind='Apply'
+WHERE b.id=@batchId AND b.shop_id=@shop AND b.dataset_id=@dataset AND b.revision=@batchRevision AND b.state='Active'",new{batchId,shop,dataset,batchRevision},tx);
+                    if(state.DatasetId!=dataset||batch==null)throw new InvalidOperationException("historical_batch_stale");
+                    tx.Commit();
+                }
+                var current=_authority();ct.ThrowIfCancellationRequested();
+                if(current.RestoreEpoch!=stamp.RestoreEpoch||current.AuthorityInstanceEpoch!=stamp.AuthorityInstanceEpoch)throw new InvalidOperationException("historical_plan_stale");
+                return HistoricalPublicationDraft.ForUndo(operation,shop,device,dataset,restore,state.DataRevision,batchId,batchRevision,batch.ApplyOperationId,state.RestoreLineageId);
+            },ct);
         private sealed class PublicationOwnerRow{public string BatchId{get;set;} public string ApplyOperationId{get;set;}}
         public async Task<IReadOnlyList<HistoricalMerchantBindingInfo>> GetMerchantBindingsAsync(string shopId, CancellationToken ct)
         {
@@ -442,6 +463,7 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 result = Replay(c, tx, guard); if (result != null) { tx.Rollback(); return; }
                 DemandDataset(c, tx, guard, null);
                 var baseRevision=c.ExecuteScalar<long>("SELECT data_revision FROM historical_import_dataset WHERE singleton_id=1",transaction:tx);
+                if(publicationDraft!=null&&publicationDraft.BaseRevision!=baseRevision)throw new InvalidOperationException("historical_plan_stale");
                 var batch = c.QuerySingleOrDefault<HistoricalSalesBatch>("SELECT id,state,revision FROM historical_import_batch WHERE id=@batchId AND shop_id=@ShopId", new { batchId, guard.ShopId }, tx);
                 if (batch == null || batch.Revision != expectedBatchRevision || batch.State != "Active") throw new InvalidOperationException("historical_batch_stale");
                 var amount = c.ExecuteScalar<long>("SELECT COALESCE(SUM(signed_amount_clp),0) FROM historical_transactions WHERE batch_id=@batchId AND is_active=1", new { batchId }, tx);

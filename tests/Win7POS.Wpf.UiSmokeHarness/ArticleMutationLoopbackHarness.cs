@@ -1494,6 +1494,8 @@ GROUP BY mutation_kind;")).ToDictionary(
             private TaskCompletionSource<bool> _releaseNextCatalogResponse =
                 new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             private readonly TcpListener _listener;
+            private readonly HistoricalPublicationAdmissionFixture _historicalPublication =
+                new HistoricalPublicationAdmissionFixture(ShopId,DeviceId,"90000000-0000-4000-8000-000000000245");
             private readonly Task _serverTask;
             private readonly Dictionary<string, RemoteProduct> _products =
                 new Dictionary<string, RemoteProduct>(
@@ -1748,9 +1750,10 @@ GROUP BY mutation_kind;")).ToDictionary(
                         string result;
                         if (history.Operation == "authority")
                             result = "{\"dataset_id\":\"90000000-0000-4000-8000-000000000245\",\"revision\":\"0\",\"writer_epoch\":\"1\",\"writer_authority\":\"local\",\"inventory_verified\":false,\"protocol_version\":1}";
-                        else if (history.Operation == "local_write_grant" && history.Payload?.WriterEpoch == "1" &&
-                            (history.Payload.Kind == "Apply" || history.Payload.Kind == "Undo") && Guid.TryParseExact(history.Payload.OperationId, "D", out var operation))
-                            result = "{\"grant_id\":\"" + Guid.NewGuid().ToString("D") + "\",\"operation_id\":\"" + operation.ToString("D") + "\",\"writer_epoch\":\"1\",\"remaining_milliseconds\":60000}";
+                        else if (history.Operation == "local_prepare" || history.Operation == "local_stage" || history.Operation == "local_authorize")
+                        {
+                            lock(_gate) result=HistoricalPublicationAdmissionFixture.Wire(history.Operation,_historicalPublication.Request(history.Operation,history.Payload));
+                        }
                         else
                         {
                             await WriteResponseAsync(stream, 400, Encoding.UTF8.GetBytes("{\"ok\":false,\"code\":\"history_input_invalid\"}"), cancellationToken).ConfigureAwait(false);

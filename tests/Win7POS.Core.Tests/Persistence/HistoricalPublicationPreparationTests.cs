@@ -121,4 +121,41 @@ public sealed partial class HistoricalLedgerTests
         {calls++;return Task.FromResult(PreparationGrant(draft));}).PrepareAsync(draft,state,default));
         Assert.AreEqual(0,calls);
     }
+
+    [TestMethod]
+    public async Task PublicationPreparation_UndoReadsTheExistingApplyAndExactLocalRevisionBeforeAdmission()
+    {
+        using var f=new Fixture();var plan=await f.Plan();var apply=await f.Service.ApplyAsync(plan,f.Guard(plan),f.Backup(),default);
+        var guard=f.UndoGuard(apply.BatchId,1);var state=await f.Service.ReadDatasetAsync(default);
+        using var draft=await f.Service.PrepareUndoPublicationDraftAsync(guard.OperationId,guard.ShopId,guard.DeviceId,guard.DatasetId,guard.RestoreEpoch,apply.BatchId,1,default);
+        Assert.AreEqual(state.DataRevision,draft.BaseRevision);Assert.AreEqual("Undo",draft.Kind);
+        StringAssert.Contains(draft.ReadPage(1,default).Json,plan.OperationId);
+        var receipt=await f.Service.UndoAsync(apply.BatchId,1,guard,f.Backup(),default,publicationDraft:draft);
+        Assert.AreEqual("Undone",receipt.CurrentBatchState);
+        using var c=f.Factory.Open();Assert.AreEqual(plan.OperationId,c.ExecuteScalar<string>("SELECT depends_on_operation_id FROM historical_publication_outbox WHERE operation_id=@id",new{id=guard.OperationId}));
+        Assert.AreEqual(draft.ContentDigest,c.ExecuteScalar<string>("SELECT content_digest FROM historical_publication_outbox WHERE operation_id=@id",new{id=guard.OperationId}));
+    }
+
+    [TestMethod]
+    public async Task PublicationPreparation_UndoCannotCommitAfterAnotherLocalHistoricalRevision()
+    {
+        using var f=new Fixture();var plan=await f.Plan();var apply=await f.Service.ApplyAsync(plan,f.Guard(plan),f.Backup(),default);
+        var guard=f.UndoGuard(apply.BatchId,1);
+        using var draft=await f.Service.PrepareUndoPublicationDraftAsync(guard.OperationId,guard.ShopId,guard.DeviceId,guard.DatasetId,guard.RestoreEpoch,apply.BatchId,1,default);
+        var other=await f.Plan(id:"other");await f.Service.ApplyAsync(other,f.Guard(other),f.Backup(),default);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.UndoAsync(apply.BatchId,1,guard,f.Backup(),default,publicationDraft:draft));
+        using var c=f.Factory.Open();Assert.AreEqual("Active",c.ExecuteScalar<string>("SELECT state FROM historical_import_batch WHERE id=@id",new{id=apply.BatchId}));
+        Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT count(*) FROM historical_import_operation WHERE operation_id=@id",new{id=guard.OperationId}));
+        Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT count(*) FROM historical_publication_outbox WHERE operation_id=@id",new{id=guard.OperationId}));
+    }
+
+    [TestMethod]
+    public async Task PublicationPreparation_UndoRejectsForeignOrStaleBatchesBeforeStaging()
+    {
+        using var f=new Fixture();var plan=await f.Plan();var apply=await f.Service.ApplyAsync(plan,f.Guard(plan),f.Backup(),default);
+        var guard=f.UndoGuard(apply.BatchId,1);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.PrepareUndoPublicationDraftAsync(guard.OperationId,"other-shop",guard.DeviceId,guard.DatasetId,guard.RestoreEpoch,apply.BatchId,1,default));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.PrepareUndoPublicationDraftAsync(guard.OperationId,guard.ShopId,guard.DeviceId,guard.DatasetId,guard.RestoreEpoch,apply.BatchId,2,default));
+        using var c=f.Factory.Open();Assert.AreEqual(1L,c.ExecuteScalar<long>("SELECT count(*) FROM historical_publication_outbox"));
+    }
 }
