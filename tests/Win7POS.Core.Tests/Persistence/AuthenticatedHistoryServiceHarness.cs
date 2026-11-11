@@ -29,6 +29,7 @@ internal static class AuthenticatedHistoryServiceHarness
         public string clientSha{get;set;}="";public string shopId{get;set;}="";public string staffId{get;set;}="";
         public int credentialVersion{get;set;}public Actor actorA{get;set;}=new();public Actor actorB{get;set;}=new();
         public bool extendedCases{get;set;}
+        public bool faultCases{get;set;}public RestartCheckpoint? restart{get;set;}
     }
     sealed class Fact
     {
@@ -38,6 +39,16 @@ internal static class AuthenticatedHistoryServiceHarness
         internal string Key=>BasicKey+"|"+(Fee??"null")+"|"+(Vat??"null")+"|"+(Net??"null");
     }
     sealed class Binding{public string Scope{get;set;}="";public string Id{get;set;}="";public string Evidence{get;set;}="";}
+    sealed class SavedFixture
+    {
+        public string root{get;set;}="";public string token{get;set;}="";public string dataset{get;set;}="";public string lineage{get;set;}="";
+        public long revision{get;set;}public string originalReceipt{get;set;}="";public string generation{get;set;}="";
+    }
+    sealed class RestartCheckpoint
+    {
+        public string schema{get;set;}="asus019-restart-v1";public string nonce{get;set;}="";public string operation{get;set;}="";
+        public SavedFixture a{get;set;}=new();public SavedFixture b{get;set;}=new();public Fact[] wanted{get;set;}=Array.Empty<Fact>();public string[] newIds{get;set;}=Array.Empty<string>();
+    }
     static string _phase="preflight",_directory="",_lastCode="";static Scope _scope=new();
     static readonly JsonSerializerOptions Json=new(){PropertyNameCaseInsensitive=false};
     static void Demand(bool condition,string code){if(!condition)throw new InvalidOperationException(code);}
@@ -54,6 +65,7 @@ internal static class AuthenticatedHistoryServiceHarness
             HistoricalReplicaProtocol.DemandId(_scope.staffId);HistoricalReplicaProtocol.DemandId(_scope.actorA.deviceId);HistoricalReplicaProtocol.DemandId(_scope.actorB.deviceId);
             Demand(_scope.actorA.deviceId!=_scope.actorB.deviceId&&_scope.credentialVersion>0&&System.Text.RegularExpressions.Regex.IsMatch(_scope.clientSha,"^[0-9a-f]{40}$"),"history_test_scope_invalid");
             using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(_scope.extendedCases?6:4));var ct=deadline.Token;
+            if(_scope.restart!=null)return await ResumeAfterLostAck(_scope.restart,ct);
             await using var a=await Session.Create(_scope.actorA,true);await using var b=await Session.Create(_scope.actorB,false);
             var original=a.LocalFacts();Demand(original.Length>0&&b.LocalFacts().Length==0,"history_test_initial_ledger");
             _phase="initial_baseline";await a.Until(a.HasBaseline,ct);await b.Until(b.HasBaseline,ct);await a.Turn(ct);
@@ -84,6 +96,7 @@ internal static class AuthenticatedHistoryServiceHarness
             await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_CORE_DATA_ROUNDTRIP",count=wanted.Length,facts=wanted,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",wanted.Select(x=>x.Key)))),newIds=expected.Select(x=>x.Id)},ct);
             await WaitSignal("admin_observed",ct);
             if(_scope.extendedCases)await DuplicateAndUndo(a,b,source,receipt,before,wanted,ct);
+            if(_scope.faultCases){await CheckpointLostAck(a,b,ct);return 0;}
             _phase="complete";Console.WriteLine("authenticated_history_core_data_pass");return 0;
         }
         catch(Exception e)
@@ -184,6 +197,69 @@ internal static class AuthenticatedHistoryServiceHarness
         await SaveState(new{phase,nonce=_scope.nonce,status="PASS_CORE_DATA_CASE",count=facts.Length,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",facts.Select(x=>x.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);
         await WaitSignal(phase+"_observed",ct);
     }
+    static async Task<SavedFixture> CaptureFixture(Session session,CancellationToken ct)
+    {
+        var state=await session.Fixture.Service.ReadDatasetAsync(ct);
+        return new(){root=session.Fixture.Root,token=session.Fixture.Db.FixtureToken,dataset=state.DatasetId,lineage=state.RestoreLineageId,revision=state.DataRevision,originalReceipt=session.Fixture.OriginalReceipt,generation=session.Generation.Fingerprint};
+    }
+    static async Task<HistoricalCloudExportTests.Fixture> ReopenFixture(SavedFixture saved,Actor actor,CancellationToken ct)
+    {
+        Demand(Path.IsPathFullyQualified(saved.root)&&Guid.TryParseExact(saved.token,"N",out _),"history_test_restart_capability");
+        var path=Path.GetFullPath(saved.root);var temporary=Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar;
+        Demand(path.StartsWith(temporary,StringComparison.Ordinal)&&System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(path),"^W7HC\\.[0-9a-f]{32}$"),"history_test_restart_owned_root");
+        Win7POS.Data.PosDatabasePathIdentity.RejectReparseComponents(path);
+        var fixture=new HistoricalCloudExportTests.Fixture{Root=path,BoundDevice=actor.deviceId,OriginalReceipt=saved.originalReceipt,KeepFiles=true};
+        fixture.Db=Win7POS.Core.Tests.Data.OwnedSqliteTestFile.Reopen(Path.Combine(path,"profile","fixture.db"),saved.token);
+        fixture.Service=new HistoricalSalesImportService(fixture.Db.Factory,()=>fixture.Db.Factory.AuthorityStamp);
+        var current=await fixture.Service.ReadDatasetAsync(ct);
+        Demand(current.DatasetId==saved.dataset&&current.DataRevision==saved.revision&&current.RestoreLineageId==saved.lineage,"history_test_restart_ledger_changed");return fixture;
+    }
+    static async Task CheckpointLostAck(Session a,Session b,CancellationToken ct)
+    {
+        _phase="fault_source_ready";var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
+        var expected=analysis.AcceptedTransactions.Where(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19).Select(ToFact).ToArray();Demand(expected.Length==1,"history_test_fault_source");
+        await SaveState(new{phase=_phase,nonce=_scope.nonce,sourceSha=Hash(await File.ReadAllBytesAsync(source)),expected},ct);await WaitSignal("allow_fault_apply",ct);
+        _phase="lost_ack";var before=a.Facts();var dataset=await a.Fixture.Service.ReadDatasetAsync(ct);
+        // Hold the real lost-ACK state until the next process. The original
+        // automatic lane is drained; recovery resumes via a new supervisor.
+        await a.DrainAutomatic(ct);
+        var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,dataset.DatasetId,dataset.DataRevision,0,analysis,ReadAssignments(a,analysis),new DateTime(2025,1,1),"Synthetic service harness approved start");
+        using(var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct))
+        {
+            var admission=await Admit(a,draft,ct);await a.Fixture.Service.ApplyAsync(plan,admission.guard,Path.Combine(a.Fixture.Output,"lost-ack-apply.db"),ct,publicationDraft:draft,publicationProof:admission.admission.Proof);
+        }
+        var dropped=false;
+        async Task<HistoricalCloudResult> DropActualAck(string operation,HistoricalCloudPayload payload,CancellationToken token)
+        {
+            var reply=await a.Request(operation,payload,token);
+            if(operation=="local_reconcile"&&!dropped){Demand(reply.PublicationReceipt!=null,"history_test_lost_ack_receipt_absent");dropped=true;throw new HistoricalCloudRequestException("history_timeout",false,true);}
+            return reply;
+        }
+        try{await new HistoricalPublicationSender(new HistoricalPublicationOutbox(a.Fixture.Db.Factory),a.Generation,a.Demand,DropActualAck).RunAsync(ct);}
+        catch(HistoricalCloudRequestException e)when(dropped&&e.Code=="history_timeout"){}
+        Demand(dropped,"history_test_fault_not_exercised");var status=await new HistoricalPublicationOutbox(a.Fixture.Db.Factory).ReadStatusAsync(plan.OperationId,_scope.shopId,ct);
+        Demand(status?.Status=="uncertain","history_test_lost_ack_not_durable");
+        var wanted=before.Concat(expected).ToArray();await b.Until(()=>Task.FromResult(Equal(wanted,b.Facts())),ct);
+        // A pulls through the real replica service while its original ACK is
+        // still absent; it must not create an echo or clear the pending fact.
+        await a.PullUntil(()=>Equal(wanted,a.Facts()),ct);
+        status=await new HistoricalPublicationOutbox(a.Fixture.Db.Factory).ReadStatusAsync(plan.OperationId,_scope.shopId,ct);Demand(status?.Status=="uncertain","history_test_pull_forgave_ack");
+        a.NoNative();b.NoNative();
+        var checkpoint=new RestartCheckpoint{nonce=_scope.nonce,operation=plan.OperationId,a=await CaptureFixture(a,ct),b=await CaptureFixture(b,ct),wanted=wanted,newIds=expected.Select(f=>f.Id).ToArray()};
+        await File.WriteAllTextAsync(Path.Combine(_directory,"restart.private.json"),JsonSerializer.Serialize(checkpoint),ct);
+        _phase="restart_pending";await SaveState(new{phase=_phase,nonce=_scope.nonce,operation=Guid.Parse(plan.OperationId).ToString("D"),count=wanted.Length,newIds=checkpoint.newIds,ackDroppedAfterRealReceipt=true,pullBeforeAck=true},ct);
+        Console.WriteLine("authenticated_history_restart_checkpoint");
+    }
+    static async Task<int> ResumeAfterLostAck(RestartCheckpoint checkpoint,CancellationToken ct)
+    {
+        _phase="restart_recovery";Demand(_scope.faultCases&&checkpoint.schema=="asus019-restart-v1"&&checkpoint.nonce==_scope.nonce&&Guid.TryParse(checkpoint.operation,out _),"history_test_restart_scope");
+        await using var a=await Session.Create(_scope.actorA,false,await ReopenFixture(checkpoint.a,_scope.actorA,ct));
+        await using var b=await Session.Create(_scope.actorB,false,await ReopenFixture(checkpoint.b,_scope.actorB,ct));
+        Demand(a.Generation.Fingerprint!=checkpoint.a.generation&&b.Generation.Fingerprint!=checkpoint.b.generation,"history_test_restart_generation_reused");
+        await Converge(a,b,checkpoint.operation,checkpoint.wanted,ct);
+        _phase="restart_recovered";await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_LOST_ACK_RESTART_PULL_BEFORE_ACK",count=checkpoint.wanted.Length,operation=Guid.Parse(checkpoint.operation).ToString("D"),newIds=checkpoint.newIds,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",checkpoint.wanted.Select(f=>f.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);
+        await WaitSignal("restart_observed",ct);Console.WriteLine("authenticated_history_restarted_pass");return 0;
+    }
     static async Task SaveState(object value,CancellationToken ct)
     {
         var target=Path.Combine(_directory,"client-state.private.json");var temporary=target+"."+Guid.NewGuid().ToString("N");
@@ -204,7 +280,7 @@ internal static class AuthenticatedHistoryServiceHarness
         var original=Path.Combine(AppContext.BaseDirectory,"fixtures","historical-sales-getnet-v1","synthetic-legacy.xlsx");
         var analyzed=new HistoricalSalesImportAnalyzer().Analyze(new[]{original},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
         var old=analyzed.AcceptedTransactions[0].ExternalId;var id="8"+DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture);
-        var target=Path.Combine(f.Output,"new-legacy.xlsx");using var input=ZipFile.OpenRead(original);using var output=ZipFile.Open(target,ZipArchiveMode.Create);var changed=0;
+        var target=Path.Combine(f.Output,"new-"+Guid.NewGuid().ToString("N")+".xlsx");using var input=ZipFile.OpenRead(original);using var output=ZipFile.Open(target,ZipArchiveMode.Create);var changed=0;
         foreach(var entry in input.Entries)
         {
             var next=output.CreateEntry(entry.FullName,CompressionLevel.Optimal);using var read=entry.Open();using var write=next.Open();
@@ -222,9 +298,9 @@ internal static class AuthenticatedHistoryServiceHarness
     {
         internal HistoricalCloudExportTests.Fixture Fixture=null!;internal OnlineSyncGeneration Generation=null!;
         PosAdminWebClient _client=null!;OnlineSyncSupervisor _supervisor=null!;Actor _actor=new();bool _active=true;string _server="";long _epoch;
-        internal static async Task<Session> Create(Actor actor,bool legacy)
+        internal static async Task<Session> Create(Actor actor,bool legacy,HistoricalCloudExportTests.Fixture? existing=null)
         {
-            var s=new Session{_actor=actor};s.Fixture=await HistoricalCloudExportTests.Fixture.CreateAsync(deviceId:actor.deviceId,seedLegacy:legacy);s.Fixture.KeepFiles=true;
+            var s=new Session{_actor=actor};s.Fixture=existing??await HistoricalCloudExportTests.Fixture.CreateAsync(deviceId:actor.deviceId,seedLegacy:legacy);s.Fixture.KeepFiles=true;
             s.Generation=new OnlineSyncGeneration(Guid.NewGuid().ToString("D"),actor.sessionId,actor.deviceId,_scope.shopId,"synthetic-service-harness",_scope.staffId,_scope.credentialVersion);
             await new OnlineSyncGenerationRepository(s.Fixture.Db.Factory).ActivateAndRecoverAsync(s.Generation,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             var options=new PosAdminWebOptions(new Uri(_scope.endpoint));s._client=new PosAdminWebClient(options);
@@ -254,6 +330,8 @@ internal static class AuthenticatedHistoryServiceHarness
         }
         internal async Task Turn(CancellationToken ct){var result=await _supervisor.TriggerAsync(OnlineSyncLane.HistoricalPayments,OnlineSyncLaneTrigger.Manual,ct);_lastCode=result.Code;AuthenticatedHistoryServiceHarness.Demand(result.Success,"history_test_supervisor_turn_failed");}
         internal async Task Until(Func<Task<bool>> ready,CancellationToken ct){for(var i=0;i<80;i++){await Turn(ct);if(await ready())return;await Task.Delay(500,ct);}throw new InvalidOperationException("history_test_convergence_timeout");}
+        internal async Task PullUntil(Func<bool> ready,CancellationToken ct){for(var i=0;i<80;i++){await new HistoricalReplicaSynchronizer(new HistoricalReplicaStore(Fixture.Db.Factory,Demand,Generation),Demand,Request).RunAsync(_scope.shopId,_scope.clientSha,ct);if(ready())return;await Task.Delay(250,ct);}throw new InvalidOperationException("history_test_pull_before_ack_timeout");}
+        internal Task DrainAutomatic(CancellationToken ct)=>_supervisor.StopAsync().WaitAsync(TimeSpan.FromSeconds(10),ct);
         internal Fact[] Facts()
         {
             using var c=Fixture.Db.Factory.Open();
