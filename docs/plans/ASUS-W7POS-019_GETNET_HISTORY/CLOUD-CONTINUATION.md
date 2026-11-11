@@ -1,7 +1,7 @@
 # ASUS019 — continuazione client cloud, Execution isolata
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
-## Composizione verificata — 20261111T201629Z, stessa ASUS-W7POS-019
+## Composizione verificata — 20261111T213523Z, stessa ASUS-W7POS-019
 
 Execution ACTIVE: cassa quotidiana e storico bilaterale. Tutti i file necessari
 autorizzati dall'utente. Qualifiche riferite agli SHA e agli artefatti seguenti;
@@ -12,7 +12,9 @@ documentazione in checkout separati, candidati delle run attive congelati.
 | Windows composto | 6cdaa2988030b3a140493d6239c8d5007603f55c; Windows-All43080480557, Security43080480554 | PASS16/16 e due job Security PASS; U19Win6cRemote01 verifica8entry, artifact13886737547 SHA2569de74b63, fingerprint6ea13878 | consegna e soaks propri |
 | Load composto | HIST_LOAD_50K, stesse soglie/carico | PASS11/11:571/571campioni,drop0,query391.7479ms/500,cold420.5537,maxDispatcher12.3842ms | non attribuisce la causa del vecchio gap059 |
 | Release esatta | 6c, Release43080678943; U19Release6c02/download-verification.json | PASS41file prodotto/110checksum; versione1.0.0-dev.6cdaa2988030, installer69c51811,payload0b88ee0f; development-unsigned, non installato | installazione/consegna separata |
-| Cassa ASUS sul pacchetto | QAartifact13884426672/da3147db,40file; Invoke-Composed6cAsusQualification02.private.ps1 | Integrated12PASS31cicli,focus29.410/scroll194.120ms,zero drop; U19Cart6c01/integrated-verified.private.json. Final60RUNNING da20:05:13Z, budget63970e30 invariato | risultato Final60 proprio, nessun PASS anticipato |
+| Cassa ASUS sul pacchetto | exact6c,QAartifact13884426672/da3147db,40file; U19Cart6c01 | Integrated12PASS31cicli focus29.410/scroll194.120ms; Final60PASS151cicli/3605.623s focus29.133/scroll194.686ms,zero drop. P95UI Rows212.029/Grid237.805ms;41file prodotto riverificati,budget63970e30 invariato. final-verified.private.json resultSHA8690882e | componente cassa qualificato, installazione/consegna e coppia storica ancora aperte |
+| MainWindow minimo | patch privata menu-focus,commitda6539c antenato6c | reverse patch check PASS; a chiusura animazione menu torna RestoreScannerFocus sulla scheda Cassa,altre schede HamburgerFocus. Esatto punto già incluso in All16/16 e soaks6c; autorizzazione utente riconfermata | nessun nuovo delta o PASS trasferito |
+| Diagnostica catalogo incollata | catalog.pull/db_failure HTTP500,UTC2026-07-26T12:00:00Z | corrisponde al campione sintetico RUNTIME_OBSERVABILITY,Program.cs2126-2146; non usata come prova di incidente attuale del negozio | nessuna modifica backend dedotta da questo campione |
 | Cassa precedente | d1b2bc3,pacchettoa07430ce/payload6b44ffe3 | ASUS PASS31cicli/max102.510ms e151/max97.826ms | risultati storici, non trasferiti al nuovo pacchetto |
 | Windows predecessori | 622PASS16/16;0e CI43078277359 eRelease43078654263 | 0e FAIL13PASS/1FAILbuild/2NOT_RUN, U19Win0eRemoteFail01; causa due API moderne nel solo helper condiviso net48, fix84b3015 incluso6c; intera soluzione Release PASS con solo CS8892 preesistente | FAIL conservato, non sommato ai successori |
 | Baseline canonica | 17f7081 e5512319, inclusi6c | RED conservati eGREEN74/74 (include51): prova applied originale dopo cambio epoca; delta vuoto avanzato richiede snapshot tramite fallback esistente, schema20/trigger invariati. WPFnet48x86 e dialog standards PASS | E2E completo ancora aperto |
@@ -22,8 +24,10 @@ documentazione in checkout separati, candidati delle run attive congelati.
 | Regressione scadenza | auth b61ff; U19StaffExpiryContract01 ecommitted-binding.private.json | RED2FAIL/4PASS, GREEN6/6: scadenza min(12h,credenziale), guardia runtime invariata; scaduto negato, sessione troppo lunga ancora negata. TypecheckPASS,48targetPASS,1624foundationPASS/7SKIP; sola rinomina loader test per ESLint poi unit6/6 e lint PASS | conferma browser/API reale nel successore |
 | Recovery prima prova | Remote11,run43085389040,Admin9f50f08/client938305e | FAIL prima del witness: adattatore QA cercava receipt_json nella risposta Apply già ricevuta. U19AuthenticatedRemote11 artifact13888091004/194184e4; tre client PG rollback/uscita naturale0 | b61ff cattura testo originale dal DB nella stessa transazione col lock, nessuna ricevuta ricostruita |
 | Recovery Remote12 | Adminb61ff/client938305e,run43091251050; U19AuthenticatedRemote12 artifact13889193349/923f8b7b | overallFAIL; prima gara Apply/recovery PASS con advisory lock osservato e ricevuta originale. Seconda raggiunge review finale dopo due recovery, FAIL BASELINE_REVIEW_REJECTED; tre PG rollback/uscita0. Il test non ripristinava SET LOCAL dopo COMMIT | correggere soltanto contesto QA e attestarlo; browser non raggiunto |
-| Successore Recovery | Adminb6304fe/client938305e,run43094416569 | RUNNING; stesso ruolo gateway,timeout8s/lock6s/search_path esplicitamente ripristinati e osservati dopo ogni COMMIT, SQLSTATE chiuso; digest completo righe economiche prima/dopo. src/SQL/lock/config uguali b61 | due gare nuove separate dalle tre canoniche, poi browser reale |
-| Controllo browser indipendente | Adminc1b5fc1/client6c,run43094421902 | RUNNING con harness browser preesistente; prodotto/SQL/config esattamente b61. Src prodotto6c e938 identici; nessuna esclusione nascosta dei casi nella prova completa | confermare sessione/API e scenari finanziari senza dipendere dal test Recovery |
+| Successore Recovery / Remote13 | Adminb6304fe/client938305e,run43094416569 | replay SQL stepPASS,servizio/browser ed exportFAIL. Log recuperato: conflict_source_ready:history_test_client_rejected. Fonte congelata ha superato i controlli precedenti prima di questa fase; ricevute singoli casi ecleanup non esportate,nessun PASS nuovo attestato | causa client interna da recuperare col successore diagnostico |
+| Controllo browser / Remote14 | Adminc1b5fc1/client6c,run43094421902; src/SQL/lock/config uguali b61 | replay SQL stepPASS,servizio/browser ed exportFAIL. Stesso codice conflict_source_ready:history_test_client_rejected; accesso/API e controlli precedenti superati nel flusso,ma ricevuta caso non disponibile | non dichiarare il percorso completo PASS |
+| Recupero diagnostica Remote13/14 | API log recuperata dopo precedenti HTTP502 | export CreateArtifact fallito dopo5tentativi con HTML inveceJSON; artifact assenti. Codice esterno recuperato,oggetto clientFailure originale perso con il file non esportato | copia redatta equivalente in stdout conSHA nel successore,senza dati privati |
+| Successore diagnostico | Admin177cbc485c4a1eca685ad11042831af90ac6fd47/client8c5b43550804b64f50080e820d0f34aaef27df1d,run43102737034 | RUNNING. Stesso report redatto in stdout+SHA256,cap secondario64KiB;4fasi client prima del conflitto. U19ClosedLogContract01 typecheckPASS,48targetPASS,1624foundationPASS/7SKIP,sourceStable51b45b20; client build0warnings/errors. Prodotti invariati daB61/6c,timeout/workload/guardie invariati | distinguere ledgerB,creazionefile,analisi e piano; poi origineAdmin/revoca |
 | Scenari finanziari distribuiti | harness Core/Data+Next+Postgres+Storage+Worker+browser, solo fixture proprie | implementati ACK perso dopo ricevuta HTTP, pull prima ACK, nuovo processo sugli stessi DB con capability originale, duplicato, Undo/correzione, origineAdmin in autorita web, revoca/conflitto; percorso completo non qualificato | confrontare7campi economici eassenza di effetti nativi/eco |
 | Vincoli esterni | installato2ad42ca,ledger Minimondo e7originali conservati | scala200%/2880x1800 invariata;100/125USER_DEFERRED;Win7fisicoBLOCKED_TARGET;GetnetCMISSING;nessun Apply reale nuovo | prova fisica e consegna non sostituite da CI |
 
@@ -35,7 +39,7 @@ sono verificati per digest, contenuto e binding, non soltanto per esito del job.
 Il solo archivio selettivo passa dal BFF; backup completo locale, nessun segreto
 nel browser/evidence. Core/Data con servizi reali non attesta WPF, periferiche o
 Win7fisico. Nessun merge main, deploy, installazione o DONE. Checkpoint privato
-201522Z aggiornato; PR135/151 eTASK146 conservano il proprio storico integrale.
+213410Z aggiornato; PR135/151 eTASK146 conservano il proprio storico integrale.
 <!-- ASUS019_COMPOSED_CURRENT_END -->
 
 <details>
