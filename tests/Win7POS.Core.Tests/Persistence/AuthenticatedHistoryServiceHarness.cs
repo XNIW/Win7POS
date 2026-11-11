@@ -28,6 +28,7 @@ internal static class AuthenticatedHistoryServiceHarness
         public string schema{get;set;}="";public string nonce{get;set;}="";public string endpoint{get;set;}="";
         public string clientSha{get;set;}="";public string shopId{get;set;}="";public string staffId{get;set;}="";
         public int credentialVersion{get;set;}public Actor actorA{get;set;}=new();public Actor actorB{get;set;}=new();
+        public bool extendedCases{get;set;}
     }
     sealed class Fact
     {
@@ -50,7 +51,7 @@ internal static class AuthenticatedHistoryServiceHarness
             var endpoint=new Uri(_scope.endpoint);Demand(endpoint.IsLoopback&&endpoint.Scheme=="http"&&endpoint.UserInfo==""&&endpoint.Query==""&&endpoint.Fragment==""&&endpoint.AbsolutePath=="/","history_test_loopback_required");
             HistoricalReplicaProtocol.DemandId(_scope.staffId);HistoricalReplicaProtocol.DemandId(_scope.actorA.deviceId);HistoricalReplicaProtocol.DemandId(_scope.actorB.deviceId);
             Demand(_scope.actorA.deviceId!=_scope.actorB.deviceId&&_scope.credentialVersion>0&&System.Text.RegularExpressions.Regex.IsMatch(_scope.clientSha,"^[0-9a-f]{40}$"),"history_test_scope_invalid");
-            using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(4));var ct=deadline.Token;
+            using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(_scope.extendedCases?6:4));var ct=deadline.Token;
             await using var a=await Session.Create(_scope.actorA,true);await using var b=await Session.Create(_scope.actorB,false);
             _phase="initial_baseline";await a.Until(a.HasBaseline,ct);await b.Until(b.HasBaseline,ct);await a.Turn(ct);
             var before=a.Facts();Demand(before.Length>0,"history_test_baseline_empty");Same(before,b.Facts());a.NoNative();b.NoNative();
@@ -78,7 +79,9 @@ internal static class AuthenticatedHistoryServiceHarness
             await b.Until(()=>Task.FromResult(Equal(wanted,b.Facts())),ct);await a.Until(()=>Task.FromResult(Equal(wanted,a.Facts())),ct);
             a.NoNative();b.NoNative();Same(a.Facts(),b.Facts());
             await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_CORE_DATA_ROUNDTRIP",count=wanted.Length,facts=wanted,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",wanted.Select(x=>x.Key)))),newIds=expected.Select(x=>x.Id)},ct);
-            await WaitSignal("admin_observed",ct);_phase="complete";Console.WriteLine("authenticated_history_core_data_pass");return 0;
+            await WaitSignal("admin_observed",ct);
+            if(_scope.extendedCases)await DuplicateAndUndo(a,b,source,receipt,before,wanted,ct);
+            _phase="complete";Console.WriteLine("authenticated_history_core_data_pass");return 0;
         }
         catch(Exception e)
         {
@@ -95,6 +98,48 @@ internal static class AuthenticatedHistoryServiceHarness
             var binding=c.QuerySingle<Binding>("SELECT scope_id Scope,id Id,evidence_reference Evidence FROM historical_merchant_binding WHERE shop_id=@shop AND alias_key=@alias",new{shop=_scope.shopId,alias=group.Key});
             return new HistoricalMerchantAssignment(group.First(),binding.Scope,binding.Id,binding.Evidence);
         }).ToArray();
+    }
+    static async Task DuplicateAndUndo(Session a,Session b,string source,HistoricalSalesOperationReceipt first,Fact[] baseline,Fact[] published,CancellationToken ct)
+    {
+        _phase="duplicate";
+        var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
+        var state=await a.Fixture.Service.ReadDatasetAsync(ct);
+        var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,state.DatasetId,state.DataRevision,0,analysis,ReadAssignments(a,analysis),new DateTime(2025,1,1),"Synthetic service harness approved start");
+        using(var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct))
+        {
+            var admission=await Admit(a,draft,ct);
+            var duplicate=await a.Fixture.Service.ApplyAsync(plan,admission.guard,Path.Combine(a.Fixture.Output,"duplicate-apply.db"),ct,publicationDraft:draft,publicationProof:admission.admission.Proof);
+            Demand(duplicate.InsertedCount==0&&duplicate.DuplicateCount==analysis.AcceptedTransactions.Count,"history_test_duplicate_effect");
+        }
+        await Converge(a,b,plan.OperationId,published,ct);await ObserveCase("duplicate",published,ct);
+        _phase="undo";state=await a.Fixture.Service.ReadDatasetAsync(ct);var operation=Guid.NewGuid().ToString("N");
+        using(var draft=await a.Fixture.Service.PrepareUndoPublicationDraftAsync(operation,_scope.shopId,a.Generation.ShopDeviceId,state.DatasetId,0,first.BatchId,1,ct))
+        {
+            var admission=await Admit(a,draft,ct);
+            await a.Fixture.Service.UndoAsync(first.BatchId,1,admission.guard,Path.Combine(a.Fixture.Output,"undo-first.db"),ct,publicationDraft:draft,publicationProof:admission.admission.Proof);
+        }
+        await Converge(a,b,operation,baseline,ct);await ObserveCase("undo",baseline,ct);
+    }
+    static async Task<(HistoricalImportAuthorizationCommitGuard guard,HistoricalPublicationAdmission admission)> Admit(Session session,HistoricalPublicationDraft draft,CancellationToken ct)
+    {
+        var authority=await session.Request("authority",new(),ct);
+        var admission=await new HistoricalPublicationPreparer(session.Fixture.Db.Factory,session.Demand,session.Request).PrepareAsync(draft,authority,ct);
+        var live=new HistoricalLocalWriteGrant(Guid.Parse(draft.OperationId).ToString("D"),authority.WriterEpoch,admission.RemainingMilliseconds,
+            admission.GrantRequestElapsedMilliseconds,session.Demand,clock:admission.ReadMonotonicMilliseconds,frequency:1000,publicationProof:admission.Proof,requestStartedTimestamp:admission.MonotonicRequestStartedMilliseconds);
+        var guard=new HistoricalImportAuthorizationCommitGuard(Enum.Parse<HistoricalImportOperationKind>(draft.Kind),draft.OperationId,draft.RequestFingerprint,draft.ShopId,"SYNTHETIC",
+            session.Generation.ShopDeviceId,1,draft.DatasetId,draft.RestoreEpoch,1,session.Generation.Fingerprint,session.Generation.StaffId,session.Generation.StaffCredentialVersion,session.Demand,(_,action)=>{session.Demand();action();session.Demand();});
+        guard.AttachPublicationGrant(live);return(guard,admission);
+    }
+    static async Task Converge(Session a,Session b,string operation,Fact[] wanted,CancellationToken ct)
+    {
+        await a.Until(async()=>{var status=await new HistoricalPublicationOutbox(a.Fixture.Db.Factory).ReadStatusAsync(operation,_scope.shopId,ct);return status?.Status=="synchronized";},ct);
+        await b.Until(()=>Task.FromResult(Equal(wanted,b.Facts())),ct);await a.Until(()=>Task.FromResult(Equal(wanted,a.Facts())),ct);
+        Same(a.Facts(),b.Facts());a.NoNative();b.NoNative();
+    }
+    static async Task ObserveCase(string phase,Fact[] facts,CancellationToken ct)
+    {
+        await SaveState(new{phase,nonce=_scope.nonce,status="PASS_CORE_DATA_CASE",count=facts.Length,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",facts.Select(x=>x.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);
+        await WaitSignal(phase+"_observed",ct);
     }
     static async Task SaveState(object value,CancellationToken ct)
     {
