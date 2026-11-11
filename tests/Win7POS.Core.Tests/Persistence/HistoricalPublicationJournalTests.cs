@@ -78,6 +78,34 @@ public sealed partial class HistoricalLedgerTests
     }
 
     [TestMethod]
+    public async Task PublicationJournal_LiveCallerOwnsIntentUntilCommitPathEndsAndBlocksReconciliation()
+    {
+        using var f=new Fixture();using var draft=await PreparationDraft(f);
+        var journal=new HistoricalPublicationJournal(f.Factory);
+        var nonce=await journal.SaveIntentAsync(draft,PreparationServerDataset,1,()=>{},default);
+        var active=HistoricalPublicationOperationUse.Begin(f.Factory,draft.OperationId);
+        try
+        {
+            var alternate=Guid.Parse(draft.OperationId).ToString("D");
+            Assert.AreEqual("history_preparation_in_use",Assert.Throws<InvalidOperationException>(()=>HistoricalPublicationOperationUse.Begin(f.Factory,alternate)).Message);
+            var error=await Assert.ThrowsAsync<InvalidOperationException>(()=>journal.AbortWithoutCommitAsync(draft.OperationId,nonce,PublicationShop,PublicationDevice,()=>{},default));
+            Assert.AreEqual("history_preparation_in_use",error.Message);
+            using(var c=f.Factory.Open())Assert.AreEqual("prepared",c.ExecuteScalar<string>("SELECT state FROM historical_preparation_outcome"));
+            f.Restart();
+            Assert.AreEqual("history_preparation_in_use",Assert.Throws<InvalidOperationException>(()=>HistoricalPublicationOperationUse.Begin(f.Factory,draft.OperationId)).Message);
+        }
+        finally {active.Dispose();active.Dispose();}
+        journal=new HistoricalPublicationJournal(f.Factory);
+        await journal.AbortWithoutCommitAsync(draft.OperationId,nonce,PublicationShop,PublicationDevice,()=>{},default);
+        using var next=HistoricalPublicationOperationUse.Begin(f.Factory,draft.OperationId);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>journal.SaveIntentAsync(draft,PreparationServerDataset,1,()=>{},default));
+        using var db=f.Factory.Open();
+        Assert.AreEqual("aborted",db.ExecuteScalar<string>("SELECT state FROM historical_preparation_outcome"));
+        Assert.AreEqual(0L,db.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation"));
+        Assert.AreEqual(0L,db.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox"));
+    }
+
+    [TestMethod]
     public async Task PublicationJournal_TombstonePreventsFutureApplyOfTheSameAuthorizedIntent()
     {
         using var f=new Fixture();var seed=await f.Plan();
