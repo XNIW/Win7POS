@@ -18,12 +18,14 @@ Stato ACTIVE; nessun DONE, merge, deploy, installazione o nuova mutazione reale.
 | Recovery | fixture9a/f4, prodotto invariato | identificazione finestre +root dump; età minima identica2100ms | mirato PASS; Windows-All03 PASS | U19RecoveryHeap03/04, U19RecoveryRetirement04, U19CloudAll03 | nessuna attestazione rilascio assoluto/Win7 fisico |
 | WPF v2 | f4ea8e2 | prepare/stage/authorize prima delle gate e outbox atomico | Smoke/CloudSync componenti PASS, fallbackv1 negato | U19WireV2Smoke02, CoreLedger68, Shell03; All03 | backend v2 completo e E2E reale |
 | Baseline v2 | client136088b /Admin fe6 +lettore/Worker v2 | export da backup verificato, lineage live/backup/finale; lettore con versione scelta dal server | export9PASS, reader18PASS, Worker+reader43PASS; typecheck03 PASS; foundation1553PASS/7SKIP locale | U19BaselineExport02, baseline-reader03, U19BaselineCorpus01 | collegare ammissione/ingest senza frozen→local o lineage inventata |
-| Admin qualificato | 815dbbdfec56d538e0a958441640ab2b8ae53a13 | CI42944438820; Cloudflare42944439011 | CI/packaging PASS; staging/prod deploy SKIPPED; TASK094 SKIPPED | job130273716119/6500 e130273717026; pacchetto corrente non ancora scaricato/verificato | servizio storico operativo separato; b0 precedente58hash conserva evidence |
+| Admin qualificato | e85b1e36acab6b3407bd48a57928a190410ff642; merge 2a816b6, stesso tree 0dee7a1d7df48e002914a9bf14ac13a7ecc7a9d8 | CI 42950686840; Cloudflare 42950686851 | PASS; SQL 83 file/4859 assert; deploy staging/prod e TASK094 SKIPPED | U19AdminE8501, Worker 13824722757, digest 8452586dedab713f8088b9fdccaa84ce0cafb2a84eb391fc99d1bfc0bdc31612, 58 hash verificati | servizio storico operativo distinto dal packaging |
 | SQL baseline interno | fe6ca45ba82928762cf8b3ba04bc54b88551b26a | replay isolato42941427654 | PASS82file/4827assert | U19BaselineSqlContext03, artifact13821491017, digestaf0c6031ac6911e68b1bc7bae7d69625cffd4d4ff27c0e1d328c8c228c87e13b | nessuna API esposta; primo FAIL preparazione e secondo FAIL fixture immutabile conservati |
 | Pipeline baseline POS | 830313664120405e4942e42c116b82addfb2eee7; integrato localmente Admin f335f2f0bf429785bf26e02c0319be16730349e6 | replay isolato42944030772;32nuovi assert con archivio CLR/reader Node,14oggetti/5movimenti | PASS83file/4859assert | U19BaselinePipeline01, artifact13821923421, digest89a6c07d4bed091900ecde1b9d2cd892690cf57f5a2d0586b3c0fae392335b91 | API privata; nessuna prova E2E distribuita trasferita; CI candidato integrato da eseguire |
 | CI Windows successore | 136088b6e61e39babd8c03db9456fa8036dfe3ce | CI42939260104; Security42939259973 | PASS16/16; Smoke8gruppi/52verifiche,27537.647ms | U19Win136Remote02, artifact13820224048, digestf7a0e603888dca45b529d3fc0c5cc8c1a24b72c39993402cbabf366440f42f5a | non cancella f4 remoto FAIL; nuova coppia finale ancora da congelare |
-| Contratti Admin | baseline Node815, componente locale sufe6+delta | reader18; Worker+reader43; typecheck03; foundation08 | PASS1553/7SKIP su1560 locale, non sommato ai mirati | baseline-reader03/worker01; admin-foundation08.private.log | CI corrente PASS ma conteggio non ancora riconciliato; v2 economico ancora privato |
+| Contratti Admin | ca08bb7dee3b63da28f4138886a3ba2ebbb89e9f isolato; integrato localmente 3523653cd33c9ee9c4570c8bfd1d11c8abd86bab | Node decisioni 19; typecheck; foundation02 | PASS 1555/7 SKIP su 1562 locale, mirati sovrapposti | decisions-node03 (21 con 2 test pinning); decisions-typecheck01; decisions-foundation02 | CI del successore integrato da eseguire; API v2 ancora chiuse |
 | Cleanup TASK094 | fixture ee788ef4-591b-45a4-86f3-90d28a77e12d e codice/data esatti | sole query read-only, progetto staging autorizzato | PASS_SCOPED_READONLY: tutti gli attivi0 | task094-readonly-cleanup-20261110.private.json | non riscrive il FAIL originario42896389034 né attesta altri fixture |
+| Proiezione locale server | 82dec507559ab80456e63e35b2ed94e05e1ba3ed, integrato in 6a8918e | replay isolato 42952263404 | PASS 84 file/4892 assert, 33 nuove prove | U19ProjectionSql01, artifact 13825732659, digest 74d12f78e92680be80d876842de3ab2a617f97222754f650f339d9bfc6eb282a | stato locale da fonti immutabili, distinto da ownership/active canonici; nessun grant/API esposto |
+| Decisioni client | 176eaa8, codice client e fixture, checkout isolato A19PubClient01 | Core ledger05; build harness; Smoke successore | 97 Core PASS; build zero warning PASS; Smoke03 PASS 8/52 in 31298.714ms; CloudSync01 PASS 1/1 in 3127.859ms | U19DecisionsLedger05; U19DecisionsSmoke03; Smoke01/02 FAIL 51/52 conservati | suite completa sul checkpoint integrato da eseguire; non è E2E distribuito |
 | Catena bilaterale | coppia futura non congelata | POS A→server→Admin aperto→POS B→POS A; origine Admin web | INCOMPLETE / E2E autenticato NOT_RUN | V2-REMAINING-INVARIANTS.private.md | baseline, review paginata, grant fresco, proiezione locale/canonica, consegna/ricevuta e riconciliazione |
 | Ritorno menu Cassa | MainWindow.xaml.cs, fuori dalla lista file dell'ultimo addendum | prova focus e patch privata git apply --check | causa dimostrata; modifica NON applicata | MainWindow-menu-focus.private.patch | risposta alla chiarificazione di perimetro già inviata |
 | Mobile / Win7 fisico | TASK146 / target assente | nessun build mobile; hardware non disponibile | NOT_RUN / BLOCKED_TARGET | commento6722613449 esistente | nessun PASS trasferito da Windows11 |
@@ -69,7 +71,25 @@ Prima run Core68:67PASS/1FAIL fixture che alterava la revisione dopo il grant;
 fixture corretto e prove di rollback/duplicato canonico in esecuzione.
 Contratto ancora incompleto lato server/WPF: nessuna API esposta.
 
-Checkpoint UTC 2026-11-11T03:07:12.810650+00:00.
+Proiezione privata: il map canonico conserva coordinate pagina/record/binding e
+local_inserted, non una copia degli importi. Gli importi provengono dagli originali
+source_objects o dalle pagine immutabili. Proprio Undo locale, stato canonico e
+proprietà del duplicato sono verificati separatamente. La cache/review paginata,
+il grant fresco e la delivery restano da completare prima di esporre la boundary.
+
+Foundation01 conserva un FAIL di pinning: checkout CRLF diverso dai byte canonici
+dei sette vecchi SQL. Verificati hash manifest e blob Git, ripristinati soltanto
+i byte canonici nel checkout; nessun diff SQL, pin o test atteso cambiato.
+Foundation02 PASS. Smoke01 conserva un FAIL nel fixture VM: il piano creato dalla
+VM non era nel registro del fake. Il successore dichiara esplicitamente quel solo
+fixture a ledger vuoto e lo verifica prima del grant; nessun fallback prodotto.
+
+Checkpoint UTC 2026-11-11T03:41:39.193557+00:00.
+Smoke02 ha riusato il vecchio binario del fixture (stesso hash della prima run):
+non qualifica il sorgente d2fd907. Il runner privato ora compila il harness prima
+di acquisire binding e context. Smoke03 PASS sul binario ricostruito176eaa8,
+fingerprint 0b305cd1e07dda26cd711fdd39c13b1ae18b7b14532b1d00afce4c9a56305700.
+
 <!-- ASUS019_CURRENT_END -->
 
 <details>
