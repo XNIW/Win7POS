@@ -7,6 +7,53 @@ param(
     [string]$OutputDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
+function Start-FunctionalChild {
+    param([string]$FilePath, [string[]]$ArgumentList, [string]$OutputPath, [string]$ErrorPath)
+    $process = $null; $output = $null; $errorOutput = $null; $started = $false
+    try {
+        $output = [IO.FileStream]::new($OutputPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read, 4096, $true)
+        $errorOutput = [IO.FileStream]::new($ErrorPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read, 4096, $true)
+        $start = [Diagnostics.ProcessStartInfo]::new($FilePath)
+        $start.UseShellExecute = $false; $start.CreateNoWindow = $true
+        $start.Arguments = $ArgumentList -join ' '
+        $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
+        $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
+        if (-not $process.Start()) { throw 'Functional child launch failed.' }
+        $started = $true
+        # Byte streams retain both channels without a synchronous file flush
+        # for each child Console.WriteLine. Both copies share the case deadline.
+        $outTask = $process.StandardOutput.BaseStream.CopyToAsync($output)
+        $errTask = $process.StandardError.BaseStream.CopyToAsync($errorOutput)
+        return [pscustomobject]@{Process=$process;Output=$output;ErrorOutput=$errorOutput;OutputTask=$outTask;ErrorTask=$errTask;OutputClosed=$false}
+    }
+    catch {
+        if ($started -and -not $process.HasExited) { $process.Kill(); $null = $process.WaitForExit(5000) }
+        foreach ($resource in @($process,$output,$errorOutput)) { if ($null -ne $resource) { $resource.Dispose() } }
+        throw
+    }
+}
+function Complete-FunctionalChildOutput {
+    param($Child, [int]$TimeoutMilliseconds)
+    if ($Child.OutputClosed) { return $true }
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    if ($TimeoutMilliseconds -lt 1) { return $false }
+    $copies = [Threading.Tasks.Task[]]@($Child.OutputTask,$Child.ErrorTask)
+    if (-not [Threading.Tasks.Task]::WaitAll($copies, $TimeoutMilliseconds)) { return $false }
+    $remaining = $TimeoutMilliseconds - [int]$clock.ElapsedMilliseconds
+    if ($remaining -lt 1) { return $false }
+    $flushes = [Threading.Tasks.Task[]]@($Child.Output.FlushAsync(),$Child.ErrorOutput.FlushAsync())
+    if (-not [Threading.Tasks.Task]::WaitAll($flushes, $remaining)) { return $false }
+    $Child.Output.Dispose(); $Child.ErrorOutput.Dispose(); $Child.OutputClosed = $true
+    return $true
+}
+function Close-FunctionalChildOutput {
+    param($Child)
+    # The caller first stops its retained child and performs a bounded drain.
+    # Closing pipe readers also terminates outstanding copies after failure.
+    foreach ($resource in @($Child.Process.StandardOutput,$Child.Process.StandardError,$Child.Output,$Child.ErrorOutput)) {
+        if ($null -ne $resource) { $resource.Dispose() }
+    }
+}
 function Read-FunctionalChildImage($Process) {
     if (-not ('Win7PosFunctionalProcessImage' -as [type])) {
         Add-Type -TypeDefinition @'
@@ -143,7 +190,7 @@ try {
         $timeoutMs = 60000 # ASUS-W7POS-019 R3: each isolated process retains the declared budget.
         $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } elseif ($name -eq 'AUTHENTICATED_SHELL_UX') { Join-Path $dataDir 'authenticated-shell-ux-smoke.txt' } elseif ($name -eq 'OPERATOR_DIALOG_GEOMETRY') { Join-Path $dataDir 'operator-dialog-geometry-smoke.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
         $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$evidenceDir; dataDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; cleanupSucceeded=$null; cleanupError=$null; evidenceExportError=$null; error=$null }
-        $process = $null
+        $process = $null; $childOutput = $null
         $threadObserver = $null
         $watch = [Diagnostics.Stopwatch]::StartNew()
         try {
@@ -152,7 +199,8 @@ try {
             $arguments = @('--data-dir', ('"' + $dataDir + '"'))
             if ($visual) { $arguments += @('--ui-ux-final-closeout','--output-dir', ('"' + $evidenceDir + '"')) }
             elseif ($name -eq 'AUTHENTICATED_SHELL_UX') { $arguments += '--authenticated-shell-ux-smoke' } elseif ($name -eq 'OPERATOR_DIALOG_GEOMETRY') { $arguments += '--operator-dialog-geometry-smoke' } else { $arguments += @('--functional-completion-smoke','--scenario',$name) }
-            $process = Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $evidenceDir 'stdout.log') -RedirectStandardError (Join-Path $evidenceDir 'stderr.log')
+            $childOutput = Start-FunctionalChild $exe $arguments (Join-Path $evidenceDir 'stdout.log') (Join-Path $evidenceDir 'stderr.log')
+            $process = $childOutput.Process
             $record.pid = $process.Id
             $null = $process.Handle
             $record.creationTimeUtc = $process.StartTime.ToUniversalTime().ToString('O')
@@ -164,9 +212,10 @@ try {
                 $record.status = 'TIMEOUT'
                 throw "Functional completion timed out ($name, $timeoutMs ms)."
             }
-            # On Windows Start-Process redirects to inherited file handles, not
-            # asynchronous readers on this Process. The bounded wait is enough;
-            # do not introduce an unbounded second wait after the test deadline.
+            if (-not (Complete-FunctionalChildOutput $childOutput ($timeoutMs - [int]$watch.ElapsedMilliseconds))) {
+                $record.status = 'TIMEOUT'
+                throw "Functional output timed out ($name, $timeoutMs ms)."
+            }
             $record.exitCode = $process.ExitCode
             if ($process.ExitCode -ne 0) { throw "Functional completion exit=$($process.ExitCode) ($name)." }
             if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf) -or
@@ -182,6 +231,7 @@ try {
             if ($null -ne $process) {
                 try {
                     Stop-FunctionalChild $process $record.creationTimeUtc
+                    if (-not (Complete-FunctionalChildOutput $childOutput 5000)) { throw 'Owned functional output cleanup timed out.' }
                     $record.cleanupSucceeded = $process.HasExited
                     if (-not $record.cleanupSucceeded) { throw 'Owned functional child still active after cleanup.' }
                 }
@@ -200,7 +250,10 @@ try {
                         if ($null -eq $record.error) { $record.error = $_.Exception.Message }
                         if ($null -eq $firstError) { $firstError = $_.Exception.Message }
                     }
-                    finally { $process.Dispose() }
+                    finally {
+                        try { Close-FunctionalChildOutput $childOutput }
+                        finally { $process.Dispose() }
+                    }
                 }
             }
             $record.elapsedMs = $watch.Elapsed.TotalMilliseconds

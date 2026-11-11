@@ -48,6 +48,17 @@ autenticato reale MainWindow/VM con fixture sintetici; carrello/sessione
 conservati. Build net48/x86 zero warning/error; nessun cambio budget.
 Questo delta richiede nuove CI e qualifica sul pacchetto esatto. Storico bilaterale
 rimane sul ramo135/Admin151; questo fix non ne attesta la catena v2 operativa.
+
+Release da6539c42964888047 conserva FAIL nel gate QA sintetico di output:
+in15s stdout448righe/stderr447, ultimo write14.784s, processo già avviato,
+CPU750ms. Nessuna causa storage/antivirus dedotta. Cattura byte-stream
+bufferizzata nel runner funzionale, stesse512WriteLine per flusso, stesso
+limite15s e verifica integrale514/513righe con sentinelle; nessuna modifica ai
+60s dei casi WPF. Test03 PASS287ms locale, include deadline su output pendente
+e cleanup posseduto. Prime prove helper01/02 FAIL conservate (fixture import,
+stream non ancora chiuso per lettura), corrette senza alterare l'output atteso.
+U19BufferedFunctional01 PASS22/22scenari; required gates50/50 PASS.
+Il confronto remoto e nuovo Release rimangono da raccogliere sul successore.
 <!-- ASUS019_CURRENT_END -->
 
 <details>
