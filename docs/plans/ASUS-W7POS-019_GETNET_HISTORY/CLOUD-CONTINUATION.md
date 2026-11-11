@@ -3,33 +3,44 @@
 <!-- ASUS019_CURRENT_START -->
 ## Convergenza corrente — stessa Execution ASUS-W7POS-019
 
-Due consegne: cassa quotidiana e storico bilaterale. Tutti i file necessari sono
-autorizzati; soglie e workload invariati. Nessun DONE o nuova mutazione reale.
+Due consegne: cassa quotidiana e storico bilaterale. Execution ACTIVE, nessun
+DONE. L'utente autorizza tutti i file necessari ai residui; soglie e carico invariati.
+Nessun merge main, deploy, installazione o nuova mutazione reale in questo checkpoint.
 
-| Scenario | SHA / comando / ambiente | Esito | Evidence | Prossimo gate |
-|---|---|---|---|---|
-| Cassa quotidiana136 | d1b2bc318c8a0aecce9543dc6a96f9a1aaf7cfc3; CI42967023331, Security42967023327, WPF42967096688, Release42967017718 | PASS build e packaging41file | U19ReleaseD1b201; installerSHA a07430ce29e60eb04d2bc23651ab905beac3bf6ed6e8e12479e83ac230f2bb8e | non è ancora coppia bilaterale finale |
-| Cassa ASUS disponibile | pacchetto d1b2 esatto, Integrated12 eFinal60, stesso budget63970e30 | PASS31/151cicli, max102.510/97.826ms | U19CartAsusD1b201, U19D1b2AsusI01/F01, tre flag validità true | Windows11 non attesta targetWin7 |
-| Cassa hosted | Release d1b2; run42970975541, Integrated12+soak60 | PASS33/166cicli, max138.340/56.051ms | U19D1b2Hosted01; artifact13837190884 digestd100083f39920a95f54b7132f6c9ed4622ce7ea3bde00991c26ae23295106a47;41file verificati | qualifica finale sul client convergente |
-| Windows precedente | 76146a42; Windows-All locale/remoto42963370668 | PASS16/16, Core1892/1892; Load entro500ms | U19CloudAll05, U19Win761Remote01; Load301.0258/481.4968ms | non trasferire PASS al delta successivo |
-| Windows journal integrato | 89021128; CI42982857599 | FAIL gates; altri15passaggi PASS incl.Load/Recovery/Cloud | U19Win890Remote01:8entry verificate | FAIL riprodotto nella sequenza42989936911: gate migrazioni fermo17; isolato release-foundation42989578469 PASS |
-| Correzione gate e capacità ricevuta | f7eb3e35c37b891aaa312ee7aa53c53fa07ee285; CI42990675222, Security42990675205 | PASS16/16 eSecurity, Load11/11 | U19WinF7Remote01:8entry verificate; artifact13842864819 digestda4425b7813adfa4802315be1bd4c78ada2b17acaad9ebaa48238e546ec5d737 | non trasferire al successore19 senza nuova CI |
-| Journal e proprietà chiamante | journal18 e outcome19; componente10589de50e62ee9808b4a16692f4e75b6294f168 | Core target300/300 PASS; precedente298/299 FAIL fixture restore conservato | U19OutcomeTarget02, fingerprintf4060448; fixture03 PASS; pin1–18 invariati,19 SHA bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee | server non ancora accetta i witness |
-| Finestra commit | stesso10589; scadenza ancorata alla richiesta authorize originale | 28/28 clock/preparer/outcome PASS; Smoke52/52 eCloud1/1 PASS | U19OutcomeClock02/Cloud01/Smoke01, WPF fingerprint3c4eac5c52e07ae06d76b53ff76d5bc10c29448d6308efa8914a1f3f21aad6e4 | nessun rinnovo per coda/riavvio; mutazione e witness atomici, ACK monodirezionale |
-| Admin151 qualificato | 85103361bc88c761386032db12e003234c05c906; CI42979142638, Cloudflare42979142701 | PASS; foundation1502/14SKIP; SQL88/5052; deploy SKIPPED | U19Admin85101:58file/lock/config/tree verificati; Worker13836547664 digest155da9a52f36f81183341d6f7d7e381fb1da26670fba32777afeadba02758e4a | Worker impacchettato distinto da servizio storico operativo |
-| Consegna economica privata | 07f150ecf312090f2bed5f345d6900c2a560f4da; replay42987337895 | PASS89file/5114assert | U19DeliverySql02; artifact13840397623 digeste35bc788ef8a81e06721d251cac6408e2840bdf3ac1580f79242e699e0fceead | fresh-only: prima consegna scaduta richiede riconciliazione; APIv2 chiuse |
-| Concorrenza SQL | 1adb226f2785dbd0e5fc022c8fbae0df1bdfc711; run42996566895, ref API verificata | PASS3 scenari reali, SQL89/5114 ecleanup naturale | U19HistoryConcurrent04; artifact13843974515 digest564ac8457a8b2489d6483ec7fd3e16decaee42c9fc814d17d92897b190512b39 | native→grant transactionid, due authorizer advisory, freeze→replay transactionid; non prova ogni interleaving |
-| Integrazione Windows135 | ba974a602f3f9d0dce8e6b495f1011e8342813ed; sorgenti runtime/test/script identici a10589 | IN_ATTESA_DI_CI sul nuovo candidato | nessuna attribuzione del PASSf7 al nuovo SHA | raccogliere Windows-All del candidato esatto |
-| Integrazione Admin151 | cb1512a5546ab4f390ad694ab3430531a3c1d088; codice identico a1adb, docs distinti | IN_ATTESA_DI_CI sul nuovo candidato | vecchio851CI/Worker resta baseline qualificata | typecheck/foundation eCI/Worker successore; nessun deploy |
-| Storico bilaterale | witness client, review/Undo/grant/delivery privati qualificati come componenti | INCOMPLETE; E2E autenticato NOT_RUN | nuovo SQL92708 privato: nonce/tombstone evalidator25campi, solo syntaxPASS | completare riconciliazione corrente, baseline automatica, confinev2, canonicalRead local eA→server→Admin aperto→B→A |
-| Recovery / cleanup | finestre possedute identificate, root TextBoxView timer2s; fixtureTASK094 scoped read-only | Recovery successori PASS; TASK094 tutti attivi0 | U19RecoveryHeap03/04, Retirement04, CloudAll04; task094-readonly-cleanup-20261110.private.json | FAIL storico e cleanup originaleNOT_ATTESTED conservati, nessun retry live |
-| Installato e target esterni | 2ad42ca9ac5601d7da9555996c1642263252b6e0, ledger/originali invariati | Win7BLOCKED_TARGET;100/125USER_DEFERRED; Getnet modernoCMISSING; mobileNOT_RUN | 200%2880×1800 preservato, kit1823697 invariato | nessun PASS mobile/Win7 trasferito; nessuna nuova installazione/deploy |
+| Scenario | SHA / comando / ambiente | Esito ed evidence | Prossimo gate |
+|---|---|---|---|
+| Cassa PR136 | d1b2bc318c8a0aecce9543dc6a96f9a1aaf7cfc3; Release42967017718, CI42967023331, Security42967023327, WPF42967096688 | PASS; U19ReleaseD1b201 verifica41file/110checksum; installer a07430ce, payload6b44ffe3 | integrare nella coppia finale prima della sua qualifica |
+| Cassa ASUS disponibile | stesso pacchetto d1b2; Integrated12 eFinal60, budget63970e30 invariato | PASS31cicli/max102.510ms e151cicli/max97.826ms; U19D1b2AsusI01/F01, cleanup naturale | Windows11 disponibile, non Win7 fisico o coppia finale |
+| Cassa hosted | stesso pacchetto; run42970975541,41file verificati | PASS Integrated33cicli/138.340ms eSoak166cicli/56.051ms; U19D1b2Hosted01, artifact13837190884 digestd100083f39920a95f54b7132f6c9ed4622ce7ea3bde00991c26ae23295106a47 | risultati distinti da ASUS |
+| Focus originale e diagnosi | prodotto149c978, FAIL258.573/258.382ms conservato; Diagnostic60 run42924975778 | diagnosi callback focus superfluo gia focalizzato, coda dietro Send; nessun blocco scanner/ASUS presunto; menu da6539c PASS73/73 | non attribuire retroattivamente i due campioni senza fasi originali |
+| Windows-All135 qualificato | ded72cce644d5f69dfe069425d124cf88a56b289; CI42999840653, Security42999840675 | PASS16/16, Load11/11 eentrambi Security; U19WinDedRemote01 verifica8entry; artifact13846238753 digest474323f858513d1225726b89c0e1ef2a5edcfbd4bbf6b34af5088c5b502dc32d; fingerprint8c3a102bbb6ef076ca920e2c9fce81feb67617e2731d7fed994f48a9c2efacd3 | il successore di composizione richiede nuova CI |
+| Load remoto originale | b976 CI42954896078 FAIL572–574.2707ms oltre500; aggregazione giorni/totale unica76146a4 | successore locale301.0258ms/remoto481.4968ms PASS; U19CloudAll05/U19Win761Remote01; ded72 nuovo LoadPASS | soglia/carico invariati, nessuna attribuzione assoluta tra VM |
+| Gate890 originale | CI42982857599 FAIL gates, altri15PASS; diagnostiche42989578469/42989936911 | causa dimostrata gate legacy fermo17 dopo18; proiezione RESULT ambigua corretta; f7 successore PASS e ded72 PASS con19; U19Win890Remote01/U19WinF7Remote01 | FAIL originali conservati, pin1–18 invariati |
+| Recovery | root dump fixture, ritiro TextBoxView dopo2100ms per timer2s; mirati eAll04 | PASS eWindows-All successori PASS; U19RecoveryHeap03/04, U19RecoveryRetirement04 | non semplice cambio5/3; nessun retry live |
+| Journal e witness client | componente10589de50e62ee9808b4a16692f4e75b6294f168 integrato ba974a6 e ded72 | target300/300, clock28/28, net48/x86 Smoke52/52 eCloud1/1; journal18/witness19, SHA19 bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee; commit atomico ledger/receipt/outbox/witness | nessuna capacita di mutazione recuperabile dal witness |
+| Admin151 qualificato | d46cb9fc50d527288077357c73f7c62d9f3e2373; CI42999850093, Cloudflare42999849993 | PASS CI/packaging, deploy SKIPPED; U19AdminD4601:58file/lock/config/tree verificati; artifact13845787706 digest910dcf2671d49737ff2cf55f6d812369505cc5d4e6b0c956289c59b7bee6ae93; treec0e1920c6a9f2be4a382419fe98d04fa646e91e4 | Worker impacchettato distinto dal servizio operativo |
+| SQL review/grant/delivery | d46 include Undo/grant62delivery ecodec originaliCLR | PASS89file/5114assert; artifact13846217006 digestf6b4be401b3acc1bfd2a4f9690ba1c510df9116633dbb189e6367725a713ea09; typecheck eLOCAL1569PASS/7SKIP | API pubblica v2 ancora chiusa |
+| Concorrenza SQL | 1adb226f integrato d46; replay42996566895 eCI d46 | PASS3scenari reali,10client rollback/uscita naturale; U19HistoryConcurrent04; artifact13843974515 digest564ac8457a8b2489d6483ec7fd3e16decaee42c9fc814d17d92897b190512b39; native/grant transactionid, authorizer advisory, freeze/replay transactionid | non prova tutti gli interleaving; primi FAIL conservati |
+| Nuova riconciliazione server | SQL92708 SHA77baa9f4c3970ffcacb0364852c02d48b2075b4bb4aa1359fe0fbef5eec15b39; successore087229e, replay43007288758 | PASS90file/5164assert e3scenari concorrenti; U19OutcomeSql02 artifact13849438166 digest1e846b22bc7b6c0a1ecaa2d908fcb27ce76094faab00be8cc49bd73c4b4d155d | primo57e1438 FAIL20/21 fixture conservato; corpus9casi ripristinato byte-esatto, prodotto invariato |
+| Contratto witness Node | 9882c4162e02dccec23fb34e5f1c4107d210e05a, source integrato identico | typecheck efoundation1579PASS/7SKIP su1586; U19OutcomeNode01; scope/proof/receipt/ACK negativo raw vincolati | FAILCRLF efixture senza nonce conservati; nessun endpoint pubblico nuovo |
+| Review eoutcome client | 1d053bc451f7473de9e9c8d18ce77b497801003c | target314/314 sourceStable; WPFnet48/x86 Cloud1/1 eSmoke8gruppi/52check PASS; U19OutcomeLaneTarget01/Cloud02/Smoke02 | Smoke01 FAILfixture privo di local_review conservato; nessuna nuova coda/timer/grant |
+| Nuovo integrato Windows135 | b8323071f944dcec797d615127f8b23e1d3a9704; runtime/test/script identici a1d053bc | READY_FOR_CI, ancora locale | push dopo commit documentale; PASSded72 resta distinto |
+| Nuovo integrato Admin151 | b30b711c20458ca302224e23fcc4cb9e40e0529f; runtime/SQL/test/script identici a52bfe3a | READY_FOR_CI, ancora locale | push dopo commit documentale; PASSd46 resta distinto |
+| Storico bilaterale | componenti distinti dalla composizione | INCOMPLETE; E2E autenticato NOT_RUN | baseline selettiva verificata automatica, confinev2/WPF, canonicalRead local, POS A→server→Admin aperto→B→A senzaeco eorigine Admin |
+| Cleanup TASK094 | solo fixture ID gia registrati, query staging read-only | PASS_SCOPED_READONLY tutti10attivi0; task094-readonly-cleanup-20261110.private.json; vecchi authFAIL ecleanupNOT_ATTESTED conservati | niente retry live ciechi |
+| Installato e dati reali | 2ad42ca9ac5601d7da9555996c1642263252b6e0; EXE SHA33a73a2c51e6fbe3082081ed787d6421da6641359f6222faf7f566538593eb0f | invariati profilo Minimondo, quattro legacy e sette XLSX | consegna distinta da build/CI |
+| Mobile / Win7 / DPI / GetnetC | handoffTASK146 comment6722613449 | nessun PASS mobile trasferito; nessun AndroidTEST verificato qui; Win7 BLOCKED_TARGET,100/125 USER_DEFERRED,200%2880×1800 conservato; moderniC MISSING | prerequisiti esterni concreti, nessuna nuova domanda DPI |
 
-Le evidence precedenti e i FAIL restano nei checkpoint e nella cronologia Git.
-Nessuna somma di rerun sovrapposti per descrivere avanzamento. Stessa Execution;
-il candidato finale deve ancora convergere e superare i gate della coppia esatta.
-
-Checkpoint UTC 2026-11-11T09:58:38.368304+00:00.
+La riconciliazione verifica il chiamante corrente autorizzato sullo stesso device/shop,
+anche se diverso dall'autorizzatore originale: conserva separati autore economico,
+grant/prova originali e audit del courier. La vecchia sessione revocata resta negata.
+Il witness attesta il comportamento del POS conforme autenticato, non prova
+crittograficamente un file SQLite contro client alterati o cloni non dichiarati.
+Restore/lineage, dipendenze, revisione e drain restano obbligatori.
+Baseline da backup completo verificato locale; soltanto export storico selettivo online.
+Tutti i FAIL/TIMEOUT/NOT_RUN precedenti restano nelle evidence e nella cronologia;
+rerun sovrapposti non si sommano. Nessun risultato di componente e un E2E distribuito.
+Checkpoint UTC 2026-11-11T11:10:49.656357+00:00.
 <!-- ASUS019_CURRENT_END -->
 
 <details>
