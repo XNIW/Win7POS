@@ -119,6 +119,12 @@ public sealed partial class HistoricalLedgerTests
         await journal.SaveGrantAsync(draft.OperationId,nonce,proof,()=>{},default);
         await journal.AbortWithoutCommitAsync(draft.OperationId,nonce,PublicationShop,PublicationDevice,()=>{},default);
         await journal.AbortWithoutCommitAsync(draft.OperationId,nonce,PublicationShop,PublicationDevice,()=>{},default);
+        var witness=await journal.ReadOutcomeWitnessAsync(draft.OperationId,PublicationShop,PublicationDevice,()=>{},default);
+        using(var json=System.Text.Json.JsonDocument.Parse(witness.Json))
+        {
+            Assert.AreEqual(proof.GrantId,json.RootElement.GetProperty("grant_id").GetString());
+            Assert.AreEqual(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(witness.ProofJson))),json.RootElement.GetProperty("proof_sha256").GetString());
+        }
         await Assert.ThrowsAsync<InvalidOperationException>(()=>journal.SaveIntentAsync(draft,PreparationServerDataset,1,()=>{},default));
         await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.ApplyAsync(plan,PublicationGuard(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,plan.DatasetId,plan.RestoreEpoch),f.Backup(),default,publicationDraft:draft,publicationProof:proof));
         using var c=f.Factory.Open();Assert.AreEqual("aborted",c.ExecuteScalar<string>("SELECT state FROM historical_preparation_outcome"));

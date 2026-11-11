@@ -10,7 +10,7 @@ namespace Win7POS.Core.Import
         private readonly Func<long> _clock; private readonly long _start; private readonly long _deadline; private readonly Action _demandActor;
         private readonly long _frequency;private readonly int _remainingMilliseconds;private readonly long _requestElapsedMilliseconds;
         internal HistoricalLocalWriteGrant(string operationId,string epoch,int remainingMilliseconds,long requestElapsedMilliseconds,Action demandActor,
-            Func<long> clock=null,long frequency=0,HistoricalPublicationProof publicationProof=null)
+            Func<long> clock=null,long frequency=0,HistoricalPublicationProof publicationProof=null,long? requestStartedTimestamp=null)
         {
             HistoricalReplicaProtocol.DemandId(operationId);OperationId=operationId;WriterEpoch=HistoricalReplicaProtocol.Integer(epoch);
             if(WriterEpoch<1||remainingMilliseconds<1||remainingMilliseconds>60000||requestElapsedMilliseconds<0)throw new InvalidOperationException("history_local_write_grant_invalid");
@@ -18,7 +18,21 @@ namespace Win7POS.Core.Import
             var hz=frequency==0?Stopwatch.Frequency:frequency;var budget=remainingMilliseconds-requestElapsedMilliseconds-10000;
             if(hz<1||hz>1000000000000L||budget<=0)throw new InvalidOperationException("history_local_write_grant_expired");
             _frequency=hz;_remainingMilliseconds=remainingMilliseconds;_requestElapsedMilliseconds=requestElapsedMilliseconds;
-            _start=_clock();_deadline=checked(_start+(long)((decimal)budget*hz/1000));DemandStillValid();
+            _start=_clock();
+            if(requestStartedTimestamp.HasValue)
+            {
+                var started=requestStartedTimestamp.Value;
+                if(started<0||_start<started)throw new InvalidOperationException("history_local_write_grant_expired");
+                var elapsed=decimal.Ceiling(((decimal)_start-started)*1000/hz);
+                if(elapsed<requestElapsedMilliseconds||elapsed>=remainingMilliseconds-10000)
+                    throw new InvalidOperationException("history_local_write_grant_expired");
+                _requestElapsedMilliseconds=(long)elapsed;
+                // Preserve the original request anchor across continuation
+                // delays. Constructing this object cannot extend the lease.
+                _deadline=checked(started+(long)((remainingMilliseconds-10000m)*hz/1000));
+            }
+            else _deadline=checked(_start+(long)((decimal)budget*hz/1000));
+            DemandStillValid();
             if(publicationProof!=null&&(publicationProof.OperationId!=operationId||publicationProof.WriterEpoch!=WriterEpoch))
                 throw new InvalidOperationException("history_publication_proof_invalid");
             PublicationProof=publicationProof;

@@ -17,6 +17,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
     // admission, the migration baseline or authenticated distributed E2E.
     internal sealed class HistoricalPublicationAdmissionFixture
     {
+        // Synthetic component only: invoke the actual trusted constructor and
+        // binding checks without widening product visibility to the harness.
+        internal static void AttachLiveGrant(HistoricalImportAuthorizationCommitGuard guard,HistoricalPublicationProof proof,Action demand)
+        {
+            var flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+            var constructor=typeof(HistoricalLocalWriteGrant).GetConstructors(flags).Single();
+            var grant=(HistoricalLocalWriteGrant)constructor.Invoke(new object[]{proof.OperationId,proof.WriterEpoch.ToString(System.Globalization.CultureInfo.InvariantCulture),60000,0L,demand,null,0L,proof,null});
+            typeof(HistoricalImportAuthorizationCommitGuard).GetMethod("AttachPublicationGrant",flags).Invoke(guard,new object[]{grant});
+        }
         private readonly string _shop,_device,_dataset;
         private readonly Func<string,string,string,Decision> _decision;
         private readonly bool _allNewFixture;

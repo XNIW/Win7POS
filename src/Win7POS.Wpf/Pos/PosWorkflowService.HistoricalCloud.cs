@@ -46,7 +46,8 @@ namespace Win7POS.Wpf.Pos
             var granted=await new HistoricalPublicationPreparer(_factory,actor.DemandCurrent,
                 (op,payload,token)=>RequestHistoricalCloudAsync(actor,op,payload,token)).PrepareAsync(draft,authority,ct).ConfigureAwait(false);
             return new HistoricalLocalWriteGrant(Guid.Parse(operation).ToString("D"),authority.WriterEpoch,granted.RemainingMilliseconds,
-                granted.GrantRequestElapsedMilliseconds,actor.DemandCurrent,publicationProof:granted.Proof);
+                granted.GrantRequestElapsedMilliseconds,actor.DemandCurrent,clock:granted.ReadMonotonicMilliseconds,frequency:1000,
+                publicationProof:granted.Proof,requestStartedTimestamp:granted.MonotonicRequestStartedMilliseconds);
         }
         public async Task<HistoricalReplicaState> ReadHistoricalCloudStateAsync(OperatorSession session,CancellationToken ct)
         {

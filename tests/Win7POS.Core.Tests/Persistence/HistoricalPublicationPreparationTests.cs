@@ -48,6 +48,12 @@ public sealed partial class HistoricalLedgerTests
         }
         var admission=await new HistoricalPublicationPreparer(f.Factory,()=>{},Request,()=>clock).PrepareAsync(draft,PreparationAuthority(),default);
         Assert.AreEqual(7L,admission.GrantRequestElapsedMilliseconds);Assert.AreEqual(60000,admission.RemainingMilliseconds);
+        Assert.AreEqual(600000L,admission.MonotonicRequestStartedMilliseconds);
+        clock+=39000;
+        var live=new HistoricalLocalWriteGrant(admission.Proof.OperationId,"1",admission.RemainingMilliseconds,admission.GrantRequestElapsedMilliseconds,
+            ()=>{},admission.ReadMonotonicMilliseconds,1000,admission.Proof,admission.MonotonicRequestStartedMilliseconds);
+        Assert.AreEqual(39007L,live.CaptureCommitWindow(TimeSpan.FromSeconds(10)).RequestElapsedMilliseconds);
+        clock+=2000;Assert.Throws<InvalidOperationException>(()=>live.CaptureCommitWindow(TimeSpan.FromSeconds(10)));
         CollectionAssert.AreEqual(new[]{"local_prepare","local_stage","local_authorize"},calls);
         using var c=f.Factory.Open();Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation"));
         Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox"));

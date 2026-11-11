@@ -10,11 +10,14 @@ namespace Win7POS.Data.Import
 {
     public sealed class HistoricalPublicationAdmission
     {
-        internal HistoricalPublicationAdmission(HistoricalPublicationProof proof,int remaining,long elapsed)
-        {Proof=proof;RemainingMilliseconds=remaining;GrantRequestElapsedMilliseconds=elapsed;}
+        private readonly Func<long> _milliseconds;
+        internal HistoricalPublicationAdmission(HistoricalPublicationProof proof,int remaining,long elapsed,long started,Func<long> milliseconds)
+        {Proof=proof;RemainingMilliseconds=remaining;GrantRequestElapsedMilliseconds=elapsed;MonotonicRequestStartedMilliseconds=started;_milliseconds=milliseconds;}
         public HistoricalPublicationProof Proof{get;}
         public int RemainingMilliseconds{get;}
         public long GrantRequestElapsedMilliseconds{get;}
+        public long MonotonicRequestStartedMilliseconds{get;}
+        public long ReadMonotonicMilliseconds()=>_milliseconds();
     }
 
     /// <summary>
@@ -73,7 +76,7 @@ namespace Win7POS.Data.Import
             Demand(ct);var elapsed=checked(_milliseconds()-started);
             if(elapsed<0)throw new InvalidOperationException("history_local_write_grant_invalid");
             if(elapsed>=granted.RemainingMilliseconds-10000L)throw new InvalidOperationException("history_local_write_grant_expired");
-            return new HistoricalPublicationAdmission(proof,granted.RemainingMilliseconds,elapsed);
+            return new HistoricalPublicationAdmission(proof,granted.RemainingMilliseconds,elapsed,started,_milliseconds);
         },ct);
 
         private void Demand(CancellationToken ct){ct.ThrowIfCancellationRequested();_demand();}

@@ -164,6 +164,7 @@ namespace Win7POS.Wpf.Pos
                     writerGrant.DemandStillValid();
                     if (current.RestoreEpoch != epoch || current.AuthorityInstanceEpoch != expectedAuthority.AuthorityInstanceEpoch) throw new InvalidOperationException("historical_database_authority_changed");
                 }, admission.Token).ConfigureAwait(false);
+                authorization.Guard.AttachPublicationGrant(writerGrant);
                 using var catalog = await new CatalogShopTransitionBarrier(_factory).EnterAsync(admission.Token).ConfigureAwait(false);
                 var receipt = await Task.Run(() => mutation(authorization.Guard, sources, admission.Token,
                     () => admission.CancelAfter(Timeout.InfiniteTimeSpan),publication,writerGrant.PublicationProof), ct).ConfigureAwait(false);
