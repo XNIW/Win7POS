@@ -19,6 +19,7 @@ public sealed partial class HistoricalBaselineStoreTests
         internal readonly List<(string Operation,HistoricalCloudPayload Payload)> Requests=new();
         internal readonly string Upload=Guid.NewGuid().ToString("D"),Run=Guid.NewGuid().ToString("D");
         internal string? Ack;
+        internal string ContextEpoch="1",ContextAuthority="local",ContextSnapshot="80000000-0000-4000-8000-000000003019";
         internal readonly Dictionary<string,string> RecoveryAcks=new();internal int RecoveryCalls;
         internal BaselineTransport(HistoricalCloudExportTests.Fixture f,OnlineSyncGeneration g){F=f;G=g;}
         internal HistoricalBaselineSynchronizer Client()=>new(F.Db.Factory,G,()=>{},Request,async(_,state,ct)=>{
@@ -28,8 +29,8 @@ public sealed partial class HistoricalBaselineStoreTests
         internal async Task<HistoricalCloudResult> Request(string operation,HistoricalCloudPayload p,CancellationToken ct)
         {
             Requests.Add((operation,p));var flow=await Store(F,G).ReadAsync(Server,1,ct);
-            if(operation=="baseline_context")return new(){Baseline=new(){State=Verified?"verified":"missing",DatasetId=Server,WriterEpoch="1",WriterAuthority="local",CanPrepare=true,
-                SourceSnapshotId=Verified?"80000000-0000-4000-8000-000000003019":null,BaselineRevision=Verified?flow?.LocalRevision.ToString():null,CanonicalRevision=Verified?"1":null}};
+            if(operation=="baseline_context")return new(){Baseline=new(){State=Verified?"verified":"missing",DatasetId=Server,WriterEpoch=ContextEpoch,WriterAuthority=ContextAuthority,CanPrepare=ContextAuthority=="local",
+                SourceSnapshotId=Verified?ContextSnapshot:null,BaselineRevision=Verified?flow?.LocalRevision.ToString():null,CanonicalRevision=Verified?"1":null}};
             if(operation=="baseline_upload_create")
             {
                 if(AdmissionCreates==0)AdmissionCreates++;
@@ -65,6 +66,26 @@ public sealed partial class HistoricalBaselineStoreTests
             }
             throw new AssertFailedException("Unexpected synthetic operation.");
         }
+    }
+    [TestMethod]
+    public async Task BaselineSynchronizer_AppliedOriginalProofSurvivesWriterFreezeWithoutNewIntentOrReceipt()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var g=Generation();await new OnlineSyncGenerationRepository(f.Db.Factory).ActivateAndRecoverAsync(g,1);
+        var t=new BaselineTransport(f,g);for(var i=0;i<6&&!t.Verified;i++)await t.Client().RunAsync(default);
+        var original=(await Store(f,g).ReadAsync(Server,1,default))!;Assert.AreEqual("applied",original.State);
+        t.ContextEpoch="2";t.ContextAuthority="frozen";Assert.IsFalse(await t.Client().RunAsync(default));
+        t.ContextAuthority="web";Assert.IsFalse(await t.Client().RunAsync(default));
+        var saved=(await Store(f,g).ReadAsync(Server,1,default))!;Assert.AreEqual(original.ReceiptJson,saved.ReceiptJson);Assert.AreEqual(original.FlowId,saved.FlowId);
+        Assert.IsNull(await Store(f,g).ReadAsync(Server,2,default));Assert.AreEqual(1,t.PrepareCalls);Assert.AreEqual(1,t.ApplyCalls);Assert.AreEqual(1,t.UploadCalls);
+    }
+    [TestMethod]
+    public async Task BaselineSynchronizer_LaterWriterEpochCannotAdoptUnknownSnapshotFromAnAppliedProof()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var g=Generation();await new OnlineSyncGenerationRepository(f.Db.Factory).ActivateAndRecoverAsync(g,1);
+        var t=new BaselineTransport(f,g);for(var i=0;i<6&&!t.Verified;i++)await t.Client().RunAsync(default);
+        t.ContextEpoch="2";t.ContextAuthority="frozen";t.ContextSnapshot=Guid.NewGuid().ToString("D");
+        var error=await Assert.ThrowsAsync<HistoricalCloudRequestException>(()=>t.Client().RunAsync(default));Assert.AreEqual("history_baseline_intent_missing",error.Code);Assert.AreEqual(1,t.PrepareCalls);
+        Assert.IsNull(await Store(f,g).ReadAsync(Server,2,default));
     }
     [TestMethod]
     public async Task BaselineSynchronizer_LostUploadAndApplyResponsesRecoverOriginalIntentAfterClientRestart()
