@@ -3,44 +3,37 @@
 <!-- ASUS019_CURRENT_START -->
 ## Convergenza corrente — stessa Execution ASUS-W7POS-019
 
-Due consegne: cassa quotidiana e storico bilaterale. Execution ACTIVE, nessun
-DONE. L'utente autorizza tutti i file necessari ai residui; soglie e carico invariati.
+Due consegne: cassa quotidiana e storico bilaterale. EXECUTION ACTIVE.
+L'utente autorizza tutti i file necessari; soglie e carico restano invariati.
 Nessun merge main, deploy, installazione o nuova mutazione reale in questo checkpoint.
 
 | Scenario | SHA / comando / ambiente | Esito ed evidence | Prossimo gate |
 |---|---|---|---|
-| Cassa PR136 | d1b2bc318c8a0aecce9543dc6a96f9a1aaf7cfc3; Release42967017718, CI42967023331, Security42967023327, WPF42967096688 | PASS; U19ReleaseD1b201 verifica41file/110checksum; installer a07430ce, payload6b44ffe3 | integrare nella coppia finale prima della sua qualifica |
-| Cassa ASUS disponibile | stesso pacchetto d1b2; Integrated12 eFinal60, budget63970e30 invariato | PASS31cicli/max102.510ms e151cicli/max97.826ms; U19D1b2AsusI01/F01, cleanup naturale | Windows11 disponibile, non Win7 fisico o coppia finale |
-| Cassa hosted | stesso pacchetto; run42970975541,41file verificati | PASS Integrated33cicli/138.340ms eSoak166cicli/56.051ms; U19D1b2Hosted01, artifact13837190884 digestd100083f39920a95f54b7132f6c9ed4622ce7ea3bde00991c26ae23295106a47 | risultati distinti da ASUS |
-| Focus originale e diagnosi | prodotto149c978, FAIL258.573/258.382ms conservato; Diagnostic60 run42924975778 | diagnosi callback focus superfluo gia focalizzato, coda dietro Send; nessun blocco scanner/ASUS presunto; menu da6539c PASS73/73 | non attribuire retroattivamente i due campioni senza fasi originali |
-| Windows-All135 qualificato | ded72cce644d5f69dfe069425d124cf88a56b289; CI42999840653, Security42999840675 | PASS16/16, Load11/11 eentrambi Security; U19WinDedRemote01 verifica8entry; artifact13846238753 digest474323f858513d1225726b89c0e1ef2a5edcfbd4bbf6b34af5088c5b502dc32d; fingerprint8c3a102bbb6ef076ca920e2c9fce81feb67617e2731d7fed994f48a9c2efacd3 | il successore di composizione richiede nuova CI |
-| Load remoto originale | b976 CI42954896078 FAIL572–574.2707ms oltre500; aggregazione giorni/totale unica76146a4 | successore locale301.0258ms/remoto481.4968ms PASS; U19CloudAll05/U19Win761Remote01; ded72 nuovo LoadPASS | soglia/carico invariati, nessuna attribuzione assoluta tra VM |
-| Gate890 originale | CI42982857599 FAIL gates, altri15PASS; diagnostiche42989578469/42989936911 | causa dimostrata gate legacy fermo17 dopo18; proiezione RESULT ambigua corretta; f7 successore PASS e ded72 PASS con19; U19Win890Remote01/U19WinF7Remote01 | FAIL originali conservati, pin1–18 invariati |
-| Recovery | root dump fixture, ritiro TextBoxView dopo2100ms per timer2s; mirati eAll04 | PASS eWindows-All successori PASS; U19RecoveryHeap03/04, U19RecoveryRetirement04 | non semplice cambio5/3; nessun retry live |
-| Journal e witness client | componente10589de50e62ee9808b4a16692f4e75b6294f168 integrato ba974a6 e ded72 | target300/300, clock28/28, net48/x86 Smoke52/52 eCloud1/1; journal18/witness19, SHA19 bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee; commit atomico ledger/receipt/outbox/witness | nessuna capacita di mutazione recuperabile dal witness |
-| Admin151 qualificato | d46cb9fc50d527288077357c73f7c62d9f3e2373; CI42999850093, Cloudflare42999849993 | PASS CI/packaging, deploy SKIPPED; U19AdminD4601:58file/lock/config/tree verificati; artifact13845787706 digest910dcf2671d49737ff2cf55f6d812369505cc5d4e6b0c956289c59b7bee6ae93; treec0e1920c6a9f2be4a382419fe98d04fa646e91e4 | Worker impacchettato distinto dal servizio operativo |
-| SQL review/grant/delivery | d46 include Undo/grant62delivery ecodec originaliCLR | PASS89file/5114assert; artifact13846217006 digestf6b4be401b3acc1bfd2a4f9690ba1c510df9116633dbb189e6367725a713ea09; typecheck eLOCAL1569PASS/7SKIP | API pubblica v2 ancora chiusa |
-| Concorrenza SQL | 1adb226f integrato d46; replay42996566895 eCI d46 | PASS3scenari reali,10client rollback/uscita naturale; U19HistoryConcurrent04; artifact13843974515 digest564ac8457a8b2489d6483ec7fd3e16decaee42c9fc814d17d92897b190512b39; native/grant transactionid, authorizer advisory, freeze/replay transactionid | non prova tutti gli interleaving; primi FAIL conservati |
-| Nuova riconciliazione server | SQL92708 SHA77baa9f4c3970ffcacb0364852c02d48b2075b4bb4aa1359fe0fbef5eec15b39; successore087229e, replay43007288758 | PASS90file/5164assert e3scenari concorrenti; U19OutcomeSql02 artifact13849438166 digest1e846b22bc7b6c0a1ecaa2d908fcb27ce76094faab00be8cc49bd73c4b4d155d | primo57e1438 FAIL20/21 fixture conservato; corpus9casi ripristinato byte-esatto, prodotto invariato |
-| Contratto witness Node | 9882c4162e02dccec23fb34e5f1c4107d210e05a, source integrato identico | typecheck efoundation1579PASS/7SKIP su1586; U19OutcomeNode01; scope/proof/receipt/ACK negativo raw vincolati | FAILCRLF efixture senza nonce conservati; nessun endpoint pubblico nuovo |
-| Review eoutcome client | 1d053bc451f7473de9e9c8d18ce77b497801003c | target314/314 sourceStable; WPFnet48/x86 Cloud1/1 eSmoke8gruppi/52check PASS; U19OutcomeLaneTarget01/Cloud02/Smoke02 | Smoke01 FAILfixture privo di local_review conservato; nessuna nuova coda/timer/grant |
-| Nuovo integrato Windows135 | b8323071f944dcec797d615127f8b23e1d3a9704; runtime/test/script identici a1d053bc | READY_FOR_CI, ancora locale | push dopo commit documentale; PASSded72 resta distinto |
-| Nuovo integrato Admin151 | b30b711c20458ca302224e23fcc4cb9e40e0529f; runtime/SQL/test/script identici a52bfe3a | READY_FOR_CI, ancora locale | push dopo commit documentale; PASSd46 resta distinto |
-| Storico bilaterale | componenti distinti dalla composizione | INCOMPLETE; E2E autenticato NOT_RUN | baseline selettiva verificata automatica, confinev2/WPF, canonicalRead local, POS A→server→Admin aperto→B→A senzaeco eorigine Admin |
-| Cleanup TASK094 | solo fixture ID gia registrati, query staging read-only | PASS_SCOPED_READONLY tutti10attivi0; task094-readonly-cleanup-20261110.private.json; vecchi authFAIL ecleanupNOT_ATTESTED conservati | niente retry live ciechi |
-| Installato e dati reali | 2ad42ca9ac5601d7da9555996c1642263252b6e0; EXE SHA33a73a2c51e6fbe3082081ed787d6421da6641359f6222faf7f566538593eb0f | invariati profilo Minimondo, quattro legacy e sette XLSX | consegna distinta da build/CI |
-| Mobile / Win7 / DPI / GetnetC | handoffTASK146 comment6722613449 | nessun PASS mobile trasferito; nessun AndroidTEST verificato qui; Win7 BLOCKED_TARGET,100/125 USER_DEFERRED,200%2880×1800 conservato; moderniC MISSING | prerequisiti esterni concreti, nessuna nuova domanda DPI |
+| Cassa PR136 | d1b2bc318c8a0aecce9543dc6a96f9a1aaf7cfc3; CI42967023331, Security42967023327, WPF42967096688, Release42967017718 | PASS; U19ReleaseD1b201 verifica41file/110checksum, installer a07430ce e payload6b44ffe3 | integrare nella coppia finale prima della sua qualifica |
+| Cassa ASUS disponibile | d1b2, Integrated12 eFinal60, budget63970e30 invariato | PASS31cicli/max102.510ms e151cicli/max97.826ms; U19D1b2AsusI01/F01, cleanup naturale | Windows11 disponibile, non Win7 fisico o coppia finale |
+| Cassa hosted | d1b2, run42970975541; U19D1b2Hosted01 | PASS Integrated33cicli/138.340ms eSoak166cicli/56.051ms; artifact13837190884 digestd100083f39920a95f54b7132f6c9ed4622ce7ea3bde00991c26ae23295106a47 | mantenere distinto da ASUS |
+| Windows135 qualificato | 4f07a2d84f06ec065df04021bc62c91b050c4d78; CI43018907144 eSecurity43018907124 | PASS16/16, Load11/11; U19Win4f07Remote01 verifica8entry, artifact13854594896 digest89cab51916750ea5ddad68df4e6831bacec5926a69a99df4c5cd2b6674863c15; fingerprint1624e4ad8a5b45cedca6050129610c3f439af0692444f58b1027964081ce5022 | la baseline locale privata non e ancora integrata in questo candidato |
+| Load egeometria cee originali | cee9160 CI43009830230 FAIL14/16, U19WinCeeRemote01; locale U19CeeGeometry01 | misure geometriche PASS ma ConfirmOnce false: fixture loopback rifiutava local_review; caldo532.6015/496.8929/500.4045ms oltre500 | FAIL conservato; nessuna attribuzione hardware/scanner |
+| Correzione successore4f07 | celle giorno/ora aggregate una volta; fixture ammette review gia implementata | target23/23, U19CeeGeometry02 PASS22misure/confirm-once/cancel; remoto Loadquery286.2606ms, cold310.1317ms, misura completa valida | stessa soglia500 e stesso carico; non trasferire il PASS al futuro candidato finale |
+| Recovery eFAIL storici | timeout fixture TextBoxView/timer2s identificato, U19RecoveryHeap03/04 eRetirement04; focus149FAIL258.573/258.382ms | successori mirati eWindows-All PASS; gate890 fermo17 dopo18 corretto; originali b976/cee eFAILfixture conservati | nessun retry live o cambio arbitrario5/3 |
+| Admin151 qualificato | 221573a770b5838796dd8f91f656dc85799a7a1d; CI43009841014, Cloudflare43009840957 | PASS packaging; deploy SKIPPED; U19Admin22101 verifica58file/lock/config/tree; Worker13849982775 digestb6181d2b28a917cbfdfecd2a5fd42bcd4adcd650551d5adf95e635f307808f98 | Worker impacchettato distinto dal servizio operativo |
+| Outcome/concorrenza SQL integrati221 | replay90file/5164assert e3scenari reali concorrenti; U19Admin22101 | PASS artifact13849964696 digeste52825578ecea26d9df1a0528735577fc09b2c8fbef4a07aad28a3146f632cd4; nonce/review/witness eoriginali ricevute vincolati | API pubblica v2 ancora chiusa |
+| Baseline server privata | 92e725e32a6b77777821e3c1c85cfb63abe3573b; replay43019401370; migrate11650 e121621 additive | PASS92file/5225assert e3concorrenze; U19BaselineUploadSql01 artifact13855186857 digest29a5057ba72a8b13e4b490c08d0a5345de1068196e19fcd3f2876db7052a824a | context, evidenza legacy eupload idempotente privati; nessun nuovo endpoint esposto |
+| Contratti Node baseline | 4906bb8ad5acc79237d2076b3d184e57dc1cb82b | typecheck PASS,9mirati PASS, foundation1588PASS/7SKIP su1595; U19BaselineCodec01/02; unicoFAILCRLF corretto con blob Git esatti, pin invariati | source integrato identico nel codepoint5442650, nuova CI dopo commit documentale |
+| Baseline client privata | ce9e583567885f541b080725a7e44f76d73d3f13; C:/Dev/A19BaselineCompose01 | Store22689e7 target344/344 eCloud1/1 net48/x86; orchestratore83/83, U19BaselineFlow01; vecchi333 eFAILpin78 preservati | collegare host/trasporto; cambio sessione primaApply richiede resume/review verificato |
+| Lettura canonica privata | marker sticky solo dopo ricevuta baseline e replica completa compatibile; ever_web/pin1–19 invariati | tre prove lettura/rollback PASS incluse nel target; fonte canonica senza doppioni/eco, copia incompleta non pubblicata | nuova20 privata SHA c6527cbfdf9d438da6852f9a3f44b4e24340d60ad3d2800e6fa66ceeea50f16f; non e migrazione distribuita |
+| Storico bilaterale | grant/outbox/witness qualificati, baseline in composizione | NOT_RUN E2E autenticato reale A→server→Admin aperto→B→A eorigine Admin | completare baseline/lease recovery, SQLv2+Node boundary+WPF, poi qualifica coppia esatta |
+| TASK094 cleanup | sola lettura dei10conteggi fixture gia autorizzati | PASS tutti0; vecchio authFAIL/cleanupNOT_ATTESTED conservato | nessun retry live cieco |
+| Consegna eprerequisiti esterni | installato2ad42ca, profilo Minimondo/quattro lotti legacy/setteXLSX invariati | Win7 fisico BLOCKED_TARGET;100/125 USER_DEFERRED,200% conservato; Getnet modernoC MISSING | niente equivalenza fra build/installazione, CI/deploy, Windows11/Win7 |
+| Mobile TASK146 | coordinamento nel commento esistente6722613449; nessun AndroidTEST verificato qui | nessun nuovo PASS mobile o targetinventato | aggiornare il solo prefisso, preservando tutta la coda Mac |
 
-La riconciliazione verifica il chiamante corrente autorizzato sullo stesso device/shop,
-anche se diverso dall'autorizzatore originale: conserva separati autore economico,
-grant/prova originali e audit del courier. La vecchia sessione revocata resta negata.
-Il witness attesta il comportamento del POS conforme autenticato, non prova
-crittograficamente un file SQLite contro client alterati o cloni non dichiarati.
-Restore/lineage, dipendenze, revisione e drain restano obbligatori.
-Baseline da backup completo verificato locale; soltanto export storico selettivo online.
-Tutti i FAIL/TIMEOUT/NOT_RUN precedenti restano nelle evidence e nella cronologia;
-rerun sovrapposti non si sommano. Nessun risultato di componente e un E2E distribuito.
-Checkpoint UTC 2026-11-11T11:10:49.656357+00:00.
+Il trasferimento usa soltanto l'archivio selettivo dei sette gruppi di tabelle;
+il backup SQLite completo rimane locale. Upload, start, review eApply mantengono
+identita persistenti. Fonte eautorizzazione sono ricontrollate; nessun lock SQLite,
+gate commerciale o manutenzione backup attraversa HTTP. Nessuna nuova coda/timer.
+La prova con risposte controllate e distinta da server/Worker/browser reali.
+Non esporre la v2 incompleta e non dichiarare DONE prima dei gate critici.
+Checkpoint UTC 2026-11-11T12:49:44.409904+00:00.
 <!-- ASUS019_CURRENT_END -->
 
 <details>
