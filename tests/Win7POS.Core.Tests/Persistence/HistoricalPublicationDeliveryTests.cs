@@ -249,6 +249,7 @@ INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,sta
             new HistoricalPublicationLocalDecision(0,0,0,0,applied.Local.InsertedCount,applied.Local.SignedAmountClp,applied.Local.InsertedCount),
             new HistoricalPublicationCanonicalDecision(applied.Proof.CanonicalDecision.BatchId,8,0,0,applied.Local.InsertedCount,applied.Local.SignedAmountClp));
         var guard=PublicationGuard(HistoricalImportOperationKind.Undo,undo,fp,state.DatasetId,f.Epoch);
+        await PersistProofIntent(f,draft,proof);
         await f.Service.UndoAsync(applied.Local.BatchId,1,guard,f.Backup(),default,publicationDraft:draft,publicationProof:proof);
         var independent=await CreatePublication(f,g,"independent");var outbox=new HistoricalPublicationOutbox(f.Factory);
         var first=await outbox.ClaimAsync(g,()=>{},1000,default);Assert.AreEqual(applied.Plan.OperationId,first.OperationId);
@@ -399,8 +400,15 @@ INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,sta
             localDecision??new HistoricalPublicationLocalDecision(preview.NewCount,preview.DuplicateCount,plan.Analysis.RejectedRows.Count,plan.CorrectionApprovals.Count,0,preview.NewGrossClp,preview.NewCount),
             new HistoricalPublicationCanonicalDecision(Guid.NewGuid().ToString("D"),canonicalRevision,canonicalDuplicate?0:preview.NewCount,
                 canonicalDuplicate?preview.NewCount+preview.DuplicateCount:preview.DuplicateCount,0,canonicalDuplicate?0:preview.NewGrossClp));
+        await PersistProofIntent(f,draft,proof);
         var receipt=await f.Service.ApplyAsync(plan,PublicationGuard(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,plan.DatasetId,plan.RestoreEpoch),f.Backup(),default,publicationDraft:draft,publicationProof:proof);
         return(plan,receipt,proof);
+    }
+    static async Task PersistProofIntent(Fixture f,HistoricalPublicationDraft draft,HistoricalPublicationProof proof)
+    {
+        var journal=new HistoricalPublicationJournal(f.Factory);
+        var nonce=await journal.SaveIntentAsync(draft,proof.ServerDatasetId,proof.WriterEpoch,()=>{},default);
+        await journal.SaveGrantAsync(draft.OperationId,nonce,proof,()=>{},default);
     }
     static HistoricalPublicationServerReceipt ServerReceipt(Fixture f,(HistoricalSalesImportPlan Plan,HistoricalSalesOperationReceipt Local,HistoricalPublicationProof Proof) source)
     {

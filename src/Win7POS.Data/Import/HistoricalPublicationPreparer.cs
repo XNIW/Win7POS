@@ -27,9 +27,10 @@ namespace Win7POS.Data.Import
         private readonly Action _demand;
         private readonly Func<string,HistoricalCloudPayload,CancellationToken,Task<HistoricalCloudResult>> _request;
         private readonly Func<long> _milliseconds;
-        public HistoricalPublicationPreparer(Action demand,
+        private readonly HistoricalPublicationJournal _journal;
+        public HistoricalPublicationPreparer(SqliteConnectionFactory factory,Action demand,
             Func<string,HistoricalCloudPayload,CancellationToken,Task<HistoricalCloudResult>> request,Func<long> milliseconds=null)
-        {_demand=demand??throw new ArgumentNullException(nameof(demand));_request=request??throw new ArgumentNullException(nameof(request));
+        {_journal=new HistoricalPublicationJournal(factory);_demand=demand??throw new ArgumentNullException(nameof(demand));_request=request??throw new ArgumentNullException(nameof(request));
          _milliseconds=milliseconds??(()=>checked((long)(Stopwatch.GetTimestamp()*(1000m/Stopwatch.Frequency))));}
 
         public Task<HistoricalPublicationAdmission> PrepareAsync(HistoricalPublicationDraft draft,
@@ -41,6 +42,7 @@ namespace Win7POS.Data.Import
             if(authority.WriterAuthority!="local"||authority.ProtocolVersion!=1||writerEpoch<1)
                 throw new InvalidOperationException("history_local_writer_closed");
             var operation=Guid.Parse(draft.OperationId).ToString("D");var serverDataset=authority.DatasetId;
+            var nonce=await _journal.SaveIntentAsync(draft,serverDataset,writerEpoch,_demand,ct).ConfigureAwait(false);
             var prepared=await Request("local_prepare",new HistoricalCloudPayload{OperationId=operation,Kind=draft.Kind,
                 LocalDatasetId=draft.DatasetId,RestoreEpoch=S(draft.RestoreEpoch),RestoreLineageId=draft.RestoreLineageId,
                 BaseRevision=S(draft.BaseRevision),WriterEpoch=S(writerEpoch),RequestFingerprint=draft.RequestFingerprint,
@@ -67,6 +69,7 @@ namespace Win7POS.Data.Import
                 proof.DatasetId!=draft.DatasetId||proof.ServerDatasetId!=serverDataset||proof.RestoreLineageId!=draft.RestoreLineageId||
                 proof.RestoreEpoch!=draft.RestoreEpoch||proof.WriterEpoch!=writerEpoch||proof.ContentDigest!=draft.ContentDigest||proof.RequestFingerprint!=draft.RequestFingerprint)
                 throw new InvalidOperationException("history_publication_proof_mismatch");
+            await _journal.SaveGrantAsync(draft.OperationId,nonce,proof,_demand,ct).ConfigureAwait(false);
             Demand(ct);var elapsed=checked(_milliseconds()-started);
             if(elapsed<0)throw new InvalidOperationException("history_local_write_grant_invalid");
             if(elapsed>=granted.RemainingMilliseconds-10000L)throw new InvalidOperationException("history_local_write_grant_expired");
