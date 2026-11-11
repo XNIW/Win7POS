@@ -22,6 +22,7 @@ namespace Win7POS.Data.Import
     {
         public long LocalOperations{get;set;} public long Pending{get;set;}
         public long Attention{get;set;} public long Confirmed{get;set;} public long Unregistered{get;set;}
+        public long BaselineCovered{get;set;}
         public string LastConfirmedRevision{get;set;}
     }
     /// <summary>Historical facts only. Never writes sales, stock, fiscal or native outbox tables.</summary>
@@ -75,22 +76,31 @@ VALUES(@OperationId,@ShopId,@DeviceId,@DatasetId,@RestoreEpoch,@revision,@kind,@
         public async Task<HistoricalPublicationStatus> ReadStatusAsync(string operation,string shop,CancellationToken ct)
         {
             using var c=await _factory.OpenExistingForRecoveryAsync(ct).ConfigureAwait(false);
-            return await c.QuerySingleOrDefaultAsync<HistoricalPublicationStatus>(new CommandDefinition(@"SELECT o.operation_id OperationId,d.status Status,d.reason_code ReasonCode,d.server_revision ServerRevision,d.confirmed_at ConfirmedAt
-FROM historical_publication_outbox o JOIN historical_publication_delivery d ON d.operation_id=o.operation_id WHERE o.operation_id=@operation AND o.shop_id=@shop",new{operation,shop},cancellationToken:ct)).ConfigureAwait(false);
+            return await c.QuerySingleOrDefaultAsync<HistoricalPublicationStatus>(new CommandDefinition(@"SELECT op.operation_id OperationId,
+CASE WHEN b.operation_id IS NOT NULL THEN 'baseline_covered' ELSE d.status END Status,
+CASE WHEN b.operation_id IS NOT NULL THEN NULL ELSE d.reason_code END ReasonCode,COALESCE(b.server_revision,d.server_revision) ServerRevision,
+CASE WHEN b.operation_id IS NOT NULL THEN NULL ELSE d.confirmed_at END ConfirmedAt
+FROM historical_import_operation op LEFT JOIN historical_publication_delivery d ON d.operation_id=op.operation_id
+LEFT JOIN historical_legacy_baseline_confirmed b ON b.operation_id=op.operation_id AND b.shop_id=op.shop_id
+WHERE op.operation_id=@operation AND op.shop_id=@shop AND (d.operation_id IS NOT NULL OR b.operation_id IS NOT NULL)",new{operation,shop},cancellationToken:ct)).ConfigureAwait(false);
         }
         public async Task<HistoricalPublicationSummary> ReadSummaryAsync(string shop,CancellationToken ct)
         {
             using var c=await _factory.OpenExistingForRecoveryAsync(ct).ConfigureAwait(false);
-            return await c.QuerySingleAsync<HistoricalPublicationSummary>(new CommandDefinition(@"SELECT COUNT(*) LocalOperations,
-COALESCE(SUM(CASE WHEN d.status IN('pending','uncertain') THEN 1 ELSE 0 END),0) Pending,
-COALESCE(SUM(CASE WHEN d.status='needs_attention' THEN 1 ELSE 0 END),0) Attention,
-COALESCE(SUM(CASE WHEN d.status='synchronized' THEN 1 ELSE 0 END),0) Confirmed,
-COALESCE(SUM(CASE WHEN d.operation_id IS NULL THEN 1 ELSE 0 END),0) Unregistered,
-(SELECT server_revision FROM historical_publication_delivery d2 JOIN historical_publication_outbox o2 ON o2.operation_id=d2.operation_id
- JOIN historical_import_dataset h2 ON h2.singleton_id=1 AND h2.dataset_id=o2.local_dataset_id
- WHERE o2.shop_id=@shop AND d2.status='synchronized' ORDER BY CAST(server_revision AS INTEGER) DESC LIMIT 1) LastConfirmedRevision
+            return await c.QuerySingleAsync<HistoricalPublicationSummary>(new CommandDefinition(@"WITH source AS (
+SELECT op.operation_id,d.operation_id delivery,d.status,d.server_revision,b.operation_id baseline,b.server_revision baseline_revision
 FROM historical_import_operation op JOIN historical_import_dataset h ON h.singleton_id=1 AND h.dataset_id=op.dataset_id
-LEFT JOIN historical_publication_delivery d ON d.operation_id=op.operation_id WHERE op.shop_id=@shop",new{shop},cancellationToken:ct)).ConfigureAwait(false);
+LEFT JOIN historical_publication_delivery d ON d.operation_id=op.operation_id
+LEFT JOIN historical_legacy_baseline_confirmed b ON b.operation_id=op.operation_id AND b.shop_id=op.shop_id WHERE op.shop_id=@shop)
+SELECT COUNT(*) LocalOperations,
+COALESCE(SUM(CASE WHEN baseline IS NULL AND status IN('pending','uncertain') THEN 1 ELSE 0 END),0) Pending,
+COALESCE(SUM(CASE WHEN baseline IS NULL AND status='needs_attention' THEN 1 ELSE 0 END),0) Attention,
+COALESCE(SUM(CASE WHEN baseline IS NULL AND status='synchronized' THEN 1 ELSE 0 END),0) Confirmed,
+COALESCE(SUM(CASE WHEN baseline IS NULL AND delivery IS NULL THEN 1 ELSE 0 END),0) Unregistered,
+COALESCE(SUM(CASE WHEN baseline IS NOT NULL THEN 1 ELSE 0 END),0) BaselineCovered,
+(SELECT CAST(MAX(CAST(revision AS INTEGER)) AS TEXT) FROM(
+ SELECT server_revision revision FROM source WHERE baseline IS NULL AND status='synchronized'
+ UNION ALL SELECT baseline_revision FROM source WHERE baseline IS NOT NULL)) LastConfirmedRevision FROM source",new{shop},cancellationToken:ct)).ConfigureAwait(false);
         }
         internal static string Serialize<T>(T value){using var stream=new MemoryStream();new DataContractJsonSerializer(typeof(T)).WriteObject(stream,value);return Encoding.UTF8.GetString(stream.ToArray());}
         internal static string Hex(byte[] value)=>BitConverter.ToString(value).Replace("-","").ToLowerInvariant();

@@ -103,6 +103,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task<bool> CloudWriterDenialsAsync(string data, HistoricalSalesQaCase test)
         {
+            using(var initial=await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
+            {
+                var workflow=initial.CreateWorkflow(initialBaseline:false);var before=initial.State();var denied=false;
+                await new OnlineSyncGenerationRepository(initial.Factory).ActivateAndRecoverAsync(initial.Generation,1);
+                try{await workflow.ApplyHistoricalSalesAsync(await initial.PlanAsync(),initial.Operator,CancellationToken.None);}
+                catch(InvalidOperationException e){denied=e.Message=="history_cloud_initial_sync_required";}
+                using var c=initial.Factory.Open();var noIntent=c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_preparation_intent")==0;
+                var passed=denied&&noIntent&&initial.LocalWriteRequests==0&&initial.State()==before&&!workflow.IsHistoricalMaintenanceActive;
+                test.PrivateDiagnostic("synthetic_initial_baseline_pending;no_intent="+noIntent+";passed="+passed);
+                if(!passed)return false;
+            }
             foreach (var reason in new[] { "frozen", "web", "offline", "wrong_operation", "expired", "v1_only" })
             {
                 using var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data);

@@ -39,7 +39,12 @@ $migrationFiles = @(
     "src/Win7POS.Data/Migrations/SchemaMigrationRunner.cs",
     "src/Win7POS.Data/Migrations/LegacySchemaDetector.cs",
     "src/Win7POS.Data/Import/HistoricalSalesSchema.cs",
-    "src/Win7POS.Data/Import/HistoricalCloudSchema.cs"
+    "src/Win7POS.Data/Import/HistoricalCloudSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalPublicationSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalPreparationSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalOutcomeSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalBaselineSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalLegacyBaselineSchema.cs"
 )
 $testFiles = @(
     "tests/Win7POS.Core.Tests/Data/MigrationRunnerTests.cs",
@@ -101,7 +106,9 @@ Require-Text $registry 'HistoricalOutcomeSchema\.Apply,\s*IsPostHistoricalOutcom
 Require-Text $registry 'IsPostHistoricalPreparationSchemaStructurallyValid\(detector\) && HistoricalOutcomeSchema\.IsSatisfied\(detector\)' "current schema retains preparation invariants before validating outcome evidence"
 Require-Text $registry 'IsPostHistoricalPublicationSchemaStructurallyValid\(detector\) && HistoricalPreparationSchema\.IsSatisfied\(detector\)' "current schema retains outbox invariants before validating the preparation journal"
 Require-Text $registry 'IsPostHistoricalSchemaStructurallyValid\(detector\) && HistoricalCloudSchema\.IsSatisfied\(detector\)' "current schema retains historical invariants before validating the cloud cache"
-Require-Text $registry 'HistoricalBaselineSchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalBaselineFlow' "baseline flow requires the latest invariant and explicit baseline recognizer"
+Require-Text $registry 'HistoricalBaselineSchema\.Apply,\s*IsPostHistoricalBaselineFlowSchemaStructurallyValid,\s*IsRecognizedHistoricalBaselineFlow' "baseline flow retains its frozen invariant and explicit baseline recognizer"
+Require-Text $registry 'HistoricalLegacyBaselineSchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalLegacyBaseline' "legacy baseline inclusion requires the latest invariant and explicit baseline recognizer"
+Require-Text $registry 'IsPostHistoricalBaselineFlowSchemaStructurallyValid\(detector\) && HistoricalLegacyBaselineSchema\.IsSatisfied\(detector\)' "current schema retains the frozen baseline invariant before legacy inclusion metadata"
 Require-Text $registry 'IsPostHistoricalOutcomeSchemaStructurallyValid\(detector\) && HistoricalBaselineSchema\.IsSatisfied\(detector\)' "current schema retains the frozen outcome invariant before baseline metadata"
 Require-Text $registry 'IsCanonicalRegistry' "special ledgerless recognition is restricted to the canonical registry"
 Require-Text $migration 'RecognizesLedgerlessBaseline' "ledgerless baseline recognition is explicit migration metadata"
@@ -146,7 +153,8 @@ $expectedIds = @(
     "0017-historical-publication-outbox",
     "0018-historical-preparation-journal",
     "0019-historical-outcome-witnesses",
-    "0020-historical-baseline-flow"
+    "0020-historical-baseline-flow",
+    "0021-historical-legacy-baseline"
 )
 if (($ids -join "|") -ne ($expectedIds -join "|")) {
     Fail "registry is not the expected append-only ordered migration sequence"
@@ -175,7 +183,8 @@ $expectedChecksums = @(
     "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b",
     "2f02c30616730d50bc23c37e123a97407753b693f25c7f6bf0326e0e79160712",
     "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee",
-    "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1"
+    "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1",
+    "cb203678ef8ed61b30d97767bc46767eff29760356c0d14321c01f3b12bce85b"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or
@@ -187,7 +196,7 @@ if (-not $failed) { Pass "published ID-to-checksum mapping is pinned in registry
 
 $trueBeforeApplyCount = [regex]::Matches(
     $registry,
-    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply|HistoricalCloudSchema\.Apply|HistoricalPublicationSchema\.Apply|HistoricalPreparationSchema\.Apply|HistoricalOutcomeSchema\.Apply|HistoricalBaselineSchema\.Apply)').Count
+    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply|HistoricalCloudSchema\.Apply|HistoricalPublicationSchema\.Apply|HistoricalPreparationSchema\.Apply|HistoricalOutcomeSchema\.Apply|HistoricalBaselineSchema\.Apply|HistoricalLegacyBaselineSchema\.Apply)').Count
 if ($trueBeforeApplyCount -ne $expectedIds.Count) {
     Fail "every published PR-B migration must require a pre-migration backup"
 }

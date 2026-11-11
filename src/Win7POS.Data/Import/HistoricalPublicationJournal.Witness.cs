@@ -56,7 +56,7 @@ FROM historical_publication_outbox WHERE operation_id=@operation",new{operation=
                 ||c.ExecuteScalar<string>("SELECT state FROM historical_preparation_outcome WHERE operation_id=@operation",new{operation=row.OperationId},t)!="aborted")
                 throw new InvalidOperationException("history_preparation_commit_exists");
             var sequence=c.ExecuteScalar<long>(@"SELECT COALESCE(MAX(sequence),0) FROM historical_publication_outbox
-WHERE shop_id=@ShopId AND device_id=@DeviceId AND local_dataset_id=@DatasetId",new{row.ShopId,row.DeviceId,row.DatasetId},t);
+WHERE shop_id=@ShopId AND device_id=@DeviceId AND local_dataset_id=@DatasetId AND proof_json IS NOT NULL",new{row.ShopId,row.DeviceId,row.DatasetId},t);
             var witness=CommonWitness(row,"aborted",row.BaseRevision,sequence);
             if(row.Proof!=null)
             {
@@ -90,8 +90,9 @@ WHERE shop_id=@ShopId AND device_id=@DeviceId AND local_dataset_id=@DatasetId",n
                 rows=System.Linq.Enumerable.ToArray(c.Query<Intent>(Select+@"
 LEFT JOIN historical_commit_witness w ON w.operation_id=i.operation_id
 WHERE i.shop_id=@shop AND i.device_id=@device AND s.state IN('staging','prepared','authorized','aborted') AND w.server_resolution IS NULL
-AND NOT EXISTS(SELECT 1 FROM historical_publication_outbox o JOIN historical_publication_delivery d ON d.operation_id=o.operation_id
- WHERE o.shop_id=@shop AND o.device_id=@device AND d.status<>'synchronized')
+AND NOT EXISTS(SELECT 1 FROM historical_publication_outbox o LEFT JOIN historical_publication_delivery d ON d.operation_id=o.operation_id
+ WHERE o.shop_id=@shop AND o.device_id=@device AND (d.operation_id IS NULL OR d.status<>'synchronized')
+ AND NOT EXISTS(SELECT 1 FROM historical_legacy_baseline_confirmed b WHERE b.operation_id=o.operation_id AND b.shop_id=o.shop_id))
 ORDER BY i.created_at,i.operation_id LIMIT 4",new{shop=generation.ShopId,device=generation.ShopDeviceId},t));
                 demand();ct.ThrowIfCancellationRequested();t.Commit();
             }

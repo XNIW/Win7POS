@@ -414,8 +414,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             internal int LocalWriteRequests;
             private readonly Dictionary<string,HistoricalSalesImportPlan> _decisionPlans=new Dictionary<string,HistoricalSalesImportPlan>(StringComparer.Ordinal);
-            internal PosWorkflowService CreateWorkflow(string rejection = null,bool allNewHistoryFixture=false)
+            internal PosWorkflowService CreateWorkflow(string rejection = null,bool allNewHistoryFixture=false,bool initialBaseline=true)
             {
+                if(initialBaseline)HistoricalPublicationAdmissionFixture.ConfirmInitialBaselineAsync(Factory,Operator,Generation,
+                    "90000000-0000-4000-8000-000000003019",CancellationToken.None).GetAwaiter().GetResult();
                 var workflow = new PosWorkflowService(Options, () => DateTimeOffset.UtcNow);
                 var publication=new HistoricalPublicationAdmissionFixture(ShopId,Generation.ShopDeviceId,"90000000-0000-4000-8000-000000003019",(operation,kind,batch)=>
                 {

@@ -6,9 +6,15 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Dapper;
 using Win7POS.Core.Import;
 using Win7POS.Core.Online;
 using Win7POS.Data.Import;
+using Win7POS.Data;
+using Win7POS.Data.Online;
+using Win7POS.Wpf.Infrastructure.Security;
 
 namespace Win7POS.Wpf.UiSmokeHarness
 {
@@ -17,6 +23,44 @@ namespace Win7POS.Wpf.UiSmokeHarness
     // admission, the migration baseline or authenticated distributed E2E.
     internal sealed class HistoricalPublicationAdmissionFixture
     {
+        // Component precondition: real authenticated operator guard, selective
+        // export, backup and durable store; only the remote ACK is simulated.
+        // This does not qualify SQL admission or distributed baseline delivery.
+        internal static async Task ConfirmInitialBaselineAsync(SqliteConnectionFactory factory,OperatorSession session,
+            OnlineSyncGeneration generation,string serverDataset,CancellationToken ct)
+        {
+            var generations=new OnlineSyncGenerationRepository(factory);
+            if(!await generations.IsCurrentAndActiveAsync(generation).ConfigureAwait(false))await generations.ActivateAndRecoverAsync(generation,1).ConfigureAwait(false);
+            Action demand=()=>factory.AccessContext.DemandPath(factory.DbPath);
+            var store=new HistoricalBaselineStore(factory,generation,demand);
+            if(await store.IsReadyForPublicationAsync(serverDataset,1,ct).ConfigureAwait(false))return;
+            var state=await new HistoricalSalesImportService(factory,()=>factory.AuthorityStamp).ReadDatasetAsync(ct).ConfigureAwait(false);
+            var capture=typeof(OperatorSession).GetMethod("CaptureHistoricalCloudExportGuard",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+            var guard=(HistoricalCloudExportGuard)capture.Invoke(session,new object[]{generation.ShopId,state.DatasetId,state.DataRevision,factory.AuthorityStamp.RestoreEpoch,demand});
+            var root=Path.Combine(Path.GetTempPath(),"b-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
+            var exported=await new HistoricalCloudExporter(factory).ExportBaselineAsync(Path.Combine(root,"history.w7history.zip"),Path.Combine(root,"backup.sqlite"),guard,
+                Guid.Parse(state.RestoreLineageId).ToString("D"),ct).ConfigureAwait(false);
+            var flow=await store.SavePreparedAsync(exported,serverDataset,1,guard,ct).ConfigureAwait(false);
+            await store.SaveUploadAsync(flow.FlowId,Guid.NewGuid().ToString("D"),ct).ConfigureAwait(false);
+            await store.SaveReadyAsync(flow.FlowId,ct).ConfigureAwait(false);
+            await store.SaveRunAsync(flow.FlowId,Guid.NewGuid().ToString("D"),ct).ConfigureAwait(false);
+            await store.SealReviewAsync(flow.FlowId,new string('a',64),ct).ConfigureAwait(false);
+            flow=await store.ReadAsync(serverDataset,1,ct).ConfigureAwait(false);
+            var snapshot=Guid.NewGuid().ToString("D");
+            using var c=factory.Open();
+            var active=c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1").ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var inactive=c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=0").ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var batches=c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_batch").ToString(System.Globalization.CultureInfo.InvariantCulture);
+            // All interpolated identifiers are generated or guard-validated.
+            var json="{\"operation_id\":\""+Guid.NewGuid().ToString("D")+"\",\"kind\":\"migrate\",\"source_run_id\":\""+flow.RunId+
+                "\",\"source_snapshot_id\":\""+snapshot+"\",\"dataset_id\":\""+flow.ServerDatasetId+"\",\"revision\":\"1\",\"writer_epoch\":\"1\","+
+                "\"new_active\":"+active+",\"new_inactive\":"+inactive+",\"duplicates\":0,\"new_batches\":"+batches+",\"original_evidence_level\":\"legacy_attested\",\"baseline_context\":{"+
+                "\"state\":\"baseline_verified\",\"source_snapshot_id\":\""+snapshot+"\",\"local_dataset_id\":\""+flow.LocalDatasetId+
+                "\",\"local_revision\":\""+flow.LocalRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)+"\",\"restore_epoch\":\""+
+                flow.RestoreEpoch.ToString(System.Globalization.CultureInfo.InvariantCulture)+"\",\"restore_lineage_id\":\""+flow.RestoreLineageId+"\",\"writer_epoch\":\"1\"}}";
+            await store.SaveReceiptAsync(flow.FlowId,json,ct).ConfigureAwait(false);
+        }
+
         // Synthetic component only: invoke the actual trusted constructor and
         // binding checks without widening product visibility to the harness.
         internal static void AttachLiveGrant(HistoricalImportAuthorizationCommitGuard guard,HistoricalPublicationProof proof,Action demand)

@@ -314,7 +314,15 @@ postcondition=current-structural-schema",
                     "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1",
                     "1.0.0",
                     "Additive baseline and sticky read selection; restore requires verified backup and reconciliation of original outcomes.",
-                    true,HistoricalBaselineSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalBaselineFlow)
+                    true,HistoricalBaselineSchema.Apply,IsPostHistoricalBaselineFlowSchemaStructurallyValid,IsRecognizedHistoricalBaselineFlow),
+                new SchemaMigration(
+                    "0021-historical-legacy-baseline",
+                    "Track original legacy operations included in a verified initial baseline without fabricating incremental receipts.",
+                    "0021-historical-legacy-baseline/v1\n" + HistoricalLegacyBaselineSchema.Sql,
+                    "cb203678ef8ed61b30d97767bc46767eff29760356c0d14321c01f3b12bce85b",
+                    "1.0.0",
+                    "Additive immutable source inclusion metadata; no legacy financial row or published migration is rewritten.",
+                    true,HistoricalLegacyBaselineSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalLegacyBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -343,6 +351,8 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+            => IsPostHistoricalBaselineFlowSchemaStructurallyValid(detector) && HistoricalLegacyBaselineSchema.IsSatisfied(detector);
+        private static bool IsPostHistoricalBaselineFlowSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalOutcomeSchemaStructurallyValid(detector) && HistoricalBaselineSchema.IsSatisfied(detector);
         private static bool IsPostHistoricalOutcomeSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalPreparationSchemaStructurallyValid(detector) && HistoricalOutcomeSchema.IsSatisfied(detector);
@@ -409,11 +419,22 @@ WHERE s.operation_id IS NULL OR s.state<>w.outcome
         private static bool IsRecognizedHistoricalBaselineFlow(LegacySchemaDetector detector)
         {
             if(detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'historical_baseline_%'",transaction:detector.Transaction)==0)return false;
-            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalOutcomeBaseline(detector)
+            if(!IsPostHistoricalBaselineFlowSchemaStructurallyValid(detector)||!IsRecognizedHistoricalOutcomeBaseline(detector)
                 ||!detector.NoRows(@"SELECT 1 FROM historical_baseline_read_mode m LEFT JOIN historical_baseline_flow f ON f.flow_id=m.flow_id
 WHERE f.flow_id IS NULL OR f.state<>'applied' OR f.shop_id<>m.shop_id OR f.local_dataset_id<>m.local_dataset_id
  OR f.restore_lineage_id<>m.restore_lineage_id OR f.server_dataset_id<>m.server_dataset_id LIMIT 1")
                 ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Historical baseline flow is incomplete or inconsistent.");
+            return true;
+        }
+
+        private static bool IsRecognizedHistoricalLegacyBaseline(LegacySchemaDetector detector)
+        {
+            if(!detector.TableExists("historical_legacy_baseline_operation"))return false;
+            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalBaselineFlow(detector)
+                ||!detector.NoRows(@"SELECT 1 FROM historical_legacy_baseline_operation b
+LEFT JOIN historical_baseline_flow f ON f.flow_id=b.flow_id LEFT JOIN historical_import_operation op ON op.operation_id=b.operation_id
+WHERE f.flow_id IS NULL OR op.operation_id IS NULL OR f.shop_id<>op.shop_id OR f.local_dataset_id<>op.dataset_id LIMIT 1")
+                ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Legacy baseline inclusion evidence is incomplete or inconsistent.");
             return true;
         }
 

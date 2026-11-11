@@ -364,6 +364,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         CheckCatalogRetryUi(proof,persist,"geometry_component_has_verified_empty",catalog.Code=="catalog_authoritatively_empty");
                         var access=await HistoricalOnboardingAccess.CreateAsync(factory,session,host.CurrentGeneration,cancellationToken);
                         var service=new Win7POS.Wpf.Pos.PosWorkflowService(factory,()=>DateTimeOffset.UtcNow);
+                        await HistoricalPublicationAdmissionFixture.ConfirmInitialBaselineAsync(factory,session,host.CurrentGeneration,
+                            "90000000-0000-4000-8000-000000000245",cancellationToken);
                         var workspace=new HistoricalOnboardingDialog(access,service){Owner=owner};
                         workspace.Show();await Dispatcher.Yield(DispatcherPriority.ContextIdle);
                         await geometry.VerifyWorkspaceAsync(workspace,factory,cancellationToken);workspace.Close();

@@ -39,11 +39,12 @@ public sealed class MigrationRunnerTests
             ["0017-historical-publication-outbox"] = "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b",
             ["0018-historical-preparation-journal"] = "2f02c30616730d50bc23c37e123a97407753b693f25c7f6bf0326e0e79160712",
             ["0019-historical-outcome-witnesses"] = "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee",
-            ["0020-historical-baseline-flow"] = "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1"
+            ["0020-historical-baseline-flow"] = "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1",
+            ["0021-historical-legacy-baseline"] = "cb203678ef8ed61b30d97767bc46767eff29760356c0d14321c01f3b12bce85b"
         };
 
-        Assert.AreEqual(20, migrations.Count);
-        Assert.AreEqual("0020-historical-baseline-flow", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(21, migrations.Count);
+        Assert.AreEqual("0021-historical-legacy-baseline", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -157,7 +158,7 @@ WHERE code = 'SNAPSHOT-BASELINE';"),
             OptionsThatCountBackups(() => backups++)).Run();
         Assert.AreEqual(1, backups);
         CollectionAssert.AreEqual(SchemaMigrationRegistry.All.Take(14).Select(x => x.MigrationId).ToArray(), result.BootstrappedMigrationIds.ToArray());
-        CollectionAssert.AreEqual(new[] { "0015-historical-card-imports","0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow" }, result.AppliedMigrationIds.ToArray());
+        CollectionAssert.AreEqual(new[] { "0015-historical-card-imports","0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow","0021-historical-legacy-baseline" }, result.AppliedMigrationIds.ToArray());
         AssertLatestLedger(database.Factory);
         using var verify = database.Factory.Open();
         Assert.AreEqual(1L, verify.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_dataset"));
@@ -233,7 +234,7 @@ VALUES('PRE-0007', 2, 750, 750, 0, 0);");
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow","0021-historical-legacy-baseline"
             },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
@@ -283,7 +284,7 @@ VALUES('perf2a.migration-probe', 'preserve-before-0009');");
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
                 "0015-historical-card-imports",
-                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow"
+                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow","0021-historical-legacy-baseline"
             },
             first.AppliedMigrationIds.ToArray());
         Assert.IsTrue(second.WasNoOp);
@@ -625,6 +626,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
     [DataRow(17,"0018-historical-preparation-journal")]
     [DataRow(18,"0019-historical-outcome-witnesses")]
     [DataRow(19,"0020-historical-baseline-flow")]
+    [DataRow(20,"0021-historical-legacy-baseline")]
     public void CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor(int prefix,string successor)
     {
         using var database = MigrationDatabase.Create();

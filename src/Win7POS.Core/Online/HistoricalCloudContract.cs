@@ -111,6 +111,7 @@ namespace Win7POS.Core.Online
         [DataMember(Name="upload_id")] public string UploadId { get; set; }
         [DataMember(Name="object_key")] public string ObjectKey { get; set; }
         [DataMember(Name="signed_url")] public string SignedUrl { get; set; }
+        [DataMember(Name="upload_required")] public bool? UploadRequired { get; set; }
         [DataMember(Name="run_id")] public string RunId { get; set; }
         [DataMember(Name="file_name")] public string FileName { get; set; }
         [DataMember(Name="sha256")] public string Sha256 { get; set; }

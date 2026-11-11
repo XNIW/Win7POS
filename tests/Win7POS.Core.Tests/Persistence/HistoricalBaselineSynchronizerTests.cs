@@ -14,7 +14,7 @@ public sealed partial class HistoricalBaselineStoreTests
     {
         internal readonly HistoricalCloudExportTests.Fixture F;
         internal OnlineSyncGeneration G;
-        internal bool LoseUpload,LoseApply,LoseRecovery,StaleApply,Verified,ReviewAllowed=true,UploadVerified=true,ChangeUpload,RevokeOnUpload;
+        internal bool LoseUpload,LoseApply,LoseRecovery,StaleApply,Verified,ReviewAllowed=true,UploadVerified=true,ChangeUpload,RevokeOnUpload,AlreadyUploaded;
         internal int PrepareCalls,UploadCalls,AdmissionCreates,ApplyCalls,StartCalls;
         internal readonly List<(string Operation,HistoricalCloudPayload Payload)> Requests=new();
         internal readonly string Upload=Guid.NewGuid().ToString("D"),Run=Guid.NewGuid().ToString("D");
@@ -37,7 +37,7 @@ public sealed partial class HistoricalBaselineStoreTests
                 if(LoseUpload){LoseUpload=false;throw new HistoricalCloudRequestException("history_timeout",false,true);}
                 if(RevokeOnUpload)await new OnlineSyncGenerationRepository(F.Db.Factory).ActivateAndRecoverAsync(Generation(),2);
                 var id=ChangeUpload?Guid.NewGuid().ToString("D"):Upload;
-                return new(){UploadId=id,ObjectKey="history/"+flow.ShopId+"/"+id,SignedUrl="synthetic-not-a-real-url"};
+                return new(){UploadId=id,ObjectKey="history/"+flow.ShopId+"/"+id,UploadRequired=!AlreadyUploaded,SignedUrl=AlreadyUploaded?null:"synthetic-not-a-real-url"};
             }
             if(operation=="baseline_upload_ready"||operation=="baseline_upload_status")return new(){UploadId=Upload,State=UploadVerified?"verified":"uploaded",
                 FileName=Path.GetFileName(flow!.ArchivePath),Sha256=flow.ArchiveSha256,ByteLength=new FileInfo(flow.ArchivePath).Length.ToString()};
@@ -163,5 +163,13 @@ public sealed partial class HistoricalBaselineStoreTests
         t.Verified=true;t.Ack=Receipt(flow);Assert.IsTrue(await t.Client().RunAsync(default));
         var applied=(await Store(f,t.G).ReadAsync(Server,1,default))!;Assert.AreEqual("applied",applied.State);Assert.AreEqual(g.PosSessionId,applied.RunSessionId);
         Assert.AreEqual(original.ApplyRequestId,applied.ApplyRequestId);Assert.AreEqual(t.Ack,applied.ReceiptJson);Assert.IsFalse(t.Requests.Any(x=>x.Operation=="baseline_apply"));
+    }
+    [TestMethod]
+    public async Task BaselineSynchronizer_PutAckLostUsesOwnedExistingObjectButStillRequiresWorkerVerification()
+    {
+        using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var g=Generation();await Prepare(f,g);var t=new BaselineTransport(f,g){AlreadyUploaded=true,UploadVerified=false};
+        Assert.IsTrue(await t.Client().RunAsync(default));Assert.IsTrue(await t.Client().RunAsync(default));Assert.IsFalse(await t.Client().RunAsync(default));
+        Assert.AreEqual(0,t.UploadCalls);Assert.AreEqual(0,t.StartCalls);Assert.AreEqual("upload_ready",(await Store(f,g).ReadAsync(Server,1,default))!.State);
+        t.UploadVerified=true;for(var i=0;i<3;i++)Assert.IsTrue(await t.Client().RunAsync(default));Assert.AreEqual(1,t.ApplyCalls);Assert.AreEqual(0,t.UploadCalls);
     }
 }

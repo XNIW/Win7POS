@@ -34,7 +34,7 @@ VALUES(1,0,4,'unverified',10,20);");
         }
 
         var migrated = new SchemaMigrationRunner(database.Factory).Run();
-        CollectionAssert.AreEqual(new[] { "0014-catalog-import-plans-and-drafts", "0015-historical-card-imports", "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow" }, migrated.AppliedMigrationIds.ToArray());
+        CollectionAssert.AreEqual(new[] { "0014-catalog-import-plans-and-drafts", "0015-historical-card-imports", "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow","0021-historical-legacy-baseline" }, migrated.AppliedMigrationIds.ToArray());
         Assert.AreEqual(ledgerless ? 13 : 0, migrated.BootstrappedMigrationIds.Count);
         Assert.IsFalse(string.IsNullOrEmpty(migrated.BackupFileName));
         using (var connection = database.Factory.Open())
@@ -124,7 +124,7 @@ INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_
         var result = new SchemaMigrationRunner(database.Factory).Run();
 
         CollectionAssert.AreEqual(
-            new[] { "0013-catalog-import-recovery", "0014-catalog-import-plans-and-drafts", "0015-historical-card-imports", "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow" },
+            new[] { "0013-catalog-import-recovery", "0014-catalog-import-plans-and-drafts", "0015-historical-card-imports", "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow","0021-historical-legacy-baseline" },
             result.AppliedMigrationIds.ToArray());
         Assert.AreEqual(ledgerless ? 12 : 0, result.BootstrappedMigrationIds.Count);
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.BackupFileName));
@@ -143,11 +143,11 @@ INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_
     }
 
     [TestMethod]
-    public void NewDatabaseAndCurrentLedgerlessBaseline_UseCanonical0020()
+    public void NewDatabaseAndCurrentLedgerlessBaseline_UseCanonical0021()
     {
         using var database = MigrationDatabase.Create();
         var first = new SchemaMigrationRunner(database.Factory).Run();
-        Assert.AreEqual(20, first.AppliedMigrationIds.Count);
+        Assert.AreEqual(21, first.AppliedMigrationIds.Count);
         Assert.AreEqual(0, first.BootstrappedMigrationIds.Count);
         using (var connection = database.Factory.Open())
         {
@@ -161,7 +161,7 @@ INSERT INTO catalog_import_plan_part(plan_id,ordinal,outbox_id,payload_hash,row_
 
         var bootstrapped = new SchemaMigrationRunner(database.Factory).Run();
 
-        Assert.AreEqual(20, bootstrapped.BootstrappedMigrationIds.Count);
+        Assert.AreEqual(21, bootstrapped.BootstrappedMigrationIds.Count);
         Assert.AreEqual(0, bootstrapped.AppliedMigrationIds.Count);
         using var verify = database.Factory.Open();
         CollectionAssert.AreEqual(
@@ -411,7 +411,7 @@ VALUES(@priorId,0,1,'retired',@retirement,@id,3,6);",
         if (valid)
         {
             var result = new SchemaMigrationRunner(database.Factory).Run();
-            Assert.AreEqual(20, result.BootstrappedMigrationIds.Count);
+            Assert.AreEqual(21, result.BootstrappedMigrationIds.Count);
             Assert.AreEqual(0, result.AppliedMigrationIds.Count);
         }
         else

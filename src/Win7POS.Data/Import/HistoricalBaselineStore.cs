@@ -53,7 +53,30 @@ FROM historical_baseline_flow ";
 AND local_dataset_id=(SELECT dataset_id FROM historical_import_dataset WHERE singleton_id=1)
 AND replace(restore_lineage_id,'-','')=(SELECT replace(value,'-','') FROM app_settings WHERE key='pos.history.restore_lineage_id') COLLATE NOCASE",
                 new{shop=_generation.ShopId,device=_generation.ShopDeviceId,serverDataset,writerEpoch},t);
-            if(flow!=null)DemandFlow(c,t,flow,false);_demand();t.Commit();return flow;
+            if(flow!=null)DemandFlow(c,t,flow,false,flow.State!="applied");_demand();t.Commit();return flow;
+        }
+
+        // Applied baseline is a device/dataset fact. A later authorized staff
+        // member may publish, but cannot resume or alter the original transfer.
+        // No intent is written by this preflight, including when it returns false.
+        public async Task<bool> IsReadyForPublicationAsync(string serverDataset,long writerEpoch,CancellationToken ct)
+        {
+            HistoricalReplicaProtocol.DemandId(serverDataset);if(writerEpoch<1)throw new ArgumentOutOfRangeException(nameof(writerEpoch));
+            _demand();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction(deferred:true);
+            await DemandGeneration(c,t,ct).ConfigureAwait(false);
+            var f=c.QuerySingleOrDefault<HistoricalBaselineFlow>(Select+@"WHERE shop_id=@shop AND device_id=@device AND server_dataset_id=@serverDataset AND writer_epoch=@writerEpoch
+AND state='applied' AND restore_epoch=@restore
+AND local_dataset_id=(SELECT dataset_id FROM historical_import_dataset WHERE singleton_id=1)
+AND local_revision<=(SELECT data_revision FROM historical_import_dataset WHERE singleton_id=1)
+AND replace(restore_lineage_id,'-','')=(SELECT replace(value,'-','') FROM app_settings WHERE key='pos.history.restore_lineage_id') COLLATE NOCASE",
+                new{shop=_generation.ShopId,device=_generation.ShopDeviceId,serverDataset,writerEpoch,restore=_factory.AuthorityStamp.RestoreEpoch},t);
+            if(f!=null)
+            {
+                HistoricalBaselineReceipt.Read(f.ReceiptJson,f);
+                var stored=c.ExecuteScalar<string>("SELECT receipt_sha256 FROM historical_baseline_flow WHERE flow_id=@FlowId",f,t);
+                if(Hash(Encoding.UTF8.GetBytes(f.ReceiptJson))!=stored)throw new InvalidOperationException("history_baseline_receipt_invalid");
+            }
+            _demand();ct.ThrowIfCancellationRequested();t.Commit();return f!=null;
         }
 
         public async Task<HistoricalBaselineFlow> SavePreparedAsync(HistoricalCloudExportReceipt receipt,string serverDataset,long writerEpoch,HistoricalCloudExportGuard guard,CancellationToken ct)
@@ -75,6 +98,14 @@ AND replace(restore_lineage_id,'-','')=(SELECT replace(value,'-','') FROM app_se
 archive_path,backup_path,archive_sha256,manifest_sha256,backup_sha256,manifest_json,start_request_id,apply_request_id,state)
 VALUES(@FlowId,@ShopId,@DeviceId,@StaffId,@LocalDatasetId,@RestoreLineageId,@RestoreEpoch,@LocalRevision,@ServerDatasetId,@WriterEpoch,@ArchivePath,@BackupPath,
 @ArchiveSha256,@ManifestSha256,@BackupSha256,@ManifestJson,@StartRequestId,@ApplyRequestId,'prepared')",flow,t);
+            // Source was verified at this exact revision; operations are
+            // immutable and the selective exporter includes every scoped one.
+            c.Execute(@"INSERT INTO historical_legacy_baseline_operation(flow_id,operation_id)
+SELECT @FlowId,op.operation_id FROM historical_import_operation op LEFT JOIN historical_publication_outbox o ON o.operation_id=op.operation_id
+WHERE op.shop_id=@ShopId AND op.dataset_id=@LocalDatasetId
+AND (o.operation_id IS NULL OR (o.proof_json IS NULL AND o.grant_id IS NULL AND o.writer_epoch IS NULL
+ AND o.receipt_json=op.receipt_json AND o.shop_id=op.shop_id AND o.local_dataset_id=op.dataset_id))
+AND NOT EXISTS(SELECT 1 FROM historical_preparation_intent i WHERE i.operation_id=op.operation_id)",flow,t);
             guard.DemandStillValid();_demand();t.Commit();return flow;
         }
 
@@ -128,9 +159,9 @@ VALUES(@FlowId,@ShopId,@DeviceId,@StaffId,@LocalDatasetId,@RestoreLineageId,@Res
         {HistoricalReplicaProtocol.DemandId(id);return c.QuerySingleOrDefault<HistoricalBaselineFlow>(Select+"WHERE flow_id=@id",new{id},t)??throw new InvalidOperationException("history_baseline_intent_missing");}
         private async Task DemandGeneration(SqliteConnection c,SqliteTransaction t,CancellationToken ct)
         {ct.ThrowIfCancellationRequested();_demand();if(!await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(c,t,_generation).ConfigureAwait(false))throw new OnlineSyncGenerationChangedException();}
-        private void DemandFlow(SqliteConnection c,SqliteTransaction t,HistoricalBaselineFlow f,bool exactRevision)
+        private void DemandFlow(SqliteConnection c,SqliteTransaction t,HistoricalBaselineFlow f,bool exactRevision,bool originalActor=true)
         {
-            if(f.ShopId!=_generation.ShopId||f.DeviceId!=_generation.ShopDeviceId||f.StaffId!=_generation.StaffId)throw new InvalidOperationException("history_baseline_original_actor_required");
+            if(f.ShopId!=_generation.ShopId||f.DeviceId!=_generation.ShopDeviceId||originalActor&&f.StaffId!=_generation.StaffId)throw new InvalidOperationException("history_baseline_original_actor_required");
             var d=c.QuerySingle<HistoricalSalesDatasetState>("SELECT dataset_id DatasetId,data_revision DataRevision,(SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id') RestoreLineageId FROM historical_import_dataset WHERE singleton_id=1",transaction:t);
             if(d.DatasetId!=f.LocalDatasetId||HistoricalPublicationDraft.NormalizeLineage(d.RestoreLineageId)!=f.RestoreLineageId||_factory.AuthorityStamp.RestoreEpoch!=f.RestoreEpoch||
                 (exactRevision?d.DataRevision!=f.LocalRevision:d.DataRevision<f.LocalRevision))throw new InvalidOperationException("history_baseline_scope_changed");

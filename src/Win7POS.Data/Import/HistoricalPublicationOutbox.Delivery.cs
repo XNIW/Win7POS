@@ -52,7 +52,8 @@ namespace Win7POS.Data.Import
 FROM historical_publication_outbox o JOIN historical_publication_delivery d ON d.operation_id=o.operation_id
 JOIN historical_import_dataset h ON h.singleton_id=1 AND h.dataset_id=o.local_dataset_id
 WHERE o.shop_id=@shop AND o.device_id=@device AND d.status IN('pending','uncertain') AND COALESCE(d.next_attempt_at,0)<=@now
-AND (o.depends_on_operation_id IS NULL OR EXISTS(SELECT 1 FROM historical_publication_delivery dependency WHERE dependency.operation_id=o.depends_on_operation_id AND dependency.status='synchronized'))
+AND (o.depends_on_operation_id IS NULL OR EXISTS(SELECT 1 FROM historical_publication_delivery dependency WHERE dependency.operation_id=o.depends_on_operation_id AND dependency.status='synchronized')
+ OR EXISTS(SELECT 1 FROM historical_legacy_baseline_confirmed b WHERE b.operation_id=o.depends_on_operation_id AND b.shop_id=o.shop_id))
 ORDER BY o.sequence LIMIT 1",new{shop=generation.ShopId,device=generation.ShopDeviceId,now},t,cancellationToken:ct)).ConfigureAwait(false);
                 if(row==null)break;
                 string reason=null;

@@ -43,6 +43,15 @@ namespace Win7POS.Wpf.Pos
             var authority=await RequestHistoricalCloudAsync(actor,"authority",null,ct).ConfigureAwait(false);
             await new HistoricalReplicaStore(_factory,actor.DemandCurrent).ObserveAuthorityAsync(shop,authority,ct).ConfigureAwait(false);
             if(authority.WriterAuthority!="local"||authority.ProtocolVersion!=1)throw new InvalidOperationException("history_local_writer_closed");
+            if(!Online.PosOnlineSyncSupervisorHost.TryCreateGeneration(actor.Trusted,out var generation))throw new OnlineSyncGenerationChangedException();
+            // Preparing a v2 intent before the initial baseline exists would
+            // block that very baseline on an unresolved server outcome.
+            if(!await new HistoricalBaselineStore(_factory,generation,actor.DemandCurrent).IsReadyForPublicationAsync(
+                authority.DatasetId,HistoricalReplicaProtocol.Integer(authority.WriterEpoch),ct).ConfigureAwait(false))
+            {
+                SignalHistoricalPublication();
+                throw new InvalidOperationException("history_cloud_initial_sync_required");
+            }
             var granted=await new HistoricalPublicationPreparer(_factory,actor.DemandCurrent,
                 (op,payload,token)=>RequestHistoricalCloudAsync(actor,op,payload,token)).PrepareAsync(draft,authority,ct).ConfigureAwait(false);
             return new HistoricalLocalWriteGrant(Guid.Parse(operation).ToString("D"),authority.WriterEpoch,granted.RemainingMilliseconds,

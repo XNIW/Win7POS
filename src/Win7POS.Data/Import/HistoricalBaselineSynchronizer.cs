@@ -62,10 +62,11 @@ namespace Win7POS.Data.Import
                 var length=new FileInfo(flow.ArchivePath).Length;
                 var upload=await Request("upload_create",new HistoricalCloudPayload{RequestKey=flow.FlowId,FileName=Path.GetFileName(flow.ArchivePath),Sha256=flow.ArchiveSha256,ByteLength=S(length)},ct).ConfigureAwait(false);
                 HistoricalReplicaProtocol.DemandId(upload.UploadId);
-                if(upload.ObjectKey!="history/"+flow.ShopId+"/"+upload.UploadId||string.IsNullOrEmpty(upload.SignedUrl))throw Invalid();
+                if(upload.ObjectKey!="history/"+flow.ShopId+"/"+upload.UploadId||upload.UploadRequired==null||
+                    (upload.UploadRequired==true?string.IsNullOrEmpty(upload.SignedUrl):upload.SignedUrl!=null))throw Invalid();
                 if(flow.State=="prepared"){await _store.SaveUploadAsync(flow.FlowId,upload.UploadId,ct).ConfigureAwait(false);return true;}
                 if(flow.UploadId!=upload.UploadId)throw Invalid();
-                await _upload(upload.SignedUrl,flow,ct).ConfigureAwait(false);_demand();
+                if(upload.UploadRequired==true)await _upload(upload.SignedUrl,flow,ct).ConfigureAwait(false);_demand();
                 var ready=await Request("upload_ready",new HistoricalCloudPayload{UploadId=flow.UploadId},ct).ConfigureAwait(false);DemandUpload(ready,flow);
                 await _store.SaveReadyAsync(flow.FlowId,ct).ConfigureAwait(false);return true;
             }

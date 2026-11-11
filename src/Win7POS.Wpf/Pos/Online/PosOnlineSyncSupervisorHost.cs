@@ -48,7 +48,7 @@ namespace Win7POS.Wpf.Pos.Online
     /// Generation transitions are serialized here before a replacement supervisor
     /// can issue requests or commit remote results.
     /// </summary>
-    public sealed class PosOnlineSyncSupervisorHost : IDisposable,IOnlineSyncCredentialedRequestExecutor
+    public sealed partial class PosOnlineSyncSupervisorHost : IDisposable,IOnlineSyncCredentialedRequestExecutor
     {
         private const string CatalogLastErrorSettingKey = "pos.catalog.last_error";
         private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(4);
@@ -78,12 +78,14 @@ namespace Win7POS.Wpf.Pos.Online
         internal PosOnlineSyncSupervisorHost(
             SqliteConnectionFactory factory,
             PosTrustedDeviceStore store,
-            FileLogger logger, IOnlineSyncClock clock = null)
+            FileLogger logger, IOnlineSyncClock clock = null,
+            Func<SqliteConnectionFactory,Win7POS.Data.Import.HistoricalBaselineSource> baselineSourceFactory = null)
         {
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _clock = clock;
+            _baselineSourceFactory=baselineSourceFactory??(f=>new Win7POS.Data.Import.HistoricalBaselineSource(f));
             _productImageSyncService = new ProductImageSyncService(_factory);
         }
 
@@ -1119,7 +1121,7 @@ namespace Win7POS.Wpf.Pos.Online
             string build;
             try{build=PosWorkflowService.HistoricalCloudBuildIdentity;}
             catch(InvalidOperationException){return Task.FromResult(new OnlineSyncLaneOutcome(false,"history_cloud_build_identity_required",terminal:true));}
-            return new PosHistoricalCloudSyncService(_factory).SynchronizeAsync(options,context,build,
+            return new PosHistoricalCloudSyncService(_factory,(baseline,state,token)=>PrepareHistoricalBaselineAsync(context,baseline,state,token)).SynchronizeAsync(options,context,build,
                 ()=>CurrentGeneration?.Fingerprint==context.Generation.Fingerprint,ct);
         }
 

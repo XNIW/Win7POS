@@ -291,7 +291,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var delivery=await _service.ReadHistoricalPublicationSummaryAsync(_session,ct).ConfigureAwait(true);
             DemandPublication(ct,PermissionCodes.RegisterViewAll);
             _publicationStatus=string.Format(CultureInfo.CurrentCulture,T("publicationState"),delivery.LocalOperations,delivery.Pending,delivery.Confirmed,delivery.Attention,delivery.Unregistered,
-                delivery.LastConfirmedRevision??T("notConfirmed"));Changed(nameof(PublicationStatus));
+                delivery.LastConfirmedRevision??T("notConfirmed"));
+            if(delivery.BaselineCovered>0)_publicationStatus+=" "+string.Format(CultureInfo.CurrentCulture,T("baselineCovered"),delivery.BaselineCovered);
+            Changed(nameof(PublicationStatus));
         }
         private async Task ExecuteAsync(Func<CancellationToken, Task> work, string permission = PermissionCodes.RegisterImportHistory, bool keepStatus = false)
         {
@@ -315,7 +317,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 await work(operation.Token).ConfigureAwait(true);
             }
             catch (OperationCanceledException) { Status = T("cancelled"); }
-            catch (Exception e) { Status = e is InvalidOperationException && e.Message.StartsWith("history_cloud_",StringComparison.Ordinal) ? T("cloudFailed") : e is InvalidOperationException && e.Message.StartsWith("history_local_",StringComparison.Ordinal) ? T("localWriterClosed") : T("failed") + " " + (e is InvalidOperationException ? e.Message : e.GetType().Name); }
+            catch (Exception e) { Status = e is InvalidOperationException && e.Message=="history_cloud_initial_sync_required" ? T("initialSyncRequired") : e is InvalidOperationException && e.Message.StartsWith("history_cloud_",StringComparison.Ordinal) ? T("cloudFailed") : e is InvalidOperationException && e.Message.StartsWith("history_local_",StringComparison.Ordinal) ? T("localWriterClosed") : T("failed") + " " + (e is InvalidOperationException ? e.Message : e.GetType().Name); }
             finally { _operation = null; IsBusy = false; Changed(nameof(CanEdit)); ScheduleHistoricalRefresh(); }
         }
         internal Task AnalyzeFilesForTestingAsync(IReadOnlyList<string> paths) { _paths = paths; return AnalyzeAsync(); }

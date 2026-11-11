@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
+using Win7POS.Core.Import;
 using Win7POS.Data.Import;
 
 namespace Win7POS.Data.Online
@@ -10,8 +11,10 @@ namespace Win7POS.Data.Online
     public sealed class PosHistoricalCloudSyncService
     {
         private readonly SqliteConnectionFactory _factory;
-        public PosHistoricalCloudSyncService(SqliteConnectionFactory factory)
-            => _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+        private readonly Func<HistoricalBaselineContext,HistoricalSalesDatasetState,CancellationToken,Task<HistoricalBaselinePreparation>> _prepareBaseline;
+        public PosHistoricalCloudSyncService(SqliteConnectionFactory factory,
+            Func<HistoricalBaselineContext,HistoricalSalesDatasetState,CancellationToken,Task<HistoricalBaselinePreparation>> prepareBaseline=null)
+        {_factory=factory??throw new ArgumentNullException(nameof(factory));_prepareBaseline=prepareBaseline;}
 
         public async Task<OnlineSyncLaneOutcome> SynchronizeAsync(PosAdminWebOptions options,
             OnlineSyncLaneExecutionContext context,string buildSha,Func<bool> isCurrent,CancellationToken ct)
@@ -59,6 +62,16 @@ namespace Win7POS.Data.Online
                 {
                     outboundMore=await new HistoricalPublicationSender(new HistoricalPublicationOutbox(_factory),context.Generation,demand,Request).RunAsync(ct).ConfigureAwait(false);
                     outboundMore=await new HistoricalPublicationOutcomeSender(new HistoricalPublicationJournal(_factory),context.Generation,demand,Request).RunAsync(ct).ConfigureAwait(false)||outboundMore;
+                    if(_prepareBaseline!=null)
+                    {
+                        async Task Upload(string url,HistoricalBaselineFlow flow,CancellationToken token)
+                        {
+                            demand();using var uploader=new HistoricalBaselineUploader(options);
+                            await context.ExecuteCredentialedRequestAsync(async(_,requestToken)=>
+                            {await uploader.UploadAsync(url,flow,demand,requestToken).ConfigureAwait(false);return true;},_=>string.Empty,token).ConfigureAwait(false);demand();
+                        }
+                        outboundMore=await new HistoricalBaselineSynchronizer(_factory,context.Generation,demand,Request,_prepareBaseline,Upload).RunAsync(ct).ConfigureAwait(false)||outboundMore;
+                    }
                 }
                 catch(HistoricalCloudRequestException error) { demand();outboundFailure=error; }
                 var store = new HistoricalReplicaStore(_factory,demand,context.Generation);
