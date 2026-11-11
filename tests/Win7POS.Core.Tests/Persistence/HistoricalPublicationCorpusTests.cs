@@ -93,6 +93,52 @@ public sealed class HistoricalPublicationCorpusTests
             Directory.Delete(full,true);
         }
     }
+    [TestMethod]
+    public async Task BoundedUndoCorpus_UsesActualTwoPageApplyAnd201RowUndo()
+    {
+        var root=Path.Combine(Path.GetTempPath(),"W7PC."+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
+        try
+        {
+            using var workbook=GetnetTestWorkbook.Legacy(Enumerable.Range(1,201)
+                .Select(i=>GetnetTestWorkbook.LegacyRow("SYN-UNDO-"+i.ToString("D3",CultureInfo.InvariantCulture),"1500","20","1480")).ToArray());
+            using var actor=new Actor(root,"c","20000000-0000-4000-8000-000000403021");
+            var baseline=await actor.Export();var plan=await actor.Plan(workbook.Path);
+            using var applyDraft=await actor.Service.PreparePublicationDraftAsync(plan,actor.Device,default);
+            Assert.AreEqual(2,applyDraft.PageCount);
+            var applied=await actor.Service.ApplyAsync(plan,actor.Guard(plan),actor.Backup(),default,publicationDraft:applyDraft);
+            Assert.AreEqual(201,applied.InsertedCount);Assert.AreEqual(301500L,applied.SignedAmountClp);
+            var applyCase=actor.Case("c-apply-201",applyDraft,applied);
+            var state=await actor.Service.ReadDatasetAsync(default);var op=Guid.NewGuid().ToString("N");
+            var fp=HistoricalSalesImportPlan.UndoFingerprint(op,Shop,state.DatasetId,applied.BatchId,1,0);
+            using var undoDraft=await actor.Service.PrepareUndoPublicationDraftAsync(op,Shop,actor.Device,state.DatasetId,0,applied.BatchId,1,default);
+            var undone=await actor.Service.UndoAsync(applied.BatchId,1,actor.Guard(HistoricalImportOperationKind.Undo,op,fp,state.DatasetId),actor.Backup(),default,publicationDraft:undoDraft);
+            Assert.AreEqual(201,undone.InsertedCount);Assert.AreEqual(301500L,undone.SignedAmountClp);
+            Assert.AreEqual(state.DataRevision+201,(await actor.Service.ReadDatasetAsync(default)).DataRevision);
+            using(var connection=actor.Db.Factory.Open())
+            {
+                Assert.AreEqual(0L,connection.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1"));
+                foreach(var table in new[]{"sales","sales_sync_outbox","local_stock_movements"})
+                    Assert.AreEqual(0L,connection.ExecuteScalar<long>("SELECT COUNT(*) FROM "+table));
+            }
+            var corpus=Environment.GetEnvironmentVariable("WIN7POS_QA_UNDO_CORPUS");
+            if(!string.IsNullOrEmpty(corpus))
+            {
+                if(Directory.Exists(corpus)&&Directory.EnumerateFileSystemEntries(corpus).Any())throw new InvalidOperationException("synthetic_corpus_target_not_empty");
+                Directory.CreateDirectory(corpus);const string file="c-baseline.w7history.zip";
+                File.Copy(baseline.ArchivePath,Path.Combine(corpus,file),false);
+                File.WriteAllText(Path.Combine(corpus,"undo-corpus.json"),JsonSerializer.Serialize(new{source="CLR analyzer/exporter/draft/ledger",syntheticOnly=true,
+                    baselineSource="verified selective archive only",baselines=new[]{new{file,archive_sha256=baseline.ArchiveSha256,manifest_sha256=baseline.ManifestSha256,baseline.Manifest}},
+                    cases=new[]{applyCase,actor.Case("c-undo-201",undoDraft,undone)},nativeEffects=0},new JsonSerializerOptions{WriteIndented=true}),new UTF8Encoding(false));
+            }
+        }
+        finally
+        {
+            var full=Path.GetFullPath(root);var allowed=Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar;
+            if(!full.StartsWith(allowed,StringComparison.OrdinalIgnoreCase)||!Path.GetFileName(full).StartsWith("W7PC.",StringComparison.Ordinal))throw new InvalidOperationException("synthetic_cleanup_target_invalid");
+            Directory.Delete(full,true);
+        }
+    }
+
     sealed class Actor:IDisposable
     {
         internal readonly OwnedSqliteTestFile Db;internal readonly HistoricalSalesImportService Service;internal readonly string Device;
