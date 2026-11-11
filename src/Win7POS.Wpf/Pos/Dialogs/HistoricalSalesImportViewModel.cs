@@ -317,6 +317,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 await work(operation.Token).ConfigureAwait(true);
             }
             catch (OperationCanceledException) { Status = T("cancelled"); }
+            catch (HistoricalCloudRequestException e) { Status = T(e.Code=="history_cloud_writer_closed"?"localWriterClosed":"cloudFailed"); }
             catch (Exception e) { Status = e is InvalidOperationException && e.Message=="history_cloud_initial_sync_required" ? T("initialSyncRequired") : e is InvalidOperationException && e.Message.StartsWith("history_cloud_",StringComparison.Ordinal) ? T("cloudFailed") : e is InvalidOperationException && e.Message.StartsWith("history_local_",StringComparison.Ordinal) ? T("localWriterClosed") : T("failed") + " " + (e is InvalidOperationException ? e.Message : e.GetType().Name); }
             finally { _operation = null; IsBusy = false; Changed(nameof(CanEdit)); ScheduleHistoricalRefresh(); }
         }

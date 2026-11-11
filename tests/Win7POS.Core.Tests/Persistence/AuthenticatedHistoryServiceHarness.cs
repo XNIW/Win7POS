@@ -28,8 +28,9 @@ internal static class AuthenticatedHistoryServiceHarness
         public string schema{get;set;}="";public string nonce{get;set;}="";public string endpoint{get;set;}="";
         public string clientSha{get;set;}="";public string shopId{get;set;}="";public string staffId{get;set;}="";
         public int credentialVersion{get;set;}public Actor actorA{get;set;}=new();public Actor actorB{get;set;}=new();
+        public Actor recoveryApplyActor{get;set;}=new();public Actor recoverySessionsActor{get;set;}=new();
         public bool extendedCases{get;set;}
-        public bool faultCases{get;set;}public bool adminOrigin{get;set;}public bool conflictCases{get;set;}public RestartCheckpoint? restart{get;set;}
+        public bool faultCases{get;set;}public bool adminOrigin{get;set;}public bool conflictCases{get;set;}public bool recoveryRaces{get;set;}public RestartCheckpoint? restart{get;set;}
     }
     sealed class Fact
     {
@@ -51,7 +52,7 @@ internal static class AuthenticatedHistoryServiceHarness
         public string schema{get;set;}="asus019-restart-v1";public string nonce{get;set;}="";public string operation{get;set;}="";
         public SavedFixture a{get;set;}=new();public SavedFixture b{get;set;}=new();public Fact[] wanted{get;set;}=Array.Empty<Fact>();public string[] newIds{get;set;}=Array.Empty<string>();
     }
-    static string _phase="preflight",_directory="",_lastCode="";static Scope _scope=new();static object? _localDiagnostics;
+    static string _phase="preflight",_directory="",_lastCode="";static Scope _scope=new();static object? _localDiagnostics,_requestFailure;
     static readonly JsonSerializerOptions Json=new(){PropertyNameCaseInsensitive=false};
     static void Demand(bool condition,string code){if(!condition)throw new InvalidOperationException(code);}
     public static async Task<int> Main(string[] args)
@@ -72,6 +73,7 @@ internal static class AuthenticatedHistoryServiceHarness
             var original=a.LocalFacts();Demand(original.Length>0&&b.LocalFacts().Length==0,"history_test_initial_ledger");
             _phase="initial_baseline";await a.Until(a.HasBaseline,ct);await b.Until(b.HasBaseline,ct);await a.Turn(ct);
             var before=a.Facts();Same(original,before);Same(before,b.Facts());a.NoNative();b.NoNative();
+            if(_scope.recoveryRaces)await RecoveryRaceSources(a,b,before,ct);
             var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
             var state=await a.Fixture.Service.ReadDatasetAsync(ct);
             var assignments=ReadAssignments(a,analysis);
@@ -104,11 +106,12 @@ internal static class AuthenticatedHistoryServiceHarness
         }
         catch(Exception e)
         {
-            if(_directory!="")await SaveState(new{phase=_phase,nonce=_scope.nonce,status="FAIL",exception=e.GetType().Name,code=ClosedCode(e.Message),lastCode=ClosedCode(_lastCode),localDiagnostics=_localDiagnostics},default);
+            if(_directory!="")await SaveState(new{phase=_phase,nonce=_scope.nonce,status="FAIL",exception=e.GetType().Name,code=ClosedCode(e is HistoricalCloudRequestException requestError?requestError.Code:e.Message),lastCode=ClosedCode(_lastCode),localDiagnostics=_localDiagnostics,requestFailure=_requestFailure},default);
             Console.Error.WriteLine("authenticated_history_client_failed");return 1;
         }
     }
-    static string ClosedCode(string? value)=>value!=null&&System.Text.RegularExpressions.Regex.IsMatch(value,"^(?:history|historical)_[a-z_]+$")?value:"history_test_failed";
+    internal static string ClosedCode(string? value)=>value!=null&&value.Length<=102&&value.IndexOf('\r')<0&&value.IndexOf('\n')<0&&System.Text.RegularExpressions.Regex.IsMatch(value,"^(?:(?:history|historical|auth)_[a-z0-9_]{1,90}|http_(?:[0-9]{3}|5xx)|success|invalid_response|io_error|network_error|dns|tls|timeout|cancelled|response_too_large|rate_limited|db_failure)$")?value:"history_test_failed";
+    internal static bool IsExpectedConflict(Exception error)=>error is HistoricalCloudRequestException request&&request.Code=="history_cloud_writer_closed"&&!request.Denied&&!request.Retryable;
     static HistoricalMerchantAssignment[] ReadAssignments(Session session,HistoricalSalesImportAnalysis analysis)
     {
         // Release this reader before publication and exclusive Apply maintenance.
@@ -275,11 +278,30 @@ internal static class AuthenticatedHistoryServiceHarness
         if(_scope.adminOrigin)await AdminOrigin(a,b,checkpoint.wanted,ct);
         Console.WriteLine("authenticated_history_restarted_pass");return 0;
     }
+    static async Task RecoveryRaceSources(Session a,Session b,Fact[] wanted,CancellationToken ct)
+    {
+        var actors=new[]{_scope.recoveryApplyActor,_scope.recoverySessionsActor};
+        Demand(actors.All(actor=>Guid.TryParse(actor.deviceId,out _)&&actor.deviceId!=_scope.actorA.deviceId&&actor.deviceId!=_scope.actorB.deviceId)&&actors[0].deviceId!=actors[1].deviceId,"history_test_recovery_actor_scope");
+        foreach(var item in new[]{(phase:"recovery_apply_ready",actor:actors[0]),(phase:"recovery_sessions_ready",actor:actors[1])})
+        {
+            // A separately owned empty dataset and synthetic device, respecting
+            // the server's existing dataset/restore-lineage fence for A and B.
+            var phase=item.phase;await using var recovery=await Session.Create(item.actor,false);
+            var flow=await recovery.PrepareUncommittedBaseline(ct);
+            _phase=phase;await SaveState(new{phase,nonce=_scope.nonce,descriptor=new{schema="asus019-baseline-lock-v1",nonce=_scope.nonce,shopId=_scope.shopId,deviceId=item.actor.deviceId,originalSessionId=item.actor.sessionId,runId=flow.RunId,applyRequestKey=flow.ApplyRequestId,previousReviewDigest=flow.ReviewDigest}},ct);
+            await WaitSignal(phase+"_observed",ct);recovery.NoNative();Demand(recovery.LocalFacts().Length==0,"history_test_recovery_changed_empty_ledger");
+        }
+        await a.Until(()=>Task.FromResult(Equal(wanted,a.Facts())),ct);await b.Until(()=>Task.FromResult(Equal(wanted,b.Facts())),ct);a.NoNative();b.NoNative();
+    }
     static async Task ConflictingPeerImport(Session a,Session b,Fact[] wanted,string existingId,CancellationToken ct)
     {
+        _phase="conflict_peer_invariant";
         Demand(b.LocalFacts().Length==0,"history_test_conflict_peer_not_empty");var before=await b.Fixture.Service.ReadDatasetAsync(ct);
+        _phase="conflict_source_create";
         var source=CorrectionSource(b.Fixture,NewSource(b.Fixture),existingId);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
+        _phase="conflict_source_analysis";
         var divergent=analysis.AcceptedTransactions.Single(t=>t.ExternalId==existingId);Demand(divergent.GrossClp.ToString(CultureInfo.InvariantCulture)!=wanted.Single(f=>f.Id==existingId).Gross,"history_test_conflict_not_divergent");
+        _phase="conflict_mapping_plan";
         var assignments=analysis.AcceptedTransactions.Select(t=>t.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select((g,i)=>new HistoricalMerchantAssignment(g.First(),"conflict-scope-"+i,"conflict-binding-"+i,"Synthetic independent mapping")).ToArray();
         var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,before.DatasetId,before.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
         _phase="conflict_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourceSha=Hash(await File.ReadAllBytesAsync(source)),operation=Guid.Parse(plan.OperationId).ToString("D")},ct);await WaitSignal("allow_conflict_prepare",ct);
@@ -288,7 +310,7 @@ internal static class AuthenticatedHistoryServiceHarness
         using(var draft=await b.Fixture.Service.PreparePublicationDraftAsync(plan,b.Generation.ShopDeviceId,ct))
         {
             try{await Admit(b,draft,ct);}
-            catch(InvalidOperationException e)when(e.Message=="history_test_http_request_rejected"&&b.LastRequestCode=="history_cloud_writer_closed"){denied=true;}
+            catch(HistoricalCloudRequestException e)when(IsExpectedConflict(e)){denied=true;}
         }
         Demand(denied,"history_test_conflicting_grant_accepted");var after=await b.Fixture.Service.ReadDatasetAsync(ct);Demand(after.DatasetId==before.DatasetId&&after.DataRevision==before.DataRevision&&b.LocalFacts().Length==0,"history_test_conflict_changed_ledger");
         // Once the same live operation ownership as WPF is released, the real
@@ -354,19 +376,21 @@ internal static class AuthenticatedHistoryServiceHarness
         internal HistoricalCloudExportTests.Fixture Fixture=null!;internal OnlineSyncGeneration Generation=null!;
         PosAdminWebClient _client=null!;OnlineSyncSupervisor _supervisor=null!;Actor _actor=new();bool _active=true;string _server="";long _epoch;
         internal string LastRequestCode{get;private set;}="";
+        PosAdminWebOptions _options=null!;Func<HistoricalBaselineContext,HistoricalSalesDatasetState,CancellationToken,Task<HistoricalBaselinePreparation>> _prepareBaseline=null!;
         internal static async Task<Session> Create(Actor actor,bool legacy,HistoricalCloudExportTests.Fixture? existing=null)
         {
             var s=new Session{_actor=actor};s.Fixture=existing??await HistoricalCloudExportTests.Fixture.CreateAsync(deviceId:actor.deviceId,seedLegacy:legacy);s.Fixture.KeepFiles=true;
             s.Generation=new OnlineSyncGeneration(Guid.NewGuid().ToString("D"),actor.sessionId,actor.deviceId,_scope.shopId,"synthetic-service-harness",_scope.staffId,_scope.credentialVersion);
             await new OnlineSyncGenerationRepository(s.Fixture.Db.Factory).ActivateAndRecoverAsync(s.Generation,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-            var options=new PosAdminWebOptions(new Uri(_scope.endpoint));s._client=new PosAdminWebClient(options);
+            var options=new PosAdminWebOptions(new Uri(_scope.endpoint));s._options=options;s._client=new PosAdminWebClient(options);
             var root=Path.Combine(Path.GetTempPath(),"s-"+Guid.NewGuid().ToString("N"));
-            var sync=new PosHistoricalCloudSyncService(s.Fixture.Db.Factory,async(context,state,ct)=>{
+            s._prepareBaseline=async(context,state,ct)=>{
                 s.Demand();AuthenticatedHistoryServiceHarness.Demand(context.State=="missing"&&context.CanPrepare==true,"history_test_prepare_denied");
                 var guard=new HistoricalCloudExportGuard(_scope.shopId,actor.deviceId,state.DatasetId,state.DataRevision,0,s.Demand);
                 var receipt=await new HistoricalBaselineSource(s.Fixture.Db.Factory,root).PrepareAsync(guard,Guid.Parse(state.RestoreLineageId).ToString("D"),ct);
                 return new HistoricalBaselinePreparation(receipt,guard);
-            });
+            };
+            var sync=new PosHistoricalCloudSyncService(s.Fixture.Db.Factory,s._prepareBaseline);
             s._supervisor=new OnlineSyncSupervisor(s.Generation,(context,trigger,ct)=>sync.SynchronizeAsync(options,context,_scope.clientSha,()=>s._active,ct),
                 generation=>new OnlineSyncGenerationRepository(s.Fixture.Db.Factory).IsCurrentAndActiveAsync(generation),
                 (_,_)=>{s._active=false;return Task.CompletedTask;},credentialProvider:_=>Task.FromResult(new OnlineSyncRequestCredentials(s.Generation,actor.deviceToken,actor.sessionToken,"synthetic-service-harness")));
@@ -375,10 +399,26 @@ internal static class AuthenticatedHistoryServiceHarness
         internal void Demand()=>AuthenticatedHistoryServiceHarness.Demand(_active,"history_test_generation_stopped");
         internal async Task<HistoricalCloudResult> Request(string operation,HistoricalCloudPayload payload,CancellationToken ct)
         {
+            if(_phase=="conflict_preparation"&&operation=="local_review")
+            {
+                AuthenticatedHistoryServiceHarness.Demand(payload.Ordinal==1&&payload.ReviewToken==null,"history_test_conflict_probe_page");
+                await SaveState(new{phase="conflict_review_ready",nonce=_scope.nonce,payload=new{operation_id=payload.OperationId,content_digest=payload.ContentDigest,ordinal=payload.Ordinal}},ct);
+                await WaitSignal("allow_conflict_review",ct);
+            }
             Demand();var result=await _client.HistoricalCloudAsync(new HistoricalCloudRequest{DeviceId=_actor.deviceId,SessionId=_actor.sessionId,DeviceToken=_actor.deviceToken,SessionToken=_actor.sessionToken,Operation=operation,Payload=payload},ct);
             _lastCode=result.Code;LastRequestCode=result.Code;
-            AuthenticatedHistoryServiceHarness.Demand(result.Success&&result.Value?.Ok==true&&result.Value.ShopId==_scope.shopId&&result.Value.DeviceId==_actor.deviceId&&result.Value.SessionId==_actor.sessionId,"history_test_http_request_rejected");return result.Value!.Result;
+            if(!result.Success)
+            {
+                RecordFailure(operation,result.Code,result.HttpStatus,result.Denied,result.Retryable);
+            }
+            try{return HistoricalCloudResponseMapper.RequireResult(result,_scope.shopId,_actor.deviceId,_actor.sessionId);}
+            catch(HistoricalCloudRequestException error)when(result.Success)
+            {
+                RecordFailure(operation,error.Code,result.HttpStatus,error.Denied,error.Retryable);throw;
+            }
         }
+        void RecordFailure(string operation,string code,int? httpStatus,bool denied,bool retryable)
+            =>_requestFailure=new{phase=_phase,actor=_actor.deviceId==_scope.actorA.deviceId?"A":_actor.deviceId==_scope.actorB.deviceId?"B":"other_test_actor",operation,code=ClosedCode(code),httpStatus,transportDenied=denied,retryable};
         internal async Task<bool> HasBaseline()
         {
             var f=await new HistoricalBaselineStore(Fixture.Db.Factory,Generation,Demand).ReadAsync(_server,_epoch,default);if(f?.State!="applied")return false;
@@ -396,6 +436,30 @@ internal static class AuthenticatedHistoryServiceHarness
         }
         internal async Task PullUntil(Func<bool> ready,CancellationToken ct){for(var i=0;i<80;i++){await new HistoricalReplicaSynchronizer(new HistoricalReplicaStore(Fixture.Db.Factory,Demand,Generation),Demand,Request).RunAsync(_scope.shopId,_scope.clientSha,ct);if(ready())return;await Task.Delay(250,ct);}throw new InvalidOperationException("history_test_pull_before_ack_timeout");}
         internal Task DrainAutomatic(CancellationToken ct)=>_supervisor.StopAsync().WaitAsync(TimeSpan.FromSeconds(10),ct);
+        internal async Task<HistoricalBaselineFlow> PrepareUncommittedBaseline(CancellationToken ct)
+        {
+            var store=new HistoricalBaselineStore(Fixture.Db.Factory,Generation,Demand);
+            async Task Upload(string url,HistoricalBaselineFlow flow,CancellationToken token)
+            {
+                using var uploader=new HistoricalBaselineUploader(_options);var code=await uploader.UploadAsync(url,flow,new OnlineSyncRequestCredentials(Generation,_actor.deviceToken,_actor.sessionToken,"synthetic-service-harness"),Demand,token);
+                AuthenticatedHistoryServiceHarness.Demand(string.IsNullOrEmpty(code),"history_test_recovery_upload_failed");
+            }
+            var client=new HistoricalBaselineSynchronizer(Fixture.Db.Factory,Generation,Demand,Request,_prepareBaseline,Upload);HistoricalBaselineFlow? current=null;
+            for(var i=0;i<80;i++)
+            {
+                current=await store.ReadAsync(_server,_epoch,ct);if(current?.State=="run_started")break;
+                AuthenticatedHistoryServiceHarness.Demand(current==null||current.State!="needs_attention","history_test_recovery_baseline_attention");await client.RunAsync(ct);await Task.Delay(250,ct);
+            }
+            AuthenticatedHistoryServiceHarness.Demand(current?.State=="run_started","history_test_recovery_baseline_not_started");
+            var ready=false;for(var i=0;i<80;i++)
+            {
+                var status=await Request("baseline_status",new(){RunId=current!.RunId},ct);if(status.State=="review_ready"){ready=true;break;}
+                AuthenticatedHistoryServiceHarness.Demand(status.State!="failed"&&status.State!="cancelled","history_test_recovery_analysis_failed");await Task.Delay(250,ct);
+            }
+            AuthenticatedHistoryServiceHarness.Demand(ready,"history_test_recovery_analysis_timeout");var review=await Request("baseline_review",new(){RunId=current!.RunId},ct);
+            AuthenticatedHistoryServiceHarness.Demand(review.CanApply==true,"history_test_recovery_review_blocked");await store.SealReviewAsync(current.FlowId,review.ReviewDigest,ct);
+            return(await store.ReadAsync(_server,_epoch,ct))!;
+        }
         internal async Task<FrozenExport> AcknowledgeFreeze(CancellationToken ct)
         {
             var authority=await Request("authority",new(),ct);AuthenticatedHistoryServiceHarness.Demand(authority.WriterAuthority=="frozen"&&authority.ProtocolVersion==1,"history_test_freeze_authority");

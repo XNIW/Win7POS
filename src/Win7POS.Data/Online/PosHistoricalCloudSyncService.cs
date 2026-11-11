@@ -45,15 +45,8 @@ namespace Win7POS.Data.Online
                     result => result!=null && SharedAuthStopPolicy.IsAuthenticationDenied(result.Code) ? result.Code : string.Empty,
                     deadline.Token).ConfigureAwait(false);
                 demand();
-                if(response?.Success!=true)
-                {
-                    if(response?.Code=="history_resnapshot_required")throw new HistoricalCloudResnapshotRequiredException();
-                    throw new HistoricalCloudRequestException(response?.Code,response?.Denied==true,response?.Retryable==true);
-                }
-                var body=response.Value;
-                if(body?.Ok!=true||body.ShopId!=context.Generation.ShopId||body.DeviceId!=context.Generation.ShopDeviceId||body.SessionId!=context.Generation.PosSessionId||body.Result==null)
-                    throw new HistoricalCloudRequestException("history_response_invalid",false,false);
-                return body.Result;
+                return HistoricalCloudResponseMapper.RequireResult(response,context.Generation.ShopId,
+                    context.Generation.ShopDeviceId,context.Generation.PosSessionId);
             }
             try
             {
