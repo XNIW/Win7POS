@@ -28,14 +28,25 @@ PASS21.881s, include scanner/coalescing/editor attivo/Unicode/chiusura. Gate
 standard dialog39/39 PASS. Recovery include il successore diagnostico qualificato
 sul ramo135: cinque cicli e raccolta a pari età dopo il timer framework2s, stessi
 60s/8MiB; fixture shell attende l'overlay realmente chiuso prima dell'Escape.
-Nessun PASS di qualifica trasferito: CI/Security/WPF/Release e pacchetto esatto,
-Integrated e Final60 restano da raccogliere sul nuovo SHA.
+Successore b76238d: CI42933914161/Security42933914165/WPF42934216716/
+Release42934061207 PASS. Pacchetto verificato41file prodotto, qualifica hosted
+42937991969 Integrated12 e soak60 PASS, ambiente valido,32/159cicli;
+focus massimo28.354/14.428ms. Artifact13823212154, digest
+550a502d009879483d9d7913e505dfd81518e2aa87cb2a179cfeda9d62eda138.
+Non qualifica ASUS, Win7 o candidato finale successivo.
 
 Copia prove privata U19Focus149Hosted01. Installato2ad42ca e ledger Minimondo
 invariati; nessun nuovo Apply/Undo/vendita reale o installazione.200% preservato,
 100/125 USER_DEFERRED, Win7 BLOCKED_TARGET, Getnet moderno C MISSING. Nessun
-merge/deploy/DONE. MainWindow focus dopo animazione menu è un residuo separato
-con patch pronta e chiarimento sul limite dei file pendente. Storico bilaterale
+merge/deploy/DONE. L'utente ha autorizzato tutti i file necessari ai residui.
+Nuova regressione menu sul prodotto b762: U19MenuFocusRed01 FAIL dopo29assert
+PASS, precisamente il focus al ritorno Cassa. La chiusura dell'animazione
+focalizzava sempre HamburgerButton dopo il ritorno allo scanner. Fix minimo:
+se la Cassa è selezionata ripristina scanner tramite PosView, altrimenti il
+focus menu esistente. U19MenuFocusGreen01 PASS73/73assert, stesso percorso
+autenticato reale MainWindow/VM con fixture sintetici; carrello/sessione
+conservati. Build net48/x86 zero warning/error; nessun cambio budget.
+Questo delta richiede nuove CI e qualifica sul pacchetto esatto. Storico bilaterale
 rimane sul ramo135/Admin151; questo fix non ne attesta la catena v2 operativa.
 <!-- ASUS019_CURRENT_END -->
 

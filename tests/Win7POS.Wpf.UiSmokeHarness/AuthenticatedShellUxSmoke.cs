@@ -299,6 +299,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var reportView = (DailyReportView)shell.FindName("DailyReportViewControl");
             await WaitCatalogRetryUiAsync(() => reportView.DataContext is DailyReportViewModel &&
                 !((DailyReportViewModel)reportView.DataContext).IsBusy, token);
+            await ClickShellMenuAsync(shell,"Pos",token);
+            check("report_menu_return_preserves_cart_and_scanner_focus_" + phase,
+                ReferenceEquals(view.DataContext, vm) && vm.ItemsCount == quantity && vm.Total == total && box.IsKeyboardFocused &&
+                ReferenceEquals(originalInitialization, vm.InitializationTask));
+            await ClickShellMenuAsync(shell,"DailyReport",token);
+            await WaitCatalogRetryUiAsync(() => reportView.DataContext is DailyReportViewModel &&
+                !((DailyReportViewModel)reportView.DataContext).IsBusy, token);
             reportView.Focus();
             shell.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(shell), Environment.TickCount,
                 Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
