@@ -29,7 +29,7 @@ internal static class AuthenticatedHistoryServiceHarness
         public string clientSha{get;set;}="";public string shopId{get;set;}="";public string staffId{get;set;}="";
         public int credentialVersion{get;set;}public Actor actorA{get;set;}=new();public Actor actorB{get;set;}=new();
         public bool extendedCases{get;set;}
-        public bool faultCases{get;set;}public RestartCheckpoint? restart{get;set;}
+        public bool faultCases{get;set;}public bool adminOrigin{get;set;}public RestartCheckpoint? restart{get;set;}
     }
     sealed class Fact
     {
@@ -39,6 +39,8 @@ internal static class AuthenticatedHistoryServiceHarness
         internal string Key=>BasicKey+"|"+(Fee??"null")+"|"+(Vat??"null")+"|"+(Net??"null");
     }
     sealed class Binding{public string Scope{get;set;}="";public string Id{get;set;}="";public string Evidence{get;set;}="";}
+    sealed class ExportBinding{public string scope{get;set;}="";public string alias{get;set;}="";}
+    sealed class FrozenExport{public string path{get;set;}="";public string sha256{get;set;}="";public ExportBinding[] bindings{get;set;}=Array.Empty<ExportBinding>();}
     sealed class SavedFixture
     {
         public string root{get;set;}="";public string token{get;set;}="";public string dataset{get;set;}="";public string lineage{get;set;}="";
@@ -49,7 +51,7 @@ internal static class AuthenticatedHistoryServiceHarness
         public string schema{get;set;}="asus019-restart-v1";public string nonce{get;set;}="";public string operation{get;set;}="";
         public SavedFixture a{get;set;}=new();public SavedFixture b{get;set;}=new();public Fact[] wanted{get;set;}=Array.Empty<Fact>();public string[] newIds{get;set;}=Array.Empty<string>();
     }
-    static string _phase="preflight",_directory="",_lastCode="";static Scope _scope=new();
+    static string _phase="preflight",_directory="",_lastCode="";static Scope _scope=new();static object? _localDiagnostics;
     static readonly JsonSerializerOptions Json=new(){PropertyNameCaseInsensitive=false};
     static void Demand(bool condition,string code){if(!condition)throw new InvalidOperationException(code);}
     public static async Task<int> Main(string[] args)
@@ -101,7 +103,7 @@ internal static class AuthenticatedHistoryServiceHarness
         }
         catch(Exception e)
         {
-            if(_directory!="")await SaveState(new{phase=_phase,nonce=_scope.nonce,status="FAIL",exception=e.GetType().Name,code=ClosedCode(e.Message),lastCode=ClosedCode(_lastCode)},default);
+            if(_directory!="")await SaveState(new{phase=_phase,nonce=_scope.nonce,status="FAIL",exception=e.GetType().Name,code=ClosedCode(e.Message),lastCode=ClosedCode(_lastCode),localDiagnostics=_localDiagnostics},default);
             Console.Error.WriteLine("authenticated_history_client_failed");return 1;
         }
     }
@@ -258,7 +260,27 @@ internal static class AuthenticatedHistoryServiceHarness
         Demand(a.Generation.Fingerprint!=checkpoint.a.generation&&b.Generation.Fingerprint!=checkpoint.b.generation,"history_test_restart_generation_reused");
         await Converge(a,b,checkpoint.operation,checkpoint.wanted,ct);
         _phase="restart_recovered";await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_LOST_ACK_RESTART_PULL_BEFORE_ACK",count=checkpoint.wanted.Length,operation=Guid.Parse(checkpoint.operation).ToString("D"),newIds=checkpoint.newIds,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",checkpoint.wanted.Select(f=>f.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);
-        await WaitSignal("restart_observed",ct);Console.WriteLine("authenticated_history_restarted_pass");return 0;
+        await WaitSignal("restart_observed",ct);
+        if(_scope.adminOrigin)await AdminOrigin(a,b,checkpoint.wanted,ct);
+        Console.WriteLine("authenticated_history_restarted_pass");return 0;
+    }
+    static async Task AdminOrigin(Session a,Session b,Fact[] before,CancellationToken ct)
+    {
+        var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
+        var expected=analysis.AcceptedTransactions.Where(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19).Select(ToFact).ToArray();Demand(expected.Length>0,"history_test_web_source_missing");
+        _phase="web_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourcePath=source,sourceSha=Hash(await File.ReadAllBytesAsync(source)),expected},ct);
+        await WaitSignal("admin_frozen",ct);_phase="freeze_ack";
+        var exportA=await a.AcknowledgeFreeze(ct);var exportB=await b.AcknowledgeFreeze(ct);
+        await SaveState(new{phase="freeze_acknowledged",nonce=_scope.nonce,exports=new[]{exportA,exportB}},ct);await WaitSignal("frozen_sources_reconciled",ct);
+        _phase="frozen_replica_pull";await a.Turn(ct);await b.Turn(ct);
+        await SaveState(new{phase="frozen_replicas_current",nonce=_scope.nonce},ct);await WaitSignal("admin_import_committed",ct);
+        _phase="admin_origin_pull";var wanted=before.Concat(expected).ToArray();
+        await a.Until(()=>Task.FromResult(Equal(wanted,a.Facts())),ct);await b.Until(()=>Task.FromResult(Equal(wanted,b.Facts())),ct);
+        Same(a.Facts(),b.Facts());a.NoNative();b.NoNative();
+        await ObserveCase("admin_origin",wanted,ct);
+        _phase="revocation_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce},ct);await WaitSignal("session_revoked",ct);
+        await b.DemandRevocation(ct);await a.Turn(ct);Same(wanted,a.Facts());a.NoNative();b.NoNative();
+        _phase="revocation";await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_SESSION_REVOCATION",otherActorActive=true},ct);await WaitSignal("revocation_observed",ct);
     }
     static async Task SaveState(object value,CancellationToken ct)
     {
@@ -329,9 +351,38 @@ internal static class AuthenticatedHistoryServiceHarness
             using var c=Fixture.Db.Factory.Open();return c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_baseline_read_mode WHERE flow_id=@FlowId",f)==1;
         }
         internal async Task Turn(CancellationToken ct){var result=await _supervisor.TriggerAsync(OnlineSyncLane.HistoricalPayments,OnlineSyncLaneTrigger.Manual,ct);_lastCode=result.Code;AuthenticatedHistoryServiceHarness.Demand(result.Success,"history_test_supervisor_turn_failed");}
-        internal async Task Until(Func<Task<bool>> ready,CancellationToken ct){for(var i=0;i<80;i++){await Turn(ct);if(await ready())return;await Task.Delay(500,ct);}throw new InvalidOperationException("history_test_convergence_timeout");}
+        internal async Task Until(Func<Task<bool>> ready,CancellationToken ct)
+        {
+            for(var i=0;i<80;i++){await Turn(ct);if(await ready())return;await Task.Delay(500,ct);}
+            var flow=await new HistoricalBaselineStore(Fixture.Db.Factory,Generation,Demand).ReadAsync(_server,_epoch,ct);
+            _localDiagnostics=new{actor=_actor.deviceId==_scope.actorA.deviceId?"A":"B",baselineState=flow?.State,
+                baselineReason=flow?.ReasonCode!=null&&System.Text.RegularExpressions.Regex.IsMatch(flow.ReasonCode,"^(?:history|baseline)_[a-z_]{1,90}$")?flow.ReasonCode:null,
+                baselineUploadPresent=flow?.UploadId!=null,baselineRunPresent=flow?.RunId!=null,baselineReviewPresent=flow?.ReviewDigest!=null};
+            throw new InvalidOperationException("history_test_convergence_timeout");
+        }
         internal async Task PullUntil(Func<bool> ready,CancellationToken ct){for(var i=0;i<80;i++){await new HistoricalReplicaSynchronizer(new HistoricalReplicaStore(Fixture.Db.Factory,Demand,Generation),Demand,Request).RunAsync(_scope.shopId,_scope.clientSha,ct);if(ready())return;await Task.Delay(250,ct);}throw new InvalidOperationException("history_test_pull_before_ack_timeout");}
         internal Task DrainAutomatic(CancellationToken ct)=>_supervisor.StopAsync().WaitAsync(TimeSpan.FromSeconds(10),ct);
+        internal async Task<FrozenExport> AcknowledgeFreeze(CancellationToken ct)
+        {
+            var authority=await Request("authority",new(),ct);AuthenticatedHistoryServiceHarness.Demand(authority.WriterAuthority=="frozen"&&authority.ProtocolVersion==1,"history_test_freeze_authority");
+            await new HistoricalReplicaStore(Fixture.Db.Factory,Demand,Generation).ObserveAuthorityAsync(_scope.shopId,authority,ct);
+            var state=await Fixture.Service.ReadDatasetAsync(ct);var stamp=Fixture.Db.Factory.AuthorityStamp;
+            var guard=new HistoricalCloudExportGuard(_scope.shopId,Generation.ShopDeviceId,state.DatasetId,state.DataRevision,stamp.RestoreEpoch,()=>{
+                Demand();var current=Fixture.Db.Factory.AuthorityStamp;AuthenticatedHistoryServiceHarness.Demand(current.RestoreEpoch==stamp.RestoreEpoch&&current.AuthorityInstanceEpoch==stamp.AuthorityInstanceEpoch,"history_test_freeze_database_changed");});
+            var store=new HistoricalPreparedExportStore(Fixture.Db.Factory);await store.DemandHistoricalPublicationsDrainedAsync(guard,ct);await store.DemandNativeSalesDrainedAsync(guard,ct);
+            var epoch=HistoricalReplicaProtocol.Integer(authority.WriterEpoch);var export=await store.ReadVerifiedAsync(epoch,guard,ct);
+            if(export==null){var id=Guid.NewGuid().ToString("N");export=await new HistoricalCloudExporter(Fixture.Db.Factory).ExportAsync(Path.Combine(Fixture.Output,"freeze-"+id+".w7history.zip"),Path.Combine(Fixture.Output,"freeze-"+id+".db"),guard,ct);await store.SaveAsync(epoch,export,guard,ct);}
+            await store.DemandHistoricalPublicationsDrainedAsync(guard,ct);await store.DemandNativeSalesDrainedAsync(guard,ct);
+            var currentState=await Fixture.Service.ReadDatasetAsync(ct);AuthenticatedHistoryServiceHarness.Demand(currentState.DatasetId==guard.DatasetId&&currentState.DataRevision==guard.DataRevision,"history_test_freeze_snapshot_stale");
+            var ack=await Request("freeze_ack",new(){WriterEpoch=authority.WriterEpoch,LocalDatasetId=guard.DatasetId,DataRevision=guard.DataRevision.ToString(CultureInfo.InvariantCulture),RestoreEpoch=guard.RestoreEpoch.ToString(CultureInfo.InvariantCulture),ArchiveSha256=export.ArchiveSha256,ManifestSha256=export.ManifestSha256,BackupSha256=export.Manifest.BackupSha256,LocalWritesDrained=true,NativeOutboxDrained=true,ProtocolVersion=1,ClientBuildSha=_scope.clientSha},ct);
+            AuthenticatedHistoryServiceHarness.Demand(ack.Acknowledged&&ack.WriterEpoch==authority.WriterEpoch,"history_test_freeze_ack_invalid");guard.DemandStillValid();
+            using var read=Fixture.Db.Factory.Open();return new(){path=export.ArchivePath,sha256=export.ArchiveSha256,bindings=read.Query<ExportBinding>("SELECT scope_id scope,alias_key alias FROM historical_merchant_binding WHERE shop_id=@shop AND is_active=1",new{shop=_scope.shopId}).ToArray()};
+        }
+        internal async Task DemandRevocation(CancellationToken ct)
+        {
+            var result=await _supervisor.TriggerAsync(OnlineSyncLane.HistoricalPayments,OnlineSyncLaneTrigger.Manual,ct);
+            AuthenticatedHistoryServiceHarness.Demand(!result.Success&&_supervisor.GetSnapshot().AuthenticationStopped&&!_active,"history_test_revocation_not_stopped");
+        }
         internal Fact[] Facts()
         {
             using var c=Fixture.Db.Factory.Open();
