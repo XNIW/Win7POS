@@ -51,15 +51,12 @@ internal static class AuthenticatedHistoryServiceHarness
             HistoricalReplicaProtocol.DemandId(_scope.staffId);HistoricalReplicaProtocol.DemandId(_scope.actorA.deviceId);HistoricalReplicaProtocol.DemandId(_scope.actorB.deviceId);
             Demand(_scope.actorA.deviceId!=_scope.actorB.deviceId&&_scope.credentialVersion>0&&System.Text.RegularExpressions.Regex.IsMatch(_scope.clientSha,"^[0-9a-f]{40}$"),"history_test_scope_invalid");
             using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(4));var ct=deadline.Token;
-            using var a=await Session.Create(_scope.actorA,true);using var b=await Session.Create(_scope.actorB,false);
+            await using var a=await Session.Create(_scope.actorA,true);await using var b=await Session.Create(_scope.actorB,false);
             _phase="initial_baseline";await a.Until(a.HasBaseline,ct);await b.Until(b.HasBaseline,ct);await a.Turn(ct);
             var before=a.Facts();Demand(before.Length>0,"history_test_baseline_empty");Same(before,b.Facts());a.NoNative();b.NoNative();
             var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
-            var state=await a.Fixture.Service.ReadDatasetAsync(ct);using var c=a.Fixture.Db.Factory.Open();
-            var assignments=analysis.AcceptedTransactions.Select(t=>t.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select(group=>{
-                var binding=c.QuerySingle<Binding>("SELECT scope_id Scope,id Id,evidence_reference Evidence FROM historical_merchant_binding WHERE shop_id=@shop AND alias_key=@alias",new{shop=_scope.shopId,alias=group.Key});
-                return new HistoricalMerchantAssignment(group.First(),binding.Scope,binding.Id,binding.Evidence);
-            }).ToArray();
+            var state=await a.Fixture.Service.ReadDatasetAsync(ct);
+            var assignments=ReadAssignments(a,analysis);
             var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,state.DatasetId,state.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
             var expected=analysis.AcceptedTransactions.Where(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19).Select(t=>new Fact{Namespace=t.ExternalNamespace,Id=t.ExternalId,Ticks=t.BusinessDateTime!.Value.Ticks.ToString(CultureInfo.InvariantCulture),Gross=t.GrossClp.ToString(CultureInfo.InvariantCulture)}).ToArray();
             Demand(expected.Length>0,"history_test_new_source_missing");
@@ -90,6 +87,15 @@ internal static class AuthenticatedHistoryServiceHarness
         }
     }
     static string ClosedCode(string? value)=>value!=null&&System.Text.RegularExpressions.Regex.IsMatch(value,"^(?:history|historical)_[a-z_]+$")?value:"history_test_failed";
+    static HistoricalMerchantAssignment[] ReadAssignments(Session session,HistoricalSalesImportAnalysis analysis)
+    {
+        // Release this reader before publication and exclusive Apply maintenance.
+        using var c=session.Fixture.Db.Factory.Open();
+        return analysis.AcceptedTransactions.Select(t=>t.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select(group=>{
+            var binding=c.QuerySingle<Binding>("SELECT scope_id Scope,id Id,evidence_reference Evidence FROM historical_merchant_binding WHERE shop_id=@shop AND alias_key=@alias",new{shop=_scope.shopId,alias=group.Key});
+            return new HistoricalMerchantAssignment(group.First(),binding.Scope,binding.Id,binding.Evidence);
+        }).ToArray();
+    }
     static async Task SaveState(object value,CancellationToken ct)
     {
         var target=Path.Combine(_directory,"client-state.private.json");var temporary=target+"."+Guid.NewGuid().ToString("N");
@@ -124,7 +130,7 @@ internal static class AuthenticatedHistoryServiceHarness
     static string Hash(byte[] bytes)=>Convert.ToHexStringLower(SHA256.HashData(bytes));
     static bool Equal(Fact[] a,Fact[] b)=>a.Select(x=>x.Key).OrderBy(x=>x,StringComparer.Ordinal).SequenceEqual(b.Select(x=>x.Key).OrderBy(x=>x,StringComparer.Ordinal));
     static void Same(Fact[] a,Fact[] b)=>Demand(Equal(a,b),"history_test_replica_mismatch");
-    sealed class Session:IDisposable
+    sealed class Session:IDisposable,IAsyncDisposable
     {
         internal HistoricalCloudExportTests.Fixture Fixture=null!;internal OnlineSyncGeneration Generation=null!;
         PosAdminWebClient _client=null!;OnlineSyncSupervisor _supervisor=null!;Actor _actor=new();bool _active=true;string _server="";long _epoch;
@@ -163,5 +169,11 @@ internal static class AuthenticatedHistoryServiceHarness
         internal Fact[] Facts(){using var c=Fixture.Db.Factory.Open();return c.Query<Fact>("SELECT external_namespace Namespace,external_id Id,CAST(business_ticks AS TEXT) Ticks,CAST(signed_amount_clp AS TEXT) Gross FROM historical_baseline_report_movements WHERE shop_id=@shop AND is_active=1",new{shop=_scope.shopId}).ToArray();}
         internal void NoNative(){using var c=Fixture.Db.Factory.Open();AuthenticatedHistoryServiceHarness.Demand(c.ExecuteScalar<long>("SELECT (SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM sales_sync_outbox)+(SELECT COUNT(*) FROM local_stock_movements)")==0,"history_test_native_effect");}
         public void Dispose(){_active=false;_supervisor?.Dispose();_client?.Dispose();Fixture?.Dispose();}
+        public async ValueTask DisposeAsync()
+        {
+            _active=false;
+            try{if(_supervisor!=null)await _supervisor.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));}
+            finally{Dispose();}
+        }
     }
 }
