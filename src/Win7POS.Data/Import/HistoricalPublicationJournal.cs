@@ -134,6 +134,9 @@ VALUES(@OperationId,@nonce,@ShopId,@DeviceId,@DatasetId,@RestoreLineageId,@Resto
         // authenticated reconciliation protocol. No absent:true assertion is sent.
         public async Task AbortWithoutCommitAsync(string operation,string nonce,string shop,string device,Action demand,CancellationToken ct)
         {
+            // A supervisor cannot declare absence while the UI still owns the
+            // preparation/authorization/local-commit path for this operation.
+            using var use=HistoricalPublicationOperationUse.Begin(_factory,operation);
             if(demand==null)throw new ArgumentNullException(nameof(demand));demand();var authority=_factory.AuthorityStamp;
             using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();
             var row=c.QuerySingleOrDefault<Intent>(Select+" WHERE i.operation_id=@operation",new{operation},t);

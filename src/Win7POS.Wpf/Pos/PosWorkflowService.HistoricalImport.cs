@@ -138,6 +138,7 @@ namespace Win7POS.Wpf.Pos
                 return authorized;
             }
             // Hash and hold inputs before acquiring workflow/auth/catalog/maintenance locks.
+            using var publicationUse=HistoricalPublicationOperationUse.Begin(_factory,op);
             using var sources = sourcePlan == null ? null : await HistoricalLedger.VerifySourcesAsync(sourcePlan, admission.Token).ConfigureAwait(false);
             readAuthority.DemandStillValid();
             var expectedAuthority = _factory.AuthorityStamp;
