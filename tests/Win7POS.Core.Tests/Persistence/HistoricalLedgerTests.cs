@@ -348,6 +348,7 @@ public sealed partial class HistoricalLedgerTests
             new HistoricalPublicationLocalDecision(preview.NewCount,preview.DuplicateCount,plan.Analysis.RejectedRows.Count,plan.CorrectionApprovals.Count,0,preview.NewGrossClp,preview.NewCount),
             new HistoricalPublicationCanonicalDecision(Guid.NewGuid().ToString("D"),7,preview.NewCount,preview.DuplicateCount,0,preview.NewGrossClp));
         await PersistProofIntent(f,draft,proof);
+        guard.AttachPublicationGrant(new HistoricalLocalWriteGrant(proof.OperationId,"1",60000,0,()=>{},publicationProof:proof));
         var receipt=await f.Service.ApplyAsync(plan,guard,f.Backup(),default,publicationDraft:draft,publicationProof:proof);
         f.Restart();File.Delete(f.Source);
         var replay=await f.Service.ApplyAsync(plan,guard,f.Backup(),default,publicationDraft:draft,publicationProof:proof);

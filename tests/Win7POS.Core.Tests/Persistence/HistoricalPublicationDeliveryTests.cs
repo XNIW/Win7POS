@@ -248,7 +248,7 @@ INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,sta
         var proof=new HistoricalPublicationProof(Guid.NewGuid().ToString("D"),Guid.Parse(undo).ToString("D"),PublicationShop,PublicationDevice,state.DatasetId,applied.Proof.ServerDatasetId,draft.RestoreLineageId,f.Epoch,1,draft.ContentDigest,fp,"content_authorized_v2",
             new HistoricalPublicationLocalDecision(0,0,0,0,applied.Local.InsertedCount,applied.Local.SignedAmountClp,applied.Local.InsertedCount),
             new HistoricalPublicationCanonicalDecision(applied.Proof.CanonicalDecision.BatchId,8,0,0,applied.Local.InsertedCount,applied.Local.SignedAmountClp));
-        var guard=PublicationGuard(HistoricalImportOperationKind.Undo,undo,fp,state.DatasetId,f.Epoch);
+        var guard=PublicationGuard(HistoricalImportOperationKind.Undo,undo,fp,state.DatasetId,f.Epoch,proof);
         await PersistProofIntent(f,draft,proof);
         await f.Service.UndoAsync(applied.Local.BatchId,1,guard,f.Backup(),default,publicationDraft:draft,publicationProof:proof);
         var independent=await CreatePublication(f,g,"independent");var outbox=new HistoricalPublicationOutbox(f.Factory);
@@ -387,8 +387,12 @@ INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,sta
         Assert.AreEqual(1L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox"));
     }
 
-    static HistoricalImportAuthorizationCommitGuard PublicationGuard(HistoricalImportOperationKind kind,string op,string fp,string dataset,long epoch)
-        =>new(kind,op,fp,PublicationShop,"SYNTHETIC",PublicationDevice,1,dataset,epoch,1,"generation","staff",1,()=>{},(_,commit)=>commit());
+    static HistoricalImportAuthorizationCommitGuard PublicationGuard(HistoricalImportOperationKind kind,string op,string fp,string dataset,long epoch,HistoricalPublicationProof? proof=null)
+    {
+        var guard=new HistoricalImportAuthorizationCommitGuard(kind,op,fp,PublicationShop,"SYNTHETIC",PublicationDevice,1,dataset,epoch,1,"generation","staff",1,()=>{},(_,commit)=>commit());
+        if(proof!=null)guard.AttachPublicationGrant(new HistoricalLocalWriteGrant(proof.OperationId,"1",60000,0,()=>{},publicationProof:proof));
+        return guard;
+    }
     static async Task<(HistoricalSalesImportPlan Plan,HistoricalSalesOperationReceipt Local,HistoricalPublicationProof Proof)> CreatePublication(Fixture f,OnlineSyncGeneration generation,string identity,
         long canonicalRevision=7,bool canonicalDuplicate=false,HistoricalPublicationLocalDecision? localDecision=null)
     {
@@ -401,7 +405,7 @@ INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,sta
             new HistoricalPublicationCanonicalDecision(Guid.NewGuid().ToString("D"),canonicalRevision,canonicalDuplicate?0:preview.NewCount,
                 canonicalDuplicate?preview.NewCount+preview.DuplicateCount:preview.DuplicateCount,0,canonicalDuplicate?0:preview.NewGrossClp));
         await PersistProofIntent(f,draft,proof);
-        var receipt=await f.Service.ApplyAsync(plan,PublicationGuard(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,plan.DatasetId,plan.RestoreEpoch),f.Backup(),default,publicationDraft:draft,publicationProof:proof);
+        var receipt=await f.Service.ApplyAsync(plan,PublicationGuard(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,plan.DatasetId,plan.RestoreEpoch,proof),f.Backup(),default,publicationDraft:draft,publicationProof:proof);
         return(plan,receipt,proof);
     }
     static async Task PersistProofIntent(Fixture f,HistoricalPublicationDraft draft,HistoricalPublicationProof proof)

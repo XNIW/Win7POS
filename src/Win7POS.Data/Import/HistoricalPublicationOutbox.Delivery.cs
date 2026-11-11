@@ -95,6 +95,7 @@ ORDER BY o.sequence LIMIT 1",new{shop=generation.ShopId,device=generation.ShopDe
             if(attempt.ClaimLineageId!=HistoricalPublicationDraft.NormalizeLineage(lineage))throw new OnlineSyncGenerationChangedException();
             var changed=await c.ExecuteAsync(new CommandDefinition(@"UPDATE historical_publication_delivery SET status='synchronized',reason_code=NULL,next_attempt_at=NULL,server_receipt_json=@receipt,server_revision=@revision,confirmed_at=@now
 WHERE operation_id=@op AND status='uncertain' AND attempt_count=@attempt",new{receipt=Serialize(receipt),revision=receipt.Revision,now,op=attempt.OperationId,attempt=attempt.Attempt},t,cancellationToken:ct)).ConfigureAwait(false);
+            if(changed==1)HistoricalPublicationJournal.ResolveCommittedWitness(c,t,attempt.OperationId,now);
             await DemandDeliveryAsync(c,t,generation,demand,ct).ConfigureAwait(false);t.Commit();
             if(changed==1)SalesReportSnapshotCoordinator.ForDatabase(_factory.DbPath).NotifyHistoricalSyncStatusCommitted();
             return changed==1;

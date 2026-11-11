@@ -111,6 +111,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             await journal.SaveGrantAsync(draft.OperationId,nonce,proof,()=>f.Factory.AccessContext.DemandPath(f.Factory.DbPath),CancellationToken.None);
             using var use=await f.Operator.BeginHistoricalAuthorizationUseAsync(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,plan.DatasetId,plan.RestoreEpoch,
                 ()=>f.Factory.AccessContext.DemandPath(f.Factory.DbPath),CancellationToken.None);
+            HistoricalPublicationAdmissionFixture.AttachLiveGrant(use.Guard,proof,()=>f.Factory.AccessContext.DemandPath(f.Factory.DbPath));
             var receipt=await f.Service.ApplyAsync(plan,use.Guard,f.Backup(),CancellationToken.None,publicationDraft:draft,publicationProof:proof);
             return(receipt,proof);
         }

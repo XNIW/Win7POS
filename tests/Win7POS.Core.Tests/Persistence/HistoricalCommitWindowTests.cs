@@ -43,4 +43,16 @@ public sealed class HistoricalCommitWindowTests
         Assert.AreEqual("history_publication_content_required",Assert.Throws<InvalidOperationException>(()=>grant.CaptureCommitWindow(TimeSpan.Zero)).Message);
         Assert.Throws<ArgumentOutOfRangeException>(()=>grant.CaptureCommitWindow(TimeSpan.FromMilliseconds(-1)));
     }
+
+    [TestMethod]
+    public void CommitWindow_DelayedContinuationCannotRestartTheOriginalAuthorizationClock()
+    {
+        var proof=Proof();long clock=40500;
+        var grant=new HistoricalLocalWriteGrant(proof.OperationId,"1",60000,100,()=>{},()=>clock,1000,proof,1000);
+        var witness=grant.CaptureCommitWindow(TimeSpan.FromSeconds(10));
+        Assert.AreEqual(39500L,witness.RequestElapsedMilliseconds);Assert.AreEqual(0L,witness.ElapsedMilliseconds);
+        clock=41001;Assert.Throws<InvalidOperationException>(()=>grant.CaptureCommitWindow(TimeSpan.FromSeconds(10)));
+        clock=51000;
+        Assert.Throws<InvalidOperationException>(()=>new HistoricalLocalWriteGrant(proof.OperationId,"1",60000,100,()=>{},()=>clock,1000,proof,1000));
+    }
 }

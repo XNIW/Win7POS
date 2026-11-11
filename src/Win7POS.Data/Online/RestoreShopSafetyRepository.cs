@@ -292,6 +292,8 @@ ON CONFLICT(key) DO UPDATE SET value = 'false';",
             var journalTables=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN('historical_preparation_intent','historical_preparation_page','historical_preparation_outcome')",transaction:tx).ConfigureAwait(false);
             if(journalTables!=0&&journalTables!=3)throw new InvalidOperationException("restore_history_journal_schema_invalid");
             if(journalTables==3)pending+=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM historical_preparation_outcome WHERE state IN('staging','prepared','authorized')",transaction:tx).ConfigureAwait(false);
+            if(await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='historical_commit_witness'",transaction:tx).ConfigureAwait(false)==1)
+                pending+=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM historical_commit_witness WHERE server_resolution IS NULL",transaction:tx).ConfigureAwait(false);
             return pending;
         }
 

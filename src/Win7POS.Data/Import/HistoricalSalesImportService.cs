@@ -432,7 +432,7 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 ct.ThrowIfCancellationRequested();
                 guard.DemandStillValid();
                 using (await _coordinator.EnterPublicationAsync(ct).ConfigureAwait(false))
-                    _coordinator.CommitAndPublishReportRevision(c, tx, () => guard.CommitIfStillValid(SqliteConnectionFactory.DurableCommitSafetyBudget, tx.Commit), _authority());
+                    _coordinator.CommitAndPublishReportRevision(c, tx, () => CommitWithWitness(c,tx,guard,publicationProof), _authority());
                 _testHooks?.AtPhase?.Invoke("after_commit", c, tx);
             }, TimeSpan.FromSeconds(30), admission.Token).ConfigureAwait(false);
             return result;
@@ -478,11 +478,18 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 HistoricalPublicationOutbox.Enqueue(c,tx,guard,publicationDraft??ownedDraft,publicationProof,result,applyOperation,now,ct);
                 _testHooks?.AtPhase?.Invoke("before_undo_commit", c, tx); ct.ThrowIfCancellationRequested(); guard.DemandStillValid();
                 using (await _coordinator.EnterPublicationAsync(ct).ConfigureAwait(false))
-                    _coordinator.CommitAndPublishReportRevision(c, tx, () => guard.CommitIfStillValid(SqliteConnectionFactory.DurableCommitSafetyBudget, tx.Commit), _authority());
+                    _coordinator.CommitAndPublishReportRevision(c, tx, () => CommitWithWitness(c,tx,guard,publicationProof), _authority());
                 _testHooks?.AtPhase?.Invoke("after_commit", c, tx);
             }, TimeSpan.FromSeconds(30), admission.Token).ConfigureAwait(false);
             return result;
         }
+        private static void CommitWithWitness(SqliteConnection c,SqliteTransaction t,HistoricalImportAuthorizationCommitGuard guard,HistoricalPublicationProof proof)
+            =>guard.CommitIfStillValid(SqliteConnectionFactory.DurableCommitSafetyBudget,()=>
+            {
+                if(proof!=null)HistoricalPublicationJournal.SealCommitWitness(c,t,guard,guard.CapturePublicationCommitWindow(SqliteConnectionFactory.DurableCommitSafetyBudget));
+                t.Commit();
+            });
+
         private void ValidateGuard(HistoricalImportAuthorizationCommitGuard g, HistoricalImportOperationKind kind, string operation, string fingerprint, string shop, string dataset, long epoch)
         {
             if (g == null) throw new ArgumentNullException(nameof(g)); g.DemandStillValid();

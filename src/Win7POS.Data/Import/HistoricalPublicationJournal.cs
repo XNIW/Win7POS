@@ -13,7 +13,7 @@ namespace Win7POS.Data.Import
 {
     /// <summary>Durable pre-authorization intent in the existing historical lane.
     /// No financial mutation, network request, lease renewal or independent scheduler.</summary>
-    public sealed class HistoricalPublicationJournal
+    public sealed partial class HistoricalPublicationJournal
     {
         private readonly SqliteConnectionFactory _factory;
         public HistoricalPublicationJournal(SqliteConnectionFactory factory)=>_factory=factory??throw new ArgumentNullException(nameof(factory));
@@ -146,6 +146,7 @@ VALUES(@OperationId,@nonce,@ShopId,@DeviceId,@DatasetId,@RestoreLineageId,@Resto
                 ||c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox WHERE operation_id=@operation",new{operation},t)!=0)
                 throw new InvalidOperationException("history_preparation_commit_exists");
             if(row.State!="aborted")c.Execute("UPDATE historical_preparation_outcome SET state='aborted' WHERE operation_id=@operation",new{operation},t);
+            SealNegativeWitness(c,t,row);
             demand();DemandFactory(authority);ct.ThrowIfCancellationRequested();t.Commit();
         }
 
