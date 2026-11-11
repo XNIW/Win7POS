@@ -9,6 +9,11 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      release_foundation_diagnostic_only:
+        description: Diagnose the exact ASUS019 89021128 release foundation gate without product or service actions
+        required: false
+        default: false
+        type: boolean
       recovery_diagnostic:
         description: Bounded Recovery timeline or three fixed candidate repetitions on independent Windows
         required: false
@@ -62,9 +67,65 @@ permissions:
   contents: read
 
 jobs:
+  release-foundation-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_foundation_diagnostic_only == true }}
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout diagnostic source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Setup exact SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Diagnose original gate on immutable source
+        shell: pwsh
+        run: |
+          $target = '89021128bd5e1063c10019a227fbaa435ff75b4f'
+          $tree = Join-Path $env:RUNNER_TEMP 'asus019-gate-source'
+          $evidence = Join-Path $env:RUNNER_TEMP 'asus019-gate-evidence'
+          New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+          git worktree add --detach $tree $target
+          if ($LASTEXITCODE -ne 0) { throw 'diagnostic_worktree_failed' }
+          Set-Location -LiteralPath $tree
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -cne $target -or (git status --porcelain)) { throw 'diagnostic_source_mismatch' }
+          & pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $target -Ref $env:GITHUB_REF -GitHubEnvironmentFile $env:GITHUB_ENV
+          if ($LASTEXITCODE -ne 0) { throw 'diagnostic_version_failed' }
+          dotnet restore Win7POS.slnx --locked-mode *> (Join-Path $evidence 'restore.log')
+          if ($LASTEXITCODE -ne 0) { throw 'diagnostic_restore_failed' }
+          $env:WIN7POS_QA_TEMP_BASE = $env:RUNNER_TEMP
+          & pwsh -NoProfile -File scripts/check-release-foundation.ps1 *> (Join-Path $evidence 'release-foundation.log')
+          $gateExit = $LASTEXITCODE
+          [ordered]@{
+            targetSha = $actual
+            workflowSha = $env:GITHUB_SHA
+            gateSha256 = (Get-FileHash scripts/check-release-foundation.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
+            exitCode = $gateExit
+            powershell = $PSVersionTable.PSVersion.ToString()
+            runnerOS = $env:RUNNER_OS
+            runnerImage = $env:ImageVersion
+            sdk = (dotnet --version)
+            sourceAfter = (git status --porcelain | Out-String).Trim()
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'result.json') -Encoding utf8
+          Get-Content -LiteralPath (Join-Path $evidence 'release-foundation.log')
+          if ($gateExit -ne 0) { throw 'original_release_foundation_gate_failed' }
+      - name: Preserve bounded gate diagnostic
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ASUS019-release-foundation-${{ github.run_id }}
+          path: ${{ runner.temp }}/asus019-gate-evidence
+          if-no-files-found: error
+          retention-days: 14
+
   build-and-check:
     name: ${{ github.event_name == 'workflow_dispatch' && (inputs.cart_diagnostic_only == true || (inputs.cart_qualification != '' && inputs.cart_qualification != 'none')) && 'canonical-not-requested' || 'build-and-check' }}
-    if: ${{ github.event_name != 'workflow_dispatch' || ((inputs.recovery_diagnostic == '' || inputs.recovery_diagnostic == 'none') && inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.release_foundation_diagnostic_only != true && (inputs.recovery_diagnostic == '' || inputs.recovery_diagnostic == 'none') && inputs.cart_diagnostic_only != true && (inputs.cart_qualification == '' || inputs.cart_qualification == 'none')) }}
     runs-on: windows-latest
     steps:
       - name: Checkout
