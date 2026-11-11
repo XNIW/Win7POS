@@ -110,7 +110,8 @@ internal static class AuthenticatedHistoryServiceHarness
             Console.Error.WriteLine("authenticated_history_client_failed");return 1;
         }
     }
-    static string ClosedCode(string? value)=>value!=null&&System.Text.RegularExpressions.Regex.IsMatch(value,"^(?:(?:history|historical|auth)_[a-z0-9_]{1,90}|http_(?:[0-9]{3}|5xx)|success|invalid_response|io_error|network_error|dns|tls|timeout|cancelled|response_too_large|rate_limited|db_failure)$")?value:"history_test_failed";
+    internal static string ClosedCode(string? value)=>value!=null&&value.Length<=102&&value.IndexOf('\r')<0&&value.IndexOf('\n')<0&&System.Text.RegularExpressions.Regex.IsMatch(value,"^(?:(?:history|historical|auth)_[a-z0-9_]{1,90}|http_(?:[0-9]{3}|5xx)|success|invalid_response|io_error|network_error|dns|tls|timeout|cancelled|response_too_large|rate_limited|db_failure)$")?value:"history_test_failed";
+    internal static bool IsExpectedConflict(Exception error)=>error is HistoricalCloudRequestException request&&request.Code=="history_cloud_writer_closed"&&!request.Denied&&!request.Retryable;
     static HistoricalMerchantAssignment[] ReadAssignments(Session session,HistoricalSalesImportAnalysis analysis)
     {
         // Release this reader before publication and exclusive Apply maintenance.
@@ -309,7 +310,7 @@ internal static class AuthenticatedHistoryServiceHarness
         using(var draft=await b.Fixture.Service.PreparePublicationDraftAsync(plan,b.Generation.ShopDeviceId,ct))
         {
             try{await Admit(b,draft,ct);}
-            catch(HistoricalCloudRequestException e)when(e.Code=="history_cloud_writer_closed"){denied=true;}
+            catch(HistoricalCloudRequestException e)when(IsExpectedConflict(e)){denied=true;}
         }
         Demand(denied,"history_test_conflicting_grant_accepted");var after=await b.Fixture.Service.ReadDatasetAsync(ct);Demand(after.DatasetId==before.DatasetId&&after.DataRevision==before.DataRevision&&b.LocalFacts().Length==0,"history_test_conflict_changed_ledger");
         // Once the same live operation ownership as WPF is released, the real
@@ -398,22 +399,23 @@ internal static class AuthenticatedHistoryServiceHarness
         internal void Demand()=>AuthenticatedHistoryServiceHarness.Demand(_active,"history_test_generation_stopped");
         internal async Task<HistoricalCloudResult> Request(string operation,HistoricalCloudPayload payload,CancellationToken ct)
         {
+            if(_phase=="conflict_preparation"&&operation=="local_review")
+            {
+                AuthenticatedHistoryServiceHarness.Demand(payload.Ordinal==1&&payload.ReviewToken==null,"history_test_conflict_probe_page");
+                await SaveState(new{phase="conflict_review_ready",nonce=_scope.nonce,payload=new{operation_id=payload.OperationId,content_digest=payload.ContentDigest,ordinal=payload.Ordinal}},ct);
+                await WaitSignal("allow_conflict_review",ct);
+            }
             Demand();var result=await _client.HistoricalCloudAsync(new HistoricalCloudRequest{DeviceId=_actor.deviceId,SessionId=_actor.sessionId,DeviceToken=_actor.deviceToken,SessionToken=_actor.sessionToken,Operation=operation,Payload=payload},ct);
             _lastCode=result.Code;LastRequestCode=result.Code;
             if(!result.Success)
             {
                 RecordFailure(operation,result.Code,result.HttpStatus,result.Denied,result.Retryable);
-                // Same immutable error carrier as PosHistoricalCloudSyncService;
-                // a concurrent successful call cannot replace this denial code.
-                if(result.Code=="history_resnapshot_required")throw new HistoricalCloudResnapshotRequiredException();
-                throw new HistoricalCloudRequestException(result.Code,result.Denied,result.Retryable);
             }
-            if(result.Value?.Ok!=true||result.Value.ShopId!=_scope.shopId||result.Value.DeviceId!=_actor.deviceId||result.Value.SessionId!=_actor.sessionId||result.Value.Result==null)
+            try{return HistoricalCloudResponseMapper.RequireResult(result,_scope.shopId,_actor.deviceId,_actor.sessionId);}
+            catch(HistoricalCloudRequestException error)when(result.Success)
             {
-                RecordFailure(operation,"history_response_invalid",result.HttpStatus,false,false);
-                throw new HistoricalCloudRequestException("history_response_invalid",false,false);
+                RecordFailure(operation,error.Code,result.HttpStatus,error.Denied,error.Retryable);throw;
             }
-            return result.Value.Result;
         }
         void RecordFailure(string operation,string code,int? httpStatus,bool denied,bool retryable)
             =>_requestFailure=new{phase=_phase,actor=_actor.deviceId==_scope.actorA.deviceId?"A":_actor.deviceId==_scope.actorB.deviceId?"B":"other_test_actor",operation,code=ClosedCode(code),httpStatus,transportDenied=denied,retryable};

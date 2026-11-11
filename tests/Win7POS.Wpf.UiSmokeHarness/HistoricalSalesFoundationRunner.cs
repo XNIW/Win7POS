@@ -136,6 +136,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CommitAuthorityAsync(string data, HistoricalSalesQaCase test)
         {
+            using (var fixture = await Fixture.CreateAsync(data))
+            {
+                var plan=await fixture.PlanAsync();var workflow=fixture.CreateWorkflow();var before=fixture.State();
+                foreach(var item in new[]{
+                    new{Code="history_cloud_writer_closed",Denied=false,Retryable=false},
+                    new{Code="auth_denied",Denied=true,Retryable=false},
+                    new{Code="history_cloud_access_denied",Denied=true,Retryable=false},
+                    new{Code="history_cloud_unavailable",Denied=false,Retryable=true},
+                    new{Code="history_response_invalid",Denied=false,Retryable=false}})
+                {
+                    workflow.SetHistoricalCloudRequestForTesting((actor,operation,payload,ct)=>
+                        Task.FromResult(item.Code=="history_response_invalid"
+                            ?PosOnlineResult<HistoricalCloudResponse>.Ok(new HistoricalCloudResponse{Ok=true,ShopId=actor.Trusted.ShopId,DeviceId=actor.Trusted.ShopDeviceId,SessionId=actor.Trusted.PosSessionId,Result=null})
+                            :PosOnlineResult<HistoricalCloudResponse>.Failure(item.Code,"Synthetic transport rejection",item.Denied,retryable:item.Retryable)));
+                    HistoricalCloudRequestException failure=null;
+                    try{await workflow.ApplyHistoricalSalesAsync(plan,fixture.Operator,CancellationToken.None);}
+                    catch(HistoricalCloudRequestException error){failure=error;}
+                    test.Check("foreground_preserves_"+item.Code,failure?.Code==item.Code&&failure.Denied==item.Denied&&failure.Retryable==item.Retryable&&fixture.State()==before&&!workflow.IsHistoricalMaintenanceActive);
+                }
+            }
             foreach (var item in new[] { new[] { "apply_revoke_before_insert", "before_insert", "revoke" }, new[] { "apply_revoke_precommit", "before_commit", "revoke" }, new[] { "expiry_before_commit", "before_commit", "expiry" }, new[] { "operator_permission_changed", "before_commit", "permission" } })
             {
                 using (var fixture = await Fixture.CreateAsync(data))
@@ -444,10 +464,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (operation == "authority")
                     {
                         if (rejection == "offline") throw new InvalidOperationException("qa_history_cloud_offline");
-                        return Task.FromResult(new HistoricalCloudResult { DatasetId = "90000000-0000-4000-8000-000000003019", Revision = "0", WriterEpoch = "1", WriterAuthority = rejection == "frozen" || rejection == "web" ? rejection : "local", ProtocolVersion = 1 });
+                        return Task.FromResult(PosOnlineResult<HistoricalCloudResponse>.Ok(new HistoricalCloudResponse { Ok=true,ShopId=actor.Trusted.ShopId,DeviceId=actor.Trusted.ShopDeviceId,SessionId=actor.Trusted.PosSessionId,Result=new HistoricalCloudResult { DatasetId = "90000000-0000-4000-8000-000000003019", Revision = "0", WriterEpoch = "1", WriterAuthority = rejection == "frozen" || rejection == "web" ? rejection : "local", ProtocolVersion = 1 } }));
                     }
                     var result=publication.Request(operation,payload,rejection);LocalWriteRequests=publication.Authorizations;
-                    return Task.FromResult(result);
+                    return Task.FromResult(PosOnlineResult<HistoricalCloudResponse>.Ok(new HistoricalCloudResponse { Ok=true,ShopId=actor.Trusted.ShopId,DeviceId=actor.Trusted.ShopDeviceId,SessionId=actor.Trusted.PosSessionId,Result=result }));
                 });
                 return workflow;
             }
