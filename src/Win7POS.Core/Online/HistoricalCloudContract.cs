@@ -55,6 +55,10 @@ namespace Win7POS.Core.Online
         [DataMember(Name="local_revision",EmitDefaultValue=false)] public string LocalRevision { get; set; }
         [DataMember(Name="local_sequence",EmitDefaultValue=false)] public string LocalSequence { get; set; }
         [DataMember(Name="local_receipt_json",EmitDefaultValue=false)] public string LocalReceiptJson { get; set; }
+        [DataMember(Name="local_nonce",EmitDefaultValue=false)] public string LocalNonce { get; set; }
+        [DataMember(Name="review_token",EmitDefaultValue=false)] public string ReviewToken { get; set; }
+        [DataMember(Name="witness_json",EmitDefaultValue=false)] public string WitnessJson { get; set; }
+        [DataMember(Name="local_proof_json",EmitDefaultValue=false)] public string LocalProofJson { get; set; }
     }
     [DataContract]
     public sealed class HistoricalCloudResponse
@@ -89,6 +93,8 @@ namespace Win7POS.Core.Online
         [DataMember(Name="state")] public string State { get; set; }
         [DataMember(Name="content_digest")] public string ContentDigest { get; set; }
         [DataMember(Name="next_ordinal")] public int NextOrdinal { get; set; }
+        [DataMember(Name="review_token")] public string ReviewToken { get; set; }
+        [DataMember(Name="witness_sha256")] public string WitnessSha256 { get; set; }
         [DataMember(Name="page_count")] public int PublicationPageCount { get; set; }
         [DataMember(Name="proof")] public HistoricalPublicationProof PublicationProof { get; set; }
         [DataMember(Name="receipt")] public HistoricalPublicationServerReceipt PublicationReceipt { get; set; }

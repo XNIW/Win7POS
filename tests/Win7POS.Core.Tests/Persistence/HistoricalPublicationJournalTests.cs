@@ -67,10 +67,11 @@ public sealed partial class HistoricalLedgerTests
             using(var c=f.Factory.Open())Assert.AreEqual(1L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_preparation_outcome WHERE state='prepared'"));
             if(operation=="local_prepare")return PreparationProgress(draft,1);
             if(operation=="local_stage")return PreparationProgress(draft,payload.Ordinal!.Value+1);
+            if(operation=="local_review")return PreparationReview(draft);
             await Task.Yield();throw new IOException("synthetic_ack_lost");
         }
         await Assert.ThrowsAsync<IOException>(()=>new HistoricalPublicationPreparer(f.Factory,()=>{},Request).PrepareAsync(draft,PreparationAuthority(),default));
-        Assert.AreEqual(3,requests);f.Restart();
+        Assert.AreEqual(4,requests);f.Restart();
         using var recovered=await new HistoricalPublicationJournal(f.Factory).ReadPendingDraftAsync(draft.OperationId,PublicationShop,PublicationDevice,PreparationServerDataset,1,()=>{},default);
         Assert.IsNotNull(recovered);Assert.AreEqual(draft.ContentDigest,recovered.ContentDigest);
         using var c=f.Factory.Open();Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation"));

@@ -9,6 +9,7 @@ namespace Win7POS.Core.Tests.Persistence;
 public sealed partial class HistoricalLedgerTests
 {
     const string PreparationServerDataset="c0000000-0000-4000-8000-000000000019";
+    const string PreparationReviewToken="d0000000-0000-4000-8000-000000000019";
     static HistoricalCloudResult PreparationAuthority()=>new(){DatasetId=PreparationServerDataset,WriterEpoch="1",WriterAuthority="local",ProtocolVersion=1};
     static async Task<HistoricalPublicationDraft> PreparationDraft(Fixture f)
     {
@@ -18,6 +19,8 @@ public sealed partial class HistoricalLedgerTests
     }
     static HistoricalCloudResult PreparationProgress(HistoricalPublicationDraft draft,int next)
         =>new(){State="preparing",OperationId=Guid.Parse(draft.OperationId).ToString("D"),ContentDigest=draft.ContentDigest,NextOrdinal=next,PublicationPageCount=draft.PageCount};
+    static HistoricalCloudResult PreparationReview(HistoricalPublicationDraft draft,int next=2,bool done=true)
+        =>new(){State=done?"reviewed":"reviewing",OperationId=Guid.Parse(draft.OperationId).ToString("D"),ContentDigest=draft.ContentDigest,NextOrdinal=next,ReviewToken=PreparationReviewToken};
     static HistoricalCloudResult PreparationGrant(HistoricalPublicationDraft draft,string mismatch="")
     {
         var grant=Guid.NewGuid().ToString("D");var op=Guid.Parse(draft.OperationId).ToString("D");
@@ -37,24 +40,29 @@ public sealed partial class HistoricalLedgerTests
         async Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload payload,CancellationToken ct)
         {
             calls.Add(op);
-            if(op=="local_prepare")return PreparationProgress(draft,1);
+            if(op=="local_prepare")
+            {
+                using var c=f.Factory.Open();Assert.AreEqual(c.ExecuteScalar<string>("SELECT local_nonce FROM historical_preparation_intent"),payload.LocalNonce);
+                return PreparationProgress(draft,1);
+            }
             if(op=="local_stage")
             {
                 Assert.AreEqual(draft.Pages(default).Single().Digest,payload.PageSha256);
                 Assert.AreEqual(draft.PageCount,await Task.Run(()=>draft.Pages(default).Count()).WaitAsync(TimeSpan.FromSeconds(2)));
                 clock=600000;return PreparationProgress(draft,payload.Ordinal!.Value+1);
             }
-            Assert.AreEqual("local_authorize",op);clock+=7;return PreparationGrant(draft);
+            if(op=="local_review"){Assert.AreEqual(1,payload.Ordinal);Assert.IsNull(payload.ReviewToken);clock+=600000;return PreparationReview(draft);}
+            Assert.AreEqual("local_authorize",op);Assert.AreEqual(PreparationReviewToken,payload.ReviewToken);clock+=7;return PreparationGrant(draft);
         }
         var admission=await new HistoricalPublicationPreparer(f.Factory,()=>{},Request,()=>clock).PrepareAsync(draft,PreparationAuthority(),default);
         Assert.AreEqual(7L,admission.GrantRequestElapsedMilliseconds);Assert.AreEqual(60000,admission.RemainingMilliseconds);
-        Assert.AreEqual(600000L,admission.MonotonicRequestStartedMilliseconds);
+        Assert.AreEqual(1200000L,admission.MonotonicRequestStartedMilliseconds);
         clock+=39000;
         var live=new HistoricalLocalWriteGrant(admission.Proof.OperationId,"1",admission.RemainingMilliseconds,admission.GrantRequestElapsedMilliseconds,
             ()=>{},admission.ReadMonotonicMilliseconds,1000,admission.Proof,admission.MonotonicRequestStartedMilliseconds);
         Assert.AreEqual(39007L,live.CaptureCommitWindow(TimeSpan.FromSeconds(10)).RequestElapsedMilliseconds);
         clock+=2000;Assert.Throws<InvalidOperationException>(()=>live.CaptureCommitWindow(TimeSpan.FromSeconds(10)));
-        CollectionAssert.AreEqual(new[]{"local_prepare","local_stage","local_authorize"},calls);
+        CollectionAssert.AreEqual(new[]{"local_prepare","local_stage","local_review","local_authorize"},calls);
         using var c=f.Factory.Open();Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation"));
         Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox"));
     }
@@ -64,9 +72,9 @@ public sealed partial class HistoricalLedgerTests
     {
         using var f=new Fixture();using var draft=await PreparationDraft(f);var calls=new List<string>();
         Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload _,CancellationToken ct)
-        {calls.Add(op);return Task.FromResult(op=="local_prepare"?PreparationProgress(draft,draft.PageCount+1):PreparationGrant(draft));}
+        {calls.Add(op);return Task.FromResult(op=="local_prepare"?PreparationProgress(draft,draft.PageCount+1):op=="local_review"?PreparationReview(draft):PreparationGrant(draft));}
         await new HistoricalPublicationPreparer(f.Factory,()=>{},Request).PrepareAsync(draft,PreparationAuthority(),default);
-        CollectionAssert.AreEqual(new[]{"local_prepare","local_authorize"},calls);
+        CollectionAssert.AreEqual(new[]{"local_prepare","local_review","local_authorize"},calls);
     }
 
     [TestMethod]
@@ -74,9 +82,9 @@ public sealed partial class HistoricalLedgerTests
     {
         using var f=new Fixture();using var draft=await PreparationDraft(f);var calls=new List<string>();
         Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload _,CancellationToken ct)
-        {calls.Add(op);if(op=="local_authorize")throw new HistoricalCloudRequestException("synthetic_lost_ack",false,true);return Task.FromResult(PreparationProgress(draft,draft.PageCount+1));}
+        {calls.Add(op);if(op=="local_authorize")throw new HistoricalCloudRequestException("synthetic_lost_ack",false,true);return Task.FromResult(op=="local_review"?PreparationReview(draft):PreparationProgress(draft,draft.PageCount+1));}
         await Assert.ThrowsAsync<HistoricalCloudRequestException>(()=>new HistoricalPublicationPreparer(f.Factory,()=>{},Request).PrepareAsync(draft,PreparationAuthority(),default));
-        CollectionAssert.AreEqual(new[]{"local_prepare","local_authorize"},calls);
+        CollectionAssert.AreEqual(new[]{"local_prepare","local_review","local_authorize"},calls);
     }
 
     [TestMethod]
@@ -86,7 +94,7 @@ public sealed partial class HistoricalLedgerTests
     {
         using var f=new Fixture();using var draft=await PreparationDraft(f);
         Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload _,CancellationToken ct)
-            =>Task.FromResult(op=="local_prepare"?PreparationProgress(draft,draft.PageCount+1):PreparationGrant(draft,mismatch));
+            =>Task.FromResult(op=="local_prepare"?PreparationProgress(draft,draft.PageCount+1):op=="local_review"?PreparationReview(draft):PreparationGrant(draft,mismatch));
         await Assert.ThrowsAsync<InvalidOperationException>(()=>new HistoricalPublicationPreparer(f.Factory,()=>{},Request).PrepareAsync(draft,PreparationAuthority(),default));
     }
 
@@ -98,6 +106,52 @@ public sealed partial class HistoricalLedgerTests
         {calls++;var result=PreparationProgress(draft,1);result.ContentDigest=new string('f',64);return Task.FromResult(result);}
         await Assert.ThrowsAsync<InvalidOperationException>(()=>new HistoricalPublicationPreparer(f.Factory,()=>{},Request).PrepareAsync(draft,PreparationAuthority(),default));
         Assert.AreEqual(1,calls);
+    }
+
+    [TestMethod]
+    [DataRow("root")][DataRow("token")][DataRow("progress")][DataRow("early")]
+    public async Task PublicationPreparation_InvalidReviewNeverRequestsTheMutationGrant(string mismatch)
+    {
+        using var f=new Fixture();using var draft=await PreparationDraft(f);var calls=new List<string>();
+        Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload payload,CancellationToken ct)
+        {
+            calls.Add(op);if(op=="local_prepare")return Task.FromResult(PreparationProgress(draft,draft.PageCount+1));
+            Assert.AreEqual("local_review",op);var result=PreparationReview(draft);
+            if(mismatch=="root")result.ContentDigest=new string('e',64);
+            if(mismatch=="token")result.ReviewToken="invalid";
+            if(mismatch=="progress")result.NextOrdinal=1;
+            if(mismatch=="early")result.NextOrdinal=draft.PageCount+2;
+            return Task.FromResult(result);
+        }
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>new HistoricalPublicationPreparer(f.Factory,()=>{},Request).PrepareAsync(draft,PreparationAuthority(),default));
+        CollectionAssert.AreEqual(new[]{"local_prepare","local_review"},calls);
+        using var c=f.Factory.Open();Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox"));
+    }
+
+    [TestMethod]
+    public async Task PublicationPreparation_UndoReviewsMultiplePagesBeforeAuthorizationAndCanResumeAnAcquiredReview()
+    {
+        using var f=new Fixture();var g=PublicationGeneration();await new Win7POS.Data.Online.OnlineSyncGenerationRepository(f.Factory).ActivateAndRecoverAsync(g,1);
+        var applied=await CreatePublication(f,g,"preparer-undo-review");var operation=Guid.NewGuid().ToString("N");
+        using var draft=await f.Service.PrepareUndoPublicationDraftAsync(operation,PublicationShop,PublicationDevice,applied.Plan.DatasetId,f.Epoch,applied.Local.BatchId,1,default);
+        var reviewPages=new List<int>();var granted=false;var resume=false;var originalGrant=PreparationGrant(draft);
+        Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload payload,CancellationToken ct)
+        {
+            if(op=="local_prepare")return Task.FromResult(PreparationProgress(draft,draft.PageCount+1));
+            if(op=="local_review")
+            {
+                var page=payload.Ordinal!.Value;reviewPages.Add(page);
+                Assert.AreEqual(page==1?null:PreparationReviewToken,payload.ReviewToken);
+                return Task.FromResult(PreparationReview(draft,resume?3:page+1,resume||page==2));
+            }
+            Assert.AreEqual("local_authorize",op);Assert.AreEqual(PreparationReviewToken,payload.ReviewToken);granted=true;
+            return Task.FromResult(originalGrant);
+        }
+        var preparer=new HistoricalPublicationPreparer(f.Factory,()=>{},Request);
+        await preparer.PrepareAsync(draft,PreparationAuthority(),default);
+        Assert.IsTrue(granted);CollectionAssert.AreEqual(new[]{1,2},reviewPages);
+        resume=true;reviewPages.Clear();await preparer.PrepareAsync(draft,PreparationAuthority(),default);
+        CollectionAssert.AreEqual(new[]{1},reviewPages);
     }
 
     [TestMethod]
@@ -115,7 +169,7 @@ public sealed partial class HistoricalLedgerTests
     {
         using var f=new Fixture();using var draft=await PreparationDraft(f);long clock=0;
         Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload _,CancellationToken ct)
-        {if(op=="local_prepare")return Task.FromResult(PreparationProgress(draft,draft.PageCount+1));clock=50000;return Task.FromResult(PreparationGrant(draft));}
+        {if(op=="local_prepare")return Task.FromResult(PreparationProgress(draft,draft.PageCount+1));if(op=="local_review")return Task.FromResult(PreparationReview(draft));clock=50000;return Task.FromResult(PreparationGrant(draft));}
         await Assert.ThrowsAsync<InvalidOperationException>(()=>new HistoricalPublicationPreparer(f.Factory,()=>{},Request,()=>clock).PrepareAsync(draft,PreparationAuthority(),default));
     }
 
