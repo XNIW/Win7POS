@@ -12,7 +12,7 @@ namespace Win7POS.Data.Import
     {
         internal const string Sql=@"
 CREATE TABLE historical_baseline_flow (
- flow_id TEXT PRIMARY KEY NOT NULL,shop_id TEXT NOT NULL,device_id TEXT NOT NULL,
+ flow_id TEXT PRIMARY KEY NOT NULL,shop_id TEXT NOT NULL,device_id TEXT NOT NULL,staff_id TEXT NOT NULL,
  local_dataset_id TEXT NOT NULL,restore_lineage_id TEXT NOT NULL,restore_epoch INTEGER NOT NULL CHECK(typeof(restore_epoch)='integer' AND restore_epoch>=0),
  local_revision INTEGER NOT NULL CHECK(typeof(local_revision)='integer' AND local_revision>=0),server_dataset_id TEXT NOT NULL,
  writer_epoch INTEGER NOT NULL CHECK(typeof(writer_epoch)='integer' AND writer_epoch>0),
@@ -20,13 +20,14 @@ CREATE TABLE historical_baseline_flow (
  manifest_json TEXT NOT NULL CHECK(length(CAST(manifest_json AS BLOB)) BETWEEN 1 AND 65536),
  start_request_id TEXT NOT NULL UNIQUE,apply_request_id TEXT NOT NULL UNIQUE,
  state TEXT NOT NULL CHECK(state IN('prepared','upload_created','upload_ready','run_started','applied','needs_attention')),
- upload_id TEXT NULL,run_id TEXT NULL,receipt_json TEXT NULL,receipt_sha256 TEXT NULL,source_snapshot_id TEXT NULL,server_revision INTEGER NULL,
+ upload_id TEXT NULL,run_id TEXT NULL,review_digest TEXT NULL CHECK(review_digest IS NULL OR (length(review_digest)=64 AND review_digest NOT GLOB '*[^0-9a-f]*')),
+ receipt_json TEXT NULL,receipt_sha256 TEXT NULL,source_snapshot_id TEXT NULL,server_revision INTEGER NULL,
  reason_code TEXT NULL CHECK(reason_code IS NULL OR length(reason_code) BETWEEN 1 AND 64),
  CHECK(state='needs_attention' OR
   (state='prepared' AND upload_id IS NULL AND run_id IS NULL AND receipt_json IS NULL AND receipt_sha256 IS NULL AND source_snapshot_id IS NULL AND server_revision IS NULL) OR
   (state IN('upload_created','upload_ready') AND upload_id IS NOT NULL AND run_id IS NULL AND receipt_json IS NULL AND receipt_sha256 IS NULL AND source_snapshot_id IS NULL AND server_revision IS NULL) OR
   (state='run_started' AND upload_id IS NOT NULL AND run_id IS NOT NULL AND receipt_json IS NULL AND receipt_sha256 IS NULL AND source_snapshot_id IS NULL AND server_revision IS NULL) OR
-  (state='applied' AND upload_id IS NOT NULL AND run_id IS NOT NULL AND receipt_json IS NOT NULL AND receipt_sha256 IS NOT NULL AND source_snapshot_id IS NOT NULL
+  (state='applied' AND upload_id IS NOT NULL AND run_id IS NOT NULL AND review_digest IS NOT NULL AND receipt_json IS NOT NULL AND receipt_sha256 IS NOT NULL AND source_snapshot_id IS NOT NULL
    AND typeof(server_revision)='integer' AND server_revision>0)),
  CHECK(receipt_json IS NULL OR length(CAST(receipt_json AS BLOB)) BETWEEN 1 AND 65536),
  CHECK(length(archive_sha256)=64 AND archive_sha256 NOT GLOB '*[^0-9a-f]*'),
@@ -38,14 +39,16 @@ CREATE TABLE historical_baseline_flow (
 CREATE TRIGGER historical_baseline_flow_delete BEFORE DELETE ON historical_baseline_flow
  BEGIN SELECT RAISE(ABORT,'history_baseline_flow_immutable');END;
 CREATE TRIGGER historical_baseline_flow_update BEFORE UPDATE ON historical_baseline_flow
- WHEN NEW.flow_id IS NOT OLD.flow_id OR NEW.shop_id IS NOT OLD.shop_id OR NEW.device_id IS NOT OLD.device_id
+ WHEN NEW.flow_id IS NOT OLD.flow_id OR NEW.shop_id IS NOT OLD.shop_id OR NEW.device_id IS NOT OLD.device_id OR NEW.staff_id IS NOT OLD.staff_id
  OR NEW.local_dataset_id IS NOT OLD.local_dataset_id OR NEW.restore_lineage_id IS NOT OLD.restore_lineage_id OR NEW.restore_epoch IS NOT OLD.restore_epoch
  OR NEW.local_revision IS NOT OLD.local_revision OR NEW.server_dataset_id IS NOT OLD.server_dataset_id OR NEW.writer_epoch IS NOT OLD.writer_epoch
  OR NEW.archive_path IS NOT OLD.archive_path OR NEW.backup_path IS NOT OLD.backup_path OR NEW.archive_sha256 IS NOT OLD.archive_sha256
  OR NEW.manifest_sha256 IS NOT OLD.manifest_sha256 OR NEW.backup_sha256 IS NOT OLD.backup_sha256 OR NEW.manifest_json IS NOT OLD.manifest_json
  OR NEW.start_request_id IS NOT OLD.start_request_id OR NEW.apply_request_id IS NOT OLD.apply_request_id
  OR (OLD.upload_id IS NOT NULL AND NEW.upload_id IS NOT OLD.upload_id) OR (OLD.run_id IS NOT NULL AND NEW.run_id IS NOT OLD.run_id)
+ OR (OLD.review_digest IS NOT NULL AND NEW.review_digest IS NOT OLD.review_digest)
  OR OLD.state IN('applied','needs_attention') OR NOT (NEW.state='needs_attention'
+ OR (OLD.state='run_started' AND NEW.state='run_started' AND OLD.review_digest IS NULL AND NEW.review_digest IS NOT NULL)
  OR (OLD.state='prepared' AND NEW.state='upload_created') OR (OLD.state='upload_created' AND NEW.state='upload_ready')
  OR (OLD.state='upload_ready' AND NEW.state='run_started') OR (OLD.state='run_started' AND NEW.state='applied'))
  BEGIN SELECT RAISE(ABORT,'history_baseline_flow_immutable');END;

@@ -71,9 +71,9 @@ SELECT shop_id,local_dataset_id,restore_lineage_id,server_dataset_id,flow_id FRO
     static async Task<string> SeedBaselineFlow(HistoricalCloudExportTests.Fixture f)
     {
         var state=await f.Service.ReadDatasetAsync(Ct);var flow=Guid.NewGuid().ToString("D");
-        using var c=f.Db.Factory.Open();c.Execute(@"INSERT INTO historical_baseline_flow(flow_id,shop_id,device_id,local_dataset_id,restore_lineage_id,restore_epoch,
+        using var c=f.Db.Factory.Open();c.Execute(@"INSERT INTO historical_baseline_flow(flow_id,shop_id,device_id,staff_id,local_dataset_id,restore_lineage_id,restore_epoch,
 local_revision,server_dataset_id,writer_epoch,archive_path,backup_path,archive_sha256,manifest_sha256,backup_sha256,manifest_json,start_request_id,apply_request_id,state)
-VALUES(@flow,@Shop,@device,@dataset,@lineage,0,@revision,@Dataset,2,'synthetic-archive','synthetic-backup',@hash,@hash,@hash,'{}',@start,@apply,'prepared')",
+VALUES(@flow,@Shop,@device,'30000000-0000-4000-8000-000000000019',@dataset,@lineage,0,@revision,@Dataset,2,'synthetic-archive','synthetic-backup',@hash,@hash,@hash,'{}',@start,@apply,'prepared')",
             new{flow,Shop,device=HistoricalCloudExportTests.Fixture.Device,dataset=state.DatasetId,lineage=Guid.Parse(state.RestoreLineageId).ToString("D"),revision=state.DataRevision,Dataset,hash=new string('a',64),start=Guid.NewGuid().ToString("D"),apply=Guid.NewGuid().ToString("D")});
         return flow;
     }
@@ -83,6 +83,7 @@ VALUES(@flow,@Shop,@device,@dataset,@lineage,0,@revision,@Dataset,2,'synthetic-a
         c.Execute("UPDATE historical_baseline_flow SET state='upload_created',upload_id=@id WHERE flow_id=@flow",new{flow,id=Guid.NewGuid().ToString("D")},t);
         c.Execute("UPDATE historical_baseline_flow SET state='upload_ready' WHERE flow_id=@flow",new{flow},t);
         c.Execute("UPDATE historical_baseline_flow SET state='run_started',run_id=@id WHERE flow_id=@flow",new{flow,id=Guid.NewGuid().ToString("D")},t);
+        c.Execute("UPDATE historical_baseline_flow SET review_digest=@hash WHERE flow_id=@flow",new{flow,hash=new string('a',64)},t);
         c.Execute("UPDATE historical_baseline_flow SET state='applied',receipt_json=@receipt,receipt_sha256=@hash,source_snapshot_id=@id,server_revision=1 WHERE flow_id=@flow",
             new{flow,receipt,hash=badHash?new string('e',64):Hash(receipt),id=Guid.NewGuid().ToString("D")},t);t.Commit();
     }

@@ -39,7 +39,7 @@ public sealed class MigrationRunnerTests
             ["0017-historical-publication-outbox"] = "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b",
             ["0018-historical-preparation-journal"] = "2f02c30616730d50bc23c37e123a97407753b693f25c7f6bf0326e0e79160712",
             ["0019-historical-outcome-witnesses"] = "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee",
-            ["0020-historical-baseline-flow"] = "19a11ab260c75a25ac1ab407697216aa0790534e6f2d4d7fc4679bbb0cfadce9"
+            ["0020-historical-baseline-flow"] = "c6527cbfdf9d438da6852f9a3f44b4e24340d60ad3d2800e6fa66ceeea50f16f"
         };
 
         Assert.AreEqual(20, migrations.Count);
