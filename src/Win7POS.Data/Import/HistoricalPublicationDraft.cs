@@ -20,6 +20,7 @@ namespace Win7POS.Data.Import
     public sealed class HistoricalPublicationDraft : IDisposable
     {
         public const int ProtocolVersion=2,MaximumPageBytes=256*1024,MaximumRecordBytes=16384;
+        public const int MaximumReceiptBytes=1024*1024;
         public const long MaximumContentBytes=256L*1024*1024;
         private readonly object _spoolGate=new object();
         private readonly FileStream _spool;
@@ -134,6 +135,7 @@ namespace Win7POS.Data.Import
             IReadOnlyDictionary<long,HistoricalPublicationCorrectionReference> correctionOwners=null,CancellationToken ct=default)
         {
             if(p==null)throw new ArgumentNullException(nameof(p));HistoricalMerchantAssignment.Required(device);
+            DemandReceiptCapacity(p);
             var lineage=NormalizeLineage(restoreLineageId);
             var owners=new Dictionary<long,HistoricalPublicationCorrectionReference>();
             foreach(var approval in p.CorrectionApprovals)
@@ -144,6 +146,20 @@ namespace Win7POS.Data.Import
             }
             if(correctionOwners!=null&&correctionOwners.Count!=owners.Count)throw new InvalidOperationException("history_publication_correction_owner_invalid");
             return new HistoricalPublicationDraft(p.OperationId,"Apply",p.ShopId,device,p.DatasetId,p.RestoreEpoch,p.DataRevision,p.RequestFingerprint,lineage,()=>ApplyRecords(p,device,lineage,owners),ct);
+        }
+        internal static void DemandReceiptCapacity(HistoricalSalesImportPlan p)
+        {
+            if(p.CorrectionApprovals.Count>HistoricalSalesApplyPreview.MaxDisplayedCorrections)
+                throw new InvalidOperationException("history_publication_receipt_capacity");
+            // Forecast using the longest possible integer tokens and the exact
+            // approved values. The actual Apply batch ID is always Guid N (32).
+            // Reject before HTTP, so no local commit can create an unsendable
+            // original receipt after the server has issued its content grant.
+            var maximum=new HistoricalSalesOperationReceipt{OperationId=p.OperationId,OperationKind="Apply",BatchId=new string('f',32),
+                InsertedCount=int.MaxValue,DuplicateCount=int.MaxValue,RejectedCount=int.MaxValue,CorrectionCount=int.MaxValue,
+                SignedAmountClp=long.MinValue,CorrectionApprovals=p.CorrectionApprovals.ToArray()};
+            if(Encoding.UTF8.GetByteCount(HistoricalPublicationOutbox.Serialize(maximum))>MaximumReceiptBytes)
+                throw new InvalidOperationException("history_publication_receipt_capacity");
         }
         public static HistoricalPublicationDraft ForUndo(string operation,string shop,string device,string dataset,long restore,long revision,string batch,long batchRevision,string applyOperation,string restoreLineageId)
         {

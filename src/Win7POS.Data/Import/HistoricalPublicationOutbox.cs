@@ -52,6 +52,8 @@ namespace Win7POS.Data.Import
                     throw new InvalidOperationException("history_publication_local_decision_mismatch");
             }
             var receiptJson=Serialize(receipt);
+            if(Encoding.UTF8.GetByteCount(receiptJson)>HistoricalPublicationDraft.MaximumReceiptBytes)
+                throw new InvalidOperationException("history_publication_receipt_capacity");
             c.Execute(@"INSERT INTO historical_publication_outbox(operation_id,shop_id,device_id,local_dataset_id,restore_epoch,local_revision,operation_kind,request_fingerprint,content_digest,protocol_version,writer_epoch,grant_id,proof_json,depends_on_operation_id,receipt_json,page_count,created_at)
 VALUES(@OperationId,@ShopId,@DeviceId,@DatasetId,@RestoreEpoch,@revision,@kind,@RequestFingerprint,@digest,2,@epoch,@grant,@proof,@dependsOn,@receiptJson,@pages,@now)",
                 new{guard.OperationId,guard.ShopId,guard.DeviceId,guard.DatasetId,guard.RestoreEpoch,revision,kind=guard.Kind.ToString(),guard.RequestFingerprint,
