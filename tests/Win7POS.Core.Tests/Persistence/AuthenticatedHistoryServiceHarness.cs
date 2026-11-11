@@ -49,7 +49,7 @@ internal static class AuthenticatedHistoryServiceHarness
         public string schema{get;set;}="asus019-restart-v1";public string nonce{get;set;}="";public string operation{get;set;}="";
         public SavedFixture a{get;set;}=new();public SavedFixture b{get;set;}=new();public Fact[] wanted{get;set;}=Array.Empty<Fact>();public string[] newIds{get;set;}=Array.Empty<string>();
     }
-    static string _phase="preflight",_directory="",_lastCode="";static Scope _scope=new();
+    static string _phase="preflight",_directory="",_lastCode="";static Scope _scope=new();static object? _localDiagnostics;
     static readonly JsonSerializerOptions Json=new(){PropertyNameCaseInsensitive=false};
     static void Demand(bool condition,string code){if(!condition)throw new InvalidOperationException(code);}
     public static async Task<int> Main(string[] args)
@@ -101,7 +101,7 @@ internal static class AuthenticatedHistoryServiceHarness
         }
         catch(Exception e)
         {
-            if(_directory!="")await SaveState(new{phase=_phase,nonce=_scope.nonce,status="FAIL",exception=e.GetType().Name,code=ClosedCode(e.Message),lastCode=ClosedCode(_lastCode)},default);
+            if(_directory!="")await SaveState(new{phase=_phase,nonce=_scope.nonce,status="FAIL",exception=e.GetType().Name,code=ClosedCode(e.Message),lastCode=ClosedCode(_lastCode),localDiagnostics=_localDiagnostics},default);
             Console.Error.WriteLine("authenticated_history_client_failed");return 1;
         }
     }
@@ -329,7 +329,15 @@ internal static class AuthenticatedHistoryServiceHarness
             using var c=Fixture.Db.Factory.Open();return c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_baseline_read_mode WHERE flow_id=@FlowId",f)==1;
         }
         internal async Task Turn(CancellationToken ct){var result=await _supervisor.TriggerAsync(OnlineSyncLane.HistoricalPayments,OnlineSyncLaneTrigger.Manual,ct);_lastCode=result.Code;AuthenticatedHistoryServiceHarness.Demand(result.Success,"history_test_supervisor_turn_failed");}
-        internal async Task Until(Func<Task<bool>> ready,CancellationToken ct){for(var i=0;i<80;i++){await Turn(ct);if(await ready())return;await Task.Delay(500,ct);}throw new InvalidOperationException("history_test_convergence_timeout");}
+        internal async Task Until(Func<Task<bool>> ready,CancellationToken ct)
+        {
+            for(var i=0;i<80;i++){await Turn(ct);if(await ready())return;await Task.Delay(500,ct);}
+            var flow=await new HistoricalBaselineStore(Fixture.Db.Factory,Generation,Demand).ReadAsync(_server,_epoch,ct);
+            _localDiagnostics=new{actor=_actor.deviceId==_scope.actorA.deviceId?"A":"B",baselineState=flow?.State,
+                baselineReason=flow?.ReasonCode!=null&&System.Text.RegularExpressions.Regex.IsMatch(flow.ReasonCode,"^(?:history|baseline)_[a-z_]{1,90}$")?flow.ReasonCode:null,
+                baselineUploadPresent=flow?.UploadId!=null,baselineRunPresent=flow?.RunId!=null,baselineReviewPresent=flow?.ReviewDigest!=null};
+            throw new InvalidOperationException("history_test_convergence_timeout");
+        }
         internal async Task PullUntil(Func<bool> ready,CancellationToken ct){for(var i=0;i<80;i++){await new HistoricalReplicaSynchronizer(new HistoricalReplicaStore(Fixture.Db.Factory,Demand,Generation),Demand,Request).RunAsync(_scope.shopId,_scope.clientSha,ct);if(ready())return;await Task.Delay(250,ct);}throw new InvalidOperationException("history_test_pull_before_ack_timeout");}
         internal Task DrainAutomatic(CancellationToken ct)=>_supervisor.StopAsync().WaitAsync(TimeSpan.FromSeconds(10),ct);
         internal Fact[] Facts()
