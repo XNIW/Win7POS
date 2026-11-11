@@ -24,7 +24,7 @@ namespace Win7POS.Core.Import
         public void DemandValid()
         {
             if(!Count(Inserted)||!Count(Duplicates)||!Count(Deactivated)||!Count(Corrections)||!Rejected.HasValue||Rejected<0||
-                Inserted+Duplicates>100000||Corrections>Inserted||HistoricalReplicaProtocol.Integer(RevisionDelta)!=Inserted+Deactivated)
+                Inserted+Duplicates>100000||Corrections>Inserted||(Inserted+Duplicates>0&&Deactivated>0)||HistoricalReplicaProtocol.Integer(RevisionDelta)!=Inserted+Deactivated)
                 throw new InvalidOperationException("history_publication_decision_invalid");
             HistoricalReplicaProtocol.Integer(SignedGrossClp);
         }

@@ -354,7 +354,7 @@ INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,sta
             "duplicates"=>new HistoricalPublicationLocalDecision(1,1,0,0,0,1234,1),
             "rejected"=>new HistoricalPublicationLocalDecision(1,0,1,0,0,1234,1),
             "corrections"=>new HistoricalPublicationLocalDecision(1,0,0,1,0,1234,1),
-            "deactivated"=>new HistoricalPublicationLocalDecision(1,0,0,0,1,1234,2),
+            "deactivated"=>new HistoricalPublicationLocalDecision(0,0,0,0,1,1234,1),
             _=>new HistoricalPublicationLocalDecision(1,0,0,0,0,1235,1)
         };
         var failure=await Assert.ThrowsAsync<InvalidOperationException>(()=>CreatePublication(f,g,"local-mismatch",localDecision:decision));
