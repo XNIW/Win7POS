@@ -81,13 +81,13 @@ $accessDialogIndex = Index-OrFail $mainCode "POS access dialog opening" "unified
 $accessAcceptanceIndex = Index-OrFail $mainCode "AcceptAuthenticatedAccessAsync(login.AccessMode)" "startup coordinator access acceptance missing"
 if ($accessDialogIndex -gt $accessAcceptanceIndex -or
     $startupCoordinator -notmatch 'AcceptAuthenticatedAccessAsync[\s\S]{0,1000}ReadShellAdmissionAsync' -or
-    $shellReader -notmatch 'IsCatalogSaleSafeAsync' -or $shellReader -notmatch 'IsAuthoritativelyEmptyAsync' -or
+    $shellReader -notmatch 'ReadPublishedSnapshotAsync' -or $shellReader -match 'CatalogShopTransitionBarrier' -or
     $shellReader -notmatch 'CurrentOperatorAuthorityVersion' -or $shellReader -notmatch 'IsCurrentAndActiveAsync' -or
-    $mainCode -notmatch 'if\s*\(_shellCanSell\)[\s\S]{0,180}EnsurePosViewCreated') {
-    Fail "versioned authenticated admission and sale-safe-only commercial view are required"
-} else { Pass "authenticated empty shell and sale-safe commercial view are separate" }
+    $mainCode -notmatch '_shellHasWorkstation\s*=\s*admission\.CanUsePosWorkspace;[\s\S]{0,150}EnsurePosViewCreated' -or $mainCode -notmatch 'if\s*\(!admission\.CanEnterShell\)' ) {
+    Fail "versioned authorized workstation admission and a coherent published snapshot are required"
+} else { Pass "workstation admission is independent of published remote sale capability" }
 if ($startupCoordinatorPolicy -notmatch 'EvaluateAdmission' -or $startupCoordinatorPolicy -notmatch 'AuthenticatedEmpty' -or
-    $mainCode -notmatch 'EnterRecoveryModeAsync' -or $mainCode -notmatch 'EmptyCatalogPlaceholder' -or
+    $mainCode -notmatch 'EnterRecoveryModeAsync' -or ($mainCode + $mainXaml) -match 'EmptyCatalogPlaceholder' -or
     $dialogCode -match 'HistoryButton|HistoricalOnboardingAccess|LogoutForced\(\)\s*;\s*_historyAccess') {
     Fail "login must transfer a normal shell without a compulsory historical capability"
 } else { Pass "verified empty login transfers normal shell; unsafe catalog remains protected" }
@@ -123,7 +123,7 @@ if ($dialogCode -match "result\.Success[\s\S]{0,220}DialogResult\s*=\s*true") {
 } else {
     $completeSignInMethod = [regex]::Match($dialogCode, "private\s+async\s+Task<bool>\s+CompleteOnlineSignInAsync[\s\S]*?private\s+async\s+Task<bool>\s+TryOfflineSignInAsync").Value
     $catalogRetryMethod = [regex]::Match($dialogCode, "private\s+async\s+Task\s+RunCatalogRetryAsync[\s\S]*?private\s+void\s+BeginBusySetup").Value
-    $initialReadyRoutesThroughGate = $dialogCode -match "result\.CanOpenPos[\s\S]{0,220}CompleteOnlineSignInAsync"
+    $initialReadyRoutesThroughGate = $dialogCode -match "result\.CanEnterWorkstation[\s\S]{0,220}CompleteOnlineSignInAsync"
     $completionRechecksSaleSafe = $completeSignInMethod -match "EnsureShellAdmissionForAccessAsync[\s\S]*DialogResult\s*=\s*true"
     $retryRequiresSaleSafe = $catalogRetryMethod -match "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe"
     $resumeOnlyClosesInsideReadyBranch = $catalogRetryMethod -match "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe[\s\S]*_resumeCatalogOnly[\s\S]*DialogResult\s*=\s*true"
@@ -190,6 +190,15 @@ if ($translations -notmatch "onlineFirstLogin\.catalogIncomplete" -or $translati
 } else {
     Pass "first-login sale-safe retry localization present"
 }
+
+$acceptance = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/AuthenticatedShellUxSmoke.cs"
+$operations = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.Operations.cs"
+if ($acceptance -match 'AccessClick\([^\r\n]*Continue|OnlineSyncLaneTrigger\.Manual|ShellInvoke\([^\r\n]*RefreshShellReadinessAsync' -or
+    $acceptance -notmatch 'cart_interactive_before_first_catalog_response' -or
+    $operations -notmatch 'ManualPriceEvidence\?\.Matches' -or $operations -notmatch 'HasLocalCreateEvidenceAsync' -or
+    $operations -notmatch 'OrdinarySaleEconomicsPolicy.EnsureValid' -or $operations -notmatch 'sale_generation_changed') {
+    Fail "automatic workstation acceptance and transaction-scoped operation guards are required"
+} else { Pass "automatic acceptance has no manual entry shortcut; economic authority remains transaction scoped" }
 
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red

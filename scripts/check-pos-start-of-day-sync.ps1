@@ -244,13 +244,12 @@ if (($service + "`n" + $syncHost) -match "OperationCanceledException[\s\S]{0,360
     Pass "retryable timeout does not clear trusted device"
 }
 
-$runIndex = Index-OrFail $main "RunStartOfDaySyncAsync(factory)" "MainWindow does not run start-of-day preflight"
-$ensureIndex = Index-OrFail $main "EnsurePosViewCreated();" "MainWindow POS lazy creation missing"
-if ($runIndex -gt $ensureIndex) {
-    Fail "start-of-day preflight must run before PosView creation"
-} else {
-    Pass "start-of-day preflight runs before PosView creation"
-}
+$loadedBody = [regex]::Match($main, 'private\s+async\s+void\s+OnLoadedAsync[\s\S]*?(?=\r?\n\s*private\s+async\s+Task<StartOfDaySyncResult>)').Value
+if ($loadedBody -match 'RunStartOfDaySyncAsync' -or $loadedBody -notmatch 'RefreshShellReadinessAsync' -or
+    $loadedBody -notmatch 'QueueBackgroundOnlineRefresh' -or
+    $main -notmatch '_shellHasWorkstation\s*=\s*admission\.CanUsePosWorkspace') {
+    Fail "normal authorized startup must open the workstation before background catalog population"
+} else { Pass "start-of-day diagnostics are optional; authorized workstation entry is catalog independent" }
 
 $recoveryExclusionIndex = $main.IndexOf(
     'StartupTrace.Write("online refresh deferred: recovery mode")',
@@ -284,7 +283,7 @@ if ($main -match "startOfDayResult\s*==\s*null\s*\|\|\s*startOfDayResult\.Should
     Pass "MainWindow always starts the scheduler after normal POS opening"
 }
 
-if ($main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,300}_startupCoordinator\?\.StartAdaptive\(factory,\s*initialTrigger\)" -or
+if ($main -notmatch "private\s+void\s+StartAdaptiveOnlineScheduler[\s\S]*?_startupCoordinator\?\.StartAdaptive\(factory,\s*initialTrigger\)" -or
     $startupCoordinator -notmatch "public\s+void\s+StartAdaptive\s*\([\s\S]{0,360}PosStartupCoordinatorPolicy\.CanStartBackground" -or
     $startupCoordinator -notmatch "public\s+void\s+StartAdaptive\s*\([\s\S]{0,500}host\.StartContinuous\(\)" -or
     $syncHost -notmatch "StartContinuous\(\)[\s\S]{0,300}lock\s*\(_stateGate\)[\s\S]{0,260}_disposed\s*\|\|\s*_supervisor\s*==\s*null\s*\|\|\s*_continuousStarted[\s\S]{0,160}_continuousStarted\s*=\s*true[\s\S]{0,160}supervisor\.Start\(\)") {
@@ -337,11 +336,11 @@ if ($dialogXaml -notmatch "AccessVerifiedPanel" -or
     $dialogXaml -notmatch "ActionHelpText" -or
     $dialog -notmatch "ApplyAuthenticatedAccessStatus" -or
     $dialog -notmatch "SyncDetailsRequested" -or
-    $main -notmatch "UpdateOperatorDisplay\(session\);[\s\S]{0,1400}RunStartOfDaySyncAsync\(factory\)" -or
+    $loadedBody -notmatch "UpdateOperatorDisplay\(session\)" -or
     $main -notmatch "SyncDetailsRequested \+= \(_, __\) => ShowSyncCenterDialog\(dialog\)") {
-    Fail "authenticated identity and actionable sync diagnostics must remain visible at the start-of-day gate"
+    Fail "authenticated identity and actionable sync diagnostics must remain visible in optional start-of-day diagnostics"
 } else {
-    Pass "start-of-day separates successful sign-in from the actionable sync gate"
+    Pass "authenticated identity remains visible and optional diagnostics remain actionable"
 }
 
 if ($dialog -notmatch "ContentRendered" -or $dialog -notmatch "RunPreflightAsync" -or $dialog -notmatch "Result\?\.CanEnterAuthenticatedShell") {

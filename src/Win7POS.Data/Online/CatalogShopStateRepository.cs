@@ -1082,6 +1082,7 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
                 expectedPreviousCursor,
                 expectedPreviousMode,
                 generation).ConfigureAwait(false);
+            await conn.ExecuteAsync("DELETE FROM app_settings WHERE key LIKE 'pos.catalog.attempt.exactness.%';", transaction: tx).ConfigureAwait(false);
 
             var value = string.IsNullOrWhiteSpace(generatedAt)
                 ? DateTimeOffset.UtcNow.ToString("O")
@@ -1339,7 +1340,7 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
             }
         }
 
-        private static async Task<CatalogSaleSafetyEvaluation> EvaluateSaleSafetyAsync(
+        internal static async Task<CatalogSaleSafetyEvaluation> EvaluateSaleSafetyAsync(
             Microsoft.Data.Sqlite.SqliteConnection conn,
             Microsoft.Data.Sqlite.SqliteTransaction tx,
             bool allowLegacyUnbound)
@@ -1393,9 +1394,14 @@ WHERE key IN (
                 Read(CompletenessStatusKey),
                 Normalize(Read(ExactnessShopIdKey)),
                 OutboxShopBinding.NormalizeCode(Read(ExactnessShopCodeKey)));
-            var decision = CatalogSaleSafetyPolicy.Evaluate(snapshot, allowLegacyUnbound);
+            // Legacy local databases have no sync identity. Once linked, even an
+            // incomplete binding cannot fall back to the legacy sale exemption.
+            var hasSyncIdentity = await conn.ExecuteScalarAsync<long>(
+                "SELECT COUNT(*) FROM pos_sync_session_generation;", transaction: tx).ConfigureAwait(false) != 0;
+            var decision = CatalogSaleSafetyPolicy.Evaluate(snapshot, allowLegacyUnbound && !hasSyncIdentity);
 
-            if (values.ContainsKey(FullRefreshRequiredAfterEmptyKey))
+            if (values.ContainsKey(FullRefreshRequiredAfterEmptyKey) &&
+                (decision.IsSaleSafe || AllowsLocalCatalogOperation(decision.ReasonCode)))
                 return CatalogSaleSafetyEvaluation.Blocked(decision.IsCatalogBound, FullRefreshRequiredAfterEmptyCode);
 
             return decision.IsSaleSafe

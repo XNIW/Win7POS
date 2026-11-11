@@ -93,12 +93,11 @@ else {
         Pass "startup does not open OperatorSwitchDialog"
     }
 
-    if ($loaded -match 'RunStartOfDaySyncAsync') {
-        Pass "startup keeps start-of-day sync after access"
-    }
-    else {
-        Fail "startup does not run start-of-day sync after access"
-    }
+    if ($loaded -notmatch 'RunStartOfDaySyncAsync' -and $loaded -match 'RefreshShellReadinessAsync' -and
+        $loaded -match 'QueueBackgroundOnlineRefresh') {
+        Pass "startup admits the authorized local workstation before automatic background population"
+    } else { Fail "normal startup must not require a synchronous catalog preflight" }
+
 }
 
 $translations = ""
@@ -299,10 +298,10 @@ if ($main -match 'private\s+async\s+Task<bool>\s+ExitRecoveryModeAsync\(\)[\s\S]
 } else {
     Fail "recovery exit must validate normal authorized access before clearing recovery mode"
 }
-if ($main -notmatch 'if\s*\(_shellCanSell\)[\s\S]{0,180}EnsurePosViewCreated') {
-    Fail "PosView creation must remain inside the sale-safe POS branch"
+if ($main -notmatch '_shellHasWorkstation\s*=\s*admission\.CanUsePosWorkspace;[\s\S]{0,150}EnsurePosViewCreated') {
+    Fail "PosView creation must follow authorized workstation admission"
 } else {
-    Pass "PosView creation remains inside the sale-safe POS branch"
+    Pass "PosView creation follows authorized workstation admission"
 }
 
 $operatorSwitchXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml"

@@ -13,7 +13,8 @@ public sealed class PosStartupCoordinatorPolicyTests
         var decision = PosStartupCoordinatorPolicy.EvaluateAdmission(PosAuthenticatedAccessMode.Normal,
             isLoggedIn: true, authorizationAllowed: true, catalogSaleSafe: false, catalogAuthoritativelyEmpty: true);
         Assert.AreEqual(PosShellReadiness.AuthenticatedEmpty, decision.Readiness);
-        Assert.AreEqual(PosShellMode.AuthenticatedEmpty, decision.ShellMode);
+        Assert.AreEqual(PosShellMode.Pos, decision.ShellMode);
+        Assert.IsTrue(decision.CanUsePosWorkspace);
         Assert.IsTrue(decision.CanEnterShell);
         Assert.IsTrue(decision.CanUseNormalNavigation);
         Assert.IsFalse(decision.CanSell);
@@ -44,7 +45,6 @@ public sealed class PosStartupCoordinatorPolicyTests
     }
 
     [TestMethod]
-    [DataRow(false, false, false, false)]
     [DataRow(true, true, false, false)]
     [DataRow(true, false, true, false)]
     [DataRow(false, true, false, true)]
@@ -67,7 +67,7 @@ public sealed class PosStartupCoordinatorPolicyTests
     }
 
     [TestMethod]
-    public void ShellMode_RequiresNormalAccessAndSaleSafeCatalogForPos()
+    public void ShellMode_RequiresNormalAccessWithoutWaitingForCatalog()
     {
         Assert.AreEqual(
             PosShellMode.Pos,
@@ -75,7 +75,7 @@ public sealed class PosStartupCoordinatorPolicyTests
                 PosAuthenticatedAccessMode.Normal,
                 catalogSaleSafe: true));
         Assert.AreEqual(
-            PosShellMode.Recovery,
+            PosShellMode.Pos,
             PosStartupCoordinatorPolicy.DetermineShellMode(
                 PosAuthenticatedAccessMode.Normal,
                 catalogSaleSafe: false));
@@ -84,6 +84,28 @@ public sealed class PosStartupCoordinatorPolicyTests
             PosStartupCoordinatorPolicy.DetermineShellMode(
                 PosAuthenticatedAccessMode.LocalRecovery,
                 catalogSaleSafe: true));
+    }
+
+    [TestMethod]
+    public void FirstDownloadPending_AdmitsRealWorkspaceWithoutRemoteSaleAuthority()
+    {
+        var decision = PosStartupCoordinatorPolicy.EvaluateAdmission(PosAuthenticatedAccessMode.Normal, true, true, false, false);
+        Assert.AreEqual(PosShellReadiness.AuthenticatedPending, decision.Readiness);
+        Assert.IsTrue(decision.CanUsePosWorkspace);
+        Assert.IsFalse(decision.CanSell);
+    }
+
+    [TestMethod]
+    [DataRow(CatalogSaleSafetyPolicy.NotSaleSafeCode,true)]
+    [DataRow(CatalogSaleSafetyPolicy.ExactnessMissingCode,true)]
+    [DataRow(PosCatalogOperationPolicy.FullRefreshRequiredAfterEmptyCode,true)]
+    [DataRow(CatalogSaleSafetyPolicy.ShopMismatchCode,false)]
+    [DataRow(CatalogSaleSafetyPolicy.RepairRequiredCode,false)]
+    [DataRow(CatalogSaleSafetyPolicy.BindingPartialCode,false)]
+    [DataRow(CatalogSaleSafetyPolicy.ExactnessNotVerifiedCode,false)]
+    public void VerifiedLocalOperations_NeverBorrowIdentityOrRepairAuthority(string reason,bool expected)
+    {
+        Assert.AreEqual(expected,PosCatalogOperationPolicy.AllowsVerifiedLocalLine(reason));
     }
 
     [TestMethod]

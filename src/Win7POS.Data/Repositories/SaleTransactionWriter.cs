@@ -84,7 +84,7 @@ namespace Win7POS.Data.Repositories
                 if (sale.Kind == (int)SaleKind.Sale)
                 {
                     await CatalogShopStateRepository
-                        .RequireSaleSafeForOrdinarySaleAsync(conn, tx)
+                        .RequireSaleSafeForOrdinarySaleAsync(conn, tx, sale, lines, authorizationCommitGuard)
                         .ConfigureAwait(false);
                 }
 

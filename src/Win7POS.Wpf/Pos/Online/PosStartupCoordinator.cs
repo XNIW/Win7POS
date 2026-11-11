@@ -88,6 +88,7 @@ namespace Win7POS.Wpf.Pos.Online
     internal sealed class PosStartupCoordinator : IDisposable
     {
         private readonly Func<bool> _isSafeStart;
+        private readonly IOnlineSyncClock _syncClock;
         private readonly Action<string> _logInfo;
         private SqliteConnectionFactory _factory;
         private PosOnlineSyncSupervisorHost _host;
@@ -103,10 +104,11 @@ namespace Win7POS.Wpf.Pos.Online
 
         public PosStartupCoordinator(
             Func<bool> isSafeStart,
-            Action<string> logInfo)
+            Action<string> logInfo, IOnlineSyncClock syncClock = null)
         {
             _isSafeStart = isSafeStart ?? throw new ArgumentNullException(nameof(isSafeStart));
             _logInfo = logInfo;
+            _syncClock = syncClock;
         }
 
         public PosAuthenticatedAccessMode AccessMode =>
@@ -121,8 +123,7 @@ namespace Win7POS.Wpf.Pos.Online
         public IOperatorSession Session => OperatorSessionHolder.Current;
 
         public bool IsFullCatalogRepairInProgress =>
-            Volatile.Read(ref _fullCatalogRepairInProgress) > 0 ||
-            _host?.IsFullCatalogSyncInProgress == true;
+            Volatile.Read(ref _fullCatalogRepairInProgress) > 0;
 
         public SqliteConnectionFactory Initialize()
         {
@@ -149,7 +150,7 @@ namespace Win7POS.Wpf.Pos.Online
 
             var factory = new SqliteConnectionFactory(options);
             factory.RefreshAuthorityStamp();
-            var host = new PosOnlineSyncSupervisorHost(factory);
+            var host = new PosOnlineSyncSupervisorHost(factory, _syncClock);
             IDisposable registration = null;
             try
             {

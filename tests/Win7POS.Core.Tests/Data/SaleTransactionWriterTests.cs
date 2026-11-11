@@ -18,7 +18,7 @@ using Win7POS.Data.Repositories;
 namespace Win7POS.Core.Tests.Data;
 
 [TestClass]
-public sealed class SaleTransactionWriterTests
+public sealed partial class SaleTransactionWriterTests
 {
     private const long CreatedAt = 1700000000000L;
     private const string ShopCode = "F6-SHOP";

@@ -384,6 +384,7 @@ namespace Win7POS.Core.Pos
             {
                 ProductId = null,
                 Barcode = pseudo,
+                ManualPriceEvidence = new ManualSaleLineEvidence(unitPriceMinor),
                 Name = name ?? "Senza codice",
                 UnitPrice = unitPriceMinor,
                 Quantity = 1
@@ -413,9 +414,16 @@ namespace Win7POS.Core.Pos
                     if (target == null || !discountTargets.Add(target)) throw new PosException(PosErrorCode.InvalidBarcode);
                 }
                 else candidate.ValidateItemChange(null, l.UnitPrice, l.Quantity);
+                ManualSaleLineEvidence manual = null;
+                if ((l.Barcode ?? string.Empty).StartsWith(DiscountKeys.ManualPrefix, StringComparison.Ordinal))
+                {
+                    manual = new ManualSaleLineEvidence(l.UnitPrice);
+                    if (!manual.Matches(l.ProductId, l.Barcode, l.UnitPrice)) throw new PosException(PosErrorCode.InvalidBarcode);
+                }
                 candidate._lines.Add(new PosLine
                 {
                     ProductId = l.ProductId,
+                    ManualPriceEvidence = manual,
                     Barcode = l.Barcode ?? string.Empty,
                     Name = l.Name ?? string.Empty,
                     UnitPrice = l.UnitPrice,
@@ -450,6 +458,7 @@ namespace Win7POS.Core.Pos
             var saleLines = _lines.Select(x => new SaleLine
             {
                 ProductId = x.ProductId,
+                ManualPriceEvidence = x.ManualPriceEvidence,
                 Barcode = x.Barcode,
                 Name = x.Name,
                 Quantity = x.Quantity,

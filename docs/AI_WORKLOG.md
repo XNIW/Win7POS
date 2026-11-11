@@ -1,6 +1,90 @@
 # AI Worklog – Win7POS
 
 <!-- ASUS019_CURRENT_START -->
+## ASUS019 cassa — richiesta di focus ridondante, 11 novembre UTC
+
+Stessa Execution, nessuna funzione nuova. Sorgente congelata149c978 e precedente
+soak42897760117 FAIL conservati: Integrated12PASS, focus258.573/258.382ms nei
+cicli116/118; quella traccia non contiene attribuzione retrospettiva di fase.
+
+Diagnostica successore42924975778, QA6533c71d68cb15d30ad94f7b809e54a37a721c0e
+contro gli esatti41file prodotto149 verificati:162cicli, ambiente valido,
+measurementCompleted true, STABILITY_PASS false perché Diagnostic. Artifact
+13816767268, digest GitHub bca4f7878fe13fd9bc3f90258d33e965e305a8c0ea141f496adb4466782ad85e.
+Massimo osservato604.718ms nel ciclo0, post scan-Grid-10→start image-ui:
+barcode già focalizzato al post (flags31); al callback owner inattivo e barcode
+non focalizzato (flags7), durata0.026ms, nessuno spostamento del focus. Una
+continuazione Send si sovrappone per569.235ms. Massimo caldo237.637ms nel ciclo126
+con lo stesso stato; non si attribuiscono per assunzione gli originali116/118.
+Nessuna prova di scanner bloccato o causa legata al carico del PC ASUS.
+
+Fix minimo PosView: nessuna richiesta Dispatcher quando BarcodeBox è già
+focalizzato; testo/selezione e richieste di ripristino necessarie restano nel
+contratto esistente. Nessuna modifica a soglia250ms, carico100k/500linee,
+20scan/ciclo,20s idle o classificazione dell'osservatore.
+
+Build net48/x86 PASS zero warning/error; visual/public-command regression
+PASS21.881s, include scanner/coalescing/editor attivo/Unicode/chiusura. Gate
+standard dialog39/39 PASS. Recovery include il successore diagnostico qualificato
+sul ramo135: cinque cicli e raccolta a pari età dopo il timer framework2s, stessi
+60s/8MiB; fixture shell attende l'overlay realmente chiuso prima dell'Escape.
+Successore b76238d: CI42933914161/Security42933914165/WPF42934216716/
+Release42934061207 PASS. Pacchetto verificato41file prodotto, qualifica hosted
+42937991969 Integrated12 e soak60 PASS, ambiente valido,32/159cicli;
+focus massimo28.354/14.428ms. Artifact13823212154, digest
+550a502d009879483d9d7913e505dfd81518e2aa87cb2a179cfeda9d62eda138.
+Non qualifica ASUS, Win7 o candidato finale successivo.
+
+Copia prove privata U19Focus149Hosted01. Installato2ad42ca e ledger Minimondo
+invariati; nessun nuovo Apply/Undo/vendita reale o installazione.200% preservato,
+100/125 USER_DEFERRED, Win7 BLOCKED_TARGET, Getnet moderno C MISSING. Nessun
+merge/deploy/DONE. L'utente ha autorizzato tutti i file necessari ai residui.
+Nuova regressione menu sul prodotto b762: U19MenuFocusRed01 FAIL dopo29assert
+PASS, precisamente il focus al ritorno Cassa. La chiusura dell'animazione
+focalizzava sempre HamburgerButton dopo il ritorno allo scanner. Fix minimo:
+se la Cassa è selezionata ripristina scanner tramite PosView, altrimenti il
+focus menu esistente. U19MenuFocusGreen01 PASS73/73assert, stesso percorso
+autenticato reale MainWindow/VM con fixture sintetici; carrello/sessione
+conservati. Build net48/x86 zero warning/error; nessun cambio budget.
+Questo delta richiede nuove CI e qualifica sul pacchetto esatto. Storico bilaterale
+rimane sul ramo135/Admin151; questo fix non ne attesta la catena v2 operativa.
+
+Release da6539c42964888047 conserva FAIL nel gate QA sintetico di output:
+in15s stdout448righe/stderr447, ultimo write14.784s, processo già avviato,
+CPU750ms. Nessuna causa storage/antivirus dedotta. Cattura byte-stream
+bufferizzata nel runner funzionale, stesse512WriteLine per flusso, stesso
+limite15s e verifica integrale514/513righe con sentinelle; nessuna modifica ai
+60s dei casi WPF. Test03 PASS287ms locale, include deadline su output pendente
+e cleanup posseduto. Prime prove helper01/02 FAIL conservate (fixture import,
+stream non ancora chiuso per lettura), corrette senza alterare l'output atteso.
+U19BufferedFunctional01 PASS22/22scenari; required gates50/50 PASS.
+Il confronto remoto e nuovo Release rimangono da raccogliere sul successore.
+<!-- ASUS019_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente alla diagnostica del focus, conservato</summary>
+
+## Stato corrente — ASUS019 carrello reale e sync automatica, ACTIVE
+
+Ultimo consolidamento: lookup fuori Dispatcher e reader differiti; lock SQL
+esclusivo7.47ms, shell70 verifiche/24.516s, visuale31.888s, vendita2.357s PASS;
+Core mirato22 PASS. La prima canonica cc termina13/15: due fixture senza guard
+corrette, FAIL preservati. Nuova qualifica richiesta;82d11de solo-doc non è la
+consegna finale del nuovo delta. Nessun pacchetto nuovo installato.
+
+Codice congelato cc6128f nel ramo PR136; installato2ad42ca conservato, POS chiuso. Ingresso
+con vera VM/scanner dopo autorizzazione locale, supervisor automatico, stato
+pubblicato distinto dai tentativi, provenienza locale/manuale e guard al commit.
+Core: 175 prove; gate obbligatori: 50; shell: 69 verifiche; integrated/F05 e storico8/52 PASS di
+sviluppo; precedenti FAIL conservati. Build08 net48/x860warning. Qualifica
+congelata, CI/pacchetto e consegna nuovi aperti, nessun PASS trasferito.
+[Execution](plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md) e
+[handoff mobile](plans/ASUS-W7POS-019_GETNET_HISTORY/HANDOFF_MOBILE.md).
+Cloud futuro distinto, nessun deploy/merge;200% mantenuto,100/125 differiti,
+Win7 fisico indisponibile, moderni Getnet senza prova C. Nessun DONE.
+
+<details><summary>Checkpoint precedente5d8e704</summary>
+
 ## Stato corrente —5d8e704 qualificato, consegna reale aperta
 
 Stessa ASUS019/R3 ACTIVE: Windows-All15/15 PASS (Core1745, functional22,
@@ -15,7 +99,10 @@ vecchi kit invariati. Moderni C MISSING e CSV_INPUT BLOCKED_INPUT separati.
 Admin B/C soltanto Planning pubblicato d202332, nessun backend cambiato.
 Dettagli e riferimenti: [report canonico](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
 Le sezioni sotto sono checkpoint storici, non lo stato corrente. Nessun DONE.
-<!-- ASUS019_CURRENT_END -->
+
+</details>
+
+</details>
 Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significativa.
 
 ---

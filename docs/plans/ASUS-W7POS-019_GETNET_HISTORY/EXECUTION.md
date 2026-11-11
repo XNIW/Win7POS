@@ -1,6 +1,121 @@
 # ASUS-W7POS-019 execution ledger
 
 <!-- ASUS019_CURRENT_START -->
+## Stato corrente — postazione reale, sviluppo verificato; qualifica finale aperta
+
+Correzione di sola qualifica: il gate supply-chain conservava il numero chiuso
+precedente di20 eccezioni storiche. È aggiornato a21 richiedendo espressamente
+anche la sola impronta cc6128f del testo di worklog; formato e divieto wildcard
+restano invariati. Gate mirato PASS. La canonica0c prosegue sul checkout congelato
+con quel singolo gate FAIL preservato; nessun suo file viene modificato. Il follow-up
+non cambia src: solo controllo di qualifica e contesto diagnostico della shell.
+La suite completa non sarà ripetuta localmente per il solo elenco/diagnostico;
+le nuove pipeline e il pacchetto conserveranno comunque SHA propri.
+
+### Consolidamento dopo la prima qualifica completa
+
+Windows-All cc6128f conclusa:13/15 PASS; Core1765 PASS/2 FAIL su fixture prive
+ora del guard obbligatorio; functional21/22 (visual seed senza guard) FAIL.
+Autorizzazione, logging, paging, crash/storico8/52/load11 PASS. Publication PASS,
+nessun esito fallito cancellato. I due seed sono corretti con autorità valida:
+Core aggiunge il negativo esplicito, visuale usa vero login/lease sintetico.
+
+Ultimo delta prodotto: letture snapshot/prodotto con transazioni differite;
+lookup barcode sul worker perché SQLite async può attendere il file lock in
+modo sincrono. Nessun cambio journal policy, schema o budget. La fixture pubblica
+aggiunge un lock SQL esclusivo controllato con watchdog finito e cleanup posseduto.
+Target16:70 assert shell PASS24.516s; input durante lock7.4728ms≤250ms;
+visuale PASS31.888s; vendita integrata PASS2.357s, tutti cleanup veri. Core08:
+22/22 PASS, inclusi read durante writer e autorizzazione mancante. Build11 pulita.
+Target13/14 non eseguiti per errori compile di fixture,15 per selettore visuale
+non ammesso: conservati. Il runner ora seleziona anche il caso visuale già canonico;
+nessun nuovo scenario o cambio della matrice default. Errori shell entrano anche
+nei diagnostici tipizzati, senza esportare testi/importi.
+
+La sola correzione documentale82d11de ha scansioni pulite e codice identico a cc;
+non è il pacchetto da consegnare dopo il nuovo delta lock. WPF mirato remoto
+fc3a31d/42860115702:20/22 PASS, visuale e shell FAIL conservati. La shell locale
+successiva passa con ricevuta completa; la nuova CI deve produrre una diagnosi
+esatta anche in caso di failure sul runner indipendente. Qualifica finale,
+performance qualificata sul nuovo pacchetto e consegna rimangono aperte.
+
+Codice congelato in cc6128f448cd36089f1c470a21885091efa4de3c; Windows-All locale
+in corso, restore/gate/build PASS, Core ancora attivo. WPF42857545140 SUCCESS.
+Release42857518468 FAIL: generic-api-key sul conteggio test del worklog, falso
+positivo riprodotto con Gitleaks8.30.1 (working tree e storia, solo docs riga9).
+Questo follow-up cambia soltanto testo e impronta storica esatta; scansioni dir/git
+PASS senza esclusione di percorsi o regole. src/scripts/tests/eng e contratti di
+build byte-identici a cc6128f, verificati con git diff. Nuovi pacchetti e workflow
+sono legati al nuovo SHA; la run locale cc6128f resta attribuita al suo codice.
+Il checkout della run attiva non viene modificato. La cronologia sotto conserva
+la preparazione e i FAIL; nessuna dichiarazione di consegna completata.
+
+Stessa ASUS019 ACTIVE. Main0378e17, PR136 draft sul ramo correttivo; installato
+2ad42ca verificato41/41, profilo10/10 invariato e POS reale chiuso normalmente.
+Il successore ancora WIP sostituisce la shell empty con una sola vera postazione
+POS dopo autenticazione/lease/trust/policy/mirror/binding e inizializzazione locale.
+Catalogo, outbox e ordini passano al supervisor della shell. Nessun Continue,
+Sync Center o secondo login richiesto per usare carrello e scanner.
+
+Contratto implementato: snapshot pubblicato distinto dal tentativo; lettura SQL
+coerente senza barriera lunga di rete; candidato fallito non invalida la copia
+operativa precedente; empty autorevole conserva il fence remoto. VM/carrello,
+selezione, input e report persistono nei refresh. Stato e callback sono fenced
+per identità/generazione; chiusura attende lane, timer, letture e scanner posseduti.
+Il report nativo dipende dalla vera policy temporale attiva, non dalla PosView.
+
+Al commit Data verifica economia, autorizzazione, shop/generazione, prodotto
+attivo e prezzo corrente. Manuale richiede evidenza immutabile emessa dal dominio;
+locale richiede intento originale hashato più scope del negozio persistito nella
+stessa transazione della creazione, anche dopo ack coerente. Un vecchio prodotto
+con client ID arbitrario non basta. Nessun backfill inferito delle vecchie prove.
+Compatibilità pre-supervisor: soltanto snapshot remoto già verificato e guard
+live con shop ufficiale uguale possono operare se manca del tutto la riga SQL
+generazione; una riga esistente inattiva/differente non ammette fallback. Nessuna
+esenzione empty/locale senza generazione durevole. Lease/permessi/fisco, commit
+unico stock/righe/outbox e replay restano verificati dai protocolli esistenti.
+
+Prove di sviluppo su HEAD2ad+WIP, **non qualifica del binario installato**:
+
+- Core06:175/175 PASS, inclusi policy, supervisor, commit economico, provenienza,
+  prezzi concorrenti/replay, cancellazione timer e candidato rifiutato con copia
+  pubblicata ancora valida. Core02(3FAIL),04(1FAIL) e correzioni restano conservati;
+  Core03 6/6 e05 14/14 PASS sono prove selettive con attribuzione propria.
+- Required03:50/50 PASS. Required01 41/50 e02 49/50 restano storici; il difetto
+  architetturale UI/SQLite corretto spostando la classificazione in Data.
+  Build08 Release net48/x86 prodotto+harness PASS,0warning/0error; restore locked PASS.
+- AUTH shell12:69 assert PASS,26.370s, cleanup vero; ingresso prima della risposta
+  sospesa, scanner rapido, pending/unknown/cancel/permesso negato, primo locale e
+  manuale con pagamento/ricevuta/stock/outbox, zero→remoto automatico, refresh con
+  report/import/input/selezione,503/perdita TCP, chiusura nel pull e riavvio.
+  Nessun Continue, CatalogDelta Manual o RefreshShellReadiness privato in questa
+  accettazione. Target11 integrated vendita e F05 carrello/restart PASS.
+- Misure sintetiche shell12,2880×1800/200%: login chiuso→interattivo155–221ms;
+  Input completion0.6076ms≤250ms; tre input73.2524ms; barcode noto con50361.2055ms,
+  perdita TCP35.6541ms. Campioni singoli, non p95 o qualifica performance finale.
+- Storico sviluppo02:8/52 PASS, circa44s nel budget60s. Il primo run FAIL perché
+  la vecchia fixture pretendeva il catalogo nel bootstrap; aggiornata la sola
+  preparazione QA esplicita. AUTH pubblico resta indipendente da quella utility.
+  Il preflight privato iniziale incompleto è NOT_EXECUTED, non PASS.
+
+Evidence: U19Cartb7e31/target10..12, U19Hcart7a101(smoke FAIL),7a102(PASS),
+cart-*.private.log nella root resume019. FAIL/timeout precedenti e dati sintetici
+conservati; nessun harness con POS reale aperto, Apply/Undo originale o vendita reale.
+Qualifica congelata Windows-All/performance, CI/pacchetto, backup aggiornamento,
+installazione e percorso sul binario nuovo restano aperti. Nessun DONE.
+
+Cloud separato: PR135b030 ha due FAIL del vecchio budget storico60s conservati
+(42826371935,42832581283), nessun terzo retry cieco; sync controllata dei fix comuni
+ancora richiesta. Admin151/6c2bd41 qualificato, nessun deploy. Il contesto mobile è
+stato letto: [handoff](HANDOFF_MOBILE.md), nessun PASS iOS/Android derivato da Windows.
+Scala200%/2880×1800 mantenuta;100/125 NOT_RUN/USER_DEFERRED; Win7 fisico
+NOT_RUN/BLOCKED_TARGET; Getnet moderni C MISSING, nessun Apply moderno.
+
+<!-- ASUS019_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente5d8e704 (storico)</summary>
+
 ## Stato corrente — candidato finale qualificato, installazione in attesa
 
 ASUS019/R3 ACTIVE. Sorgente pubblicata `5d8e704b2d0027c4ee1d5a9f4cb6b10842b85b54`, fingerprint
@@ -47,7 +162,8 @@ ledger cloud e cutover con unico writer. Nessun ruolo, credenziale, grant/RLS,
 schema, dato o deploy modificato. Stessa task, nessun DONE o secondo MasterPlan.
 
 I checkpoint sotto conservano la propria data; lo stato corrente e questo riquadro.
-<!-- ASUS019_CURRENT_END -->
+
+</details>
 ## Qualifica a397 conclusa; estensione QA finale — 9 novembre
 
 Il candidato pubblicato a397a49 ha concluso Windows-All 15/15 PASS: Core1745,
@@ -949,6 +1065,38 @@ new artifact verification/reader and document-only closeout.
 
 ## 8Nov2026 — server409 fix applied, HTTP/UI pending policy
 
+## 10Nov2026 — prova reale5d, race del refresh catalogo
+
+Stessa Execution ACTIVE. Installazione5d8e704 effettiva,41/41 file confrontati
+con lo ZIP qualificato,10/10 file profilo invariati prima del login. Utente ha
+avviato dal menu Start e inserito personalmente il PIN: shell autenticata,
+Online, catalogo vuoto esplicito e nessun popup storico automatico.
+Menu→riepilogo→History→Import history apre volontariamente il form vuoto,
+titolo/footer contenuti al200%;0file,Analyze/Confirm disabilitati. Escape chiude
+la secondaria e il processo19404 resta vivo con la sessione.
+
+Il rientro NON è qualificato: la shell viene portata ai Products in recovery.
+Log10:21:02.836 inizio pull periodico,10:21:03.321 recovery catalog_not_sale_safe,
+senza completamento del pull. La lettura dello stato shell può osservare la
+cancellazione transitoria della prova empty prima della pubblicazione finale;
+l'ingresso recovery ferma poi il publisher. Non è dimostrato un difetto di Escape.
+Nessun retry live, Apply/Undo o file storico selezionato per questa diagnosi.
+
+Correzione isolata da0378e17 in codex/asus019-catalog-refresh-shell-race: il reader
+shell acquisisce il CatalogShopTransitionBarrier già detenuto dal pull. Legge
+il risultato completo e rivalida comunque sessione/generazione; una pull fallita
+senza nuova prova rimane Recovery, la cancellazione del wait è rispettata.
+Non conserva prove invalidabili né abilita vendita/pagamento. Fixture WPF estesa
+con refresh sospeso, successo, fallimento e cancellazione; esecuzione PENDING.
+Build Release/net48/x86 prodotto+harness PASS0warning; dialog standard39/39 PASS.
+Primo build fixture FAIL per binding dynamic non referenziato, conservato:
+risolto con DTO tipizzato senza aggiungere dipendenze. Nessun test UI locale
+con POS reale aperto; prova nativa demandata alla CI isolata.
+UI live lasciata protetta in recovery, installato5d invariato. DPI100/125,
+focus visuale affidabile e nuovo rientro richiedono il successore qualificato.
+
+Le righe sotto restano il checkpoint8novembre, non lo stato corrente.
+
 Admin candidate d864c740 / normal merge1a35034a, CI42451262145/CF42451262142 PASS.
 67 file / 4.375 test pgTAP, foundation1.131 PASS / 14 SKIP / 0 FAIL, UI48/pairing2. First555f502
 preparation hash failure preserved; canonical LF pin fixed without changing SQL/tests.
@@ -958,3 +1106,34 @@ body unchanged. V3 with current real lease returns ok/shop_scoped/done/0counts.
 No Worker or Windows code change. App launch rejected by tool policy, no process
 and no new pull verified; explicit authorization pending, no alternative launcher.
 No Getnet apply/sale/reset/revocation. New report holds evidence and next step.
+# Correttivo isolato alla consegna quotidiana — 10 novembre
+
+Il frozen f87dd7c conserva gli esiti reali: CI42864189139 FAIL (functional21/22,
+solo AUTHENTICATED_SHELL_UX), Security42864189296 SUCCESS,
+WPF42864444597 SUCCESS e Release42864438219 SUCCESS. Windows-All locale0c:
+14/15 PASS, solo gate statico del conteggio eccezioni; Core1768/1768 e
+functional22/22 PASS. Il gate corretto separatamente è PASS, senza trasformare
+la run originale in verde. Il diagnostico pubblico remoto non contiene una
+asserzione FAIL della shell; causa non ancora attribuita, nessun retry cieco.
+
+Successore in worktree distinto: lettura snapshot richiede nella stessa TX
+generazione attiva e identità shop ufficiale/bound coerenti; due regressioni
+empty/nonempty incluse nel Core mirato13/13 PASS, shell70 PASS32.939s e build
+net48/x86 PASS. Il writer diagnostico ora conserva ogni checkpoint booleano
+tipizzato anche se il processo termina prima di catch/finally, senza copiare
+importi o proof private. Budget52/60s e assert invariati. Qualifica remota del
+successore ancora NOT_RUN; installato2ad42ca, nessun dato reale modificato.
+
+Gli addenda cloud/bilaterali si implementano separatamente in PR135/Admin151:
+non sono incorporati in questo candidato di consegna PR136.
+
+Qualifica7d4529d: WPF42873989282 e Release42875543336 SUCCESS,
+Security42875498374 SUCCESS; CI42875498214 FAIL soltanto shell21/22.
+Il sidecar tipizzato non era incluso nella copia functional verso il report
+canonico: causa della diagnostica assente, non ancora causa del FAIL shell.
+Successore QA: whitelist qa-diagnostics.json, osservazioni chiuse senza ID
+privati e caller line distinta anche attraverso i delegate AUTH. Test runner
+statico e projection PASS; build net48/x86 zero warning/error; AUTH mirato nel
+contesto TEMP canonico PASS24.439s,70 checkpoint/40callsite distinti, bundle
+pubblico verificato. Nessun assert o budget52/60s cambiato. Il tentativo auth02
+si ferma prima del figlio per output già creato; conservato, non prova runtime.

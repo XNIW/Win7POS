@@ -67,6 +67,7 @@ namespace Win7POS.Data.Online
         private readonly Func<double> _jitter;
         private readonly PriorityOnlineRequestGate _requestGate;
         private readonly CancellationTokenSource _lifetime = new CancellationTokenSource();
+        private readonly HashSet<Task> _scheduledTasks = new HashSet<Task>();
         private bool _authenticationStopped;
         private bool _stopping;
         private Task _authenticationStopTask = Task.CompletedTask;
@@ -277,6 +278,9 @@ namespace Win7POS.Data.Online
             try
             {
                 await WhenIdleAsync().ConfigureAwait(false);
+                Task[] scheduled;
+                lock (_gate) scheduled = _scheduledTasks.ToArray();
+                await Task.WhenAll(scheduled).ConfigureAwait(false);
                 await _authenticationStopTask.ConfigureAwait(false);
                 completion.TrySetResult(null);
             }
@@ -525,9 +529,13 @@ namespace Win7POS.Data.Online
                     _lifetime.Token);
                 slot.ScheduleCancellation = scheduleCancellation;
                 slot.NextDueAt = _clock.UtcNow.Add(delay);
+                var scheduled = Task.Run(() => RunScheduleAsync(slot, delay, outcome, scheduleCancellation));
+                _scheduledTasks.Add(scheduled);
+                _ = scheduled.ContinueWith(completed =>
+                {
+                    lock (_gate) _scheduledTasks.Remove(completed);
+                }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             }
-
-            _ = RunScheduleAsync(slot, delay, outcome, scheduleCancellation);
         }
 
         private async Task RunScheduleAsync(
@@ -555,6 +563,20 @@ namespace Win7POS.Data.Online
             catch (OperationCanceledException)
             {
                 // A newer signal, relink, auth-stop, or shutdown replaced this due time.
+            }
+            catch (Exception)
+            {
+                // Observe scheduler faults and expose them through the lane snapshot.
+                // They cannot become an unobserved task or a successful sync result.
+                lock (_gate)
+                {
+                    if (!_stopping && ReferenceEquals(slot.ScheduleCancellation, scheduleCancellation))
+                    {
+                        slot.LastOutcome = new OnlineSyncLaneOutcome(false, "sync_schedule_failed", terminal: true);
+                        slot.ScheduleCancellation = null;
+                        slot.NextDueAt = null;
+                    }
+                }
             }
             finally
             {

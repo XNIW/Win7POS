@@ -184,6 +184,16 @@ SELECT last_insert_rowid();",
                             }
                         }
 
+                        var officialShop = await connection.ExecuteScalarAsync<string>(
+                            "SELECT value FROM app_settings WHERE key=@key;", new {key=OutboxShopBinding.OfficialShopIdKey}, transaction).ConfigureAwait(false);
+                        var boundShop = await connection.ExecuteScalarAsync<string>(
+                            "SELECT value FROM app_settings WHERE key=@key;", new {key=CatalogShopStateRepository.BoundShopIdKey}, transaction).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(officialShop) && string.Equals(officialShop,boundShop,StringComparison.Ordinal))
+                            await connection.ExecuteAsync(@"INSERT INTO app_settings(key,value) VALUES(@key,@value)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;",
+                                new {key=CatalogShopStateRepository.LocalCreationScopePrefix+mutations[0].ClientProductId,value=officialShop}, transaction).ConfigureAwait(false);
+                        else if (await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM pos_sync_session_generation WHERE active=1;",transaction:transaction).ConfigureAwait(false)!=0)
+                            throw new InvalidOperationException("local_article_shop_transition");
                         transaction.Commit();
                         return new LocalArticleWriteResult
                         {

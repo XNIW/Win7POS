@@ -114,6 +114,7 @@ namespace Win7POS.Wpf.Pos
                 vm.AddBarcodeCommand.Execute(null);
                 e.Handled = true;
             }
+            else if (vm.TryQueueBarcodeSubmission()) e.Handled = true;
         }
 
         private void OnViewPreviewKeyDown(object sender, KeyEventArgs e)
@@ -249,13 +250,18 @@ namespace Win7POS.Wpf.Pos
         private void FocusBarcode()
         {
             if (!IsLoaded || _focusOperation?.Status == DispatcherOperationStatus.Pending) return;
+            // An already focused scanner needs no deferred restoration. Keep
+            // its current text/selection and avoid a redundant callback that
+            // could otherwise wait behind the next modal/render transition.
+            if (BarcodeBox.IsKeyboardFocused) return;
             _focusOperation = Dispatcher.BeginInvoke((Action)(() =>
             {
                 _focusOperation = null;
                 var window = Window.GetWindow(this);
                 if (!IsLoaded || !IsEnabled || !BarcodeBox.IsVisible || window?.IsActive != true) return;
+                var alreadyTyping = BarcodeBox.IsKeyboardFocused && !string.IsNullOrEmpty(BarcodeBox.Text);
                 Keyboard.Focus(BarcodeBox);
-                BarcodeBox.SelectAll();
+                if (!alreadyTyping) BarcodeBox.SelectAll();
             }), DispatcherPriority.Input);
         }
 

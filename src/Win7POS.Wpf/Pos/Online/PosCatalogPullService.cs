@@ -289,8 +289,8 @@ namespace Win7POS.Wpf.Pos.Online
                     .ConfigureAwait(false))
                 {
                 var catalogState = new CatalogShopStateRepository(_factory);
-                // A previous successful empty read must never qualify a failed new pull.
-                await catalogState.ClearAuthoritativeEmptyAsync(generation).ConfigureAwait(false);
+                // Keep the published observation while fetching its replacement. Last-attempt
+                // diagnostics cannot invalidate a committed snapshot; publication/identity can.
                 var capturedSessionError = await catalogState.ValidateCapturedSessionAsync(
                     trustedSession.ShopId,
                     trustedSession.ShopCode).ConfigureAwait(false);
@@ -1531,6 +1531,7 @@ namespace Win7POS.Wpf.Pos.Online
                                     await ClearCatalogRuntimeDiagnosticAsync(emptySettings, generation).ConfigureAwait(false);
                                     await emptySettings.SetBoolIfGenerationCurrentAsync(LastCatalogHasMoreSettingKey, false, generation).ConfigureAwait(false);
                                     await StoreCatalogBootstrapStatusAsync(BootstrapStatusEmptyVerified).ConfigureAwait(false);
+                                    CatalogEvents.PublishCommittedCatalog(_factory.DbPath, generation?.Fingerprint);
                                     return PosCatalogPullOutcome.AuthoritativelyEmpty(pagesProcessed);
                                 }
                                 // Preserve the precise failed qualification guard;
@@ -1658,7 +1659,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 await catalogApplyRun.AbortAtomicFullRefreshAsync()
                                     .ConfigureAwait(false);
                                 var exactnessCode = SafeCode(exactness.Code);
-                                await catalogState.StoreExactnessAsync(
+                                await catalogState.StoreAttemptExactnessAsync(
                                     trustedSession.ShopId,
                                     trustedSession.ShopCode,
                                     exactness,
@@ -1717,7 +1718,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 .ConfigureAwait(false);
                             throw;
                         }
-                        CatalogEvents.AdvanceRevision();
+                        CatalogEvents.PublishCommittedCatalog(_factory.DbPath, generation?.Fingerprint);
                         try
                         {
                             await StoreCatalogDiagnosticsAsync(
@@ -1871,7 +1872,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 "Catalog authoritative stage cleanup deferred: category=catalog.pull code=catalog_authoritative_stage_cleanup_failed");
                         }
                     }
-                    CatalogEvents.AdvanceRevision();
+                    CatalogEvents.PublishCommittedCatalog(_factory.DbPath, generation?.Fingerprint);
                     _logger.LogInfo(
                         "Catalog pull completed: category=catalog.pull products=" + totalStats.UpdatedProducts.ToString() +
                         ", prices=" + totalStats.PriceRowsApplied.ToString() +
@@ -2149,7 +2150,7 @@ namespace Win7POS.Wpf.Pos.Online
             // invalidates cursors before another page can be requested.
             if (publishRevision)
             {
-                CatalogEvents.AdvanceRevision();
+                CatalogEvents.PublishCommittedCatalog(_factory.DbPath, generation?.Fingerprint);
             }
             // A committed catalog page may have supplied the remote identity
             // awaited by an offline-staged product image. Wake the image lane;
