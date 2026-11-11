@@ -17,6 +17,7 @@ namespace Win7POS.Data.Import
     public sealed class HistoricalPublicationSender
     {
         private readonly HistoricalPublicationOutbox _outbox;
+        private readonly HistoricalPublicationJournal _journal;
         private readonly OnlineSyncGeneration _generation;
         private readonly Action _demand;
         private readonly Func<string,HistoricalCloudPayload,CancellationToken,Task<HistoricalCloudResult>> _request;
@@ -25,7 +26,7 @@ namespace Win7POS.Data.Import
             Func<string,HistoricalCloudPayload,CancellationToken,Task<HistoricalCloudResult>> request,Func<long> now=null)
         { _outbox=outbox??throw new ArgumentNullException(nameof(outbox));_generation=generation??throw new ArgumentNullException(nameof(generation));
           _demand=demand??throw new ArgumentNullException(nameof(demand));_request=request??throw new ArgumentNullException(nameof(request));
-          _now=now??(()=>DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()); }
+          _now=now??(()=>DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());_journal=new HistoricalPublicationJournal(_outbox.Factory); }
         public Task<bool> RunAsync(CancellationToken ct)=>Task.Run(async()=>
         {
             HistoricalCloudRequestException latestFailure=null;
@@ -45,11 +46,14 @@ namespace Win7POS.Data.Import
                         // Restore may recover an acquired receipt, but cannot
                         // first-deliver an old-lineage fact.
                         if(attempt.ReceiptOnly)throw new HistoricalCloudRequestException("history_publication_restore_reconciliation",false,false);
-                        if(reply?.State!="authorized")throw new HistoricalCloudRequestException("history_publication_not_admitted",false,false);
-                        reply=await _request("local_deliver",new HistoricalCloudPayload{
+                        if(reply?.State!="authorized"&&reply?.State!="reconcile_required")throw new HistoricalCloudRequestException("history_publication_not_admitted",false,false);
+                        var witness=await _journal.ReadOutcomeWitnessAsync(attempt.OperationId,_generation.ShopId,_generation.ShopDeviceId,_demand,ct).ConfigureAwait(false);
+                        if(witness==null||witness.Outcome!="committed"||witness.ProofJson!=attempt.ProofJson)
+                            throw new HistoricalCloudRequestException("history_publication_witness_missing",false,false);
+                        reply=await _request("local_reconcile",new HistoricalCloudPayload{
                             OperationId=attempt.WireOperationId,GrantId=attempt.Proof.GrantId,ContentDigest=attempt.ContentDigest,
                             LocalRevision=attempt.LocalRevision.ToString(CultureInfo.InvariantCulture),LocalSequence=attempt.Sequence.ToString(CultureInfo.InvariantCulture),
-                            LocalReceiptJson=attempt.ReceiptJson},ct).ConfigureAwait(false);
+                            LocalReceiptJson=attempt.ReceiptJson,WitnessJson=witness.Json,LocalProofJson=witness.ProofJson},ct).ConfigureAwait(false);
                     }
                     _demand();ct.ThrowIfCancellationRequested();
                     await _outbox.ConfirmAsync(attempt,reply?.PublicationReceipt,_generation,_demand,_now(),ct).ConfigureAwait(false);

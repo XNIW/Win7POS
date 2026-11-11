@@ -55,7 +55,11 @@ namespace Win7POS.Data.Online
             try
             {
                 var outboundMore=false;HistoricalCloudRequestException outboundFailure=null;
-                try { outboundMore=await new HistoricalPublicationSender(new HistoricalPublicationOutbox(_factory),context.Generation,demand,Request).RunAsync(ct).ConfigureAwait(false); }
+                try
+                {
+                    outboundMore=await new HistoricalPublicationSender(new HistoricalPublicationOutbox(_factory),context.Generation,demand,Request).RunAsync(ct).ConfigureAwait(false);
+                    outboundMore=await new HistoricalPublicationOutcomeSender(new HistoricalPublicationJournal(_factory),context.Generation,demand,Request).RunAsync(ct).ConfigureAwait(false)||outboundMore;
+                }
                 catch(HistoricalCloudRequestException error) { demand();outboundFailure=error; }
                 var store = new HistoricalReplicaStore(_factory,demand,context.Generation);
                 var more = await new HistoricalReplicaSynchronizer(store,demand,Request).RunAsync(context.Generation.ShopId,buildSha,ct).ConfigureAwait(false);

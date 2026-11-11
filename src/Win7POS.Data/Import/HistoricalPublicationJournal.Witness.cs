@@ -7,14 +7,18 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Import;
+using Win7POS.Core.Online;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Import
 {
     public sealed class HistoricalPublicationWitnessEnvelope
     {
-        internal HistoricalPublicationWitnessEnvelope(string operation,string outcome,string json,string digest,string proof)
-        {OperationId=operation;Outcome=outcome;Json=json;Sha256=digest;ProofJson=proof;}
+        internal HistoricalPublicationWitnessEnvelope(string operation,string root,string outcome,string json,string digest,string proof)
+        {JournalOperationId=operation;OperationId=Guid.Parse(operation).ToString("D");ContentDigest=root;Outcome=outcome;Json=json;Sha256=digest;ProofJson=proof;}
+        internal string JournalOperationId{get;}
         public string OperationId{get;}
+        public string ContentDigest{get;}
         public string Outcome{get;}
         public string Json{get;}
         public string Sha256{get;}
@@ -69,9 +73,61 @@ WHERE shop_id=@ShopId AND device_id=@DeviceId AND local_dataset_id=@DatasetId",n
             var witness=c.QuerySingleOrDefault<WitnessRow>(WitnessSelect+" WHERE operation_id=@operation",new{operation},t);
             if(witness==null)return null;
             if(row==null||row.ShopId!=shop||row.DeviceId!=device||row.State!=witness.Outcome)throw new InvalidOperationException("history_commit_witness_binding_invalid");
-            DemandCurrent(c,t,row.DatasetId,row.RestoreEpoch,row.LineageId,row.BaseRevision,witness.Outcome=="aborted");DemandWitnessBytes(witness);
+            // Sealing absence required the exact base revision. Reading already
+            // sealed immutable evidence may recover an acquired ACK later too.
+            DemandCurrent(c,t,row.DatasetId,row.RestoreEpoch,row.LineageId,row.BaseRevision);DemandWitnessBytes(witness);
             demand();DemandFactory(authority);ct.ThrowIfCancellationRequested();t.Commit();
-            return new HistoricalPublicationWitnessEnvelope(Guid.Parse(operation).ToString("D"),witness.Outcome,witness.Json,witness.Digest,row.Proof);
+            return new HistoricalPublicationWitnessEnvelope(row.OperationId,row.ContentDigest,witness.Outcome,witness.Json,witness.Digest,row.Proof);
+        }
+
+        public async Task<HistoricalPublicationWitnessEnvelope> ReadPendingNegativeOutcomeAsync(OnlineSyncGeneration generation,Action demand,CancellationToken ct)
+        {
+            if(generation==null||demand==null)throw new ArgumentNullException();demand();Intent[] rows;
+            using(var c=await _factory.OpenAsync(ct).ConfigureAwait(false))
+            using(var t=c.BeginTransaction(deferred:true))
+            {
+                if(!await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(c,t,generation).ConfigureAwait(false))throw new OnlineSyncGenerationChangedException();
+                rows=System.Linq.Enumerable.ToArray(c.Query<Intent>(Select+@"
+LEFT JOIN historical_commit_witness w ON w.operation_id=i.operation_id
+WHERE i.shop_id=@shop AND i.device_id=@device AND s.state IN('staging','prepared','authorized','aborted') AND w.server_resolution IS NULL
+AND NOT EXISTS(SELECT 1 FROM historical_publication_outbox o JOIN historical_publication_delivery d ON d.operation_id=o.operation_id
+ WHERE o.shop_id=@shop AND o.device_id=@device AND d.status<>'synchronized')
+ORDER BY i.created_at,i.operation_id LIMIT 4",new{shop=generation.ShopId,device=generation.ShopDeviceId},t));
+                demand();ct.ThrowIfCancellationRequested();t.Commit();
+            }
+            foreach(var row in rows)
+            {
+                try
+                {
+                    // Acquires the same live UI ownership and seals a permanent
+                    // tombstone before any HTTP. No SQLite transaction crosses it.
+                    await AbortWithoutCommitAsync(row.OperationId,row.Nonce,generation.ShopId,generation.ShopDeviceId,demand,ct).ConfigureAwait(false);
+                    return await ReadOutcomeWitnessAsync(row.OperationId,generation.ShopId,generation.ShopDeviceId,demand,ct).ConfigureAwait(false);
+                }
+                catch(InvalidOperationException e) when(e.Message=="history_preparation_in_use"||e.Message=="history_preparation_commit_exists"||e.Message=="history_preparation_context_changed")
+                {demand();ct.ThrowIfCancellationRequested();}
+            }
+            return null;
+        }
+
+        public async Task ResolveNegativeOutcomeAsync(HistoricalPublicationWitnessEnvelope envelope,HistoricalCloudResult ack,
+            OnlineSyncGeneration generation,Action demand,long now,CancellationToken ct)
+        {
+            if(envelope==null||generation==null||demand==null)throw new ArgumentNullException();
+            if(now<=0||envelope.Outcome!="aborted"||ack?.State!="aborted"||ack.OperationId!=envelope.OperationId||ack.ContentDigest!=envelope.ContentDigest||ack.WitnessSha256!=envelope.Sha256)
+                throw new HistoricalCloudRequestException("history_publication_abort_ack_invalid",false,false);
+            demand();var authority=_factory.AuthorityStamp;
+            using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();
+            if(!await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(c,t,generation).ConfigureAwait(false))throw new OnlineSyncGenerationChangedException();
+            var row=c.QuerySingleOrDefault<Intent>(Select+" WHERE i.operation_id=@operation",new{operation=envelope.JournalOperationId},t);
+            var witness=c.QuerySingleOrDefault<WitnessRow>(WitnessSelect+" WHERE operation_id=@operation",new{operation=envelope.JournalOperationId},t);
+            if(row==null||witness==null||row.ShopId!=generation.ShopId||row.DeviceId!=generation.ShopDeviceId||row.State!="aborted"||witness.Outcome!="aborted"
+                ||witness.Json!=envelope.Json||witness.Digest!=envelope.Sha256||row.ContentDigest!=envelope.ContentDigest)
+                throw new InvalidOperationException("history_commit_witness_binding_invalid");
+            DemandCurrent(c,t,row.DatasetId,row.RestoreEpoch,row.LineageId,row.BaseRevision);DemandWitnessBytes(witness);
+            c.Execute(@"UPDATE historical_commit_witness SET server_resolution='aborted',resolved_at_utc_ms=@now
+WHERE operation_id=@operation AND outcome='aborted' AND server_resolution IS NULL",new{operation=envelope.JournalOperationId,now},t);
+            demand();DemandFactory(authority);ct.ThrowIfCancellationRequested();t.Commit();
         }
 
         internal static void ResolveCommittedWitness(SqliteConnection c,SqliteTransaction t,string operation,long now)

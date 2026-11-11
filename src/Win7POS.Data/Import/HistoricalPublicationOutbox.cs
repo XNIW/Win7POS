@@ -28,6 +28,7 @@ namespace Win7POS.Data.Import
     public sealed partial class HistoricalPublicationOutbox
     {
         private readonly SqliteConnectionFactory _factory;
+        internal SqliteConnectionFactory Factory=>_factory;
         public HistoricalPublicationOutbox(SqliteConnectionFactory factory)=>_factory=factory??throw new ArgumentNullException(nameof(factory));
 
         internal static void Enqueue(SqliteConnection c,SqliteTransaction t,HistoricalImportAuthorizationCommitGuard guard,

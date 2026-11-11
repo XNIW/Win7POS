@@ -81,7 +81,7 @@ INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,sta
             Assert.AreEqual(Guid.Parse(local.Plan.OperationId).ToString("D"),payload.OperationId);
             Assert.AreEqual(local.Proof.ContentDigest,payload.ContentDigest);
             if(op=="local_receipt"){lookups++;return Task.FromResult(new HistoricalCloudResult{State=acquired?"committed":"authorized",PublicationReceipt=acquired?receipt:null});}
-            Assert.AreEqual("local_deliver",op);deliveries++;acquired=true;
+            Assert.AreEqual("local_reconcile",op);Assert.IsFalse(string.IsNullOrEmpty(payload.WitnessJson));Assert.IsFalse(string.IsNullOrEmpty(payload.LocalProofJson));deliveries++;acquired=true;
             throw new HistoricalCloudRequestException("synthetic_ack_lost",false,true);
         }
         var first=new HistoricalPublicationSender(new HistoricalPublicationOutbox(f.Factory),g,()=>{},Request,()=>now);
@@ -269,7 +269,7 @@ INSERT INTO historical_import_batch(id,shop_id,dataset_id,apply_operation_id,sta
         var current=await CreatePublication(f,g,"current-lineage");var outbox=new HistoricalPublicationOutbox(f.Factory);var deliveries=0;
         Task<HistoricalCloudResult> Request(string op,HistoricalCloudPayload p,CancellationToken ct)
         {
-            if(op=="local_deliver")deliveries++;
+            if(op=="local_reconcile")deliveries++;
             return Task.FromResult(p.OperationId==old.Proof.OperationId?new HistoricalCloudResult{State="authorized"}:
                 new HistoricalCloudResult{State="committed",PublicationReceipt=ServerReceipt(f,current)});
         }
