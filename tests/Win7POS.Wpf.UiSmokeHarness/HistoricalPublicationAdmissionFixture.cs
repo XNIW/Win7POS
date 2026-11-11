@@ -18,14 +18,42 @@ namespace Win7POS.Wpf.UiSmokeHarness
     internal sealed class HistoricalPublicationAdmissionFixture
     {
         private readonly string _shop,_device,_dataset;
+        private readonly Func<string,string,string,Decision> _decision;
+        private readonly bool _allNewFixture;
         private readonly Dictionary<string,Prepared> _operations=new Dictionary<string,Prepared>(StringComparer.Ordinal);
         private sealed class Prepared
         {
             internal string Operation,Kind,LocalDataset,Restore,Lineage,Epoch,Request,Content;
             internal int Pages;internal readonly List<string> Digests=new List<string>();
+            internal readonly Decision Totals=new Decision();internal string UndoBatch;
         }
-        internal HistoricalPublicationAdmissionFixture(string shop,string device,string dataset)
-        {_shop=shop;_device=device;_dataset=dataset;}
+        internal HistoricalPublicationAdmissionFixture(string shop,string device,string dataset,Func<string,string,string,Decision> decision=null,bool allNewFixture=false)
+        {_shop=shop;_device=device;_dataset=dataset;_decision=decision;_allNewFixture=allNewFixture;}
+        [DataContract] internal sealed class Decision
+        {
+            [DataMember(Name="inserted")] public int Inserted;
+            [DataMember(Name="duplicates")] public int Duplicates;
+            [DataMember(Name="rejected")] public int Rejected;
+            [DataMember(Name="corrections")] public int Corrections;
+            [DataMember(Name="deactivated")] public int Deactivated;
+            internal long Gross;
+            [DataMember(Name="signed_gross_clp")] private string GrossWire{get=>Gross.ToString(System.Globalization.CultureInfo.InvariantCulture);set=>Gross=HistoricalReplicaProtocol.Integer(value);}
+            [DataMember(Name="revision_delta")] private string DeltaWire{get=>(Inserted+Deactivated).ToString(System.Globalization.CultureInfo.InvariantCulture);set{}}
+        }
+        [DataContract] private sealed class CanonicalDecision
+        {
+            [DataMember(Name="batch_id")] internal string Batch;
+            [DataMember(Name="revision")] internal string Revision;
+            [DataMember(Name="inserted")] internal int Inserted;
+            [DataMember(Name="duplicates")] internal int Duplicates;
+            [DataMember(Name="deactivated")] internal int Deactivated;
+            [DataMember(Name="signed_gross_clp")] internal string Gross;
+        }
+        [DataContract] private sealed class Record
+        {
+            [DataMember(Name="kind")] internal string Kind;
+            [DataMember(Name="fields")] internal Dictionary<string,string> Fields;
+        }
         internal int Authorizations{get;private set;}
         internal HistoricalCloudResult Request(string operation,HistoricalCloudPayload payload,string rejection=null)
         {
@@ -56,7 +84,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if(payload.Ordinal<=p.Digests.Count)
                 {if(p.Digests[payload.Ordinal.Value-1]!=payload.PageSha256)throw new InvalidOperationException("qa_history_publication_page_changed");}
                 else
-                {if(payload.Ordinal!=p.Digests.Count+1)throw new InvalidOperationException("qa_history_publication_page_skipped");p.Digests.Add(payload.PageSha256);}
+                {
+                    if(payload.Ordinal!=p.Digests.Count+1)throw new InvalidOperationException("qa_history_publication_page_skipped");
+                    using var records=new MemoryStream(raw);
+                    foreach(var record in (Record[])new DataContractJsonSerializer(typeof(Record[]),new DataContractJsonSerializerSettings{UseSimpleDictionaryFormat=true}).ReadObject(records))
+                    {
+                        if(record.Kind=="movement"){p.Totals.Inserted++;p.Totals.Gross=checked(p.Totals.Gross+HistoricalReplicaProtocol.Integer(record.Fields["gross_clp"]));}
+                        else if(record.Kind=="rejected")p.Totals.Rejected++;
+                        else if(record.Kind=="correction")p.Totals.Corrections++;
+                        else if(record.Kind=="undo")p.UndoBatch=record.Fields["batch_id"];
+                    }
+                    p.Digests.Add(payload.PageSha256);
+                }
                 return Progress(p,false);
             }
             if(operation!="local_authorize"||p.Digests.Count!=p.Pages||Hash(Encoding.ASCII.GetBytes(string.Join("\n",p.Digests)+"\n"))!=p.Content)
@@ -66,15 +105,30 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var proofFields=new Dictionary<string,string>{{"grant_id",id},{"operation_id",p.Operation},{"shop_id",_shop},{"device_id",_device},
                 {"local_dataset_id",p.LocalDataset},{"server_dataset_id",_dataset},{"restore_lineage_id",p.Lineage},{"restore_epoch",p.Restore},
                 {"writer_epoch","1"},{"content_digest",p.Content},{"request_fingerprint",p.Request},{"decision","content_authorized_v2"}};
-            using var proofStream=new MemoryStream();
-            new DataContractJsonSerializer(typeof(Dictionary<string,string>),new DataContractJsonSerializerSettings{UseSimpleDictionaryFormat=true}).WriteObject(proofStream,proofFields);
-            proofStream.Position=0;var proof=(HistoricalPublicationProof)new DataContractJsonSerializer(typeof(HistoricalPublicationProof)).ReadObject(proofStream);
+            var decision=_decision?.Invoke(p.Operation,p.Kind,p.UndoBatch);
+            if(decision==null)
+            {
+                if(!_allNewFixture||p.Kind!="Apply")throw new InvalidOperationException("qa_history_decision_oracle_required");
+                decision=p.Totals;
+            }
+            var proof=MakeProof(proofFields,decision);
             return new HistoricalCloudResult{State="authorized",OperationId=rejection=="wrong_operation"?Guid.NewGuid().ToString("D"):p.Operation,
                 ContentDigest=p.Content,GrantId=id,WriterEpoch=p.Epoch,RemainingMilliseconds=rejection=="expired"?0:60000,PublicationProof=proof};
         }
         private static HistoricalCloudResult Progress(Prepared p,bool count)=>new HistoricalCloudResult{State="preparing",OperationId=p.Operation,
             ContentDigest=p.Content,NextOrdinal=p.Digests.Count+1,PublicationPageCount=count?p.Pages:0};
         private static string Hash(byte[] value){using var h=SHA256.Create();return BitConverter.ToString(h.ComputeHash(value)).Replace("-","").ToLowerInvariant();}
+        // Typed simulated server DTOs only; no production constructor is opened
+        // to the harness. This fixture is not the independent SQL economic oracle.
+        internal static HistoricalPublicationProof MakeProof(Dictionary<string,string> fields,Decision local,string revision="1")
+        {
+            string Json<T>(T value){using var stream=new MemoryStream();new DataContractJsonSerializer(typeof(T),new DataContractJsonSerializerSettings{UseSimpleDictionaryFormat=true}).WriteObject(stream,value);return Encoding.UTF8.GetString(stream.ToArray());}
+            var root=Json(fields);var canonical=new CanonicalDecision{Batch=Guid.NewGuid().ToString("D"),Revision=revision,Inserted=local.Inserted,
+                Duplicates=local.Duplicates,Deactivated=local.Deactivated,Gross=local.Gross.ToString(System.Globalization.CultureInfo.InvariantCulture)};
+            var json=root.Substring(0,root.Length-1)+",\"local_decision\":"+Json(local)+",\"canonical_decision\":"+Json(canonical)+"}";
+            using var read=new MemoryStream(Encoding.UTF8.GetBytes(json));
+            var proof=(HistoricalPublicationProof)new DataContractJsonSerializer(typeof(HistoricalPublicationProof)).ReadObject(read);proof.DemandValid();return proof;
+        }
         internal static string Wire(string operation,HistoricalCloudResult result)
         {
             if(operation=="local_authorize")

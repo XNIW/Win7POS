@@ -413,10 +413,23 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 File.WriteAllText(Path.Combine(f.Root, "source.bin"), "synthetic-history-source-v1", new UTF8Encoding(false)); return f;
             }
             internal int LocalWriteRequests;
+            private readonly Dictionary<string,HistoricalSalesImportPlan> _decisionPlans=new Dictionary<string,HistoricalSalesImportPlan>(StringComparer.Ordinal);
             internal PosWorkflowService CreateWorkflow(string rejection = null)
             {
                 var workflow = new PosWorkflowService(Options, () => DateTimeOffset.UtcNow);
-                var publication=new HistoricalPublicationAdmissionFixture(ShopId,Generation.ShopDeviceId,"90000000-0000-4000-8000-000000003019");
+                var publication=new HistoricalPublicationAdmissionFixture(ShopId,Generation.ShopDeviceId,"90000000-0000-4000-8000-000000003019",(operation,kind,batch)=>
+                {
+                    // Local preview is fixture input, not a claimed server E2E.
+                    if(kind=="Apply")
+                    {
+                        var plan=_decisionPlans[Guid.Parse(operation).ToString("N")];var preview=Service.PreviewAsync(plan,CancellationToken.None).GetAwaiter().GetResult();
+                        return new HistoricalPublicationAdmissionFixture.Decision{Inserted=preview.NewCount,Duplicates=preview.DuplicateCount,
+                            Rejected=plan.Analysis.RejectedRows.Count,Corrections=plan.CorrectionApprovals.Count,Gross=preview.NewGrossClp};
+                    }
+                    using var c=Factory.Open();return new HistoricalPublicationAdmissionFixture.Decision{
+                        Deactivated=checked((int)c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE batch_id=@batch AND is_active=1",new{batch})),
+                        Gross=c.ExecuteScalar<long>("SELECT COALESCE(SUM(signed_amount_clp),0) FROM historical_transactions WHERE batch_id=@batch AND is_active=1",new{batch})};
+                });
                 workflow.SetHistoricalCloudRequestForTesting((actor, operation, payload, ct) =>
                 {
                     ct.ThrowIfCancellationRequested(); actor.DemandCurrent();
@@ -440,13 +453,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var summary = new HistoricalSalesImportSummary(count, count, count, 0, 0, count * 1000L, count * 1000L, 0, count * 1000L, count, 0, 0, start, start.AddSeconds(count - 1));
                 var analysis = new HistoricalSalesImportAnalysis(new[] { file }, rows, Array.Empty<HistoricalSalesRejectedRow>(), Array.Empty<HistoricalSalesImportDiagnostic>(), summary, false); var state = await Service.ReadDatasetAsync(CancellationToken.None);
                 var key = HistoricalMerchantAssignment.MerchantKey(merchant).Substring(0, 16);
-                return new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"), ShopId, state.DatasetId, state.DataRevision, Factory.AuthorityStamp.RestoreEpoch, analysis, new[] { new HistoricalMerchantAssignment(merchant, "synthetic-scope-" + key, "synthetic-binding-" + key, "synthetic-evidence") }, new DateTime(2001, 1, 1), "synthetic-start-proof");
+                var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"), ShopId, state.DatasetId, state.DataRevision, Factory.AuthorityStamp.RestoreEpoch, analysis, new[] { new HistoricalMerchantAssignment(merchant, "synthetic-scope-" + key, "synthetic-binding-" + key, "synthetic-evidence") }, new DateTime(2001, 1, 1), "synthetic-start-proof");
+                _decisionPlans[plan.OperationId]=plan;return plan;
             }
             internal async Task<HistoricalSalesImportPlan> PreparePlanAsync(HistoricalSalesImportAnalysis analysis)
             {
                 var state = await Service.ReadDatasetAsync(CancellationToken.None);
                 var assignments = analysis.AcceptedTransactions.Select(x => x.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select(g => new HistoricalMerchantAssignment(g.First(), "synthetic-scope-" + g.Key.Substring(0, 16), "synthetic-binding-" + g.Key.Substring(0, 16), "synthetic-evidence")).ToArray();
-                return new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"), ShopId, state.DatasetId, state.DataRevision, Factory.AuthorityStamp.RestoreEpoch, analysis, assignments, new DateTime(2040, 1, 1), "synthetic-start-proof");
+                var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"), ShopId, state.DatasetId, state.DataRevision, Factory.AuthorityStamp.RestoreEpoch, analysis, assignments, new DateTime(2040, 1, 1), "synthetic-start-proof");
+                _decisionPlans[plan.OperationId]=plan;return plan;
             }
             internal async Task<HistoricalSalesOperationReceipt> ApplyAsync(HistoricalSalesImportPlan plan)
             { using (var use = await Operator.BeginHistoricalAuthorizationUseAsync(HistoricalImportOperationKind.Apply, plan.OperationId, plan.RequestFingerprint, plan.DatasetId, plan.RestoreEpoch, () => Factory.AccessContext.DemandPath(Factory.DbPath), CancellationToken.None)) return await Service.ApplyAsync(plan, use.Guard, Backup(), CancellationToken.None); }
@@ -473,7 +488,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal string Backup() => Path.Combine(Root, "backup-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".db");
             internal long Count(string table) { if (!new[] { "historical_transactions", "historical_import_batch", "historical_import_operation" }.Contains(table)) throw new ArgumentException(); using (var c = Factory.Open()) return c.ExecuteScalar<long>("SELECT COUNT(*) FROM " + table); }
             internal string State() { using (var c = Factory.Open()) return string.Join("|", c.ExecuteScalar<long>("SELECT data_revision FROM historical_import_dataset WHERE singleton_id=1"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_batch"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox")); }
-            public void Dispose() { _store?.Clear(); SqliteConnectionFactory.ClearAllPools(); Owner?.Dispose(); } // Evidence remains owned and retained.
+            public void Dispose() { _decisionPlans.Clear(); _store?.Clear(); SqliteConnectionFactory.ClearAllPools(); Owner?.Dispose(); } // Evidence remains owned and retained.
         }
 
         [DataContract] private sealed class CrashProof
