@@ -56,6 +56,30 @@ AND replace(restore_lineage_id,'-','')=(SELECT replace(value,'-','') FROM app_se
             if(flow!=null)DemandFlow(c,t,flow,false,flow.State!="applied");_demand();t.Commit();return flow;
         }
 
+        // A writer freeze changes the grant epoch, not an already verified
+        // device baseline. Read only the original matching applied proof;
+        // never create or relabel an intent from a server context.
+        internal async Task<HistoricalBaselineFlow> ReadAppliedContextAsync(string serverDataset,long writerEpoch,string snapshot,long baselineRevision,long canonicalRevision,CancellationToken ct)
+        {
+            HistoricalReplicaProtocol.DemandId(serverDataset);HistoricalReplicaProtocol.DemandId(snapshot);
+            if(writerEpoch<1||baselineRevision<0||canonicalRevision<1)throw new InvalidOperationException("history_baseline_context_changed");
+            _demand();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction(deferred:true);
+            await DemandGeneration(c,t,ct).ConfigureAwait(false);
+            var f=c.QuerySingleOrDefault<HistoricalBaselineFlow>(Select+@"WHERE shop_id=@shop AND device_id=@device AND server_dataset_id=@serverDataset
+AND state='applied' AND writer_epoch<=@writerEpoch AND source_snapshot_id=@snapshot AND server_revision=@canonicalRevision AND local_revision=@baselineRevision
+AND local_dataset_id=(SELECT dataset_id FROM historical_import_dataset WHERE singleton_id=1)
+AND replace(restore_lineage_id,'-','')=(SELECT replace(value,'-','') FROM app_settings WHERE key='pos.history.restore_lineage_id') COLLATE NOCASE",
+                new{shop=_generation.ShopId,device=_generation.ShopDeviceId,serverDataset,writerEpoch,snapshot,canonicalRevision,baselineRevision},t);
+            if(f!=null)
+            {
+                DemandFlow(c,t,f,false,false);var receipt=HistoricalBaselineReceipt.Read(f.ReceiptJson,f);
+                var stored=c.ExecuteScalar<string>("SELECT receipt_sha256 FROM historical_baseline_flow WHERE flow_id=@FlowId",f,t);
+                if(receipt.Snapshot!=snapshot||receipt.Revision!=canonicalRevision||Hash(Encoding.UTF8.GetBytes(f.ReceiptJson))!=stored)
+                    throw new InvalidOperationException("history_baseline_receipt_invalid");
+            }
+            _demand();ct.ThrowIfCancellationRequested();t.Commit();return f;
+        }
+
         // Applied baseline is a device/dataset fact. A later authorized staff
         // member may publish, but cannot resume or alter the original transfer.
         // No intent is written by this preflight, including when it returns false.
