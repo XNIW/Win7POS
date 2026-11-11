@@ -20,27 +20,27 @@ collegamento Start Menu. Dopo una configurazione per utente, chiudere/riaprire
 dal collegamento esistente e verificare negozio/profilo prima del PIN. Non
 spostare DB/trust o usare una seconda istanza per correggere una selezione errata.
 
-Per un nuovo negozio senza catalogo operativo, un accesso valido apre la
-finestra principale autenticata anche quando il catalogo è confermato vuoto.
-Serve una risposta catalogo completa con totale zero, riferita allo shop e alla
-generation correnti: errori, timeout e risposte parziali non abilitano questo
-percorso. Login e lease devono essere validi; il permesso d'importazione non è
-necessario per entrare nella finestra principale. Un messaggio spiega che le
-vendite non sono pronte e consente di aprire il centro di sincronizzazione.
-Carrello, pagamento e stampa di vendita restano protetti. Non è recovery locale.
+Dopo accesso normale valido e inizializzazione locale, si apre direttamente la
+vera postazione POS con carrello e barcode, anche se il catalogo è vuoto o ancora
+in download. Login, lease, shop e integrità devono essere validi. Catalogo, outbox
+e ordini si aggiornano automaticamente in background; Sync Center resta una
+sezione diagnostica volontaria. Nessun popup storico obbligatorio al login.
 
-Lo storico è una scelta volontaria: aprire **Riepilogo vendite e incassi** e poi
-**Importazione storico**, con i permessi descritti sotto. Chiudere il dialog con
-il pulsante, la X o Escape riporta al riepilogo; tornare alla cassa conserva la
-sessione e il processo. Uscire dal programma e cambiare operatore sono azioni
-distinte. La consultazione e il CSV rimangono soggetti ai rispettivi permessi.
+Un primo download pendente dà un riscontro specifico sui codici non disponibili;
+un codice realmente sconosciuto riusa la creazione rapida con CatalogEdit o
+supervisore. Manuali CLP e articoli locali con provenienza verificata seguono i
+permessi e i controlli economici fino al commit. Mostrare il carrello non concede
+vendite su vecchi prodotti diagnostici: dopo empty autorevole il catalogo remoto
+richiede una nuova sostituzione completa qualificata. Un tentativo lento/fallito
+conserva l'ultimo snapshot operativo valido e non distrugge input, selezione,
+carrello o report. Prezzi e disponibilità vengono rivalidati al pagamento, senza
+cambiare silenziosamente i totali dell'operatore.
 
-La prova di catalogo vuoto non rende il catalogo sale-safe. I dati precedenti
-sono conservati e le vendite rimangono bloccate finché una successiva
-sincronizzazione completa non qualifica un catalogo operativo. Una nuova
-richiesta invalida la precedente prova empty; un errore non riattiva le vendite.
-La scadenza o revoca dell'autorizzazione invalida lo storico e i suoi dati visibili.
-Il percorso non sostituisce le prove esercente, tempo e overlap richieste sotto.
+Menu → Riepilogo/registro giornaliero → Cronologia → Importa storico è il percorso
+volontario. Close, X ed Escape chiudono la secondaria e ritornano allo stesso
+contesto. Permessi storici e policy temporale del report nativo sono indipendenti
+dal catalogo e dalla presenza del carrello. Scadenza/revoca invalida accesso e dati
+protetti. Questo percorso non sostituisce prove esercente, tempo e overlap.
 
 Dal riepilogo aprire **Importazione storico**. Il permesso
 `register.import_history` abilita l'importazione; `register.cancel_history` abilita

@@ -2060,7 +2060,10 @@ namespace Win7POS.Wpf
                 SideMenuPanel.Visibility = Visibility.Collapsed;
                 SideMenuPanel.Opacity = 0;
                 transform.X = -18;
-                HamburgerButton?.Focus();
+                if (MainTabControl?.SelectedIndex == 0)
+                    PosViewControl?.RestoreScannerFocus();
+                else
+                    HamburgerButton?.Focus();
             };
             SideMenuPanel.BeginAnimation(UIElement.OpacityProperty, fade);
             transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(-18, duration));

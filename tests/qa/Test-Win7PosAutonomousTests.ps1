@@ -283,7 +283,7 @@ Remove-Item Function:/Invoke-QaGit
 $functionalSource = Join-Path $repoRoot 'scripts/run-functional-completion-smoke.ps1'
 $functionalAst = [Management.Automation.Language.Parser]::ParseFile($functionalSource, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw 'Functional runner syntax errors' }
-foreach ($name in @('Read-FunctionalChildImage','Get-FunctionalChildImage','Stop-FunctionalChild','New-FunctionalDataRoot','Copy-FunctionalEvidence')) {
+foreach ($name in @('Start-FunctionalChild','Complete-FunctionalChildOutput','Close-FunctionalChildOutput','Read-FunctionalChildImage','Get-FunctionalChildImage','Stop-FunctionalChild','New-FunctionalDataRoot','Copy-FunctionalEvidence')) {
     $definition = @($functionalAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true))
     Assert-QaTest ($definition.Count -eq 1) "Missing functional identity helper: $name"
     . ([scriptblock]::Create($definition[0].Extent.Text))
@@ -343,7 +343,7 @@ if ($Runtime -and $IsWindows) {
     $own = [Diagnostics.Process]::GetCurrentProcess()
     try { Assert-QaTest ((Read-FunctionalChildImage $own) -ceq $own.MainModule.FileName) 'Native process image differs from owned synthetic host' }
     finally { $own.Dispose() }
-    # Same Windows redirection as the functional runner, with a synthetic child
+    # Same bounded byte-stream capture as the functional runner, with a synthetic child
     # only. Both final writes must already be visible after the bounded wait.
     $outputProbe = Join-Path $unicode 'functional-output-probe.ps1'
     @'
@@ -358,11 +358,14 @@ for ($i = 0; $i -lt 512; $i++) {
 '@ | Set-Content -LiteralPath $outputProbe -Encoding utf8
     $probeOut = Join-Path $unicode 'functional-stdout.log'
     $probeErr = Join-Path $unicode 'functional-stderr.log'
-    $probeProcess = Start-Process -FilePath $shell -ArgumentList @('-NoProfile','-File',('"' + $outputProbe + '"')) -WindowStyle Hidden -PassThru -RedirectStandardOutput $probeOut -RedirectStandardError $probeErr
+    $outputClock = [Diagnostics.Stopwatch]::StartNew()
+    $probeOutput = Start-FunctionalChild $shell @('-NoProfile','-File',('"' + $outputProbe + '"')) $probeOut $probeErr
+    $probeProcess = $probeOutput.Process
     try {
         $probeCreated = $probeProcess.StartTime.ToUniversalTime().ToString('O')
         $null = $probeProcess.Handle
-        $probeExited = $probeProcess.WaitForExit(15000)
+        $probeExited = $probeProcess.WaitForExit([Math]::Max(1,15000-[int]$outputClock.ElapsedMilliseconds))
+        if ($probeExited) { $probeExited = Complete-FunctionalChildOutput $probeOutput (15000-[int]$outputClock.ElapsedMilliseconds) }
         # Snapshot only this bounded synthetic output, before cleanup. A timeout
         # must distinguish startup, partial writes and process exit, not infer
         # a pipe deadlock or disk latency from WaitForExit(false) alone.
@@ -383,9 +386,35 @@ for ($i = 0; $i -lt 512; $i++) {
         Assert-QaTest $probeExited 'Synthetic output probe exceeded its finite process budget'
         Assert-QaTest ($probeProcess.ExitCode -eq 0) 'Synthetic output probe failed'
         Assert-QaTest ([IO.File]::ReadAllText($probeOut).EndsWith('FINAL_STDOUT_SENTINEL' + [Environment]::NewLine) -and [IO.File]::ReadAllText($probeErr).EndsWith('FINAL_STDERR_SENTINEL' + [Environment]::NewLine)) 'Bounded Windows wait returned before redirected final output was available'
+        Assert-QaTest (@([IO.File]::ReadAllLines($probeOut)).Count -eq 514 -and @([IO.File]::ReadAllLines($probeErr)).Count -eq 513) 'Buffered capture lost synthetic output lines'
     } finally {
-        try { Stop-FunctionalChild $probeProcess $probeCreated }
-        finally { $probeProcess.Dispose() }
+        try {
+            Stop-FunctionalChild $probeProcess $probeCreated
+            Assert-QaTest (Complete-FunctionalChildOutput $probeOutput 5000) 'Synthetic output cleanup timed out'
+        }
+        finally {
+            try { Close-FunctionalChildOutput $probeOutput }
+            finally { $probeProcess.Dispose() }
+        }
+    }
+    $pendingScript = Join-Path $unicode 'functional-pending-output.ps1'
+    "[Console]::Out.WriteLine('PARTIAL_SENTINEL'); Start-Sleep -Seconds 30" | Set-Content -LiteralPath $pendingScript -Encoding utf8
+    $pendingOutput = Start-FunctionalChild $shell @('-NoProfile','-File',('"' + $pendingScript + '"')) (Join-Path $unicode 'pending-out.log') (Join-Path $unicode 'pending-err.log')
+    $pendingCreated = $pendingOutput.Process.StartTime.ToUniversalTime().ToString('O')
+    try {
+        Assert-QaTest (-not (Complete-FunctionalChildOutput $pendingOutput 100)) 'Pending child output bypassed its finite deadline'
+        Assert-QaTest (-not $pendingOutput.Process.HasExited) 'Output completion stopped a live child without ownership cleanup'
+    }
+    finally {
+        try {
+            Stop-FunctionalChild $pendingOutput.Process $pendingCreated
+            Assert-QaTest (Complete-FunctionalChildOutput $pendingOutput 5000) 'Stopped synthetic output could not drain'
+            Assert-QaTest $pendingOutput.Process.HasExited 'Timed out synthetic child survived cleanup'
+        }
+        finally {
+            try { Close-FunctionalChildOutput $pendingOutput }
+            finally { $pendingOutput.Process.Dispose() }
+        }
     }
 }
 $script:imageReads = 0
