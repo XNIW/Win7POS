@@ -1,35 +1,46 @@
 # AI Worklog – Win7POS
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
-## Composizione corrente — 20261111T152646Z, stessa ASUS-W7POS-019
+## Composizione corrente — 20261111T171130Z, stessa ASUS-W7POS-019
 
-Execution ACTIVE: cassa quotidiana e storico bilaterale. L'utente autorizza
-tutti i file necessari; nessuna nuova funzione, infrastruttura o task.
-Codepoint candidati: Windows71eafda924c91bdbe121bbfa9b2cd054dffa3e77,
-Admin48093f3bf77ad6bbc07cd74d6e28df2e5c81ea5e (codice identico a33164d44).
-Il commit documentale successore non cambia tali componenti; richiede comunque
-binding e qualifica del proprio SHA. Nessun merge main, deploy o installazione.
+Execution ACTIVE, due consegne: cassa quotidiana e storico bilaterale.
+Autorizzati tutti i file necessari; nessuna nuova funzione o task.
+Codepoint candidati: Windowsc9a3355e972f4dd995931e4f24bf4fb6c4f74ab3
+(include harness92c3517 e diagnostica02f51b9), Admin996cd7b7475e17679e30347823fafd4378022318.
+Il successore documentale va legato alla propria qualifica; nessun PASS
+pregresso diventa automaticamente PASS del nuovo SHA.
 
 | Scenario | SHA / comando / ambiente | Esito ed evidence | Prossimo gate |
 |---|---|---|---|
-| Cassa qualificata precedentemente | d1b2bc3, pacchetto a07430ce /payload6b44ffe3; Integrated12 eFinal60 ASUS | PASS31cicli/max102.510ms e151/max97.826ms, budget63970e30 invariato | ripetere sul pacchetto composto finale |
-| Candidato precedente composto | c88b3614, Windows-All locale U19FinalWindows01 | FAIL2/16 (gates, Core); altri14PASS. Core1971PASS/11FAIL/1982; cleanup naturale e pubblicazione evidence PASS | FAIL conservato; nessun PASS trasferito al successore |
-| C88 prove mirate | fingerprint9ab866c4; geometria, Smoke, Load canonici | PASS U19FinalGeometry01; Smoke52/52 U19FinalSmoke01; Load11/11 U19FinalLoad01, queryMs196.5719 contro500 invariato | non è pacchetto finale o qualifica Win7 fisico |
-| Trasporto baseline corretto | componente3e4748b, composto71eafda; POST solo all'Admin configurato | Core/Data120/120 U19BffTransportTarget01; quattro gate prima falliti oraPASS; build net48/x86 eCloud1/1 U19BffCloud02 | suite completa sullo SHA finale |
-| Confine architetturale | c88 contattava Storage direttamente, respinto da4gate | il POS ora invia l'archivio al BFF esistente; target Storage solo server-side, hash/dimensione/lease controllati, niente allowlist client o indebolimento gate | E2E autenticato con Worker operativo di test |
-| Freeze legacy | regression U19CutoverCoverage01 FAIL riprodotto; 02 PASS dopo fix | copertura canonica verificata vale come drain dei soli legacy; audit incrementale originale invariato; journal/witness v2 incerti restano bloccanti | provare origine Admin nella modalità prevista |
-| Fixture report | c88 mancava schema baseline nelle fixture minime | schema20 canonico applicato senza ACK inventati; U19BaselineReports01 PASS10/10 | includere nella suite completa successore |
-| API e BFF Admin | privato33164d44, composto48093f3 | U19BffContract02: typecheckPASS, target40PASS, foundation1616PASS/7SKIP su1623; sourceStable b621fc93 | CI completa, browser e packaging sullo SHA pubblicato |
-| SQL pubblico v2 | bc6d061e, replay43044363336; migration141636 SHAba0992ab | PASS94file/5307assert +3concurrentcases, U19ComposedSql03; artifact13868405092 digesta20891af162ddef1ccc001b1bb508f4279e2bde780f536e6d79c8b70097bbada | tre race preesistenti non qualificano nuove race recovery |
-| FAIL SQL conservati | 63f69799 e9fbf9ae; replay43038705948/43041270226 | nuove fixture: policy indipendenti mancanti, negativo dopo cambio revisione, conteggio zero obsoleto dopo Apply. Guard finanziari invariati; successore bc6PASS | non sommare rerun o cancellare FAIL |
-| Baseline qualificata pubblicata | Windows6ce1f12 CI43023775479 eSecurity43023775383; Admin5895e17 CI43023787452/CF43023787441 | PASS; artifact Windows13860906046 digest155813f5, 8entry; Worker13856476824 digestee458ce8,58file; deploy SKIPPED e Worker non operativo | risultati precedenti distinti dalla coppia corrente |
-| Storico bilaterale completo | A→server→Admin già aperto→B→A senza eco; origine Admin; ACK perso/restart/correzione/Undo/revoca/conflitti | NOT_RUN come singola prova autenticata distribuita. I component test non la sostituiscono | completare harness con servizi reali isolati |
-| Consegna | installato2ad42ca invariato; profilo Minimondo e7originali conservati | pacchetto composto, Integrated/Final60 e consegna NOT_RUN; 200% invariato,100/125 USER_DEFERRED | Win7 fisico BLOCKED_TARGET; GetnetC MISSING |
+| Cassa precedente | d1b2bc3, pacchettoa07430ce/payload6b44ffe3; ASUS Integrated12 eFinal60 | PASS31cicli/max102.510ms e151/max97.826ms, budget63970e30 invariato | qualifica sul pacchetto finale composto |
+| Windows composto precedente | 791fc4f7, CI43050673848 eSecurity43050674075 | PASS16/16; U19Win791Remote01 verifica artifact13870814586 SHA256b6537e61/8entry, fingerprint5797937a; target396/396 incluso nel perimetro | non trasferire il PASS al successore |
+| Successore059 | CI43057322574, Security43057322848 | Windows-All FAIL15/16, Core e altri14passi PASS; fallisce solo Load. U19Win059RemoteFail01, artifact13874022646 SHA2565b2dbb24/8entry verificati | copertura del campionatore da chiarire |
+| Load059 | HIST_LOAD_50K, stesso workload e limiti | query283.8887ms contro500 PASS; max Dispatcher osservato13.8919ms; 393/394campioni e1drop nella prima fase analysis: gate Dispatcher FAIL. Nessuna causa host/UI dedotta | diagnostica limitata, zero tolleranze aggiunte |
+| Diagnostica Load | componente02f51b9, composto ca83a08 | U19LoadGap01 PASS11/11,18.8606s, fingerprint6285d981 sul WIP stabile prima del commit;83check puri PASS. Nuovi testimoni wait/memory/GC, senza cambiare clock, intervalli, priorità, soglie o workload | causa del vecchio drop UNRESOLVED; ripetere Windows-All successore |
+| API/BFF precedente | Admin3b675654, CI43059296486 eCF43059299287 | Verify, SQL e build PASS; U19Admin3b01 verifica58file, lock/config/treeeb1cd04e. Artifact13873217236 SHA2566477fc81. Entrambi i deploy SKIPPED | Worker impacchettato, servizio operativo non attestato |
+| SQL composizione | replay3b, artifact13872648476 SHA256e7232bb1 | PASS94file/5307assert +3race preesistenti; receipt verificata U19Admin3b01 | nuove race recovery NOT_RUN |
+| Prova autenticata01 | client059/Admind4f02e5, run43058834395 | SQL PASS; scenario FAIL initial_baseline/history_response_invalid, cleanup naturale. Artifact13874140882 SHA256508ae8cf, U19AuthenticatedRemote01 | FAIL conservato, nessun roundtrip PASS |
+| Prova autenticata02 | client413eb4d/Admin9c85b2c, run43062172147 | SQL PASS; baseline contextHTTP200; Storage.info realeHTTP400 con machine code404 e StorageApiError; clientFAIL come sopra. Artifact13875071522 SHA256c4ade33c verificato U19AuthenticatedRemote02 | correzione specifica del confine Storage |
+| Correzione Storage | Admin996cd7b, sorgenti stabili520c480a | helper riconosce soltanto SDK StorageApiError400/code404 oltre al404già previsto; generici400/auth/rete restano FAIL. U19AuthenticatedContract03 typecheckPASS,42targetPASS inclusi nei1618foundationPASS/7SKIP su1625 | E2E reale successore, CI e packaging propri |
+| Harness successore | client92c3517, schemaasus019-authenticated-history-v2; incluso c9a3355 | build10PASS0warning/error; baseline confrontata con economia originale e audit immutabile; implementati import duplicato, Undo con proprietario originale, correzione dopo Undo e confronto esatto identità/ticks/gross/fee/VAT/net. Il reader SQLite si chiude prima di Apply; stop supervisor atteso e limitato | esecuzione distribuita di questi casi NOT_RUN |
+| Storico bilaterale completo | A→server→Admin già aperto→B→A, origine Admin in writer mode prevista | roundtrip autenticato non ancora PASS; ACKperso/riavvio reale/pull prima ACK/revoca/conflitti e race recovery ancora aperti | completare servizi reali di test e casi residui |
+| Pacchetto e consegna | release05943057309469 in packaging all'ultima osservazione, Core PASS; QAbundle43057597754 | QA40file verificati artifact13872765644 SHA256ce6e92f8, U19Cart05901; nessuna nuova installazione. Integrated/Final60 finale NOT_RUN | pacchetto finale, binding, soaks, backup/rollback e consegna |
+| Vincoli esterni | installato2ad42ca, profilo Minimondo e7originali conservati | 200%/2880×1800 invariati;100/125 USER_DEFERRED; Win7fisico BLOCKED_TARGET; GetnetC MISSING | nessuna attestazione sostitutiva |
 
-Nessun DONE. Worker impacchettato, servizio operativo, CI, deploy e installazione
-restano gate separati. Backup SQLite completo locale; si trasferisce soltanto
-l'archivio selettivo. Nessuna mutazione reale, vendita nativa, stock o ricevuta
-commerciale aggiunta da questa continuazione.
+Il vecchio c88 Windows-All FAIL2/16 rimane verificato in U19WinC88RemoteFail01;
+SQL63f/9fb e fallimenti precedenti restano nella cronologia. Anche i FAIL DNS
+di Chromium (CIc351 e run43056918378) sono conservati; quest'ultima non ha
+eseguito lo scenario autenticato e fallisce anche l'export per evidence assente.
+La CI3b usa Ubuntu24.04 e il Chromium Playwright vincolato dal lockfile; il
+servizio E2E separato registrera versione/hash del Chrome alla fase browser, ancora NOT_RUN nelle due prove fallite.
+
+Il client trasferisce solo l'archivio selettivo al BFF configurato, con
+dimensione/hash/lease verificati; il backup completo rimane locale. Nessuna
+allowlist client per Storage, ricevuta fittizia, nuovo grant SDK o v1 fallback.
+Copertura baseline verificata e replica completa drenano i soli legacy senza
+riscriverne l'audit; journal/witness v2 incerti restano bloccanti.
+Nessun merge main, deploy, mutazione reale o DONE. Qualifica mobile e Win7
+fisico restano separate; il test Core/Data non attesta WPF o periferiche.
 <!-- ASUS019_COMPOSED_CURRENT_END -->
 
 <!-- ASUS019_CURRENT_START -->
