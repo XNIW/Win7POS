@@ -85,6 +85,16 @@ VALUES(@FlowId,@ShopId,@DeviceId,@StaffId,@LocalDatasetId,@RestoreLineageId,@Res
         public Task SealReviewAsync(string flow,string digest,CancellationToken ct)
         {HistoricalReplicaProtocol.DemandHash(digest);return Change(flow,"run_started","review_digest=@value",digest,ct);}
 
+        public async Task MarkAttentionAsync(string id,string reason,CancellationToken ct)
+        {
+            if(reason!="baseline_upload_rejected"&&reason!="baseline_job_failed"&&reason!="baseline_review_denied"&&reason!="baseline_unknown_outcome"&&reason!="baseline_context_changed")throw new ArgumentException(nameof(reason));
+            _demand();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();
+            await DemandGeneration(c,t,ct).ConfigureAwait(false);var f=ReadFlow(c,t,id);DemandFlow(c,t,f,false);
+            if(f.State=="needs_attention")return;if(f.State=="applied")throw new InvalidOperationException("history_baseline_phase_invalid");
+            c.Execute("UPDATE historical_baseline_flow SET state='needs_attention',reason_code=@reason WHERE flow_id=@id",new{id,reason},t);
+            _demand();ct.ThrowIfCancellationRequested();t.Commit();
+        }
+
         public async Task SaveReceiptAsync(string id,string json,CancellationToken ct)
         {
             _demand();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);using var t=c.BeginTransaction();

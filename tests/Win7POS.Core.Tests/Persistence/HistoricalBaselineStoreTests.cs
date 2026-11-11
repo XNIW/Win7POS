@@ -8,7 +8,7 @@ using Win7POS.Data.Online;
 namespace Win7POS.Core.Tests.Persistence;
 
 [TestClass]
-public sealed class HistoricalBaselineStoreTests
+public sealed partial class HistoricalBaselineStoreTests
 {
     const string Server="90000000-0000-4000-8000-000000003019",Staff="30000000-0000-4000-8000-000000003019";
     static OnlineSyncGeneration Generation(string? staff=null)=>new(Guid.NewGuid().ToString("D"),Guid.NewGuid().ToString("D"),

@@ -59,6 +59,12 @@ namespace Win7POS.Core.Online
         [DataMember(Name="review_token",EmitDefaultValue=false)] public string ReviewToken { get; set; }
         [DataMember(Name="witness_json",EmitDefaultValue=false)] public string WitnessJson { get; set; }
         [DataMember(Name="local_proof_json",EmitDefaultValue=false)] public string LocalProofJson { get; set; }
+        [DataMember(Name="upload_id",EmitDefaultValue=false)] public string UploadId { get; set; }
+        [DataMember(Name="run_id",EmitDefaultValue=false)] public string RunId { get; set; }
+        [DataMember(Name="file_name",EmitDefaultValue=false)] public string FileName { get; set; }
+        [DataMember(Name="sha256",EmitDefaultValue=false)] public string Sha256 { get; set; }
+        [DataMember(Name="byte_length",EmitDefaultValue=false)] public string ByteLength { get; set; }
+        [DataMember(Name="review_digest",EmitDefaultValue=false)] public string ReviewDigest { get; set; }
     }
     [DataContract]
     public sealed class HistoricalCloudResponse
@@ -98,6 +104,29 @@ namespace Win7POS.Core.Online
         [DataMember(Name="page_count")] public int PublicationPageCount { get; set; }
         [DataMember(Name="proof")] public HistoricalPublicationProof PublicationProof { get; set; }
         [DataMember(Name="receipt")] public HistoricalPublicationServerReceipt PublicationReceipt { get; set; }
+        [DataMember(Name="baseline")] public HistoricalBaselineContext Baseline { get; set; }
+        [DataMember(Name="upload_id")] public string UploadId { get; set; }
+        [DataMember(Name="object_key")] public string ObjectKey { get; set; }
+        [DataMember(Name="signed_url")] public string SignedUrl { get; set; }
+        [DataMember(Name="run_id")] public string RunId { get; set; }
+        [DataMember(Name="file_name")] public string FileName { get; set; }
+        [DataMember(Name="sha256")] public string Sha256 { get; set; }
+        [DataMember(Name="byte_length")] public string ByteLength { get; set; }
+        [DataMember(Name="review_digest")] public string ReviewDigest { get; set; }
+        [DataMember(Name="can_apply")] public bool? CanApply { get; set; }
+        [DataMember(Name="receipt_json")] public string BaselineReceiptJson { get; set; }
+    }
+    [DataContract]
+    public sealed class HistoricalBaselineContext
+    {
+        [DataMember(Name="state")] public string State { get; set; }
+        [DataMember(Name="dataset_id")] public string DatasetId { get; set; }
+        [DataMember(Name="writer_epoch")] public string WriterEpoch { get; set; }
+        [DataMember(Name="writer_authority")] public string WriterAuthority { get; set; }
+        [DataMember(Name="source_snapshot_id")] public string SourceSnapshotId { get; set; }
+        [DataMember(Name="baseline_revision")] public string BaselineRevision { get; set; }
+        [DataMember(Name="canonical_revision")] public string CanonicalRevision { get; set; }
+        [DataMember(Name="can_prepare")] public bool? CanPrepare { get; set; }
     }
     [DataContract]
     public sealed class HistoricalPublicationServerReceipt
