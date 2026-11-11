@@ -101,7 +101,25 @@ function Get-QaGateDiagnosticTemplates([string]$RepoRoot) {
                 $literal=$statement.Groups['text'].Value
                 if($literal -match '[`$]' -or $literal -notmatch '(?i)^(?:PASS\b|FAIL\b|OK\b|ERROR\b|=== RESULT)'){continue}
                 $status=if($literal -match '(?i)^(FAIL|ERROR)\b' -or $literal -match '(?i)RESULT.*FAIL'){'FAIL'}else{'PASS'}
-                $templates.Add(@{text=$literal;assertionId=('GATE_'+[IO.Path]::GetFileNameWithoutExtension($file)+'_L'+($i+1));status=$status})
+                $templates.Add(@{text=$literal;stem=[IO.Path]::GetFileNameWithoutExtension($file);assertionId=('GATE_'+[IO.Path]::GetFileNameWithoutExtension($file)+'_L'+($i+1));status=$status})
+            }
+            if([IO.Path]::GetExtension($file) -ceq '.ps1') {
+                $tokens=$null;$errors=$null
+                $ast=[Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
+                if($errors.Count){continue}
+                foreach($command in $ast.FindAll({param($node) $node -is [Management.Automation.Language.CommandAst]},$true)) {
+                    $name=$command.GetCommandName()
+                    if($name -cnotin @('Fail','Pass','Require-Text') -or $command.CommandElements.Count -lt 2){continue}
+                    $argument=$command.CommandElements[-1]
+                    if($argument -isnot [Management.Automation.Language.StringConstantExpressionAst] -and
+                       ($argument -isnot [Management.Automation.Language.ExpandableStringExpressionAst] -or $argument.NestedExpressions.Count)){continue}
+                    $literal=$argument.Value
+                    if([string]::IsNullOrWhiteSpace($literal) -or $literal.Length -gt 500 -or $literal -match '[\r\n]'){continue}
+                    $statuses=if($name -ceq 'Require-Text'){@('PASS','FAIL')}elseif($name -ceq 'Fail'){@('FAIL')}else{@('PASS')}
+                    foreach($status in $statuses) {
+                        $templates.Add(@{text=($status+': '+$literal);stem=[IO.Path]::GetFileNameWithoutExtension($file);assertionId=('GATE_'+[IO.Path]::GetFileNameWithoutExtension($file)+'_L'+$command.Extent.StartLineNumber);status=$status})
+                    }
+                }
             }
         }
     }
@@ -114,12 +132,19 @@ function ConvertFrom-QaGateTranscript {
     $info=[IO.FileInfo]::new([IO.Path]::GetFullPath($TranscriptPath))
     if(-not $info.Exists -or $info.Length -gt 16MB -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'qa_projection_transcript_invalid'}
     $templates=Get-QaGateDiagnosticTemplates $RepoRoot
-    $lookup=@{};foreach($template in $templates){if(-not $lookup.ContainsKey($template.text)){$lookup[$template.text]=$template}}
+    $lookup=@{};foreach($template in $templates){if(-not $lookup.ContainsKey($template.text)){$lookup[$template.text]=@()};$lookup[$template.text]+=$template}
     $events=[Collections.Generic.List[object]]::new();$withheld=0;$sequence=0
+    $failedGateStem=$null
     foreach($rawLine in [IO.File]::ReadLines($info.FullName)) {
         $line=$rawLine.Trim();if(-not $line){continue}
+        if($line -cmatch '^=== FAILED GATE: ([A-Za-z0-9_-]+)\.ps1(?: \[release\])? \(exit [0-9]+\) ===$'){$failedGateStem=$Matches[1];$sequence++;continue}
+        if($line -cmatch '^=== END FAILED GATE: [A-Za-z0-9_-]+\.ps1(?: \[release\])? ===$'){$failedGateStem=$null;$sequence++;continue}
         if(-not $lookup.ContainsKey($line)){$withheld++;$sequence++;continue}
-        $template=$lookup[$line]
+        $candidates=@($lookup[$line] | Where-Object {$null -eq $failedGateStem -or $_.stem -ceq $failedGateStem} | Sort-Object assertionId -Unique)
+        # Shared RESULT lines cannot identify their source without a failed-gate
+        # frame. Never attribute the first matching literal to an unrelated gate.
+        if($candidates.Count -ne 1){$withheld++;$sequence++;continue}
+        $template=$candidates[0]
         $events.Add([pscustomobject]@{sequence=$sequence++;stepId='gates';scenarioId=$null;assertionId=$template.assertionId;status=$template.status;expected=$true;actual=($template.status -eq 'PASS');checkpoint='assertion';code=$(if($template.status -eq 'FAIL'){'assertion_failed'}else{'none'});durationMs=0;diagnosticCompleteness='complete'})
     }
     if($withheld){foreach($event in $events){$event.diagnosticCompleteness='partial'}}
