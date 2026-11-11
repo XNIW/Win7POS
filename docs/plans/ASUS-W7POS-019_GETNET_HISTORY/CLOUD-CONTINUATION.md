@@ -1,7 +1,7 @@
 # ASUS019 — continuazione client cloud, Execution isolata
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
-## Composizione verificata — 20261111T200025Z, stessa ASUS-W7POS-019
+## Composizione verificata — 20261111T201629Z, stessa ASUS-W7POS-019
 
 Execution ACTIVE: cassa quotidiana e storico bilaterale. Tutti i file necessari
 autorizzati dall'utente. Qualifiche riferite agli SHA e agli artefatti seguenti;
@@ -12,16 +12,18 @@ documentazione in checkout separati, candidati delle run attive congelati.
 | Windows composto | 6cdaa2988030b3a140493d6239c8d5007603f55c; Windows-All43080480557, Security43080480554 | PASS16/16 e due job Security PASS; U19Win6cRemote01 verifica8entry, artifact13886737547 SHA2569de74b63, fingerprint6ea13878 | consegna e soaks propri |
 | Load composto | HIST_LOAD_50K, stesse soglie/carico | PASS11/11:571/571campioni,drop0,query391.7479ms/500,cold420.5537,maxDispatcher12.3842ms | non attribuisce la causa del vecchio gap059 |
 | Release esatta | 6c, Release43080678943; U19Release6c02/download-verification.json | PASS41file prodotto/110checksum; versione1.0.0-dev.6cdaa2988030, installer69c51811,payload0b88ee0f; development-unsigned, non installato | installazione/consegna separata |
-| Cassa ASUS sul pacchetto | QAartifact13884426672 SHA256da3147db,40file verificati; runner Invoke-Composed6cAsusQualification02.private.ps1 | RUNNING Integrated12 poi Final60, U19Cart6cI01/U19Cart6cF01; budget63970e30 invariato, nessuna build pesante concorrente | ricevute finali, nessun PASS anticipato |
+| Cassa ASUS sul pacchetto | QAartifact13884426672/da3147db,40file; Invoke-Composed6cAsusQualification02.private.ps1 | Integrated12PASS31cicli,focus29.410/scroll194.120ms,zero drop; U19Cart6c01/integrated-verified.private.json. Final60RUNNING da20:05:13Z, budget63970e30 invariato | risultato Final60 proprio, nessun PASS anticipato |
 | Cassa precedente | d1b2bc3,pacchettoa07430ce/payload6b44ffe3 | ASUS PASS31cicli/max102.510ms e151/max97.826ms | risultati storici, non trasferiti al nuovo pacchetto |
 | Windows predecessori | 622PASS16/16;0e CI43078277359 eRelease43078654263 | 0e FAIL13PASS/1FAILbuild/2NOT_RUN, U19Win0eRemoteFail01; causa due API moderne nel solo helper condiviso net48, fix84b3015 incluso6c; intera soluzione Release PASS con solo CS8892 preesistente | FAIL conservato, non sommato ai successori |
 | Baseline canonica | 17f7081 e5512319, inclusi6c | RED conservati eGREEN74/74 (include51): prova applied originale dopo cambio epoca; delta vuoto avanzato richiede snapshot tramite fallback esistente, schema20/trigger invariati. WPFnet48x86 e dialog standards PASS | E2E completo ancora aperto |
 | Admin pubblico precedente | 8ccb5758; CI43066464128,CF43066464229 | Verify/SQL/build PASS, deploySKIPPED; U19Admin8cc01 verifica58file/tree/lock/config, Worker13876372298/7a032d48 e replay13876623226/14fb3bc5 | Worker impacchettato, servizio operativo non attestato |
-| Admin candidato nuovo | b61ff823db68f37689a997604edda820256bc7f5, PR151 | CI43091893821 eCF43091893786 RUNNING; unico delta runtime da8cc: scadenza sessione staff; SQL/lock/dipendenze invariati | propri artifact/build/SQL necessari |
+| Admin candidato nuovo | b61ff823db68f37689a997604edda820256bc7f5, PR151; CI43091893821,CF43091893786 | Verify/SQL/build PASS, deploySKIPPED. U19AdminB6101 verifica58file/tree05d3cb0d/lock/config; Worker13889521659/5dd48490 e replay13889457956/8b33dab0,94file5307assert+3racePASS | Worker operativo e percorso finanziario non attestati |
 | Sessione web reale | Remote10,run43085382627,Admin7d371d9/client6c | FAIL403 history_access_denied; cookie presente, propria sessione revocata, credenziale valida e permesso presente. U19AuthenticatedRemote10 artifact13887037812/d9db3c7e; cleanup naturale | login12h oltre credenziale+1h riprodotto e corretto sotto |
 | Regressione scadenza | auth b61ff; U19StaffExpiryContract01 ecommitted-binding.private.json | RED2FAIL/4PASS, GREEN6/6: scadenza min(12h,credenziale), guardia runtime invariata; scaduto negato, sessione troppo lunga ancora negata. TypecheckPASS,48targetPASS,1624foundationPASS/7SKIP; sola rinomina loader test per ESLint poi unit6/6 e lint PASS | conferma browser/API reale nel successore |
 | Recovery prima prova | Remote11,run43085389040,Admin9f50f08/client938305e | FAIL prima del witness: adattatore QA cercava receipt_json nella risposta Apply già ricevuta. U19AuthenticatedRemote11 artifact13888091004/194184e4; tre client PG rollback/uscita naturale0 | b61ff cattura testo originale dal DB nella stessa transazione col lock, nessuna ricevuta ricostruita |
-| Due nuove gare Recovery + browser | Adminb61ff/client938305e,run43091251050 | RUNNING su servizi reali isolati: prima Apply/recovery e due recovery, poi browser/API/Worker. Tre gare canoniche restano separate; sei minuti Core e timeout SQL invariati | ricevute proprie, nessun roundtrip completo PASS |
+| Recovery Remote12 | Adminb61ff/client938305e,run43091251050; U19AuthenticatedRemote12 artifact13889193349/923f8b7b | overallFAIL; prima gara Apply/recovery PASS con advisory lock osservato e ricevuta originale. Seconda raggiunge review finale dopo due recovery, FAIL BASELINE_REVIEW_REJECTED; tre PG rollback/uscita0. Il test non ripristinava SET LOCAL dopo COMMIT | correggere soltanto contesto QA e attestarlo; browser non raggiunto |
+| Successore Recovery | Adminb6304fe/client938305e,run43094416569 | RUNNING; stesso ruolo gateway,timeout8s/lock6s/search_path esplicitamente ripristinati e osservati dopo ogni COMMIT, SQLSTATE chiuso; digest completo righe economiche prima/dopo. src/SQL/lock/config uguali b61 | due gare nuove separate dalle tre canoniche, poi browser reale |
+| Controllo browser indipendente | Adminc1b5fc1/client6c,run43094421902 | RUNNING con harness browser preesistente; prodotto/SQL/config esattamente b61. Src prodotto6c e938 identici; nessuna esclusione nascosta dei casi nella prova completa | confermare sessione/API e scenari finanziari senza dipendere dal test Recovery |
 | Scenari finanziari distribuiti | harness Core/Data+Next+Postgres+Storage+Worker+browser, solo fixture proprie | implementati ACK perso dopo ricevuta HTTP, pull prima ACK, nuovo processo sugli stessi DB con capability originale, duplicato, Undo/correzione, origineAdmin in autorita web, revoca/conflitto; percorso completo non qualificato | confrontare7campi economici eassenza di effetti nativi/eco |
 | Vincoli esterni | installato2ad42ca,ledger Minimondo e7originali conservati | scala200%/2880x1800 invariata;100/125USER_DEFERRED;Win7fisicoBLOCKED_TARGET;GetnetCMISSING;nessun Apply reale nuovo | prova fisica e consegna non sostituite da CI |
 
@@ -33,7 +35,7 @@ sono verificati per digest, contenuto e binding, non soltanto per esito del job.
 Il solo archivio selettivo passa dal BFF; backup completo locale, nessun segreto
 nel browser/evidence. Core/Data con servizi reali non attesta WPF, periferiche o
 Win7fisico. Nessun merge main, deploy, installazione o DONE. Checkpoint privato
-195409Z aggiornato; PR135/151 eTASK146 conservano il proprio storico integrale.
+201522Z aggiornato; PR135/151 eTASK146 conservano il proprio storico integrale.
 <!-- ASUS019_COMPOSED_CURRENT_END -->
 
 <details>
