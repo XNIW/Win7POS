@@ -124,6 +124,12 @@ $trustedTarget=[pscustomobject]@{ measurementTargetProfile='win7-sp1'; measureme
 $null = Assert-HistoricalSalesMeasurement $trustedWin7 $trustedTarget
 Assert-MeasurementTest $true 'A Win7 profile requires a matching independent target identity'
 
+$diagnosticValid = New-HistoricalSalesMeasurementFixture
+$diagnosticValid.metrics | Add-Member -NotePropertyName samplerGapCount -NotePropertyValue 0
+$diagnosticValid.metrics | Add-Member -NotePropertyName samplerGapFirstWaitMs -NotePropertyValue 0.0
+$null = Assert-HistoricalSalesMeasurement $diagnosticValid
+Assert-MeasurementTest $true 'Bounded sampler diagnostics preserve the original measurement contract'
+
 # The producer counters are deliberately made self-consistent with the surviving
 # samples. Only reconstruction from the fixed start/end catches these prefixes.
 Must-RejectMeasurement 'truncated beginning with self-consistent counters' {
@@ -166,7 +172,11 @@ Must-RejectMeasurement 'pending completion field omitted by serializer' {
     $f.metrics.completedProbes=41; $f.metrics.pendingProbes=1
 }
 Must-RejectMeasurement 'grid gap' { param($f) $f.samples[3].dueTicks+=10 }
-Must-RejectMeasurement 'explicit dispatcher drop' { param($f) $f.samples[3].dropped=1; $f.metrics.dropped=1 }
+Must-RejectMeasurement 'explicit dispatcher drop' {
+    param($f) $f.samples[3].dropped=1; $f.metrics.dropped=1
+    $f.metrics | Add-Member -NotePropertyName samplerGapCount -NotePropertyValue 0
+    $f.metrics | Add-Member -NotePropertyName samplerGapFirstWaitMs -NotePropertyValue 0.0
+}
 Must-RejectMeasurement 'explicit suspend' { param($f) $f.samples[3].suspended=1; $f.metrics.suspended=1 }
 Must-RejectMeasurement 'explicit memory suspend' { param($f) $f.memorySamples[3].suspended=1; $f.metrics.suspended=1 }
 Must-RejectMeasurement 'overflow' { param($f) $f.metrics.overflow=1 }

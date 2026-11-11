@@ -94,6 +94,7 @@ function Get-HistoryMeasurementPhases {
 
 function Assert-HistoryMeasurementStructure($Receipt) {
     $metricNames=@('analysisMs','planMs','hashingMs','dedupMs','serviceMs','admissionMs','applyMs','backupMs','backupTransitionMs','mutationMs','commitMs','applyReturnMs','rollbackMs','rollbackBackupMs','queryMs','queryColdMs','ownershipColdMs','analysisCancelMs','fixtureSetupMs','sourceGenerationMs','nativeSeedMs','privateBytesBefore','privateBytesAfter','sampledPeakPrivateBytes','dispatcherP95Ms','dispatcherMaximumMs','cancelMs','expectedSamples','observedSamples','expectedMemorySamples','observedMemorySamples','completedProbes','pendingProbes','dropped','memoryDropped','overflow','suspended','stopwatchFrequency','sampleIntervalMs','memoryIntervalMs')
+    $metricNames+=@('samplerGapCount','samplerGapFirstSequence','samplerGapFirstWaitMs','samplerGapFirstRequestedMs','samplerGapFirstMemoryMs','samplerGapFirstObservationMs','samplerGapFirstWaitSignaled','samplerGapFirstGc0','samplerGapFirstGc1','samplerGapFirstGc2')
     if ($Receipt.PSObject.Properties.Name -contains 'metrics') {
         Assert-HistoryKeys $Receipt.metrics $metricNames
         foreach($field in $Receipt.metrics.PSObject.Properties.Name){ Assert-HistoryNumber $Receipt.metrics.$field -Integral:($field -notlike '*Ms') }
