@@ -38,6 +38,8 @@ namespace Win7POS.Data.Import
                 RestoreLineageId=HistoricalPublicationDraft.NormalizeLineage(state.RestoreLineageId)},ct).ConfigureAwait(false)).Baseline;
             DemandContext(context);var epoch=HistoricalReplicaProtocol.Integer(context.WriterEpoch);
             var flow=await _store.ReadAsync(context.DatasetId,epoch,ct).ConfigureAwait(false);
+            if(flow==null&&context.State=="verified")
+                flow=await _store.ReadAppliedContextAsync(context.DatasetId,epoch,context.SourceSnapshotId,HistoricalReplicaProtocol.Integer(context.BaselineRevision),HistoricalReplicaProtocol.Integer(context.CanonicalRevision),ct).ConfigureAwait(false);
             if(flow==null)
             {
                 if(context.State=="verified")throw new HistoricalCloudRequestException("history_baseline_intent_missing",false,false);
