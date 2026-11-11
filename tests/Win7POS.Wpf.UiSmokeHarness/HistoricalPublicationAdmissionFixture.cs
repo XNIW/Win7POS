@@ -32,7 +32,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private readonly Dictionary<string,Prepared> _operations=new Dictionary<string,Prepared>(StringComparer.Ordinal);
         private sealed class Prepared
         {
-            internal string Operation,Kind,LocalDataset,Restore,Lineage,Epoch,Request,Content;
+            internal string Operation,Kind,LocalDataset,Restore,Lineage,Epoch,Request,Content,Nonce;
+            internal readonly string ReviewToken=Guid.NewGuid().ToString("D");internal int ReviewNext=1;
             internal int Pages;internal readonly List<string> Digests=new List<string>();
             internal readonly Decision Totals=new Decision();internal string UndoBatch;
         }
@@ -70,16 +71,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
             HistoricalReplicaProtocol.DemandId(payload.OperationId);HistoricalReplicaProtocol.DemandHash(payload.ContentDigest);
             if(operation=="local_prepare")
             {
+                HistoricalReplicaProtocol.DemandId(payload.LocalNonce);
                 if(rejection=="v1_only")throw new InvalidOperationException("qa_history_v2_not_available");
                 if(payload.ProtocolVersion!=2||payload.WriterEpoch!="1"||payload.PageCount<1||payload.PageCount>20000||
                     (payload.Kind!="Apply"&&payload.Kind!="Undo"))throw new InvalidOperationException("qa_history_publication_prepare_invalid");
                 if(!_operations.TryGetValue(payload.OperationId,out var prepared))
                 {
                     prepared=new Prepared{Operation=payload.OperationId,Kind=payload.Kind,LocalDataset=payload.LocalDatasetId,Restore=payload.RestoreEpoch,
-                        Lineage=payload.RestoreLineageId,Epoch=payload.WriterEpoch,Request=payload.RequestFingerprint,Content=payload.ContentDigest,Pages=payload.PageCount.Value};
+                        Lineage=payload.RestoreLineageId,Epoch=payload.WriterEpoch,Request=payload.RequestFingerprint,Content=payload.ContentDigest,Pages=payload.PageCount.Value,Nonce=payload.LocalNonce};
                     _operations.Add(payload.OperationId,prepared);
                 }
-                if(prepared.Content!=payload.ContentDigest||prepared.LocalDataset!=payload.LocalDatasetId||prepared.Lineage!=payload.RestoreLineageId)
+                if(prepared.Content!=payload.ContentDigest||prepared.LocalDataset!=payload.LocalDatasetId||prepared.Lineage!=payload.RestoreLineageId||prepared.Nonce!=payload.LocalNonce)
                     throw new InvalidOperationException("qa_history_publication_identity_changed");
                 return Progress(prepared,true);
             }
@@ -107,7 +109,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 return Progress(p,false);
             }
-            if(operation!="local_authorize"||p.Digests.Count!=p.Pages||Hash(Encoding.ASCII.GetBytes(string.Join("\n",p.Digests)+"\n"))!=p.Content)
+            var reviewPages=p.Kind=="Undo"?1:p.Pages;
+            if(operation=="local_review")
+            {
+                if(p.Digests.Count!=p.Pages||payload.Ordinal<1||payload.Ordinal>reviewPages||payload.Ordinal>p.ReviewNext||
+                    (payload.ReviewToken!=null&&payload.ReviewToken!=p.ReviewToken)||(payload.ReviewToken==null&&payload.Ordinal!=1))
+                    throw new InvalidOperationException("qa_history_review_invalid");
+                if(payload.Ordinal==p.ReviewNext)p.ReviewNext++;
+                return new HistoricalCloudResult{State=p.ReviewNext>reviewPages?"reviewed":"reviewing",OperationId=p.Operation,
+                    ContentDigest=p.Content,ReviewToken=p.ReviewToken,NextOrdinal=p.ReviewNext};
+            }
+            if(operation!="local_authorize"||payload.ReviewToken!=p.ReviewToken||p.ReviewNext!=reviewPages+1||p.Digests.Count!=p.Pages||Hash(Encoding.ASCII.GetBytes(string.Join("\n",p.Digests)+"\n"))!=p.Content)
                 throw new InvalidOperationException("qa_history_publication_not_complete");
             Authorizations++;
             var id=Guid.NewGuid().ToString("D");
@@ -149,6 +161,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             var fields=new Dictionary<string,object>{{"state",result.State},{"operation_id",result.OperationId},{"content_digest",result.ContentDigest}};
             fields.Add("next_ordinal",result.NextOrdinal);if(operation=="local_prepare")fields.Add("page_count",result.PublicationPageCount);
+            if(operation=="local_review")fields.Add("review_token",result.ReviewToken);
             using var stream=new MemoryStream();new DataContractJsonSerializer(typeof(Dictionary<string,object>),new DataContractJsonSerializerSettings{
                 UseSimpleDictionaryFormat=true}).WriteObject(stream,fields);
             return Encoding.UTF8.GetString(stream.ToArray());
