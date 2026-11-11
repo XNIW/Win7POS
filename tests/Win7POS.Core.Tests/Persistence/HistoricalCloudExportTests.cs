@@ -173,11 +173,13 @@ public sealed class HistoricalCloudExportTests
         internal string Archive => Path.Combine(Output, "synthetic.w7history.zip");
         internal string Backup => Path.Combine(Output, "verified.db");
         internal OwnedSqliteTestFile Db = null!; internal HistoricalSalesImportService Service = null!; internal string OriginalReceipt = "";
-        internal static async Task<Fixture> CreateAsync(bool largeIds = false)
+        internal string BoundDevice = Device; internal bool KeepFiles;
+        internal static async Task<Fixture> CreateAsync(bool largeIds = false,string? deviceId = null,bool seedLegacy = true)
         {
-            var f = new Fixture(); Directory.CreateDirectory(Path.Combine(f.Root, "profile")); Directory.CreateDirectory(f.Output);
+            var f = new Fixture{BoundDevice=deviceId??Device}; Directory.CreateDirectory(Path.Combine(f.Root, "profile")); Directory.CreateDirectory(f.Output);
             f.Db = OwnedSqliteTestFile.Create(Path.Combine(f.Root, "profile", "fixture.db")); DbInitializer.EnsureCreated(f.Db.Options);
             f.Service = new HistoricalSalesImportService(f.Db.Factory, () => f.Db.Factory.AuthorityStamp);
+            if(!seedLegacy)return f;
             if (largeIds) { using var c = f.Db.Factory.Open(); c.Execute("INSERT INTO sqlite_sequence(name,seq) VALUES('historical_transactions',9007199254740992)"); }
             var dir = Path.Combine(AppContext.BaseDirectory, "fixtures", "historical-sales-getnet-v1");
             var analysis = new HistoricalSalesImportAnalyzer().Analyze(new[] { Path.Combine(dir, "synthetic-legacy.xlsx"), Path.Combine(dir, "synthetic-modern.xlsx") }, new HistoricalSalesImportOptions {
@@ -190,12 +192,13 @@ public sealed class HistoricalCloudExportTests
             using var read = f.Db.Factory.Open(); f.OriginalReceipt = read.ExecuteScalar<string>("SELECT receipt_json FROM historical_import_operation WHERE operation_id=@op", new { op })!;
             return f;
         }
-        internal HistoricalImportAuthorizationCommitGuard ImportGuard(HistoricalImportOperationKind kind, string op, string fingerprint, string dataset) => new(kind, op, fingerprint, Shop, "SYNTHETIC", Device, 1, dataset, 0, 1, "synthetic-generation", "synthetic-staff", 1, () => { }, (_, action) => action());
-        internal async Task<HistoricalCloudExportGuard> Guard() { var state = await Service.ReadDatasetAsync(CancellationToken.None); return new(Shop, Device, state.DatasetId, state.DataRevision, 0, () => { }); }
+        internal HistoricalImportAuthorizationCommitGuard ImportGuard(HistoricalImportOperationKind kind, string op, string fingerprint, string dataset) => new(kind, op, fingerprint, Shop, "SYNTHETIC", BoundDevice, 1, dataset, 0, 1, "synthetic-generation", "synthetic-staff", 1, () => { }, (_, action) => action());
+        internal async Task<HistoricalCloudExportGuard> Guard() { var state = await Service.ReadDatasetAsync(CancellationToken.None); return new(Shop, BoundDevice, state.DatasetId, state.DataRevision, 0, () => { }); }
         internal string ReadFacts() { using var c = Db.Factory.Open(); return string.Join("|", c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM local_stock_movements"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation"), c.ExecuteScalar<long>("SELECT COALESCE(SUM(signed_amount_clp),0) FROM historical_transactions WHERE is_active=1")); }
         public void Dispose()
         {
             Db.Dispose();
+            if(KeepFiles)return; // External service harness retains only its newly created synthetic roots.
             var target = Path.GetFullPath(Root);
             var allowed = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             if (!target.StartsWith(allowed, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(target).StartsWith("W7HC.", StringComparison.Ordinal))

@@ -1,0 +1,167 @@
+using System.Globalization;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Xml.Linq;
+using Dapper;
+using Win7POS.Core.Import;
+using Win7POS.Core.Online;
+using Win7POS.Data.Import;
+using Win7POS.Data.Online;
+
+namespace Win7POS.Core.Tests.Persistence;
+
+// Test-only console entry: build the existing test assembly with OutputType=Exe
+// and StartupObject set to this class. Ordinary MSTest discovery adds no skip.
+// Uses the real Core/Data client, supervisor, HTTP, export, ledger and replica.
+// Local actor composition is synthetic; this does not attest WPF/Win7 hardware.
+internal static class AuthenticatedHistoryServiceHarness
+{
+    sealed class Actor
+    {
+        public string deviceId{get;set;}="";public string sessionId{get;set;}="";
+        public string deviceToken{get;set;}="";public string sessionToken{get;set;}="";
+    }
+    sealed class Scope
+    {
+        public string schema{get;set;}="";public string nonce{get;set;}="";public string endpoint{get;set;}="";
+        public string clientSha{get;set;}="";public string shopId{get;set;}="";public string staffId{get;set;}="";
+        public int credentialVersion{get;set;}public Actor actorA{get;set;}=new();public Actor actorB{get;set;}=new();
+    }
+    sealed class Fact
+    {
+        public string Namespace{get;set;}="";public string Id{get;set;}="";public string Ticks{get;set;}="";public string Gross{get;set;}="";
+        internal string Key=>Namespace+"|"+Id+"|"+Ticks+"|"+Gross;
+    }
+    sealed class Binding{public string Scope{get;set;}="";public string Id{get;set;}="";public string Evidence{get;set;}="";}
+    static string _phase="preflight",_directory="",_lastCode="";static Scope _scope=new();
+    static readonly JsonSerializerOptions Json=new(){PropertyNameCaseInsensitive=false};
+    static void Demand(bool condition,string code){if(!condition)throw new InvalidOperationException(code);}
+    public static async Task<int> Main(string[] args)
+    {
+        try
+        {
+            Demand(args.Length==1&&Path.IsPathFullyQualified(args[0]),"history_test_context_required");
+            _directory=Path.GetDirectoryName(Path.GetFullPath(args[0]))!;
+            Win7POS.Data.PosDatabasePathIdentity.RejectReparseComponents(args[0]);
+            _scope=JsonSerializer.Deserialize<Scope>(await File.ReadAllTextAsync(args[0]),Json)??throw new InvalidDataException();
+            Demand(_scope.schema=="asus019-authenticated-history-v1"&&Guid.TryParseExact(_scope.nonce,"N",out _)&&_scope.shopId==HistoricalCloudExportTests.Fixture.Shop,"history_test_scope_invalid");
+            var endpoint=new Uri(_scope.endpoint);Demand(endpoint.IsLoopback&&endpoint.Scheme=="http"&&endpoint.UserInfo==""&&endpoint.Query==""&&endpoint.Fragment==""&&endpoint.AbsolutePath=="/","history_test_loopback_required");
+            HistoricalReplicaProtocol.DemandId(_scope.staffId);HistoricalReplicaProtocol.DemandId(_scope.actorA.deviceId);HistoricalReplicaProtocol.DemandId(_scope.actorB.deviceId);
+            Demand(_scope.actorA.deviceId!=_scope.actorB.deviceId&&_scope.credentialVersion>0&&System.Text.RegularExpressions.Regex.IsMatch(_scope.clientSha,"^[0-9a-f]{40}$"),"history_test_scope_invalid");
+            using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(4));var ct=deadline.Token;
+            using var a=await Session.Create(_scope.actorA,true);using var b=await Session.Create(_scope.actorB,false);
+            _phase="initial_baseline";await a.Until(a.HasBaseline,ct);await b.Until(b.HasBaseline,ct);await a.Turn(ct);
+            var before=a.Facts();Demand(before.Length>0,"history_test_baseline_empty");Same(before,b.Facts());a.NoNative();b.NoNative();
+            var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
+            var state=await a.Fixture.Service.ReadDatasetAsync(ct);using var c=a.Fixture.Db.Factory.Open();
+            var assignments=analysis.AcceptedTransactions.Select(t=>t.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select(group=>{
+                var binding=c.QuerySingle<Binding>("SELECT scope_id Scope,id Id,evidence_reference Evidence FROM historical_merchant_binding WHERE shop_id=@shop AND alias_key=@alias",new{shop=_scope.shopId,alias=group.Key});
+                return new HistoricalMerchantAssignment(group.First(),binding.Scope,binding.Id,binding.Evidence);
+            }).ToArray();
+            var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,state.DatasetId,state.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
+            var expected=analysis.AcceptedTransactions.Where(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19).Select(t=>new Fact{Namespace=t.ExternalNamespace,Id=t.ExternalId,Ticks=t.BusinessDateTime!.Value.Ticks.ToString(CultureInfo.InvariantCulture),Gross=t.GrossClp.ToString(CultureInfo.InvariantCulture)}).ToArray();
+            Demand(expected.Length>0,"history_test_new_source_missing");
+            _phase="source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,baselineCount=before.Length,sourceSha=Hash(await File.ReadAllBytesAsync(source)),expected},ct);
+            await WaitSignal("allow_local_apply",ct);
+            _phase="local_apply";var authority=await a.Request("authority",new(),ct);
+            using var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct);
+            var admission=await new HistoricalPublicationPreparer(a.Fixture.Db.Factory,a.Demand,a.Request).PrepareAsync(draft,authority,ct);
+            var live=new HistoricalLocalWriteGrant(Guid.Parse(plan.OperationId).ToString("D"),authority.WriterEpoch,admission.RemainingMilliseconds,
+                admission.GrantRequestElapsedMilliseconds,a.Demand,clock:admission.ReadMonotonicMilliseconds,frequency:1000,publicationProof:admission.Proof,requestStartedTimestamp:admission.MonotonicRequestStartedMilliseconds);
+            var guard=new HistoricalImportAuthorizationCommitGuard(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,_scope.shopId,"SYNTHETIC",
+                a.Generation.ShopDeviceId,1,plan.DatasetId,0,1,a.Generation.Fingerprint,a.Generation.StaffId,a.Generation.StaffCredentialVersion,a.Demand,(_,action)=>{a.Demand();action();a.Demand();});
+            guard.AttachPublicationGrant(live);
+            var receipt=await a.Fixture.Service.ApplyAsync(plan,guard,Path.Combine(a.Fixture.Output,"new-apply.db"),ct,publicationDraft:draft,publicationProof:admission.Proof);
+            Demand(receipt.InsertedCount==expected.Length,"history_test_local_count_mismatch");
+            _phase="published";
+            await a.Until(async()=>{var status=await new HistoricalPublicationOutbox(a.Fixture.Db.Factory).ReadStatusAsync(plan.OperationId,_scope.shopId,ct);return status?.Status=="synchronized";},ct);
+            var wanted=before.Concat(expected).OrderBy(x=>x.Key,StringComparer.Ordinal).ToArray();
+            await b.Until(()=>Task.FromResult(Equal(wanted,b.Facts())),ct);await a.Until(()=>Task.FromResult(Equal(wanted,a.Facts())),ct);
+            a.NoNative();b.NoNative();Same(a.Facts(),b.Facts());
+            await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_CORE_DATA_ROUNDTRIP",count=wanted.Length,facts=wanted,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",wanted.Select(x=>x.Key)))),newIds=expected.Select(x=>x.Id)},ct);
+            await WaitSignal("admin_observed",ct);_phase="complete";Console.WriteLine("authenticated_history_core_data_pass");return 0;
+        }
+        catch(Exception e)
+        {
+            if(_directory!="")await SaveState(new{phase=_phase,nonce=_scope.nonce,status="FAIL",exception=e.GetType().Name,code=ClosedCode(e.Message),lastCode=ClosedCode(_lastCode)},default);
+            Console.Error.WriteLine("authenticated_history_client_failed");return 1;
+        }
+    }
+    static string ClosedCode(string? value)=>value!=null&&System.Text.RegularExpressions.Regex.IsMatch(value,"^(?:history|historical)_[a-z_]+$")?value:"history_test_failed";
+    static async Task SaveState(object value,CancellationToken ct)
+    {
+        var target=Path.Combine(_directory,"client-state.private.json");var temporary=target+"."+Guid.NewGuid().ToString("N");
+        await File.WriteAllTextAsync(temporary,JsonSerializer.Serialize(value),ct);File.Move(temporary,target,true);
+    }
+    static async Task WaitSignal(string phase,CancellationToken ct)
+    {
+        var clock=System.Diagnostics.Stopwatch.StartNew();var file=Path.Combine(_directory,"client-control.private.json");
+        while(clock.Elapsed<TimeSpan.FromSeconds(60))
+        {
+            ct.ThrowIfCancellationRequested();if(File.Exists(file)){using var json=JsonDocument.Parse(await File.ReadAllTextAsync(file,ct));if(json.RootElement.GetProperty("nonce").GetString()==_scope.nonce&&json.RootElement.GetProperty("phase").GetString()==phase)return;}
+            await Task.Delay(100,ct);
+        }
+        throw new InvalidOperationException("history_test_browser_signal_timeout");
+    }
+    static string NewSource(HistoricalCloudExportTests.Fixture f)
+    {
+        var original=Path.Combine(AppContext.BaseDirectory,"fixtures","historical-sales-getnet-v1","synthetic-legacy.xlsx");
+        var analyzed=new HistoricalSalesImportAnalyzer().Analyze(new[]{original},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
+        var old=analyzed.AcceptedTransactions[0].ExternalId;var id="8"+DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture);
+        var target=Path.Combine(f.Output,"new-legacy.xlsx");using var input=ZipFile.OpenRead(original);using var output=ZipFile.Open(target,ZipArchiveMode.Create);var changed=0;
+        foreach(var entry in input.Entries)
+        {
+            var next=output.CreateEntry(entry.FullName,CompressionLevel.Optimal);using var read=entry.Open();using var write=next.Open();
+            if(entry.FullName.StartsWith("xl/",StringComparison.Ordinal)&&entry.FullName.EndsWith(".xml",StringComparison.Ordinal))
+            {
+                var xml=XDocument.Load(read);foreach(var value in xml.Descendants().Where(x=>x.Name.LocalName=="t"||x.Name.LocalName=="v"))if(value.Value==old){value.Value=id;changed++;}xml.Save(write);
+            }else read.CopyTo(write);
+        }
+        Demand(changed>0,"history_test_source_mutation_missing");return target;
+    }
+    static string Hash(byte[] bytes)=>Convert.ToHexStringLower(SHA256.HashData(bytes));
+    static bool Equal(Fact[] a,Fact[] b)=>a.Select(x=>x.Key).OrderBy(x=>x,StringComparer.Ordinal).SequenceEqual(b.Select(x=>x.Key).OrderBy(x=>x,StringComparer.Ordinal));
+    static void Same(Fact[] a,Fact[] b)=>Demand(Equal(a,b),"history_test_replica_mismatch");
+    sealed class Session:IDisposable
+    {
+        internal HistoricalCloudExportTests.Fixture Fixture=null!;internal OnlineSyncGeneration Generation=null!;
+        PosAdminWebClient _client=null!;OnlineSyncSupervisor _supervisor=null!;Actor _actor=new();bool _active=true;string _server="";long _epoch;
+        internal static async Task<Session> Create(Actor actor,bool legacy)
+        {
+            var s=new Session{_actor=actor};s.Fixture=await HistoricalCloudExportTests.Fixture.CreateAsync(deviceId:actor.deviceId,seedLegacy:legacy);s.Fixture.KeepFiles=true;
+            s.Generation=new OnlineSyncGeneration(Guid.NewGuid().ToString("D"),actor.sessionId,actor.deviceId,_scope.shopId,"synthetic-service-harness",_scope.staffId,_scope.credentialVersion);
+            await new OnlineSyncGenerationRepository(s.Fixture.Db.Factory).ActivateAndRecoverAsync(s.Generation,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            var options=new PosAdminWebOptions(new Uri(_scope.endpoint));s._client=new PosAdminWebClient(options);
+            var root=Path.Combine(Path.GetTempPath(),"s-"+Guid.NewGuid().ToString("N"));
+            var sync=new PosHistoricalCloudSyncService(s.Fixture.Db.Factory,async(context,state,ct)=>{
+                s.Demand();AuthenticatedHistoryServiceHarness.Demand(context.State=="missing"&&context.CanPrepare==true,"history_test_prepare_denied");
+                var guard=new HistoricalCloudExportGuard(_scope.shopId,actor.deviceId,state.DatasetId,state.DataRevision,0,s.Demand);
+                var receipt=await new HistoricalBaselineSource(s.Fixture.Db.Factory,root).PrepareAsync(guard,Guid.Parse(state.RestoreLineageId).ToString("D"),ct);
+                return new HistoricalBaselinePreparation(receipt,guard);
+            });
+            s._supervisor=new OnlineSyncSupervisor(s.Generation,(context,trigger,ct)=>sync.SynchronizeAsync(options,context,_scope.clientSha,()=>s._active,ct),
+                generation=>new OnlineSyncGenerationRepository(s.Fixture.Db.Factory).IsCurrentAndActiveAsync(generation),
+                (_,_)=>{s._active=false;return Task.CompletedTask;},credentialProvider:_=>Task.FromResult(new OnlineSyncRequestCredentials(s.Generation,actor.deviceToken,actor.sessionToken,"synthetic-service-harness")));
+            var authority=await s.Request("authority",new(),default);s._server=authority.DatasetId;s._epoch=HistoricalReplicaProtocol.Integer(authority.WriterEpoch);return s;
+        }
+        internal void Demand()=>AuthenticatedHistoryServiceHarness.Demand(_active,"history_test_generation_stopped");
+        internal async Task<HistoricalCloudResult> Request(string operation,HistoricalCloudPayload payload,CancellationToken ct)
+        {
+            Demand();var result=await _client.HistoricalCloudAsync(new HistoricalCloudRequest{DeviceId=_actor.deviceId,SessionId=_actor.sessionId,DeviceToken=_actor.deviceToken,SessionToken=_actor.sessionToken,Operation=operation,Payload=payload},ct);
+            _lastCode=result.Code;
+            AuthenticatedHistoryServiceHarness.Demand(result.Success&&result.Value?.Ok==true&&result.Value.ShopId==_scope.shopId&&result.Value.DeviceId==_actor.deviceId&&result.Value.SessionId==_actor.sessionId,"history_test_http_request_rejected");return result.Value!.Result;
+        }
+        internal async Task<bool> HasBaseline()
+        {
+            var f=await new HistoricalBaselineStore(Fixture.Db.Factory,Generation,Demand).ReadAsync(_server,_epoch,default);if(f?.State!="applied")return false;
+            using var c=Fixture.Db.Factory.Open();return c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_baseline_read_mode WHERE flow_id=@FlowId",f)==1;
+        }
+        internal async Task Turn(CancellationToken ct){var result=await _supervisor.TriggerAsync(OnlineSyncLane.HistoricalPayments,OnlineSyncLaneTrigger.Manual,ct);_lastCode=result.Code;AuthenticatedHistoryServiceHarness.Demand(result.Success,"history_test_supervisor_turn_failed");}
+        internal async Task Until(Func<Task<bool>> ready,CancellationToken ct){for(var i=0;i<80;i++){await Turn(ct);if(await ready())return;await Task.Delay(500,ct);}throw new InvalidOperationException("history_test_convergence_timeout");}
+        internal Fact[] Facts(){using var c=Fixture.Db.Factory.Open();return c.Query<Fact>("SELECT external_namespace Namespace,external_id Id,CAST(business_ticks AS TEXT) Ticks,CAST(signed_amount_clp AS TEXT) Gross FROM historical_baseline_report_movements WHERE shop_id=@shop AND is_active=1",new{shop=_scope.shopId}).ToArray();}
+        internal void NoNative(){using var c=Fixture.Db.Factory.Open();AuthenticatedHistoryServiceHarness.Demand(c.ExecuteScalar<long>("SELECT (SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM sales_sync_outbox)+(SELECT COUNT(*) FROM local_stock_movements)")==0,"history_test_native_effect");}
+        public void Dispose(){_active=false;_supervisor?.Dispose();_client?.Dispose();Fixture?.Dispose();}
+    }
+}
