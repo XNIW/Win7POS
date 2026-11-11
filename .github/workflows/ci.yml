@@ -99,7 +99,9 @@ jobs:
           dotnet restore Win7POS.slnx --locked-mode *> (Join-Path $evidence 'restore.log')
           if ($LASTEXITCODE -ne 0) { throw 'diagnostic_restore_failed' }
           $env:WIN7POS_QA_TEMP_BASE = $env:RUNNER_TEMP
-          & pwsh -NoProfile -File scripts/check-release-foundation.ps1 *> (Join-Path $evidence 'release-foundation.log')
+          # Reproduce the preceding source gates as well: isolated foundation
+          # passed on the original SHA, without explaining the canonical FAIL.
+          & pwsh -NoProfile -File scripts/check-required-gates.ps1 *> (Join-Path $evidence 'required-gates.log')
           $gateExit = $LASTEXITCODE
           [ordered]@{
             targetSha = $actual
@@ -112,8 +114,8 @@ jobs:
             sdk = (dotnet --version)
             sourceAfter = (git status --porcelain | Out-String).Trim()
           } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'result.json') -Encoding utf8
-          Get-Content -LiteralPath (Join-Path $evidence 'release-foundation.log')
-          if ($gateExit -ne 0) { throw 'original_release_foundation_gate_failed' }
+          Get-Content -LiteralPath (Join-Path $evidence 'required-gates.log')
+          if ($gateExit -ne 0) { throw 'original_required_gates_failed' }
       - name: Preserve bounded gate diagnostic
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
