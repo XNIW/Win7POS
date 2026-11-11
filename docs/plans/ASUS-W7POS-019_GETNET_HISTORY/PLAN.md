@@ -16,7 +16,7 @@ L'utente autorizza tutti i file necessari ai residui; soglie e workload invariat
 
 | Scenario | SHA / binding | Comando e ambiente | Esito | Evidence | Prossimo gate |
 |---|---|---|---|---|---|
-| Cassa PR136 | prodotto menu da6539c; QA d1b2bc318c8a0aecce9543dc6a96f9a1aaf7cfc3 | CI42967023331, Security42967023327, WPF42967096688, Release42967017718 | WPF PASS; CI/Release in qualifica | shell73/73, U19BufferedFunctional01 PASS22/22, gate50/50 | pacchetto esatto e nuova Integrated12+soak60; nessun PASS b762 trasferito |
+| Cassa PR136 | d1b2bc318c8a0aecce9543dc6a96f9a1aaf7cfc3 | CI42967023331; Security42967023327; WPF42967096688; Release42967017718 | PASS build e gate | U19ReleaseD1b201:41 file prodotto/110 checksum, installer a07430ce; payload6b44ffe3 | nuova qualifica esatta Integrated12 e Final60 |
 | Focus originario | prodotto149c978 | Integrated12 +soak60, run42897760117, budget250ms | Integrated PASS; soak FAIL conservato | artifact13807390665, cicli116/118:258.573/258.382ms | nessuna attribuzione retroattiva senza fasi originali |
 | Diagnosi focus | prodotto149, harness6533c71 | Diagnostic60, run42924975778,162cicli | completa; non qualifica | U19Focus149Hosted01, artifact13816767268 | callback focus superfluo già focalizzato, in coda dietro Send; nessun blocco scanner/ASUS presunto |
 | Qualifica cassa b762 | pacchetto Release42934061207; 41/41 file corrispondenti | hosted42937991969, Integrated12 +soak60 | PASS entrambi, ambiente valido | U19CartB762Qual01, artifact13823212154, digest550a502d009879483d9d7913e505dfd81518e2aa87cb2a179cfeda9d62eda138; focus max28.354/14.428ms,32/159cicli | non attesta ASUS, Win7 o coppia finale |
@@ -29,16 +29,20 @@ L'utente autorizza tutti i file necessari ai residui; soglie e workload invariat
 | Recovery | fixture9a/f4, prodotto invariato | root dump +ritiro dopo2100ms, stessa regola controllo/Recovery | mirato eAll04 PASS | U19RecoveryHeap03/04, U19RecoveryRetirement04, U19CloudAll04 | root TextBoxView throttle timer2s; non semplice cambio5/3 |
 | Decisioni client v2 | codice176eaa8 integrato b976 | Core ledger05, Smoke03, CloudSync01 | PASS97 Core; Smoke8gruppi/52verifiche; Cloud1/1 | U19DecisionsLedger05/Smoke03/Cloud01; Smoke31.299s, Cloud3.128s | esiti locale/canonico separati; nessun PASS E2E trasferito |
 | Baseline v2 | client136, Adminfe6/830/815 | backup verificato, exportCLR, lettore Node, replaySQL isolato | componenti PASS | U19BaselineExport02, U19BaselineSqlContext03(82/4827), U19BaselinePipeline01(83/4859) | collegare baseline automatica e WPF senza ricaduta v1 |
-| Admin qualificato | 7b25d769a5ecee72950cc2a000801e96b789d28a; mergeec82efa7, stesso tree00a30fb0 | CI42964674538; Cloudflare42964674543 | PASS; foundation1498/14SKIP; SQL85file/4929assert; deploySKIPPED | U19Admin7b01, Worker13830249894, digestd46bcbb2addd519628814e6d6b99b1ab07eb0900e253b166d6e3491466fd53f0,58hash e lock/configGit verificati | nuovo reviewer integrato localmente0fad849 in verifica, servizio operativo distinto dal packaging |
+| Admin qualificato | 9cf51c3e7ae552ff3b9b9c6f90460417324dc028; merge18e105bd, tree7e16ee07 | CI42968555435 eCloudflare42968555507 | PASS CI e packaging; deploy SKIPPED | U19Admin9cf01,58 file/lock/config/tree verificati; artifact13831469762, digest0f8e9f9bd7801d5bd65fe4a7c5e043ade86910ba296b11119477a2fe16f17d9e | pacchetto distinto dal servizio storico operativo |
 | Contratti Node | 0fad8496a616c7b04827a9edee53f262b8a7c301 locale | typecheck e foundation integrati01 | PASS1559/7SKIP su1566, zeroFAIL | review-apply-integrated-typecheck01/foundation01; mirati corpus03 PASS3 | CI del candidato integrato; API v2 ancora chiuse |
 | Proiezione locale server | 82dec507 integrato6a8918e/6c | replay isolato42952263404 | PASS84file/4892assert,33 nuove prove | U19ProjectionSql01, artifact13825732659, digest74d12f78e92680be80d876842de3ab2a617f97222754f650f339d9bfc6eb282a | importi dalle fonti immutabili; duplicato non acquisisce ownership |
 | Indice review server | 254d2f6 integrato in7b25d76 | replay isolato42955496895 eCI integrata42964674538 | PASS85file/4929assert,37nuoveprove | U19ReviewIndexSql01 eU19Admin7b01 | indice di sole coordinate; nessuna copia economica |
 | Corpus CLR→Node | client eab54ae; Node118f858+715b75f, integrato0fad849 | 9draft/receipt,37record,1correzione; trasporto SQL byte-esatto | PASS1CLR +3Node mirati distinti | U19PublicationCorpus02, U19PublicationCorpusTests02, publication-node03 | non E2E distribuito; test Unicode protegge gli hash dei byte originali |
 | Review Apply server | ee8f2952506c4650713415ac29cb8f4887a5c3d2; migrationSHA8e0ddbfacbc41613db0b8bb4c13f2b3033af561a0fe362a16bdeaec6a44e1bbf | replay isolato42966932726 | PASS86file/4959assert,30nuoveprove | U19ReviewApplySql03, artifact13831916416, digest3a4f89551203865be4b3a86b2d242adfaf2d50da7dabcbaaf19cf658cc9766e8 | decisioni locale/canonica distinte, replay e revoca/revisione; nessun grant/ledger finanziario |
-| Catena bilaterale | Apply reviewer ee8f295 qualificato, Undo WIP inA19ReviewUndo01 | review/grant/delivery/journal/reconciliation | NOT_RUN E2E autenticato POS A→server→Admin aperto→POS B→A | V2-REMAINING-INVARIANTS.private.md; Undo SQL parsePASS, testNOT_RUN; APIv2 chiuse | completare Undo/grant/receipt e chiamante WPF, nessun effetto native/stock/ricevute |
+| Catena bilaterale | reviewer Apply/Undo e grant privato qualificati; journal client WIP A19Journal01 | grant/delivery/journal/reconciliation/WPF | INCOMPLETE; E2E autenticato NOT_RUN | 7 nuovi test journal scritti, non compilati mentre Final60 ASUS resta attivo | completare protocollo, chiamante WPF e POS A→server→Admin aperto→POS B→A senza eco |
 | Cleanup TASK094 | fixtureee788ef4-591b-45a4-86f3-90d28a77e12d, codice/data esatti | query scoped read-only staging | PASS_SCOPED_READONLY, tutti gli attivi0 | task094-readonly-cleanup-20261110.private.json | FAIL42896389034 e cleanup originaleNOT_ATTESTED conservati |
 | Installato / dati reali | 2ad42ca9ac5601d7da9555996c1642263252b6e0 | verifica EXE e profilo conservato | invariato; nessun nuovo Apply/Undo | EXE33a73a2c51e6fbe3082081ed787d6421da6641359f6222faf7f566538593eb0f | consegna finale distinta da build/CI |
 | Mobile / Win7 / DPI / GetnetC | handoffTASK146 esistente | target Win7 assente; 200%2880×1800 | Win7BLOCKED_TARGET;100/125USER_DEFERRED; moderniC MISSING | commento6722613449, prove private originali | nessun PASS mobile/Win7 trasferito da Windows11 |
+| Cassa d1b2 ASUS disponibile | stesso pacchetto eQA d1b2, budget63970e30 | run-cart-performance Integrated12, poiFinal60 | Integrated PASS; Final60 RUNNING | U19D1b2AsusI01:31cicli,620campioni, focus/scroll max102.510ms; tre flag validità/PASS true; U19D1b2AsusF01 avvio06:29:11Z | raccogliere Final; Windows11 non attesta Win7 o coppia bilaterale |
+| Cassa d1b2 hosted | Release42967017718, head d1b2 esatto | run42970975541, Integrated12+soak60 | Integrated PASS; soak60 RUNNING | primo step terminato06:27:53Z; soak successivo in corso | ambiente hosted, nessun PASS ASUS/merge Final implicito |
+| Undo bounded | 0b8ea660e38e5ff5e6c86604b7be56daa9cc4723 | replay42970545278,39 nuove asserzioni | PASS87file/4998assert | U19UndoReviewSql01, artifact13832838738, digest1857e5b2d870641e0ee90ff2f1f3a649cd423da0cc3d17ecb7c78ef36468e4a2 | baseline eApply originali; caso201righe in due pagine, duplicato canonico senza ownership |
+| Grant content privato | 2b45e1ff1fe6a1e2f78dd474d1773bc44ca6ea4c | replay42976723698,54 nuove asserzioni | PASS88file/5052assert | U19ContentGrantSql01, artifact13835169803, digest883fd373ba4145d0ab68039a5bf9d6e449753ef3cd80c09993aa0ddc1d032406 | esiti locale/canonico separati, replay senza rinnovo,TTL non è assenza; concorrenza multisessione ancora NOT_RUN |
 
 Il FAIL Load remoto b976 resta conservato. Successore76146: locale301.0258ms
 e remoto481.4968ms a caldo, entrambi entro500ms; Cold remoto517.7835ms e
@@ -50,9 +54,10 @@ Sono conservati i FAIL originali149, f4 remoto, All01/02, Smoke01/02 e il primo
 corpusCLR con percorso export non valido. Fixture corretti senza cambiare le
 guardie prodotto. Le vecchie run non diventano PASS e i test sovrapposti non si sommano.
 
-Review, grant fresco legato al contenuto, proprietà di Apply/Undo, delivery
-atomica, ricevuta canonica, journal prima di authorize e riconciliazione dei
-grant ignoti restano gate critici prima dell'API e della coppia finale. Le prove
+Review Apply/Undo e grant privato hanno superato i rispettivi replay isolati.
+Concorrenza multisessione, delivery atomica, ricevuta canonica, journal prima
+di authorize e riconciliazione dei grant ignoti restano gate critici prima
+dell'API e della coppia finale. Le prove
 SQL/Node/loopback e il Worker impacchettato non attestano il servizio operativo.
 Baseline da backup completo verificato locale; soltanto export storico selettivo
 online. Profilo Minimondo, ledger originale e sette XLSX restano conservati.
@@ -69,7 +74,7 @@ fixture in due caratteri; originaliCLR integri. Solo literalSQL ripristinato con
 lettura UTF8 esplicita/escape Unicode;9pagine confrontate byte per byte, guardia
 SHA prodotto invariata. Successore42966932726 PASS.
 
-Checkpoint UTC 20261111T055209Z. I dettagli dei checkpoint precedenti rimangono nella
+Checkpoint UTC 20261111T072259Z. I dettagli dei checkpoint precedenti rimangono nella
 cronologia Git e nelle evidence private originali; nessuna approvazione operativa implicita.
 <!-- ASUS019_CURRENT_END -->
 
