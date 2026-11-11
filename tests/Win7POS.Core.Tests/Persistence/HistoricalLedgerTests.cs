@@ -347,6 +347,7 @@ public sealed partial class HistoricalLedgerTests
         var proof=new HistoricalPublicationProof(Guid.NewGuid().ToString("D"),Guid.Parse(plan.OperationId).ToString("D"),shop,device,plan.DatasetId,"c0000000-0000-4000-8000-000000000019",draft.RestoreLineageId,plan.RestoreEpoch,1,draft.ContentDigest,plan.RequestFingerprint,"content_authorized_v2",
             new HistoricalPublicationLocalDecision(preview.NewCount,preview.DuplicateCount,plan.Analysis.RejectedRows.Count,plan.CorrectionApprovals.Count,0,preview.NewGrossClp,preview.NewCount),
             new HistoricalPublicationCanonicalDecision(Guid.NewGuid().ToString("D"),7,preview.NewCount,preview.DuplicateCount,0,preview.NewGrossClp));
+        await PersistProofIntent(f,draft,proof);
         var receipt=await f.Service.ApplyAsync(plan,guard,f.Backup(),default,publicationDraft:draft,publicationProof:proof);
         f.Restart();File.Delete(f.Source);
         var replay=await f.Service.ApplyAsync(plan,guard,f.Backup(),default,publicationDraft:draft,publicationProof:proof);

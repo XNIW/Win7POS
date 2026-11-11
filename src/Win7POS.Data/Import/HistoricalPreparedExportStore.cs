@@ -19,9 +19,10 @@ namespace Win7POS.Data.Import
         public async Task DemandHistoricalPublicationsDrainedAsync(HistoricalCloudExportGuard guard,CancellationToken ct)
         {
             guard.DemandStillValid();using var c=await _factory.OpenAsync(ct).ConfigureAwait(false);
-            if(await c.ExecuteScalarAsync<long>(new CommandDefinition(@"SELECT COUNT(*) FROM historical_publication_outbox o
+            if(await c.ExecuteScalarAsync<long>(new CommandDefinition(@"SELECT (SELECT COUNT(*) FROM historical_publication_outbox o
 LEFT JOIN historical_publication_delivery d ON d.operation_id=o.operation_id
-WHERE o.shop_id=@shop AND (d.operation_id IS NULL OR d.status<>'synchronized')",new{shop=guard.ShopId},cancellationToken:ct)).ConfigureAwait(false)!=0)
+WHERE o.shop_id=@shop AND (d.operation_id IS NULL OR d.status<>'synchronized'))+
+(SELECT COUNT(*) FROM historical_preparation_intent i JOIN historical_preparation_outcome s ON s.operation_id=i.operation_id WHERE i.shop_id=@shop AND s.state IN('staging','prepared','authorized'))",new{shop=guard.ShopId},cancellationToken:ct)).ConfigureAwait(false)!=0)
                 throw new InvalidOperationException("history_cloud_history_sync_required");
             guard.DemandStillValid();
         }

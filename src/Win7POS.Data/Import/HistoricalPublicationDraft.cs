@@ -52,6 +52,28 @@ namespace Win7POS.Data.Import
         public string DatasetId{get;} public long RestoreEpoch{get;} public long BaseRevision{get;}
         public string RestoreLineageId{get;}
         public string RequestFingerprint{get;} public string ContentDigest{get;} public int PageCount{get;}
+        internal HistoricalPublicationDraft(string operation,string kind,string shop,string device,string dataset,long restore,long revision,string fingerprint,string lineage,
+            string expectedRoot,int expectedPages,IEnumerable<Page> persisted,CancellationToken ct)
+        {
+            OperationId=operation;Kind=kind;ShopId=shop;DeviceId=device;DatasetId=dataset;RestoreEpoch=restore;BaseRevision=revision;
+            RequestFingerprint=fingerprint;RestoreLineageId=NormalizeLineage(lineage);
+            _spool=new FileStream(Path.Combine(Path.GetTempPath(),"W7H."+Guid.NewGuid().ToString("N")),FileMode.CreateNew,FileAccess.ReadWrite,FileShare.Read,32768,FileOptions.DeleteOnClose|FileOptions.SequentialScan);
+            try
+            {
+                using var hash=SHA256.Create();using var writer=new BinaryWriter(_spool,new UTF8Encoding(false),true);long bytes=0;var count=0;
+                foreach(var page in persisted)
+                {
+                    ct.ThrowIfCancellationRequested();var data=Encoding.UTF8.GetBytes(page.Json);bytes=checked(bytes+data.Length);
+                    if(++count!=page.Ordinal||count>20000||data.Length<2||data.Length>MaximumPageBytes||bytes>MaximumContentBytes)
+                        throw new InvalidOperationException("history_preparation_content_changed");
+                    _pageOffsets.Add(_spool.Position);writer.Write(data.Length);writer.Write(data);
+                    var line=Encoding.ASCII.GetBytes(page.Digest+"\n");hash.TransformBlock(line,0,line.Length,line,0);
+                }
+                writer.Flush();_spool.Flush(true);hash.TransformFinalBlock(Array.Empty<byte>(),0,0);ContentDigest=Hex(hash.Hash);PageCount=count;
+                if(count!=expectedPages||count<1||ContentDigest!=expectedRoot)throw new InvalidOperationException("history_preparation_content_changed");
+            }
+            catch{_spool.Dispose();throw;}
+        }
         public sealed class Page
         {
             internal Page(int ordinal,string json){Ordinal=ordinal;Json=json;using var h=SHA256.Create();Digest=Hex(h.ComputeHash(Encoding.UTF8.GetBytes(json)));}

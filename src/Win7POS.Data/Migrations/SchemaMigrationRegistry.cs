@@ -290,7 +290,15 @@ postcondition=current-structural-schema",
                     "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b",
                     "1.0.0",
                     "Additive historical outbox; rollback requires verified backup and reconciliation of unresolved server authorizations.",
-                    true,HistoricalPublicationSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalPublicationBaseline)
+                    true,HistoricalPublicationSchema.Apply,IsPostHistoricalPublicationSchemaStructurallyValid,IsRecognizedHistoricalPublicationBaseline),
+                new SchemaMigration(
+                    "0018-historical-preparation-journal",
+                    "Persist immutable historical intent before HTTP authorization and fence local aborts against future commits.",
+                    "0018-historical-preparation-journal/v1\n" + HistoricalPreparationSchema.Sql,
+                    "2f02c30616730d50bc23c37e123a97407753b693f25c7f6bf0326e0e79160712",
+                    "1.0.0",
+                    "Additive durable intent; restore requires verified backup and reconciliation of every unresolved server decision.",
+                    true,HistoricalPreparationSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalPreparationBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -319,6 +327,8 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+            => IsPostHistoricalPublicationSchemaStructurallyValid(detector) && HistoricalPreparationSchema.IsSatisfied(detector);
+        private static bool IsPostHistoricalPublicationSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalCloudSchemaStructurallyValid(detector) && HistoricalPublicationSchema.IsSatisfied(detector);
         private static bool IsPostHistoricalCloudSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalSchemaStructurallyValid(detector) && HistoricalCloudSchema.IsSatisfied(detector);
@@ -339,12 +349,26 @@ SELECT 1 FROM historical_cloud_generation g WHERE g.generation_id=s.generation_i
         private static bool IsRecognizedHistoricalPublicationBaseline(LegacySchemaDetector detector)
         {
             if(detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'historical_publication_%'",transaction:detector.Transaction)==0)return false;
-            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalCloudBaseline(detector)
+            if(!IsPostHistoricalPublicationSchemaStructurallyValid(detector)||!IsRecognizedHistoricalCloudBaseline(detector)
                 ||!detector.NoRows(@"SELECT 1 FROM historical_publication_outbox o
 WHERE (SELECT COUNT(*) FROM historical_publication_page p WHERE p.operation_id=o.operation_id)<>o.page_count
  OR NOT EXISTS(SELECT 1 FROM historical_publication_delivery d WHERE d.operation_id=o.operation_id)
  OR NOT EXISTS(SELECT 1 FROM historical_import_operation h WHERE h.operation_id=o.operation_id AND h.shop_id=o.shop_id AND h.dataset_id=o.local_dataset_id AND h.request_fingerprint=o.request_fingerprint) LIMIT 1")
                 ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Historical publication baseline is incomplete or inconsistent.");
+            return true;
+        }
+
+        private static bool IsRecognizedHistoricalPreparationBaseline(LegacySchemaDetector detector)
+        {
+            if(detector.Connection.ExecuteScalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'historical_preparation_%'",transaction:detector.Transaction)==0)return false;
+            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalPublicationBaseline(detector)
+                ||!detector.NoRows(@"SELECT 1 FROM historical_preparation_intent i LEFT JOIN historical_preparation_outcome s ON s.operation_id=i.operation_id
+WHERE s.operation_id IS NULL OR (s.state IN('prepared','authorized') AND (SELECT COUNT(*) FROM historical_preparation_page p WHERE p.operation_id=i.operation_id)<>i.page_count)
+OR (s.state IN('staging','aborted') AND ((SELECT COUNT(*) FROM historical_preparation_page p WHERE p.operation_id=i.operation_id)>i.page_count
+ OR (SELECT COALESCE(MAX(ordinal),0) FROM historical_preparation_page p WHERE p.operation_id=i.operation_id)<>(SELECT COUNT(*) FROM historical_preparation_page p WHERE p.operation_id=i.operation_id)))
+OR (s.state='committed' AND (EXISTS(SELECT 1 FROM historical_preparation_page p WHERE p.operation_id=i.operation_id)
+ OR NOT EXISTS(SELECT 1 FROM historical_publication_outbox o WHERE o.operation_id=i.operation_id AND o.content_digest=i.content_digest))) LIMIT 1")
+                ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Historical preparation baseline is incomplete or inconsistent.");
             return true;
         }
 

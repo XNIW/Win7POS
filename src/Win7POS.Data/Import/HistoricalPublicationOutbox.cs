@@ -64,6 +64,7 @@ VALUES(@OperationId,@ShopId,@DeviceId,@DatasetId,@RestoreEpoch,@revision,@kind,@
             }
             digest.TransformFinalBlock(Array.Empty<byte>(),0,0);
             if(pages!=draft.PageCount||Hex(digest.Hash)!=draft.ContentDigest)throw new InvalidOperationException("history_publication_content_changed");
+            HistoricalPublicationJournal.CommitIntent(c,t,draft,proof,ct);
             c.Execute(@"INSERT INTO historical_publication_delivery(operation_id,status,reason_code) VALUES(@OperationId,@status,@reason)",
                 new{guard.OperationId,status=proof==null?"needs_attention":"pending",reason=proof==null?"history_publication_proof_missing":null},t);
             guard.DemandStillValid();

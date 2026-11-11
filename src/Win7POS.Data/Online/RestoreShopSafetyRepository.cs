@@ -288,7 +288,11 @@ ON CONFLICT(key) DO UPDATE SET value = 'false';",
             var tables=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN('historical_publication_outbox','historical_publication_page','historical_publication_delivery')",transaction:tx).ConfigureAwait(false);
             if(tables==0)return 0; // Pre-0017 verified source; no incremental queue existed.
             if(tables!=3)throw new InvalidOperationException("restore_history_outbox_schema_invalid");
-            return await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM historical_publication_outbox o LEFT JOIN historical_publication_delivery d ON d.operation_id=o.operation_id WHERE d.operation_id IS NULL OR d.status<>'synchronized'",transaction:tx).ConfigureAwait(false);
+            var pending=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM historical_publication_outbox o LEFT JOIN historical_publication_delivery d ON d.operation_id=o.operation_id WHERE d.operation_id IS NULL OR d.status<>'synchronized'",transaction:tx).ConfigureAwait(false);
+            var journalTables=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN('historical_preparation_intent','historical_preparation_page','historical_preparation_outcome')",transaction:tx).ConfigureAwait(false);
+            if(journalTables!=0&&journalTables!=3)throw new InvalidOperationException("restore_history_journal_schema_invalid");
+            if(journalTables==3)pending+=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM historical_preparation_outcome WHERE state IN('staging','prepared','authorized')",transaction:tx).ConfigureAwait(false);
+            return pending;
         }
 
         private static Task<string> GetAsync(

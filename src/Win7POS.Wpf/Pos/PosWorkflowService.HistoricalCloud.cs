@@ -43,7 +43,7 @@ namespace Win7POS.Wpf.Pos
             var authority=await RequestHistoricalCloudAsync(actor,"authority",null,ct).ConfigureAwait(false);
             await new HistoricalReplicaStore(_factory,actor.DemandCurrent).ObserveAuthorityAsync(shop,authority,ct).ConfigureAwait(false);
             if(authority.WriterAuthority!="local"||authority.ProtocolVersion!=1)throw new InvalidOperationException("history_local_writer_closed");
-            var granted=await new HistoricalPublicationPreparer(actor.DemandCurrent,
+            var granted=await new HistoricalPublicationPreparer(_factory,actor.DemandCurrent,
                 (op,payload,token)=>RequestHistoricalCloudAsync(actor,op,payload,token)).PrepareAsync(draft,authority,ct).ConfigureAwait(false);
             return new HistoricalLocalWriteGrant(Guid.Parse(operation).ToString("D"),authority.WriterEpoch,granted.RemainingMilliseconds,
                 granted.GrantRequestElapsedMilliseconds,actor.DemandCurrent,publicationProof:granted.Proof);
