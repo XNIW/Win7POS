@@ -422,7 +422,7 @@ function Export-QaSmokeEvidence([string]$WorkDirectory, [string]$DestinationDire
     if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw 'qa_smoke_work_directory_missing' }
     if ((Test-QaWithin $destination $source) -or (Test-QaWithin $source $destination)) { throw 'qa_smoke_export_paths_overlap' }
     $allowed = @('harness-error.txt','product-image-profile-smoke.txt','bounded-logging-smoke.txt','product-paging-dispatcher-smoke.txt')
-    foreach ($mode in @('smoke','restart-prepare','restart-verify','clock-capacity')) {
+    foreach ($mode in @('smoke','restart-prepare','restart-verify','restart-denied-verify','clock-capacity')) {
         $artifact = 'authorization-lease-' + $mode + '.txt'
         $allowed += @($artifact, ($artifact + '.stdout.txt'), ($artifact + '.stderr.txt'))
     }

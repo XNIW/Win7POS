@@ -1,5 +1,64 @@
 # ASUS-W7POS-019 — Importazione storico Getnet
 
+<!-- ASUS019_OFFLINE_REOPEN_CURRENT_START -->
+## Addendum 11 novembre — cassa consegnata e riapertura offline
+
+Stessa Execution ACTIVE. Cassa d1b2bc3 installata tramite installer canonico
+Release42967017718 dopo backup prodotto verificato;41file corrispondono al
+pacchetto e13file profilo invariati. Primo Start/login→carrello vuoto/scanner→
+riepilogo→POS/focus verificati, senza nuove righe economiche. PR136 integrata
+normalmente in main32145b0; secondo avvio reale e scanner fisico NOT_RUN.
+Il pacchetto installato conserva il precedente limite offline process-scoped.
+
+Questo successore indipendente estende l'offline alla riapertura dell'app nella
+stessa sessione Windows. Non rinnova le12ore massime, né la scadenza più breve
+di staff/sessione. Riusa mirror shop/staff/versione credenziale, verificatore
+PIN, tentativi e controllo della generazione durevole prima dell'autorizzazione.
+Prima attivazione senza un accesso server verificato resta negata.
+
+Il formato trust v5 sostituisce il segreto del solo processo con ricevuta casuale
+e binding DPAPI a profilo canonico,device,shop,staff/versione e sessione. Un secondo
+testimone DPAPI CurrentUser, nel registro HKCU volatile fuori dai backup profilo,
+vincola l'esatto hash del file e la ricevuta corrente. Memorizza l'ancora temporale
+server/QPC e il massimo tempo locale osservato; gli accessi successivi avanzano
+questi valori, mai la scadenza. File vecchi/alterati,altro profilo/device e perdita
+del testimone non ricreano autorità. Clear/TryClear registrano una tombstone prima
+di eliminare il file; il ripristino del profilo non annulla una revoca già nota.
+Mutex per profilo serializza gli accessi al testimone. Formati1–4 restano leggibili
+per recovery online ma non acquisiscono automaticamente autorità offline v5.
+Nessuna password leggibile o recuperabile; i token DPAPI già esistenti restano
+distinti dal verificatore PIN. Nessun nuovo schema SQLite,contratto cloud o SDK.
+
+Riavvio Windows offline: BLOCKED_TIME_CONTINUITY. La chiave volatile scompare
+quando viene scaricato l'hive; non viene ricreata leggendo il vecchio profilo.
+Dopo reboot/logoff serve una nuova attestazione online. Non è provato un clock
+fidato che includa il tempo trascorso a macchina spenta su Win7; prossimo passo:
+scegliere e qualificare tale fonte prima di consentire reboot offline. Perdita
+del testimone simulata nei test ≠ reboot fisico eseguito. Revoche server ancora
+sconosciute senza rete non sono rilevate immediatamente. Ripristino dell'intero
+OS/VM e codice ostile eseguito come lo stesso utente Windows non costituiscono
+un confine di sicurezza offerto da DPAPI/registro applicativo.
+
+Fonti API: [QPC e Stopwatch su Windows7](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps),
+[chiavi volatile ed esclusione da RegSaveKey](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regcreatekeyexw).
+
+Prove del delta su fixture isolate:113Core mirati PASS,buildWPF/harness net48x86
+PASS0warning/error,gate offline e standard dialog ALLPASS. Smoke principale
+conserva le precedenti race/limiti/zero sink; prepare/verify in due CLR prova
+riapertura e PIN,un terzo CLR prova la revoca persistita,altro profilo/device,
+testimone alterato e testimone Windows mancante. UX3/3 PASS: AUTHENTICATED_SHELL_UX,
+INTEGRATED_login_sale_retry_receipt_restart,F05_same_clock_recovery_restart_active_cart.
+Questi PASS locali non equivalgono a Windows-All/Release/pacchetto qualificati.
+Congelare il successore ed eseguire i propri gate prima della consegna.
+
+Storico bilaterale conserva le sorgenti/run precedenti. Client bb2ffda aggiunge
+soltanto i5ID mancanti nei due cataloghi QA; CrashProbe completo5/5 PASS con11
+assert nel commit-authority,compresi i6precedenti. Server2024819 corregge solo
+il seed duplicato del fixture SQL; run autenticata43124933306 con client93fd
+in corso. Timeout o errore generico non valgono come writer_closed. Win7fisico
+BLOCKED_TARGET;200%/2880×1800 mantenuti,100/125 USER_DEFERRED. Nessun DONE globale.
+<!-- ASUS019_OFFLINE_REOPEN_CURRENT_END -->
+
 <!-- ASUS019_CURRENT_START -->
 ## Stato corrente — POS reale e sync in background, ACTIVE (10 novembre)
 

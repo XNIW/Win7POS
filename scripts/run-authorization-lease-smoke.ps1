@@ -216,6 +216,12 @@ try {
         -Mode "--authorization-lease-restart-verify" `
         -ArtifactName "authorization-lease-restart-verify.txt" `
         -RequirePreparedData
+    $revokedVerify = Invoke-AuthorizationHarness `
+        -DataDirectory $restartDataDir `
+        -DiagnosticsDirectory $restartDiagnosticsDir `
+        -Mode "--authorization-lease-restart-denied-verify" `
+        -ArtifactName "authorization-lease-restart-denied-verify.txt" `
+        -RequirePreparedData
     $capacity = Invoke-AuthorizationHarness `
         -DataDirectory $capacityDataDir `
         -DiagnosticsDirectory $capacityDiagnosticsDir `
@@ -306,17 +312,37 @@ if ([string]::Equals(
         [StringComparison]::Ordinal)) {
     throw "Authorization lease restart regression did not use two distinct process instances."
 }
-if ((Read-ResultValue -Text $verify.Result -Name "offlineAttestationAfterRestart") -ne "False" -or
-    (Read-ResultValue -Text $verify.Result -Name "offlineDenial") -ne "offline_attestation_required" -or
+if ((Read-ResultValue -Text $verify.Result -Name "offlineAttestationAfterRestart") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "correctPinAfterRestart") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "wrongPinAfterRestartDenied") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "oldBackupAfterRestartDenied") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "revokedBackupAfterRestartDenied") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "offlineDenialAfterRevocation") -ne "offline_attestation_required" -or
     (Read-ResultValue -Text $verify.Result -Name "unauthorizedSaleSinkRows") -ne "0" -or
     (Read-ResultValue -Text $verify.Result -Name "unauthorizedPublicationOutboxRows") -ne "0" -or
     (Read-ResultValue -Text $verify.Result -Name "freshOnlineRecovery") -ne "True") {
-    throw "Authorization lease restart regression did not prove fail-closed authorization and online recovery."
+    throw "Authorization lease restart regression did not prove witnessed app reopen, PIN isolation, rollback/revocation rejection and online recovery."
 }
 
     Write-Host $smoke.Result
     Write-Host $prepare.Result
     Write-Host $verify.Result
+    $revokedInstance = Read-ResultValue -Text $revokedVerify.Result -Name "processInstance"
+    if ($revokedInstance -eq $prepareInstance -or $revokedInstance -eq $verifyInstance) {
+        throw "Revoked restart verification must use a third distinct process."
+    }
+    foreach ($as019RestartCheck in @('revocationSurvivesAnotherProcess','otherProfileDenied',
+        'changedDeviceDenied','alteredWitnessDenied','lostBootWitnessDenied')) {
+        if ((Read-ResultValue -Text $revokedVerify.Result -Name $as019RestartCheck) -ne 'True') {
+            throw "Restart witness negative check missing: $as019RestartCheck"
+        }
+    }
+    foreach ($as019RestartCheck in @('unauthorizedSaleSinkRows','unauthorizedPublicationOutboxRows')) {
+        if ((Read-ResultValue -Text $revokedVerify.Result -Name $as019RestartCheck) -ne '0') {
+            throw "Revoked restart probe reached an economic sink."
+        }
+    }
+    Write-Host $revokedVerify.Result
     Write-Host $capacity.Result
     Write-Host "AUTHORIZATION_LEASE_DATA_DIAGNOSTICS_SEPARATED=True"
     Write-Host "AUTHORIZATION_LEASE_RESTART_SEEDED_ONCE=True"

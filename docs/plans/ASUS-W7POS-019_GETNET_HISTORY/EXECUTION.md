@@ -1,5 +1,55 @@
 # ASUS-W7POS-019 execution ledger
 
+## 11 novembre — successore offline separato dalla cassa installata
+
+La causa reale del carrello bloccato era l'EXE2ad42ca ancora installato. Nessuna
+nuova riscrittura della cassa: consegnato d1b2bc3 già qualificato,installerSHA
+a07430ce29e60eb04d2bc23651ab905beac3bf6ed6e8e12479e83ac230f2bb8e.
+Compatibilità15migrazioni esatte/0pendenti,backup prodotto integrity/FK verificato,
+copia13file profilo hash-identica;41file installati esatti. Primo percorso reale
+Start/login/carrello/scanner/sconosciuto annullato/riepilogo/ritorno e focus PASS,
+conteggi prodotti/vendite/outbox/storico invariati,chiusura normale. Evidence
+U19CashD1bInstall01; merge PR136 normale32145b0162229c4691e8ab5a97d7845689061d81.
+Secondo avvio/PIN reale e scanner fisico NOT_RUN,non sostituiti dalla fixture.
+
+Nuovo contratto implementato su base d1b: trustv5 con ricevuta/profile binding e
+testimone DPAPI HKCU volatile fuori dal backup. QPC mantiene il tempo server fra
+processi; wall high-water,tombstone e hash esatto impediscono ripristini vecchi.
+Durata≤12h e scadenze server/staff invariate. Mirror/PIN/tentativi/generazione
+riusati. Reboot/logoff senza continuità del testimone richiedono online:
+BLOCKED_TIME_CONTINUITY per il requisito di reboot offline,con prossimo passo nel
+PLAN. Nessun password storage,nuovo framework o migrazione DB/cloud.
+
+Comandi e risultati privati del componente prima del freeze:
+- restorelocked PASS; buildWPF/harness Release net48/x86 PASS0warning/error;
+  U19OfflineReopenRestore01,Harness05,Wpf01.
+- filtro Core sui4gruppi richiesti più PosOfflineRestartClockPolicyTests:
+  U19OfflineReopenCore02/offline.trx PASS113/113,0skip/0fail.
+- check-pos-offline-authorization-lease.ps1 ALLPASS (Gate03),standarddialog
+  ALLPASS (Dialog01),nessun limite o assert dinamico precedente rimosso.
+- run-authorization-lease-smoke.ps1 -KeepData: Auth04 PASS,main+prepare+verify+
+  terzo processo revocato+capacity. PIN errato/vecchio backup/revoca/profile/device/
+  DPAPI alterata/hive mancante negati,zero vendite/outbox non autorizzate.
+- functional3/3 PASS (U19OfflineReopenFunctional01): AUTH25031ms,
+  INTEGRATED1780ms,F051199ms,limite60000ms invariato per scenario.
+
+Fallimenti intermedi conservati: Core01 aveva2warning di attributo test obsoleto,
+corretti senza cambiare casi; AuthRed01 fixture legacy ancora letteralev4;
+Harness03 errore compile System.Text.Encoding mancante; Auth03 terzo processo
+non trovava la chiave perché il suo calcolo hex differiva dal primo scopebase64.
+Scope prodotto ora hex canonico valido per registro/mutex; Auth04 prova l'intera
+catena. Gate01/02 fallivano per regex obsolete/slicer riservato ai metodi Task;
+Gate03 usa delimitatori C# bilanciati per i due metodi sincroni e controlla ancora
+tombstone/anchor/high-waters. Nessun FAIL riclassificato retroattivamente.
+
+Storico: All93fd15PASS/1FAIL conservato,bb2ffda solo cataloghi QA completaCrash5/5
+con11assert commit-authority. Invoker privato01 mancava output/env,02 non aveva
+CLI,03 aveva una root non canonica e fu rifiutato dal probe;04 usa gli helper
+canonici per root/manifest e PASS5/5. Nuove pipeline exact-head necessarie.
+Server2024819 fixture SQL circoscritto,prepareLF42pin PASS senza modificarli;
+primo push fallito per reset rete,verificati ref remoti prima di pubblicare.
+Run autenticata43124933306 avviata dopo correzione,nessun retry live reale.
+
 <!-- ASUS019_CURRENT_START -->
 ## Stato corrente — postazione reale, sviluppo verificato; qualifica finale aperta
 

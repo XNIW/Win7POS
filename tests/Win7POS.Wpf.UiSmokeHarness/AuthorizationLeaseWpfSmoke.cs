@@ -43,6 +43,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         public static Task<string> RunClockCapacityAsync() => TraceAsync(RunClockCapacityCoreAsync);
         public static Task<string> PrepareRestartProbeAsync() => TraceAsync(PrepareRestartProbeCoreAsync);
         public static Task<string> VerifyRestartProbeAsync() => TraceAsync(VerifyRestartProbeCoreAsync);
+        public static Task<string> VerifyRevokedRestartProbeAsync() => TraceAsync(VerifyRevokedRestartProbeCoreAsync);
         private static async Task<string> TraceAsync(Func<Task<string>> run)
         {
             TypedQaDiagnosticWriter.BeginScenario(null, "authorization-lease");
@@ -151,6 +152,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             VerifyLegacyStateReread(store, legacyResponse, formatVersion: 1);
             VerifyLegacyStateReread(store, legacyResponse, formatVersion: 2);
             VerifyLegacyStateReread(store, legacyResponse, formatVersion: 3);
+            VerifyLegacyStateReread(store, legacyResponse, formatVersion: 4);
 
             var response = BuildResponse(includeOfflineAttestation: true);
             store.SaveFirstLogin(response, "qa-auth-generation-1");
@@ -3033,13 +3035,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "qa-auth-process-restart");
             Require(
                 store.TryRead(out var trusted) &&
-                trusted.TrustedStateFormatVersion == 4 &&
+                trusted.TrustedStateFormatVersion == 5 &&
                 trusted.OfflineAuthorizationAttested,
-                "restart probe did not persist a process-scoped offline attestation");
+                "restart probe did not persist the independently witnessed offline attestation");
 
             return "PASS authorization lease restart prepare" + Environment.NewLine +
                 "processInstance=" + ProcessInstanceId + Environment.NewLine +
-                "stateFormat=4" + Environment.NewLine +
+                "stateFormat=5" + Environment.NewLine +
                 "offlineAttested=True" + Environment.NewLine;
         }
 
@@ -3065,7 +3067,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 store.TryRead(out var restartedSession),
                 "restart probe state was not readable for bounded online recovery");
             Require(
-                restartedSession.TrustedStateFormatVersion == 4,
+                restartedSession.TrustedStateFormatVersion == 5,
                 "restart probe did not preserve the current trusted-state format");
             Require(
                 PosOfflineAuthorizationLeasePolicy.ValidateOnlineReceipt(
@@ -3073,36 +3075,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     DateTimeOffset.UtcNow).Allowed,
                 "restart probe blocked bounded online recovery");
             Require(
-                !restartedSession.OfflineAuthorizationAttested &&
-                string.IsNullOrWhiteSpace(
-                    restartedSession.EffectiveOfflineAuthorizationExpiresAt),
-                "process restart retained the prior offline attestation");
-            RequireDenied(
+                restartedSession.OfflineAuthorizationAttested &&
                 PosOfflineAuthorizationLeasePolicy.Evaluate(
                     restartedSession,
-                    DateTimeOffset.UtcNow),
-                "offline_attestation_required",
-                "process restart retained offline authorization");
-            Require(
-                StagingAcceptanceWpfHarness
-                    .TryLoadRestartedOnlineRecoverySession(
-                        store,
-                        out var acceptanceResumeSession,
-                        out var acceptanceOfflineAuthorityCleared) &&
-                acceptanceOfflineAuthorityCleared &&
-                string.Equals(
-                    acceptanceResumeSession.GenerationId,
-                    restartedSession.GenerationId,
-                    StringComparison.Ordinal),
-                "staging resume did not accept bounded online recovery");
-            Require(
-                StagingAcceptanceWpfHarness
-                    .ShouldAttemptOfflineOperatorLogin(
-                        resumeAfterRestart: false) &&
-                !StagingAcceptanceWpfHarness
-                    .ShouldAttemptOfflineOperatorLogin(
-                        resumeAfterRestart: true),
-                "staging resume attempted a process-scoped offline login");
+                    DateTimeOffset.UtcNow).Allowed,
+                "same-Windows-session app reopen lost valid offline authorization");
+            var originalState = File.ReadAllText(store.TrustedDeviceFilePath);
 
             var guard = new PosOfflineAuthorizationLeaseGuard(
                 store,
@@ -3139,6 +3117,41 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 CountSalesOutboxRows(factory) == outboxBefore,
                 "restarted offline authority reached the sale or publication outbox sink");
 
+            Require(await operatorSession.LoginAsync(username, WrongPin).ConfigureAwait(true) ==
+                    LoginResult.Failed && !guard.Evaluate().Allowed,
+                "wrong PIN activated reopened offline authority");
+            Require(await operatorSession.LoginAsync(username, CorrectPin).ConfigureAwait(true) ==
+                    LoginResult.Success && guard.Evaluate().Allowed,
+                "correct PIN failed after a distinct-process offline reopen");
+            permissions.Demand(PermissionCodes.PosPay, "qa reopened offline permission without sale");
+
+            store.SaveFirstLogin(BuildResponse(includeOfflineAttestation: true),
+                "qa-auth-process-new-receipt");
+            var latestState = File.ReadAllText(store.TrustedDeviceFilePath);
+            File.WriteAllText(store.TrustedDeviceFilePath, originalState);
+            Require(store.TryRead(out var rolledBack) && !rolledBack.OfflineAuthorizationAttested,
+                "old profile backup recovered superseded offline authority");
+            RequireDenied(PosOfflineAuthorizationLeasePolicy.Evaluate(rolledBack, DateTimeOffset.UtcNow),
+                "offline_attestation_required", "old backup was authorized after process reopen");
+            File.WriteAllText(store.TrustedDeviceFilePath, latestState);
+            Require(store.TryRead(out var latest) && latest.OfflineAuthorizationAttested,
+                "current exact witnessed state failed after old-backup rejection");
+            store.Clear();
+            File.WriteAllText(store.TrustedDeviceFilePath, latestState);
+            Require(store.TryRead(out var revoked) && !revoked.OfflineAuthorizationAttested,
+                "profile restore undid the independent revocation tombstone");
+            RequireDenied(guard.Evaluate(), "offline_attestation_required",
+                "known revocation was bypassed by restoring the trusted-state file");
+            Require(StagingAcceptanceWpfHarness.TryLoadRestartedOnlineRecoverySession(store,
+                    out var acceptanceResumeSession, out var acceptanceOfflineAuthorityCleared) &&
+                    acceptanceOfflineAuthorityCleared,
+                "revoked offline state prevented bounded online recovery");
+            Require(StagingAcceptanceWpfHarness.ShouldAttemptOfflineOperatorLogin(resumeAfterRestart: false) &&
+                    !StagingAcceptanceWpfHarness.ShouldAttemptOfflineOperatorLogin(resumeAfterRestart: true),
+                "staging-only online recovery policy changed implicitly");
+            Require(CountSaleRows(factory) == salesBefore && CountSalesOutboxRows(factory) == outboxBefore,
+                "reopen probes wrote an economic row");
+
             store.SaveFirstLogin(
                 BuildResponse(includeOfflineAttestation: true),
                 "qa-auth-process-restart-recovered");
@@ -3146,15 +3159,107 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 new PosTrustedDeviceStore().TryRead(out var recoveredSession) &&
                 recoveredSession.OfflineAuthorizationAttested,
                 "fresh online authorization did not recover after process restart");
+            var revokedForNextProcess = File.ReadAllText(store.TrustedDeviceFilePath);
+            store.Clear();
+            File.WriteAllText(store.TrustedDeviceFilePath, revokedForNextProcess);
 
             return "PASS authorization lease restart verify" + Environment.NewLine +
                 "processInstance=" + ProcessInstanceId + Environment.NewLine +
                 "onlineRecoveryReadable=True" + Environment.NewLine +
-                "offlineAttestationAfterRestart=False" + Environment.NewLine +
-                "offlineDenial=offline_attestation_required" + Environment.NewLine +
+                "offlineAttestationAfterRestart=True" + Environment.NewLine +
+                "correctPinAfterRestart=True" + Environment.NewLine +
+                "wrongPinAfterRestartDenied=True" + Environment.NewLine +
+                "oldBackupAfterRestartDenied=True" + Environment.NewLine +
+                "revokedBackupAfterRestartDenied=True" + Environment.NewLine +
+                "offlineDenialAfterRevocation=offline_attestation_required" + Environment.NewLine +
                 "unauthorizedSaleSinkRows=0" + Environment.NewLine +
                 "unauthorizedPublicationOutboxRows=0" + Environment.NewLine +
                 "freshOnlineRecovery=True" + Environment.NewLine;
+        }
+
+        private static async Task<string> VerifyRevokedRestartProbeCoreAsync()
+        {
+            // Third CLR process: there is no in-memory revocation latch from the
+            // process that cleared trust then restored its previously valid file.
+            var options = PosDbOptions.Default();
+            var factory = new SqliteConnectionFactory(options);
+            var users = new UserRepository(factory);
+            var username = await users.FindTrustedRemoteStaffUsernameAsync(ShopId, ShopCode,
+                StaffId, StaffCode, CredentialVersion).ConfigureAwait(true);
+            Require(!string.IsNullOrWhiteSpace(username), "revoked restart lost the fixture PIN mirror");
+            var store = new PosTrustedDeviceStore();
+            Require(store.TryRead(out var revoked) && !revoked.OfflineAuthorizationAttested,
+                "third process recovered revoked authority from a restored profile");
+            var guard = new PosOfflineAuthorizationLeaseGuard(store, () => DateTimeOffset.UtcNow);
+            var session = new OperatorSession(users, new SecurityRepository(factory), guard);
+            Require(await session.LoginAsync(username, CorrectPin).ConfigureAwait(true) ==
+                    LoginResult.AuthorizationExpired,
+                "correct PIN bypassed the persisted revocation witness after another restart");
+            var beforeSales = CountSaleRows(factory);
+            var beforeOutbox = CountSalesOutboxRows(factory);
+            session.SetUserForTesting(new UserAccount { Id=900003, Username=username,
+                DisplayName="QA Revoked Restart", IsActive=true, RoleCode="cashier",
+                RoleName="Cashier", PermissionCodes=new List<string>{PermissionCodes.PosPay} });
+            var deniedBeforeSink = false;
+            try
+            {
+                new PermissionService(session).Demand(PermissionCodes.PosPay,
+                    "qa revoked restart authorization sale sink");
+                InsertUnauthorizedSaleAndOutbox(factory, "revoked-restart");
+            }
+            catch (PosAuthorizationLeaseException) { deniedBeforeSink=true; }
+            Require(deniedBeforeSink && CountSaleRows(factory)==beforeSales &&
+                    CountSalesOutboxRows(factory)==beforeOutbox,
+                "revoked restart wrote a sale or publication row");
+
+            store.SaveFirstLogin(BuildResponse(includeOfflineAttestation: true),
+                "qa-restart-witness-negative-probes");
+            var currentJson=File.ReadAllText(store.TrustedDeviceFilePath);
+            Require(store.TryRead(out var valid) && valid.OfflineAuthorizationAttested,
+                "fresh receipt failed before witness negative probes");
+            var otherProfile=new PosTrustedDeviceStore("qa-restart-other-profile");
+            Directory.CreateDirectory(Path.GetDirectoryName(otherProfile.TrustedDeviceFilePath));
+            File.WriteAllText(otherProfile.TrustedDeviceFilePath,currentJson);
+            Require(otherProfile.TryRead(out var transferred) && !transferred.OfflineAuthorizationAttested,
+                "copying a receipt to another profile transferred offline authority");
+            File.WriteAllText(store.TrustedDeviceFilePath,
+                currentJson.Replace(valid.ShopDeviceId, "qa-other-device"));
+            Require(store.TryRead(out var changedDevice) && !changedDevice.OfflineAuthorizationAttested,
+                "changed device identity retained offline authority");
+            File.WriteAllText(store.TrustedDeviceFilePath,currentJson);
+
+            string scope;
+            using(var hash=System.Security.Cryptography.SHA256.Create())
+                scope=BitConverter.ToString(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(
+                    Path.GetFullPath(store.TrustedDeviceFilePath).ToUpperInvariant())))
+                    .Replace("-",string.Empty).ToLowerInvariant();
+            var witnessPath=@"Software\Win7POS\OfflineAuthorization\"+scope;
+            using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(witnessPath,true))
+            {
+                Require(key!=null,"owned restart witness key missing before tamper probe");
+                var protectedBytes=(byte[])key.GetValue("Witness");
+                protectedBytes[protectedBytes.Length/2]^=1;
+                key.SetValue("Witness",protectedBytes,Microsoft.Win32.RegistryValueKind.Binary);
+            }
+            Require(store.TryRead(out var tampered) && !tampered.OfflineAuthorizationAttested,
+                "altered DPAPI witness authorized offline");
+            store.SaveFirstLogin(BuildResponse(includeOfflineAttestation:true),"qa-restart-hive-loss");
+            // This is only the exact key belonging to the seeded synthetic data
+            // root. It simulates hive unload; it does not reboot Windows.
+            Microsoft.Win32.Registry.CurrentUser.DeleteSubKey(witnessPath,true);
+            Require(store.TryRead(out var lostBootWitness) && !lostBootWitness.OfflineAuthorizationAttested,
+                "missing boot witness was silently recreated from the profile backup");
+            Require(CountSaleRows(factory)==beforeSales && CountSalesOutboxRows(factory)==beforeOutbox,
+                "witness negative probes wrote economic rows");
+            return "PASS authorization lease revoked restart verify"+Environment.NewLine+
+                "processInstance="+ProcessInstanceId+Environment.NewLine+
+                "revocationSurvivesAnotherProcess=True"+Environment.NewLine+
+                "otherProfileDenied=True"+Environment.NewLine+
+                "changedDeviceDenied=True"+Environment.NewLine+
+                "alteredWitnessDenied=True"+Environment.NewLine+
+                "lostBootWitnessDenied=True"+Environment.NewLine+
+                "unauthorizedSaleSinkRows=0"+Environment.NewLine+
+                "unauthorizedPublicationOutboxRows=0"+Environment.NewLine;
         }
 
         private static void VerifyLegacyStateReread(
@@ -3167,7 +3272,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "qa-auth-legacy-v" + formatVersion);
             var json = File.ReadAllText(store.TrustedDeviceFilePath);
             json = json.Replace(
-                "\"formatVersion\":4",
+                "\"formatVersion\":5",
                 "\"formatVersion\":" + formatVersion);
             if (formatVersion == 1)
             {
