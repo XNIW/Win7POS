@@ -1,7 +1,98 @@
 # ASUS-W7POS-019 execution ledger
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
-## Composizione verificata — 20261111T230040Z, stessa ASUS-W7POS-019
+
+## Stato corrente — 20261112T003136Z, stessa ASUS-W7POS-019 ACTIVE
+
+Cassa già consegnata; riapertura offline e storico hanno candidati/gate propri.
+Nessun PASS trasferito fra SHA,nessun DONE globale. Le righe datate precedenti
+sono conservate sotto come storia,anche quando descrivono installato2ad42ca.
+
+| Ambito | Sorgente e prova | Stato e prossimo passo |
+|---|---|---|
+| Cassa installata | d1b2bc3,setup a07430ce/payload6b44ffe3,Release42967017718; U19CashD1bInstall01 |41file installati esatti,13file profilo invariati dopo backup integrity/FK; login umano/carrello vuoto/scanner/sconosciuto annullato/riepilogo→POS/focus PASS.0righe economiche nuove. Chiusura normale; secondo Start/PIN e scanner fisico NOT_RUN |
+| Main cassa | PR136 merge normale32145b0 | CI43123779651 eSecurity43123779666 PASS. Qualifica d1b e prima prova installata distinte dallo storico |
+| Offline app reopen | fe069a1e8a4326c55b4e8d471679d5bfefba2c0b,PR137,codex/asus019-offline-reopen | implementato trustv5 + testimone DPAPI HKCU volatile fuori dai backup,hash/ricevuta/profilo/device/generazione,clock QPC/high-water e tombstone. Mirror/PIN/tentativi/durata≤12h e scadenze staff/sessione riusati. Formati1–4 solo recovery online |
+| Prove offline locali | Core02 113/113; Auth04 main+tre CLR distinti+capacity; Functional01 3/3; Required01 50/50; QaProtocol01 PASS | PIN corretto/errato,backup precedente,revoca dopo altro processo,altro profilo/device,DPAPI alterata/hive perso e zero sink provati. Soluzione/WPF/harness net48x86 PASS0warning/error. Componenti pre-freeze,non PASS globale del candidato |
+| Gate offline congelati | All43127519453,Security43127519394,Release43127263071,QApayload43127517745 | RUNNING. Pacchetto successore non installato; download/checksum/binding e soaks con budget63970e30 richiesti prima di consegnarlo |
+| Reboot Windows offline | nessun clock sicuro verificato attraverso lo spegnimento Win7 | BLOCKED_TIME_CONTINUITY: chiave volatile persa→online obbligatorio. Test hive mancante è simulato,non reboot fisico; prossimo passo qualificare una fonte temporale adeguata. Prima attivazione mai verificata negata; revoche remote sconosciute offline non immediate |
+| Storico Windows | bb2ffda3037518612daa76966392f2502cff6506,PR135 | soltanto2cataloghi QA;5ID nuovi conservano6assert precedenti. Crash04 canonico PASS5/5,commit-authority11/11. All43126279571/Security43126279594/Release43126275026 RUNNING |
+| Storico SQL | 9942d6078b675f090c252b8af5b0858e385e634f,Admin151 | solo fixture: successo usa baseline_upload_create idempotente prevista dall'API.11assert e42pin invariati,preparePASS95file/5318assert ATTESI. Nessun SQLPASS locale |
+| Remote18 | server2024819/client93fd,run43124933306 | FAIL pgTAP linea30 prima dei casi autenticati; artifact13902723648 SHA bec88b0c verificato. Fixture chiamava authority non prevista da v2; sorgente rifiuta operation_invalid,nessuna causa runtime inventata |
+| Remote19 | run43127437586,server9942d60/clientbb2ffda | RUNNING canonicalSQL. Richiesti rawSQL40001 canonical_economic_conflict sullo stesso contenuto,veroHTTP409 history_cloud_writer_closed,riconciliazione,origineAdmin e revoca isolata. Timeout/generici non accettati |
+| Storia preservata | Remote15/16 nove casi propri PASS ma overallFAIL; All93fd15PASS/1FAIL; SQL2c/202FAIL | artifact,run e sorgenti congelate conservati. Nessuna somma dei rerun o indebolimento di soglie/carico/timeout |
+| Vincoli |200%2880×1800 conservati;100/125 USER_DEFERRED,Win7fisico BLOCKED_TARGET,GetnetCMISSING | nessun Apply/Undo/reimport/vendita/articolo di test nel negozio reale; originali,storico,code e backup conservati |
+
+Autorizzazione notturna esplicita valida; nessuna nuova richiesta operativa.
+Interruzioni Computer Use rispettate,nessun launcher alternativo o reset per
+aggirare blocchi. Pubblicare solo evidence redatte con SHA/run/exit reali.
+
+<!-- ASUS019_COMPOSED_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente235241Z conservato come storia</summary>
+
+
+## Priorità installato/offline — 20261111T235241Z, stessa ASUS-W7POS-019 ACTIVE
+
+Il nuovo addendum separa la consegna della cassa dal residuo storico indipendente.
+Identificazione read-only: Start punta al Program Files installato; processo vecchio
+2ad42ca, proprietario del DB Minimondo atteso. I Recent pertinenti sono link a una
+cartella sorgenti e a uno ZIP, non EXE alternativi. Origine esatta del clic iniziale
+non attestata. Nessuna riscrittura di MainWindow: correzione già qualificata in d1b.
+
+Cassa d1b2bc318c8a0aecce9543dc6a96f9a1aaf7cfc3 installata tramite setup canonico
+SHA a07430ce29e60eb04d2bc23651ab905beac3bf6ed6e8e12479e83ac230f2bb8e,
+Release42967017718. Compatibilità:15 migrazioni esatte,0pendenti/ignote/checksum
+divergenti; schema storico,formato trust e contratti HTTP invariati rispetto2ad.
+Backup prodotto verificato/integrity+FK e copia completa13file hash-identica;
+installer non ha alterato il profilo.41file installati corrispondono al pacchetto.
+Log installer: successo/no reboot; exit code non catturato, non inventato.
+Nuovo processo8128 da explorer, EXE/versione/hash e proprietà dello stesso DB
+verificati. Primo accesso reale: carrello vuoto e barcode disponibili, sync
+non modale; sconosciuto apre quick-create esistente, annullata senza salvare;
+riepilogo volontario→POS, focus scanner provato digitando e cancellando un
+marcatore. Conteggi prodotti/vendite/outbox/storico invariati. Chiusura normale.
+Secondo avvio reale NOT_RUN (avvio/PIN mascherato manuali); scanner fisico NOT_RUN.
+Qualifiche d1b riusate sul pacchetto identico; nessuna nuova soak per il link.
+
+Offline: d1b mantiene il contratto process-scoped e NON soddisfa la riapertura.
+Successore separato da d1b in codex/asus019-offline-reopen. Modello da implementare:
+attestazione DPAPI v5 con identità profilo/dispositivo/generazione/operatore e
+versione credenziale; testimone protetto fuori dal backup profilo che vincola
+esattamente la ricevuta e conserva clock monotono/high-water/tombstone di revoca.
+Un nonce volatile per sessione Windows rende distinguibile la perdita della
+continuità di boot; QPC avanza il tempo server fra processi senza affidarsi solo
+all'orologio civile. File vecchi/alterati/altro profilo o device non riattivano
+l'autorità. Mirror/PIN/tentativi e durata esistente <=12h,scadenza staff/sessione
+restano obbligatori; nessuna password recuperabile. Prove positive e negative
+in processi distinti prima di cambiare l'aspettativa dello smoke.
+Riavvio Windows offline BLOCKED_TIME_CONTINUITY: senza clock sicuro attraverso
+lo spegnimento non è provata la durata trascorsa; nuova attestazione online dopo
+reboot, non semplice rimozione del nonce. Test di reboot simulato/clock rollback
+deve negare. Supporto reale del reboot non dichiarato; prossimo passo scegliere
+un'origine temporale verificabile compatibile Win7 e qualificarla su target.
+Prima attivazione senza trust negata; perdita rete nello stesso processo resta
+distinta da blocco/sblocco,nuovo processo e reboot. Revoche server sconosciute
+durante offline non rilevabili immediatamente.
+
+Storico preservato: All93fd run43114242774 FAIL15PASS/1FAIL nel crash
+HIST_B_COMMIT_AUTHORITY; artifact13899494374 SHA1a8ebfcf verificato (8entry).
+Release43114234648 PASS packaging, non installato/qualificato globalmente.
+Cinque nuovi assert WPF mancavano nei due cataloghi QA: fix2file da qualificare,
+83check protocollo PASS, nessuna assertion precedente rimossa. SQL2c/Remote17
+FAIL prima degli assert per duplicato permesso nel seed; fix2024819 idempotente
+circoscritto al fixture,nuova run necessaria. Remote15/16 nove casi reali PASS
+propri ma overallFAIL; timeout non accettato come writer_closed.
+
+Autorizzata dall'utente l'esecuzione automatica notturna. Nessun nuovo consenso
+operativo richiesto; desktop protetto e blocchi strumento rispettati. Nessuna
+vendita/import/Undo reale,nessun nuovo prodotto,soglia o timeout indebolito.
+200%/2880x1800 conservati,100/125 USER_DEFERRED,Win7fisico BLOCKED_TARGET.
+Stati cassa,offline,storico e target fisico distinti; nessun DONE globale.
+
+
+## Checkpoint storico precedente — 20261111T230040Z, stessa ASUS-W7POS-019
 
 Execution ACTIVE: cassa quotidiana e storico bilaterale. Tutti i file necessari
 autorizzati dall'utente. Qualifiche riferite agli SHA e agli artefatti seguenti;
@@ -48,7 +139,9 @@ Il solo archivio selettivo passa dal BFF; backup completo locale, nessun segreto
 nel browser/evidence. Core/Data con servizi reali non attesta WPF, periferiche o
 Win7fisico. Nessun merge main, deploy, installazione o DONE. Checkpoint privato
 220842Z aggiornato; PR135/151 eTASK146 conservano il proprio storico integrale.
-<!-- ASUS019_COMPOSED_CURRENT_END -->
+
+</details>
+
 
 <details>
 <summary>Checkpoint precedente181007Z conservato come storia</summary>
