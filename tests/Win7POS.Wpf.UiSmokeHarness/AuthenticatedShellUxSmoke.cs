@@ -59,6 +59,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     {
                         server.UseCatalogSnapshot(empty: reopen < 2);
                         server.StaffRoleKey = reopen == 1 ? "pos_cashier" : "pos_admin";
+                        server.PersistentLocalAuthorization = reopen % 2 == 1;
                         OperatorSessionHolder.Current = null;
                         var commercialBefore=ReadShellCommercialCounts(factory);
                         var clock = new ShellSyncClock();
@@ -82,6 +83,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             var admittedView=ShellField<PosView>(shell,"PosViewControl");
                             var admittedModel=(PosViewModel)admittedView.DataContext;
                             await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                            if (server.PersistentLocalAuthorization)
+                            {
+                                var authorityDecision = OperatorSessionHolder.Current.EvaluateAuthorizationLease();
+                                var expiryTimer = ShellField<DispatcherTimer>(shell, "_authorizationLeaseTimer");
+                                check("persistent_authority_no_expiry_timer_" + reopen,
+                                    authorityDecision.Allowed && authorityDecision.EffectiveExpiresAt == DateTimeOffset.MaxValue &&
+                                    (expiryTimer == null || !expiryTimer.IsEnabled));
+                            }
                             check("initial_barcode_focus_"+reopen,((TextBox)admittedView.FindName("BarcodeBox")).IsKeyboardFocused);
                             check("login_real_workstation_"+reopen, admittedModel.AddBarcodeCommand.CanExecute(null) &&
                                 !shell.OwnedWindows.OfType<PosStartOfDaySyncDialog>().Any());

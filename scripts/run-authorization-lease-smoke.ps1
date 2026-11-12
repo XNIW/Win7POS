@@ -196,6 +196,8 @@ $restartDataDir = Join-Path $runRoot "restart-data"
 $restartDiagnosticsDir = Join-Path $runRoot "restart-diagnostics"
 $capacityDataDir = Join-Path $runRoot "capacity-data"
 $capacityDiagnosticsDir = Join-Path $runRoot "capacity-diagnostics"
+$persistentDataDir = Join-Path $runRoot "persistent-restart-data"
+$persistentDiagnosticsDir = Join-Path $runRoot "persistent-restart-diagnostics"
 
 try {
     $smoke = Invoke-AuthorizationHarness `
@@ -228,6 +230,57 @@ try {
         -Mode "--authorization-lease-clock-capacity-smoke" `
         -ArtifactName "authorization-lease-clock-capacity.txt" `
         -SeedTrustedSession
+
+    $persistentPrepare = Invoke-AuthorizationHarness `
+        -DataDirectory $persistentDataDir -DiagnosticsDirectory $persistentDiagnosticsDir `
+        -Mode "--authorization-persistent-restart-prepare" `
+        -ArtifactName "authorization-lease-restart-prepare.txt" -SeedTrustedSession
+    $persistentVerify = Invoke-AuthorizationHarness `
+        -DataDirectory $persistentDataDir -DiagnosticsDirectory $persistentDiagnosticsDir `
+        -Mode "--authorization-persistent-restart-verify" `
+        -ArtifactName "authorization-lease-restart-verify.txt" -RequirePreparedData
+    $persistentDenied = Invoke-AuthorizationHarness `
+        -DataDirectory $persistentDataDir -DiagnosticsDirectory $persistentDiagnosticsDir `
+        -Mode "--authorization-persistent-restart-denied-verify" `
+        -ArtifactName "authorization-lease-restart-denied-verify.txt" -RequirePreparedData
+    $persistentInstances = @($persistentPrepare, $persistentVerify, $persistentDenied) | ForEach-Object {
+        if ((Read-ResultValue -Text $_.Result -Name "persistentGrant") -ne 'True') {
+            throw 'Persistent authorization restart accidentally used the bounded compatibility mode.'
+        }
+        Read-ResultValue -Text $_.Result -Name "processInstance"
+    }
+    if (@($persistentInstances | Select-Object -Unique).Count -ne 3 -or
+        (Read-ResultValue -Text $persistentPrepare.Result -Name "stateFormat") -ne '6') {
+        throw 'Persistent authorization must use protected v6 state in three independent CLR processes.'
+    }
+    foreach ($check in @('correctPinAfterRestart','wrongPinAfterRestartDenied',
+        'oldBackupAfterRestartDenied','revokedBackupAfterRestartDenied')) {
+        if ((Read-ResultValue -Text $persistentVerify.Result -Name $check) -ne 'True') {
+            throw "Persistent reopen check missing: $check"
+        }
+    }
+    foreach ($check in @('revocationSurvivesAnotherProcess','otherProfileDenied',
+        'changedDeviceDenied','alteredWitnessDenied','lostBootWitnessDenied')) {
+        if ((Read-ResultValue -Text $persistentDenied.Result -Name $check) -ne 'True') {
+            throw "Persistent witness negative check missing: $check"
+        }
+    }
+    foreach ($probe in @($persistentVerify,$persistentDenied)) {
+        foreach ($check in @('unauthorizedSaleSinkRows','unauthorizedPublicationOutboxRows')) {
+            if ((Read-ResultValue -Text $probe.Result -Name $check) -ne '0') {
+                throw "Persistent probe reached an unauthorized economic sink."
+            }
+        }
+    }
+    foreach ($check in @('persistentLocalGrantBeyondLegacyWindow','persistentGrantWrongPinDenied',
+        'persistentGrantCommitProof','persistentGrantRevokedBackupDenied','persistentGrantSupersedesLegacyBackup')) {
+        if ((Read-ResultValue -Text $smoke.Result -Name $check) -ne 'True') {
+            throw "Persistent ordinary-use regression missing: $check"
+        }
+    }
+    Write-Host $persistentPrepare.Result
+    Write-Host $persistentVerify.Result
+    Write-Host $persistentDenied.Result
 
 if ((Read-ResultValue -Text $smoke.Result -Name "frozenClockMonotonicExpiry") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "frozenClockUnauthorizedSaleSinkRows") -ne "0" -or

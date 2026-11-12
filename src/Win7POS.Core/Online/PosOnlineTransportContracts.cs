@@ -151,6 +151,9 @@ namespace Win7POS.Core.Online
     [DataContract]
     public sealed class PosFirstLoginRequest
     {
+        [DataMember(Name = "localAuthorizationPolicy", EmitDefaultValue = false)]
+        public string LocalAuthorizationPolicy { get; set; } =
+            PosOnlineContract.PersistentLocalAuthorizationPolicy;
         [DataMember(Name = "credential")]
         public string Credential { get; set; }
 
@@ -408,6 +411,8 @@ namespace Win7POS.Core.Online
     [DataContract]
     public sealed class PosFirstLoginResponse
     {
+        [DataMember(Name = "localAuthorizationPolicy", EmitDefaultValue = false)]
+        public string LocalAuthorizationPolicy { get; set; }
         [DataMember(Name = "device")]
         public PosTrustedDeviceResponse Device { get; set; }
 

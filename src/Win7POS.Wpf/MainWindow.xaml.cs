@@ -1210,6 +1210,12 @@ namespace Win7POS.Wpf
                 return;
             }
 
+            if (decision.EffectiveExpiresAt.Value == DateTimeOffset.MaxValue)
+            {
+                _authorizationLeaseTimer?.Stop();
+                return;
+            }
+
             var remaining = decision.EffectiveExpiresAt.Value - decision.EstimatedServerNow.Value;
             if (remaining <= TimeSpan.Zero)
             {

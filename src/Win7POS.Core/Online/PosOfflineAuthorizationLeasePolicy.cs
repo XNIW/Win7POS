@@ -8,6 +8,13 @@ namespace Win7POS.Core.Online
         private static readonly TimeSpan MaximumOfflineAge =
             TimeSpan.FromSeconds(PosOnlineContract.OfflineAuthorizationMaxAgeSeconds);
 
+        public static bool IsPersistentAuthorizationExpiry(string value)
+        {
+            return TryParseUtc(value, out var expiry) &&
+                TryParseUtc(PosOnlineContract.PersistentLocalAuthorizationExpiryUtc,
+                    out var persistentExpiry) && expiry >= persistentExpiry;
+        }
+
         public static PosOfflineAuthorizationLeaseDecision Evaluate(
             PosTrustedDeviceSession session,
             DateTimeOffset localNow,
@@ -76,6 +83,37 @@ namespace Win7POS.Core.Online
             if (sessionExpiresAt <= lastServerAt)
             {
                 return PosOfflineAuthorizationLeaseDecision.Deny("session_window_invalid");
+            }
+
+            // The ordinary POS grant no longer expires with the cloud bearer
+            // token or the legacy 12-hour offline lease. Legacy receipts retain
+            // their original rules; an online response still needs a valid TTL.
+            if (session.PersistentLocalAuthorization)
+            {
+                if (!session.OfflineAuthorizationAttested || session.TrustedStateFormatVersion != 6)
+                    return PosOfflineAuthorizationLeaseDecision.Deny("offline_attestation_required");
+                if (requireAuthoritativeOfflineExpiry &&
+                    (!IsPersistentAuthorizationExpiry(session.SessionExpiresAt) ||
+                     !IsPersistentAuthorizationExpiry(session.EffectiveOfflineAuthorizationExpiresAt)))
+                    return PosOfflineAuthorizationLeaseDecision.Deny("offline_attestation_invalid");
+                var observed = localNow.ToUniversalTime();
+                var estimated = lastServerAt;
+                try
+                {
+                    if (observed > lastLocalAt) estimated += observed - lastLocalAt;
+                }
+                catch (ArgumentOutOfRangeException) { estimated = lastServerAt; }
+                if (minimumTrustedServerNow > estimated) estimated = minimumTrustedServerNow.Value;
+                if (!requireAuthoritativeOfflineExpiry)
+                {
+                    if (observed < lastLocalAt)
+                        return PosOfflineAuthorizationLeaseDecision.Deny("clock_rollback");
+                    if (estimated >= sessionExpiresAt)
+                        return PosOfflineAuthorizationLeaseDecision.Deny("offline_lease_expired");
+                    return PosOfflineAuthorizationLeaseDecision.Allow(sessionExpiresAt, estimated, estimated);
+                }
+                return PosOfflineAuthorizationLeaseDecision.Allow(
+                    DateTimeOffset.MaxValue, estimated, estimated);
             }
 
             DateTimeOffset authoritativeOfflineExpiry = default;

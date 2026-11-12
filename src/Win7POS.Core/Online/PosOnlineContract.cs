@@ -14,6 +14,9 @@ namespace Win7POS.Core.Online
         public const string ArticleMutationSchemaVersion =
             PosArticleMutationContract.SchemaVersion;
         public const int OfflineAuthorizationMaxAgeSeconds = 12 * 60 * 60;
+        public const string PersistentLocalAuthorizationPolicy = "persistent-pos-v1";
+        public const string PersistentLocalAuthorizationExpiryUtc =
+            "9999-12-31T23:59:59.999999Z";
         public const string PaymentCard = "card";
         public const string PaymentCash = "cash";
         public const string PaymentOther = "other";

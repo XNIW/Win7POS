@@ -2212,12 +2212,17 @@ GROUP BY mutation_kind;")).ToDictionary(
             }
 
             internal string StaffRoleKey = "pos_admin";
+            internal volatile bool PersistentLocalAuthorization;
 
             private PosFirstLoginResponse BuildFirstLoginResponse()
             {
                 var now = DateTimeOffset.UtcNow;
+                var expiry = PersistentLocalAuthorization
+                    ? DateTimeOffset.MaxValue.AddTicks(-9) : now.AddHours(4);
                 return new PosFirstLoginResponse
                 {
+                    LocalAuthorizationPolicy = PersistentLocalAuthorization
+                        ? PosOnlineContract.PersistentLocalAuthorizationPolicy : null,
                     Device = new PosTrustedDeviceResponse
                     {
                         ShopDeviceId = DeviceId,
@@ -2225,7 +2230,7 @@ GROUP BY mutation_kind;")).ToDictionary(
                         Trusted = true
                     },
                     EffectiveOfflineAuthorizationExpiresAt =
-                        now.AddHours(4).ToString(
+                        expiry.ToString(
                             "O",
                             CultureInfo.InvariantCulture),
                     Ok = true,
@@ -2235,7 +2240,7 @@ GROUP BY mutation_kind;")).ToDictionary(
                         CultureInfo.InvariantCulture),
                     Session = new PosSessionResponse
                     {
-                        ExpiresAt = now.AddHours(4).ToString(
+                        ExpiresAt = expiry.ToString(
                             "O",
                             CultureInfo.InvariantCulture),
                         HeartbeatAfterSeconds = 300,

@@ -314,6 +314,71 @@ public sealed class PosOfflineAuthorizationLeasePolicyTests
             Generation(sessionId: "session-b").Fingerprint);
     }
 
+    [TestMethod]
+    public void PersistentGrant_RemainsUsableYearsBeyondTheLegacyOfflineWindow()
+    {
+        var session = Session(DateTimeOffset.MaxValue);
+        session.PersistentLocalAuthorization = true;
+        session.TrustedStateFormatVersion = 6;
+        var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(session, LocalReceipt.AddYears(5));
+        Assert.IsTrue(decision.Allowed);
+        Assert.AreEqual(DateTimeOffset.MaxValue, decision.EffectiveExpiresAt);
+    }
+
+    [TestMethod]
+    public void PersistentGrant_ClockAdjustmentDoesNotBecomeAnAutomaticLogout()
+    {
+        var session = Session(DateTimeOffset.MaxValue);
+        session.PersistentLocalAuthorization = true;
+        session.TrustedStateFormatVersion = 6;
+        Assert.IsTrue(PosOfflineAuthorizationLeasePolicy.Evaluate(session,
+            LocalReceipt.AddDays(-1), ServerContact.AddDays(2), ServerContact.AddDays(2)).Allowed);
+    }
+
+    [TestMethod]
+    [DataRow(false, 6)]
+    [DataRow(true, 5)]
+    public void PersistentGrant_RequiresValidatedCurrentProtectedReceipt(bool attested, int format)
+    {
+        var session = Session(DateTimeOffset.MaxValue);
+        session.PersistentLocalAuthorization = true;
+        session.TrustedStateFormatVersion = format;
+        session.OfflineAuthorizationAttested = attested;
+        Assert.IsFalse(PosOfflineAuthorizationLeasePolicy.Evaluate(session, LocalReceipt.AddDays(1)).Allowed);
+    }
+
+    [TestMethod]
+    public void PersistentLocalGrant_DoesNotAcceptExpiredFreshOnlineResponse()
+    {
+        var session = Session(ServerContact.AddHours(1));
+        session.PersistentLocalAuthorization = true;
+        session.TrustedStateFormatVersion = 6;
+        Assert.IsFalse(PosOfflineAuthorizationLeasePolicy.ValidateOnlineReceipt(session, LocalReceipt.AddHours(2)).Allowed);
+    }
+
+    [TestMethod]
+    public void PersistentGrant_CannotEraseAnExplicitFiniteAuthorityDeadline()
+    {
+        var session = Session(ServerContact.AddHours(1));
+        session.PersistentLocalAuthorization = true;
+        session.TrustedStateFormatVersion = 6;
+        var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(session, LocalReceipt);
+        Assert.IsFalse(decision.Allowed);
+        Assert.AreEqual("offline_attestation_invalid", decision.Code);
+    }
+
+    [TestMethod]
+    public void PersistentGrant_AcceptsFreshHeartbeatAfterOriginalOfflineWindow()
+    {
+        var session = Session(DateTimeOffset.MaxValue);
+        session.PersistentLocalAuthorization = true;
+        session.TrustedStateFormatVersion = 6;
+        session.LastOkServerAt = ServerContact.AddDays(3).ToString("O");
+        session.LastOkLocalAt = LocalReceipt.AddDays(3).ToString("O");
+        session.SessionExpiresAt = DateTimeOffset.MaxValue.ToString("O");
+        Assert.IsTrue(PosOfflineAuthorizationLeasePolicy.ValidateOnlineReceipt(session, LocalReceipt.AddDays(3)).Allowed);
+    }
+
     private static PosTrustedDeviceSession Session(DateTimeOffset expiresAt)
     {
         return new PosTrustedDeviceSession
