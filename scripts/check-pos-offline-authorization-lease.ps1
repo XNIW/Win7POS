@@ -35,6 +35,8 @@ $contract = Read-Text "src/Win7POS.Core/Online/PosOnlineContract.cs"
 $policy = Read-Text "src/Win7POS.Core/Online/PosOfflineAuthorizationLeasePolicy.cs"
 $contracts = Read-Text "src/Win7POS.Core/Online/PosOnlineTransportContracts.cs"
 $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
+$restartWitness = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOfflineRestartWitnessStore.cs"
+$restartClock = Read-Text "src/Win7POS.Core/Online/PosOfflineRestartClockPolicy.cs"
 $guard = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOfflineAuthorizationLeaseGuard.cs"
 $authorizationCommitGuard = Read-Text "src/Win7POS.Core/Pos/SaleAuthorizationCommitGuard.cs"
 $operatorSessionContract = Read-Text "src/Win7POS.Wpf/Infrastructure/Security/IOperatorSession.cs"
@@ -78,9 +80,14 @@ Require-Pattern "first-login DTO consumes authenticated serverTime" $contracts '
 Require-Pattern "heartbeat DTO consumes authenticated serverTime" $contracts 'class\s+PosHeartbeatResponse[\s\S]*DataMember\(Name\s*=\s*"serverTime"\)'
 Require-Pattern "first-login DTO consumes the optional authoritative offline expiry" $contracts 'class\s+PosFirstLoginResponse[\s\S]*DataMember\(\s*Name\s*=\s*"effectiveOfflineAuthorizationExpiresAt"'
 Require-Pattern "offline policy requires an attested authoritative expiry" $policy 'requireAuthoritativeOfflineExpiry[\s\S]*offline_attestation_required[\s\S]*authoritativeOfflineExpiry\s*<\s*effectiveExpiry'
-Require-Pattern "trusted state v4 persists an integrity-bound offline expiry" $store 'CurrentFormatVersion\s*=\s*4[\s\S]*EffectiveOfflineAuthorizationExpiresAt[\s\S]*ProtectedOfflineAuthorizationBinding[\s\S]*HasValidOfflineAuthorizationBinding'
+Require-Pattern "trusted state v5 persists an integrity-bound offline expiry" $store 'CurrentFormatVersion\s*=\s*5[\s\S]*EffectiveOfflineAuthorizationExpiresAt[\s\S]*ProtectedOfflineAuthorizationBinding[\s\S]*HasValidOfflineAuthorizationBinding'
 Require-Pattern "legacy v1/v2/v3 trusted state remains online-readable without offline authorization" $store 'PreviousFormatVersion\s*=\s*3[\s\S]*OlderFormatVersion\s*=\s*2[\s\S]*LegacyFormatVersion\s*=\s*1[\s\S]*ValidateOnlineReceipt'
-Require-Pattern "offline binding is scoped to a random process secret" $store 'ProcessAuthorizationScope\s*=\s*[\s\S]{0,120}CreateProcessAuthorizationScope\(\)[\s\S]*ComputeOfflineAuthorizationBinding[\s\S]*AppendBoundedValue\(material,\s*ProcessAuthorizationScope\)'
+Require-Pattern "v4 remains online-readable without silently acquiring restart authority" $store 'ProcessScopedFormatVersion\s*=\s*4[\s\S]*state\.FormatVersion\s*!=\s*ProcessScopedFormatVersion'
+Require-Pattern "offline binding requires a fresh receipt id and canonical profile scope" $store 'OfflineReceiptId\s*=\s*Guid\.NewGuid\(\)\.ToString\("N"\)[\s\S]*AppendBoundedValue\(material,\s*ProfileScope\(\)\)[\s\S]*AppendBoundedValue\(material,\s*receiptId\)'
+Require-Pattern "restart witness uses DPAPI CurrentUser outside profile backups in a volatile registry key" $restartWitness 'Software\\Win7POS\\OfflineAuthorization[\s\S]*ProtectedData\.Unprotect[\s\S]*DataProtectionScope\.CurrentUser[\s\S]*ProtectedData\.Protect[\s\S]*RegistryOptions\.Volatile'
+Require-Pattern "restart reads require the exact state hash, receipt and generation before clock restoration" $store 'RestartWitnessStore\(\)\.TryAdvance\([\s\S]*ComputeSha256\(stateJson\),\s*state\.OfflineReceiptId,\s*generation[\s\S]*TryRestoreRestartClock\(receipt\)'
+Require-Pattern "restart clock rejects profile, backup, identity, counter and wall-clock rollback" $restartClock 'receipt\.ProfileScope[\s\S]*receipt\.StateSha256[\s\S]*receipt\.ReceiptId[\s\S]*receipt\.GenerationFingerprint[\s\S]*timestamp\s*<\s*receipt\.Timestamp[\s\S]*localNow\s*<\s*receipt\.LocalHighWater'
+Require-Pattern "revocation tombstone is stored before the trusted file can be removed" $store 'public\s+void\s+Clear\(\)[\s\S]*RestartWitnessStore\(\)\.Invalidate\(\);[\s\S]*DeleteStateBestEffort\(\);[\s\S]*public\s+bool\s+TryClear[\s\S]*RestartWitnessStore\(\)\.Invalidate\(\);[\s\S]*DeleteStateBestEffort\(\);'
 if ($store -match 'DataMember\([\s\S]{0,100}processAuthorizationScope') {
     Fail "process authorization scope must never be serialized"
 }
@@ -94,7 +101,23 @@ Require-Pattern "process trusted time is bounded and keyed only by clock domain 
 Require-Pattern "active generation anchor is separated from the process clock high-water" $store 'class\s+ProcessAuthorizationClockState[\s\S]*HighWaters[\s\S]*ActiveAnchor[\s\S]*WithoutActiveAnchor'
 Require-Pattern "clock-state preparation clones before capacity checks and never evicts" $store 'TryPrepareProcessAuthorizationClockState[\s\S]*new\s+Dictionary<[\s\S]*currentState\.HighWaters[\s\S]*TryGetValue\([\s\S]*existingHighWater[\s\S]*Count\s*>=\s*MaximumProcessClockScopes[\s\S]*new\s+ProcessTrustedTimeHighWater[\s\S]*new\s+ProcessAuthorizationClockState'
 Require-Pattern "clock-state preparation rejects active domain or frequency mismatch" $store 'activeAnchor\s*!=\s*null[\s\S]{0,500}activeAnchor\.ClockDomain[\s\S]{0,260}activeAnchor\.Frequency\s*!=\s*_monotonicFrequency[\s\S]{0,120}return\s+false'
-Require-Pattern "Clear and TryClear remove only the active authorization anchor" $store 'public\s+void\s+Clear\(\)[\s\S]{0,350}WithoutActiveAnchor\(\)[\s\S]*public\s+bool\s+TryClear\([\s\S]{0,600}WithoutActiveAnchor\(\)'
+foreach ($clearMethod in @('Clear','TryClear')) {
+    $clearDeclarations = [regex]::Matches($store, '(?m)^\s*public\s+(?:void|bool)\s+'+[regex]::Escape($clearMethod)+'\s*\(')
+    if ($clearDeclarations.Count -ne 1) { Fail "$clearMethod must have one explicit body" }
+    else {
+        $clearStart = Find-CSharpMethodBodyStart $store $clearDeclarations[0].Index
+        if ($null -eq $clearStart -or $clearStart.Kind -ne 'block') { Fail "$clearMethod requires a block body" }
+        else {
+            $clearEnd = Find-CSharpMatchingDelimiter $store $clearStart.Index '{' '}'
+            if ($clearEnd -le $clearStart.Index) { Fail "$clearMethod body must have balanced braces" }
+            else {
+                $clearBody = $store.Substring($clearStart.Index, $clearEnd-$clearStart.Index+1)
+                Require-Pattern "$clearMethod retains high-waters and removes only its active anchor" $clearBody 'WithoutActiveAnchor\(\)'
+                Require-Pattern "$clearMethod tombstones restart authority before deleting the file" $clearBody 'RestartWitnessStore\(\)\.Invalidate\(\);[\s\S]*DeleteStateBestEffort\(\)'
+            }
+        }
+    }
+}
 $clockPublishCount = [regex]::Matches(
     $store,
     'SaveState\([\s\S]{0,180}_processAuthorizationClockState\s*=\s*preparedClockState').Count
@@ -116,7 +139,7 @@ Require-Pattern "authorization lease dynamic smoke is wired into the UI harness"
 Require-Pattern "authorization lease restart prepare and verify are separate harness modes" $uiHarness '--authorization-lease-restart-prepare[\s\S]*--authorization-lease-restart-verify[\s\S]*PrepareRestartProbeAsync[\s\S]*VerifyRestartProbeAsync'
 Require-Pattern "clock capacity is exercised in a separate process harness" $uiHarness '--authorization-lease-clock-capacity-smoke[\s\S]*RunClockCapacityAsync'
 Require-Pattern "seeded authorization modes require an explicit trusted-session seed" $uiHarness 'authorizationLeaseModeRequiresSeed[\s\S]{0,500}!seedTrustedSession[\s\S]{0,300}requires --seed-trusted-session'
-Require-Pattern "restart verification explicitly forbids reseeding prepared state" $uiHarness 'authorizationLeaseRestartVerify\s*&&\s*seedTrustedSession[\s\S]{0,300}without --seed-trusted-session'
+Require-Pattern "both restart verification modes explicitly forbid reseeding prepared state" $uiHarness '\(authorizationLeaseRestartVerify\s*\|\|\s*authorizationLeaseRestartDeniedVerify\)\s*&&\s*seedTrustedSession[\s\S]{0,300}without --seed-trusted-session'
 Require-Pattern "authorization artifacts and unhandled errors use diagnostics outside the data root" $uiHarness 'EnsureAuthorizationLeaseDiagnosticsPath[\s\S]*harnessErrorPath[\s\S]*artifactDirectory\s*=\s*authorizationLeaseMode\s*\?\s*diagnosticsDir\s*:\s*dataDir'
 Require-Pattern "seeded QA data rejects non-empty roots with entry names" $uiHarness 'requireEmpty\s*&&\s*entries\.Length\s*>\s*0[\s\S]{0,500}Found:[\s\S]{0,500}string\.Join'
 Require-Pattern "persistent restart state is validated without the empty-directory seed guard" $uiHarness 'requirePreparedState\s*&&\s*entries\.Length\s*==\s*0[\s\S]{0,250}non-empty prepared QA data directory'
@@ -140,7 +163,7 @@ Require-Pattern "dynamic smoke proves fresh recovery and failed-save non-publica
 Require-Pattern "isolated clock smoke fills sixteen scopes, denies the seventeenth and reuses the first" $authorizationSmoke 'RunClockCapacityAsync[\s\S]*index\s*<\s*16[\s\S]*qa-clock-capacity-16[\s\S]*qa-clock-capacity-generation-00-reuse[\s\S]*saturation evicted'
 Require-Pattern "dynamic smoke rejects monotonic regression across preflight tokens" $authorizationSmoke 'orderedFirst[\s\S]*crossPreflightTicks\s*=\s*90[\s\S]*regressedSecond[\s\S]*crossPreflightTicks\s*=\s*100[\s\S]*trusted_time_continuity_lost'
 Require-Pattern "unauthorized sink probe reaches the real sale and publication tables if the guard regresses" $authorizationSmoke 'InsertUnauthorizedSaleAndOutbox[\s\S]*INSERT INTO sales\([\s\S]*INSERT INTO sales_sync_outbox\('
-Require-Pattern "cross-process restart denies offline authorization before sale persistence" $authorizationSmoke 'PrepareRestartProbeAsync[\s\S]*VerifyRestartProbeAsync[\s\S]*offline_attestation_required[\s\S]*deniedBeforeSink[\s\S]*unauthorizedSaleSinkRows=0[\s\S]*freshOnlineRecovery=True'
+Require-Pattern "cross-process reopen still denies persistence before PIN, then proves PIN and backup isolation" $authorizationSmoke 'VerifyRestartProbeCoreAsync[\s\S]*deniedBeforeSink[\s\S]*wrong PIN activated reopened[\s\S]*correct PIN failed after a distinct-process[\s\S]*old backup was authorized[\s\S]*known revocation was bypassed[\s\S]*unauthorizedSaleSinkRows=0[\s\S]*freshOnlineRecovery=True'
 Require-Pattern "Windows runner executes prepare and verify in distinct processes" $authorizationSmokeRunner 'authorization-lease-restart-prepare[\s\S]*authorization-lease-restart-verify[\s\S]*prepareInstance[\s\S]*verifyInstance[\s\S]*offlineAttestationAfterRestart'
 Require-Pattern "Windows runner separates run-scoped data and diagnostics directories" $authorizationSmokeRunner 'AuthorizationLease\.[\s\S]*main-data[\s\S]*main-diagnostics[\s\S]*restart-data[\s\S]*restart-diagnostics[\s\S]*capacity-data[\s\S]*capacity-diagnostics'
 Require-Pattern "Windows runner rejects nested diagnostics before creating either process output stream" $authorizationSmokeRunner 'diagnostics must be outside WIN7POS_DATA_DIR[\s\S]*New-Item\s+-ItemType\s+Directory\s+-Path\s+\$DiagnosticsDirectory'

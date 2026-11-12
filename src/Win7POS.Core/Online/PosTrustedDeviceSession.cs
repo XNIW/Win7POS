@@ -8,6 +8,8 @@ namespace Win7POS.Core.Online
         public string LastOkLocalAt { get; set; }
         public string LastOkServerAt { get; set; }
         public bool OfflineAuthorizationAttested { get; set; }
+        // Local validation result only; never persisted as an authority claim.
+        public string OfflineAuthorizationFailureCode { get; set; }
         public string PosSessionId { get; set; }
         public string SessionExpiresAt { get; set; }
         public string SessionToken { get; set; }

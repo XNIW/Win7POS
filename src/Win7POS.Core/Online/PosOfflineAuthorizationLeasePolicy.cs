@@ -84,7 +84,10 @@ namespace Win7POS.Core.Online
                 if (requireAuthoritativeOfflineExpiry)
                 {
                     return PosOfflineAuthorizationLeaseDecision.Deny(
-                        "offline_attestation_required");
+                        session.OfflineAuthorizationFailureCode == "clock_rollback" ||
+                        session.OfflineAuthorizationFailureCode == "trusted_time_continuity_lost"
+                            ? session.OfflineAuthorizationFailureCode
+                            : "offline_attestation_required");
                 }
             }
             else if (!TryParseUtc(
