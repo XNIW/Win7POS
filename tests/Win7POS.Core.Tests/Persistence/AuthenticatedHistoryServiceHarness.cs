@@ -305,19 +305,19 @@ internal static class AuthenticatedHistoryServiceHarness
         var assignments=analysis.AcceptedTransactions.Select(t=>t.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select((g,i)=>new HistoricalMerchantAssignment(g.First(),"conflict-scope-"+i,"conflict-binding-"+i,"Synthetic independent mapping")).ToArray();
         var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,before.DatasetId,before.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
         _phase="conflict_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourceSha=Hash(await File.ReadAllBytesAsync(source)),operation=Guid.Parse(plan.OperationId).ToString("D")},ct);await WaitSignal("allow_conflict_prepare",ct);
-        _phase="conflict_preparation";var denied=false;
+        _phase="conflict_preparation";var denied=false;object? denial=null;
         using(var publicationUse=HistoricalPublicationOperationUse.Begin(b.Fixture.Db.Factory,plan.OperationId))
         using(var draft=await b.Fixture.Service.PreparePublicationDraftAsync(plan,b.Generation.ShopDeviceId,ct))
         {
             try{await Admit(b,draft,ct);}
-            catch(HistoricalCloudRequestException e)when(IsExpectedConflict(e)){denied=true;}
+            catch(HistoricalCloudRequestException e)when(IsExpectedConflict(e)){denied=true;denial=new{code=e.Code,httpStatus=b.LastRequestHttpStatus,transportDenied=e.Denied,retryable=e.Retryable};}
         }
-        Demand(denied,"history_test_conflicting_grant_accepted");var after=await b.Fixture.Service.ReadDatasetAsync(ct);Demand(after.DatasetId==before.DatasetId&&after.DataRevision==before.DataRevision&&b.LocalFacts().Length==0,"history_test_conflict_changed_ledger");
+        Demand(denied&&denial!=null&&b.LastRequestHttpStatus==409,"history_test_conflicting_grant_accepted");var after=await b.Fixture.Service.ReadDatasetAsync(ct);Demand(after.DatasetId==before.DatasetId&&after.DataRevision==before.DataRevision&&b.LocalFacts().Length==0,"history_test_conflict_changed_ledger");
         // Once the same live operation ownership as WPF is released, the real
         // supervisor seals and reconciles the negative outcome itself.
         await b.Until(()=>{using var read=b.Fixture.Db.Factory.Open();return Task.FromResult(read.ExecuteScalar<string>("SELECT server_resolution FROM historical_commit_witness WHERE operation_id=@op",new{op=plan.OperationId})=="aborted");},ct);
         Same(wanted,a.Facts());Same(wanted,b.Facts());a.NoNative();b.NoNative();
-        _phase="conflict";await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_CONFLICT_DENIED_ABORT_RECONCILED",operation=Guid.Parse(plan.OperationId).ToString("D"),count=wanted.Length,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",wanted.Select(f=>f.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);await WaitSignal("conflict_observed",ct);
+        _phase="conflict";await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_CONFLICT_DENIED_ABORT_RECONCILED",denial,operation=Guid.Parse(plan.OperationId).ToString("D"),count=wanted.Length,factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",wanted.Select(f=>f.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);await WaitSignal("conflict_observed",ct);
     }
     static async Task AdminOrigin(Session a,Session b,Fact[] before,CancellationToken ct)
     {
@@ -376,6 +376,7 @@ internal static class AuthenticatedHistoryServiceHarness
         internal HistoricalCloudExportTests.Fixture Fixture=null!;internal OnlineSyncGeneration Generation=null!;
         PosAdminWebClient _client=null!;OnlineSyncSupervisor _supervisor=null!;Actor _actor=new();bool _active=true;string _server="";long _epoch;
         internal string LastRequestCode{get;private set;}="";
+        internal int? LastRequestHttpStatus{get;private set;}
         PosAdminWebOptions _options=null!;Func<HistoricalBaselineContext,HistoricalSalesDatasetState,CancellationToken,Task<HistoricalBaselinePreparation>> _prepareBaseline=null!;
         internal static async Task<Session> Create(Actor actor,bool legacy,HistoricalCloudExportTests.Fixture? existing=null)
         {
@@ -406,7 +407,7 @@ internal static class AuthenticatedHistoryServiceHarness
                 await WaitSignal("allow_conflict_review",ct);
             }
             Demand();var result=await _client.HistoricalCloudAsync(new HistoricalCloudRequest{DeviceId=_actor.deviceId,SessionId=_actor.sessionId,DeviceToken=_actor.deviceToken,SessionToken=_actor.sessionToken,Operation=operation,Payload=payload},ct);
-            _lastCode=result.Code;LastRequestCode=result.Code;
+            _lastCode=result.Code;LastRequestCode=result.Code;LastRequestHttpStatus=result.HttpStatus;
             if(!result.Success)
             {
                 RecordFailure(operation,result.Code,result.HttpStatus,result.Denied,result.Retryable);
