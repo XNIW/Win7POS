@@ -15,7 +15,8 @@ namespace Win7POS.Wpf.Pos.Online
 {
     public sealed class PosTrustedDeviceStore
     {
-        private const int CurrentFormatVersion = 4;
+        private const int CurrentFormatVersion = 5;
+        private const int ProcessScopedFormatVersion = 4;
         private const int PreviousFormatVersion = 3;
         private const int OlderFormatVersion = 2;
         private const int LegacyFormatVersion = 1;
@@ -27,8 +28,6 @@ namespace Win7POS.Wpf.Pos.Online
         private const int MaximumProfileNameCharacters = 80;
         private const int MinimumProfileNameCharacters = 8;
         private static readonly object StateGate = new object();
-        private static readonly string ProcessAuthorizationScope =
-            CreateProcessAuthorizationScope();
         private static readonly string DefaultMonotonicClockDomain =
             "system-stopwatch";
         private static ProcessAuthorizationClockState
@@ -186,7 +185,7 @@ namespace Win7POS.Wpf.Pos.Online
                     {
                         state.ProtectedOfflineAuthorizationBinding =
                             ProtectString(
-                                ComputeOfflineAuthorizationBinding(session));
+                                ComputeOfflineAuthorizationBinding(session, state.OfflineReceiptId));
                     }
                     SaveState(state);
                 }
@@ -392,7 +391,7 @@ namespace Win7POS.Wpf.Pos.Online
                         "Invalid POS authorization lease: " +
                         clockFailureCode);
                 }
-                SaveState(state);
+                SaveState(state, preparedClockState);
                 _processAuthorizationClockState = preparedClockState;
             }
         }
@@ -509,7 +508,7 @@ namespace Win7POS.Wpf.Pos.Online
                 {
                     return false;
                 }
-                SaveState(CreateStoredState(refreshedCandidate));
+                SaveState(CreateStoredState(refreshedCandidate), preparedClockState);
                 _processAuthorizationClockState = preparedClockState;
                 return TryReadState(out _, out refreshedSession);
             }
@@ -533,6 +532,7 @@ namespace Win7POS.Wpf.Pos.Online
         {
             lock (StateGate)
             {
+                RestartWitnessStore().Invalidate();
                 DeleteStateBestEffort();
                 _processAuthorizationClockState =
                     _processAuthorizationClockState.WithoutActiveAnchor();
@@ -552,6 +552,7 @@ namespace Win7POS.Wpf.Pos.Online
                     return false;
                 }
 
+                RestartWitnessStore().Invalidate();
                 var cleared = DeleteStateBestEffort();
                 _processAuthorizationClockState =
                     _processAuthorizationClockState.WithoutActiveAnchor();
@@ -833,6 +834,7 @@ namespace Win7POS.Wpf.Pos.Online
                 state = Deserialize<StoredTrustedDeviceState>(stateJson);
                 if (state == null ||
                     (state.FormatVersion != CurrentFormatVersion &&
+                     state.FormatVersion != ProcessScopedFormatVersion &&
                      state.FormatVersion != PreviousFormatVersion &&
                      state.FormatVersion != OlderFormatVersion &&
                      state.FormatVersion != LegacyFormatVersion) ||
@@ -867,7 +869,7 @@ namespace Win7POS.Wpf.Pos.Online
                     TrustedStateFormatVersion = state.FormatVersion,
                 };
                 session.OfflineAuthorizationAttested =
-                    HasValidOfflineAuthorizationBinding(state, session);
+                    HasValidOfflineAuthorizationBinding(state, session, stateJson);
                 if (!session.OfflineAuthorizationAttested)
                     session.EffectiveOfflineAuthorizationExpiresAt = null;
                 return true;
@@ -987,7 +989,7 @@ namespace Win7POS.Wpf.Pos.Online
             return ComputeSha256(material.ToString());
         }
 
-        private static StoredTrustedDeviceState CreateStoredState(
+        private StoredTrustedDeviceState CreateStoredState(
             PosTrustedDeviceSession session)
         {
             var state = new StoredTrustedDeviceState
@@ -1013,10 +1015,11 @@ namespace Win7POS.Wpf.Pos.Online
 
             if (session.OfflineAuthorizationAttested)
             {
+                state.OfflineReceiptId = Guid.NewGuid().ToString("N");
                 state.EffectiveOfflineAuthorizationExpiresAt =
                     session.EffectiveOfflineAuthorizationExpiresAt;
                 state.ProtectedOfflineAuthorizationBinding = ProtectString(
-                    ComputeOfflineAuthorizationBinding(session));
+                    ComputeOfflineAuthorizationBinding(session, state.OfflineReceiptId));
             }
             return state;
         }
@@ -1060,9 +1063,10 @@ namespace Win7POS.Wpf.Pos.Online
             return candidate;
         }
 
-        private static bool HasValidOfflineAuthorizationBinding(
+        private bool HasValidOfflineAuthorizationBinding(
             StoredTrustedDeviceState state,
-            PosTrustedDeviceSession session)
+            PosTrustedDeviceSession session,
+            string stateJson)
         {
             if (state.FormatVersion != CurrentFormatVersion ||
                 string.IsNullOrWhiteSpace(
@@ -1073,14 +1077,33 @@ namespace Win7POS.Wpf.Pos.Online
                 return false;
             }
 
-            var expected = ComputeOfflineAuthorizationBinding(session);
+            if (state.OfflineReceiptId == null || state.OfflineReceiptId.Length != 32)
+                return false;
+            var expected = ComputeOfflineAuthorizationBinding(session, state.OfflineReceiptId);
             var actual = UnprotectToString(
                 state.ProtectedOfflineAuthorizationBinding);
-            return FixedTimeEquals(expected, actual);
+            if (!FixedTimeEquals(expected, actual) ||
+                !TryCreateGenerationFingerprint(session, out var generation) ||
+                !TryCaptureMonotonicTimestamp(out var timestamp))
+                return false;
+            if (!RestartWitnessStore().TryAdvance(
+                    ComputeSha256(stateJson), state.OfflineReceiptId, generation,
+                    _monotonicClockDomain, _monotonicFrequency, timestamp,
+                    DateTimeOffset.UtcNow, out var receipt, out var failureCode))
+            {
+                session.OfflineAuthorizationFailureCode = failureCode;
+                return false;
+            }
+            if (!TryRestoreRestartClock(receipt))
+            {
+                session.OfflineAuthorizationFailureCode = "trusted_time_continuity_lost";
+                return false;
+            }
+            return true;
         }
 
-        private static string ComputeOfflineAuthorizationBinding(
-            PosTrustedDeviceSession session)
+        private string ComputeOfflineAuthorizationBinding(
+            PosTrustedDeviceSession session, string receiptId)
         {
             var material = new StringBuilder();
             AppendBoundedValue(material, CurrentFormatVersion.ToString());
@@ -1101,28 +1124,44 @@ namespace Win7POS.Wpf.Pos.Online
                 material,
                 session.EffectiveOfflineAuthorizationExpiresAt);
             AppendBoundedValue(material, ComputeSecretStamp(session));
-            // The repository has no trustworthy persisted monotonic boot clock on
-            // Windows 7. Keep offline authority process-scoped so a restart cannot
-            // reset the in-memory server-time high-water and replay this binding.
-            AppendBoundedValue(material, ProcessAuthorizationScope);
+            AppendBoundedValue(material, ProfileScope());
+            AppendBoundedValue(material, receiptId);
             return ComputeSha256(material.ToString());
         }
 
-        private static string CreateProcessAuthorizationScope()
+        private string ProfileScope()
         {
-            var bytes = new byte[32];
-            try
+            using (var sha = SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(
+                    Path.GetFullPath(TrustedDeviceFilePath).ToUpperInvariant())))
+                    .Replace("-", string.Empty).ToLowerInvariant();
+        }
+
+        private PosOfflineRestartWitnessStore RestartWitnessStore() =>
+            new PosOfflineRestartWitnessStore(ProfileScope());
+
+        private bool TryRestoreRestartClock(PosOfflineRestartReceipt receipt)
+        {
+            var current = _processAuthorizationClockState;
+            var active = current.ActiveAnchor;
+            if (active != null && (active.ClockDomain != receipt.ClockDomain ||
+                active.Frequency != receipt.Frequency)) return false;
+            var key = new ProcessClockKey(receipt.ClockDomain, receipt.Frequency);
+            var highWaters = new Dictionary<ProcessClockKey, ProcessTrustedTimeHighWater>(current.HighWaters);
+            var trustedNow = receipt.ServerAnchor;
+            if (highWaters.TryGetValue(key, out var highWater))
             {
-                using (var random = RandomNumberGenerator.Create())
-                {
-                    random.GetBytes(bytes);
-                }
-                return Convert.ToBase64String(bytes);
+                if (!TryAdvanceServerAnchor(highWater.ServerAnchor, highWater.MonotonicTimestamp,
+                        receipt.Timestamp, receipt.Frequency, out var minimum)) return false;
+                if (minimum > trustedNow) trustedNow = minimum;
             }
-            finally
-            {
-                Array.Clear(bytes, 0, bytes.Length);
-            }
+            else if (highWaters.Count >= MaximumProcessClockScopes) return false;
+            highWaters[key] = new ProcessTrustedTimeHighWater(trustedNow, receipt.Timestamp,
+                receipt.Frequency, receipt.ClockDomain);
+            _processAuthorizationClockState = new ProcessAuthorizationClockState(highWaters,
+                new ProcessAuthorizationClockAnchor(receipt.GenerationFingerprint, trustedNow,
+                    receipt.Timestamp, receipt.Frequency, receipt.ClockDomain));
+            return true;
         }
 
         private sealed class ProcessClockKey :
@@ -1292,7 +1331,8 @@ namespace Win7POS.Wpf.Pos.Online
             return difference == 0;
         }
 
-        private void SaveState(StoredTrustedDeviceState state)
+        private void SaveState(StoredTrustedDeviceState state,
+            ProcessAuthorizationClockState preparedClockState = null)
         {
             AppPaths.EnsureDataDirectories();
             EnsureProfilePathSafe(createDirectory: true);
@@ -1304,6 +1344,19 @@ namespace Win7POS.Wpf.Pos.Online
                     "Trusted-device state exceeds the supported size.");
             }
             WriteAllTextAtomic(TrustedDeviceFilePath, serialized);
+            var anchor = preparedClockState?.ActiveAnchor;
+            if (anchor != null && !string.IsNullOrEmpty(state.OfflineReceiptId))
+            {
+                RestartWitnessStore().Write(new PosOfflineRestartReceipt
+                {
+                    ProfileScope = ProfileScope(), StateSha256 = ComputeSha256(serialized),
+                    ReceiptId = state.OfflineReceiptId, GenerationFingerprint = anchor.GenerationFingerprint,
+                    ClockDomain = anchor.ClockDomain, Frequency = anchor.Frequency,
+                    Timestamp = anchor.MonotonicTimestamp, ServerAnchor = anchor.ServerAnchor,
+                    LocalHighWater = DateTimeOffset.UtcNow
+                });
+            }
+            else RestartWitnessStore().Invalidate();
         }
 
         private void EnsureProfilePathSafe(bool createDirectory)
@@ -1463,6 +1516,8 @@ namespace Win7POS.Wpf.Pos.Online
         [DataContract]
         private sealed class StoredTrustedDeviceState
         {
+            [DataMember(Name = "offlineReceiptId", EmitDefaultValue = false)]
+            public string OfflineReceiptId { get; set; }
             [DataMember(Name = "formatVersion")]
             public int FormatVersion { get; set; }
 

@@ -106,6 +106,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--authorization-lease-restart-prepare");
             var authorizationLeaseRestartVerify =
                 HasArg(args, "--authorization-lease-restart-verify");
+            var authorizationLeaseRestartDeniedVerify =
+                HasArg(args, "--authorization-lease-restart-denied-verify");
             var authorizationLeaseClockCapacity =
                 HasArg(args, "--authorization-lease-clock-capacity-smoke");
             var authorizationLeaseSmoke =
@@ -114,6 +116,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 authorizationLeaseSmoke ||
                 authorizationLeaseRestartPrepare ||
                 authorizationLeaseRestartVerify ||
+                authorizationLeaseRestartDeniedVerify ||
                 authorizationLeaseClockCapacity;
             var seedTrustedSession =
                 HasArg(args, "--seed-trusted-session");
@@ -162,7 +165,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 throw new InvalidOperationException(
                     "This authorization lease mode requires --seed-trusted-session.");
             }
-            if (authorizationLeaseRestartVerify && seedTrustedSession)
+            if ((authorizationLeaseRestartVerify || authorizationLeaseRestartDeniedVerify) && seedTrustedSession)
             {
                 throw new InvalidOperationException(
                     "Restart verification must reuse prepared state without --seed-trusted-session.");
@@ -254,7 +257,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
                     dataDir,
                     requireEmptyQaData,
-                    authorizationLeaseRestartVerify);
+                    authorizationLeaseRestartVerify || authorizationLeaseRestartDeniedVerify);
             }
 
             Directory.CreateDirectory(dataDir);
@@ -264,7 +267,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
                     dataDir,
                     requireEmptyQaData,
-                    authorizationLeaseRestartVerify);
+                    authorizationLeaseRestartVerify || authorizationLeaseRestartDeniedVerify);
             }
             var artifactDirectory =
                 authorizationLeaseMode ? diagnosticsDir : dataDir;
@@ -272,6 +275,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                authorizationLeaseSmoke ||
                                authorizationLeaseRestartPrepare ||
                                authorizationLeaseRestartVerify ||
+                               authorizationLeaseRestartDeniedVerify ||
                                authorizationLeaseClockCapacity ||
                                HasArg(args, "--product-paging-dispatcher-smoke") ||
                                HasArg(args, "--bounded-logging-smoke") ||
@@ -532,6 +536,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             result.StartsWith("PASS", StringComparison.Ordinal)
                                 ? 0
                                 : 1);
+                        return;
+                    }
+
+                    if (authorizationLeaseRestartDeniedVerify)
+                    {
+                        var result = await AuthorizationLeaseWpfSmoke
+                            .VerifyRevokedRestartProbeAsync()
+                            .ConfigureAwait(true);
+                        File.WriteAllText(Path.Combine(artifactDirectory,
+                            "authorization-lease-restart-denied-verify.txt"), result, Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
                         return;
                     }
 

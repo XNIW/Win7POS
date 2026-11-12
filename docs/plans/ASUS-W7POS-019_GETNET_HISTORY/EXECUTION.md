@@ -1,5 +1,102 @@
 # ASUS-W7POS-019 execution ledger
 
+<!-- ASUS019_DELIVERY_COMPOSITION_START -->
+## Composizione candidata — stessa ASUS-W7POS-019 ACTIVE
+
+Il ramo codex/asus019-delivery-offline-history integra il client storico
+1f8ceaa62cdb4fad47852b55f69e933b8fa3aa54 con offline reopen
+fe069a1e8a4326c55b4e8d471679d5bfefba2c0b, base comune d1b2bc3.
+Nessuna correzione prodotto manuale durante il merge: conflitti soltanto nei
+due documenti, risolti conservando entrambe le cronologie. Gli altri file
+sono integrati da Git; Program e catalogo QA richiedono i gate del composto.
+
+Cassa reale d1b installata/41file e prima UX PASS; secondo Start/PIN e scanner
+fisico NOT_RUN. Nessuna installazione di questo composto e nessuna vendita,
+articolo,Apply/Undo/reimport sul negozio reale.200%/2880x1800 conservati.
+
+Prove dei componenti, distinte dalle prove del composto:
+- Offline fe: Windows43127519453 PASS15/15,Security43127519394 entrambiPASS,
+  Release43127263071 e download41file/110checksum PASS. QA40/prodotto41,
+  34file comuni esatti; ASUS Integrated12 PASS,Final60 in corso. Offline
+  reopen nella stessa sessione Windows e negativi in tre CLR provati;
+  reboot/logoff offline BLOCKED_TIME_CONTINUITY. Win7fisico BLOCKED_TARGET.
+- Storico precedente bb2: Windows43126279571 PASS16/16,Security entrambiPASS,
+  Release/download41/110 PASS. Client1f richiede ed esporta l'HTTP409 effettivo;
+  propri All43133339400/Release43133380130 ancora in corso,Security entrambiPASS.
+- Servizi reali21: SQL95/5318 e10casi PASS,HTTP409/history_cloud_writer_closed
+  non retryable,uploadZIP200. OverallFAIL alla riconciliazione congelata:
+  sette duplicati attivi e una riga inattiva ricreata,benchè già canonica
+  con identità/digest/economia/stato esatti. Artifact3f22cde0 conservato.
+- Correttivo server separato612d9bd: migrazione additiva riusa una sola
+  versione inattiva esatta nello stesso shop; ambiguità bloccata,guardie di
+  mapping e classificazioni attive/baseline conservate.13nuovi assert,
+  vecchi28overlay/pin invariati,prepare43pin PASS; SQL96/5331 e prova22
+  run43135972944 in corso. Non ancora PASS del successore o deploy operativo.
+
+Gate propri di questo composto ancora NOT_RUN: required/dialog/build,
+Windows-All net48/x86 con storicoAll,Security,Release esatto/QA payload,
+prove autenticazione/riapertura e nuova ASUS Integrated12/Final60 sul suo SHA.
+I PASS dei componenti non si trasferiscono. Nessun DONE globale. Dopo il
+freeze eseguire i gate remoti senza caricare l'ASUS durante la misura fe.
+Le sezioni seguenti conservano il contesto dei componenti alle rispettive date.
+<!-- ASUS019_DELIVERY_COMPOSITION_END -->
+
+<details>
+<summary>Contesto del componente offline fe069a1 conservato integralmente</summary>
+
+## 11 novembre — successore offline separato dalla cassa installata
+
+La causa reale del carrello bloccato era l'EXE2ad42ca ancora installato. Nessuna
+nuova riscrittura della cassa: consegnato d1b2bc3 già qualificato,installerSHA
+a07430ce29e60eb04d2bc23651ab905beac3bf6ed6e8e12479e83ac230f2bb8e.
+Compatibilità15migrazioni esatte/0pendenti,backup prodotto integrity/FK verificato,
+copia13file profilo hash-identica;41file installati esatti. Primo percorso reale
+Start/login/carrello/scanner/sconosciuto annullato/riepilogo/ritorno e focus PASS,
+conteggi prodotti/vendite/outbox/storico invariati,chiusura normale. Evidence
+U19CashD1bInstall01; merge PR136 normale32145b0162229c4691e8ab5a97d7845689061d81.
+Secondo avvio/PIN reale e scanner fisico NOT_RUN,non sostituiti dalla fixture.
+
+Nuovo contratto implementato su base d1b: trustv5 con ricevuta/profile binding e
+testimone DPAPI HKCU volatile fuori dal backup. QPC mantiene il tempo server fra
+processi; wall high-water,tombstone e hash esatto impediscono ripristini vecchi.
+Durata≤12h e scadenze server/staff invariate. Mirror/PIN/tentativi/generazione
+riusati. Reboot/logoff senza continuità del testimone richiedono online:
+BLOCKED_TIME_CONTINUITY per il requisito di reboot offline,con prossimo passo nel
+PLAN. Nessun password storage,nuovo framework o migrazione DB/cloud.
+
+Comandi e risultati privati del componente prima del freeze:
+- restorelocked PASS; buildWPF/harness Release net48/x86 PASS0warning/error;
+  U19OfflineReopenRestore01,Harness05,Wpf01.
+- filtro Core sui4gruppi richiesti più PosOfflineRestartClockPolicyTests:
+  U19OfflineReopenCore02/offline.trx PASS113/113,0skip/0fail.
+- check-pos-offline-authorization-lease.ps1 ALLPASS (Gate03),standarddialog
+  ALLPASS (Dialog01),nessun limite o assert dinamico precedente rimosso.
+- run-authorization-lease-smoke.ps1 -KeepData: Auth04 PASS,main+prepare+verify+
+  terzo processo revocato+capacity. PIN errato/vecchio backup/revoca/profile/device/
+  DPAPI alterata/hive mancante negati,zero vendite/outbox non autorizzate.
+- functional3/3 PASS (U19OfflineReopenFunctional01): AUTH25031ms,
+  INTEGRATED1780ms,F051199ms,limite60000ms invariato per scenario.
+
+Fallimenti intermedi conservati: Core01 aveva2warning di attributo test obsoleto,
+corretti senza cambiare casi; AuthRed01 fixture legacy ancora letteralev4;
+Harness03 errore compile System.Text.Encoding mancante; Auth03 terzo processo
+non trovava la chiave perché il suo calcolo hex differiva dal primo scopebase64.
+Scope prodotto ora hex canonico valido per registro/mutex; Auth04 prova l'intera
+catena. Gate01/02 fallivano per regex obsolete/slicer riservato ai metodi Task;
+Gate03 usa delimitatori C# bilanciati per i due metodi sincroni e controlla ancora
+tombstone/anchor/high-waters. Nessun FAIL riclassificato retroattivamente.
+
+Storico: All93fd15PASS/1FAIL conservato,bb2ffda solo cataloghi QA completaCrash5/5
+con11assert commit-authority. Invoker privato01 mancava output/env,02 non aveva
+CLI,03 aveva una root non canonica e fu rifiutato dal probe;04 usa gli helper
+canonici per root/manifest e PASS5/5. Nuove pipeline exact-head necessarie.
+Server2024819 fixture SQL circoscritto,prepareLF42pin PASS senza modificarli;
+primo push fallito per reset rete,verificati ref remoti prima di pubblicare.
+Run autenticata43124933306 avviata dopo correzione,nessun retry live reale.
+
+
+</details>
+
 <!-- ASUS019_COMPOSED_CURRENT_START -->
 ## Composizione verificata — 20261111T181007Z, stessa ASUS-W7POS-019
 
