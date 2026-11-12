@@ -2,7 +2,7 @@
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
 
-## Stato corrente — 20261112T003136Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato corrente — 20261112T010755Z, stessa ASUS-W7POS-019 ACTIVE
 
 Cassa già consegnata; riapertura offline e storico hanno candidati/gate propri.
 Nessun PASS trasferito fra SHA,nessun DONE globale. Le righe datate precedenti
@@ -14,12 +14,13 @@ sono conservate sotto come storia,anche quando descrivono installato2ad42ca.
 | Main cassa | PR136 merge normale32145b0 | CI43123779651 eSecurity43123779666 PASS. Qualifica d1b e prima prova installata distinte dallo storico |
 | Offline app reopen | fe069a1e8a4326c55b4e8d471679d5bfefba2c0b,PR137,codex/asus019-offline-reopen | implementato trustv5 + testimone DPAPI HKCU volatile fuori dai backup,hash/ricevuta/profilo/device/generazione,clock QPC/high-water e tombstone. Mirror/PIN/tentativi/durata≤12h e scadenze staff/sessione riusati. Formati1–4 solo recovery online |
 | Prove offline locali | Core02 113/113; Auth04 main+tre CLR distinti+capacity; Functional01 3/3; Required01 50/50; QaProtocol01 PASS | PIN corretto/errato,backup precedente,revoca dopo altro processo,altro profilo/device,DPAPI alterata/hive perso e zero sink provati. Soluzione/WPF/harness net48x86 PASS0warning/error. Componenti pre-freeze,non PASS globale del candidato |
-| Gate offline congelati | All43127519453,Security43127519394,Release43127263071,QApayload43127517745 | RUNNING. Pacchetto successore non installato; download/checksum/binding e soaks con budget63970e30 richiesti prima di consegnarlo |
+| Gate offline congelati | fe069a1,Windows43127519453 | PASS15/15,10entry artifact13904014333/SHA7cbe8f24 verificati,fingerprint9cec3fa5. Security43127519394 entrambiPASS; QApayload43127517745 PASS40file verificati. Release43127263071 ancora RUNNING_CORE; adapter ASUS12/60 preparato,non avviato senza receipt ReleasePASS. Budget63970e30 invariato |
 | Reboot Windows offline | nessun clock sicuro verificato attraverso lo spegnimento Win7 | BLOCKED_TIME_CONTINUITY: chiave volatile persa→online obbligatorio. Test hive mancante è simulato,non reboot fisico; prossimo passo qualificare una fonte temporale adeguata. Prima attivazione mai verificata negata; revoche remote sconosciute offline non immediate |
-| Storico Windows | bb2ffda3037518612daa76966392f2502cff6506,PR135 | soltanto2cataloghi QA;5ID nuovi conservano6assert precedenti. Crash04 canonico PASS5/5,commit-authority11/11. All43126279571/Security43126279594/Release43126275026 RUNNING |
+| Storico Windows | bb2ffda3037518612daa76966392f2502cff6506,PR135 | All43126279571 PASS16/16,8entry artifact13904583951/SHAde9c504e verificati,fingerprint6d3d21d3. Security43126279594 entrambiPASS. Release43126275026 PASS; download canonico U19ReleaseBb2Remote01 PASS41file/110checksum,development-unsigned,non installato. Crash04 locale PASS5/5,commit-authority11/11 |
 | Storico SQL | 9942d6078b675f090c252b8af5b0858e385e634f,Admin151 | solo fixture: successo usa baseline_upload_create idempotente prevista dall'API.11assert e42pin invariati,preparePASS95file/5318assert ATTESI. Nessun SQLPASS locale |
 | Remote18 | server2024819/client93fd,run43124933306 | FAIL pgTAP linea30 prima dei casi autenticati; artifact13902723648 SHA bec88b0c verificato. Fixture chiamava authority non prevista da v2; sorgente rifiuta operation_invalid,nessuna causa runtime inventata |
-| Remote19 | run43127437586,server9942d60/clientbb2ffda | RUNNING canonicalSQL. Richiesti rawSQL40001 canonical_economic_conflict sullo stesso contenuto,veroHTTP409 history_cloud_writer_closed,riconciliazione,origineAdmin e revoca isolata. Timeout/generici non accettati |
+| Remote19 | run43127437586,server9942d60/clientbb2ffda; U19AuthenticatedRemote19 | SQLPASS95file/5318assert e10casi reali PASS,compreso conflitto negato/negativo riconciliato:0grant/0ricevute,economia immutata. RawSQL40001/canonical_economic_conflict stesso contenuto,rollback attestato. PostgREST14.14/image de2f4d04. OverallFAIL frozen_source_reconciliation/history_test_browser_upload_failed; HTTP upload non catturato,nessuna causa inventata |
+| Probe20 QA | server024258b113d45913548742c4e41a0d9392502794/client1f8ceaa62cdb4fad47852b55f69e933b8fa3aa54,run43131069842 | sorgenti runtime/migrazioni invariate9942/bb2; MIME del File sintetico coerente col chooser,uploadstatus/codiceStorage chiusi.105target/1645foundationPASS7SKIP,typecheckPASS,fingerprintdddedb9a stabile. Client harnessbuildPASS0warning/error eHTTP409esplicito obbligatorio. Pubblicati solo rami probe,PR135/151 precedenti conservate durante run. Esito servizi reali PENDING |
 | Storia preservata | Remote15/16 nove casi propri PASS ma overallFAIL; All93fd15PASS/1FAIL; SQL2c/202FAIL | artifact,run e sorgenti congelate conservati. Nessuna somma dei rerun o indebolimento di soglie/carico/timeout |
 | Vincoli |200%2880×1800 conservati;100/125 USER_DEFERRED,Win7fisico BLOCKED_TARGET,GetnetCMISSING | nessun Apply/Undo/reimport/vendita/articolo di test nel negozio reale; originali,storico,code e backup conservati |
 
