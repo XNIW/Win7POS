@@ -1,6 +1,32 @@
 # ASUS-W7POS-019 execution ledger
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
+## Stato corrente — 20261112T175420Z, stessa ASUS-W7POS-019 ACTIVE
+
+| Ambito | Prova e risultato corrente |
+| --- | --- |
+| Requisito ordinario | Autorizzazione POS e PIN Minimondo senza scadenza, come richiesto esplicitamente. Il modello negoziato `persistent-pos-v1` salva autorità DPAPI v6 con testimone HKCU persistente indipendente dal backup. PIN, binding, generazione, versione, tentativi e revoche note restano verificati. Nessuna licenza futura introdotta; vecchie ricevute v1–v5 restano bounded. |
+| Installato reale | Ancora aa4ec25, EXE SHA f2f75be2, Start/profilo verificati. Primo login reale FAIL: first-login timeout, fallback offline_attestation_required mostrato genericamente come scaduto. POS chiuso dall’utente. Installazione248 e primo/secondo avvio reale NOT_RUN: non attribuire al pacchetto nuovo il precedente smoke reale d1b. |
+| Windows248 qualificato | PR138, 248e6891dcab5ce086c36b0fbec1c66ffb487344. All43248176976 PASS16/16, artifact13960748887/SHA2f2c9486 verificato8entry; Security43248176453 PASS; Release43248317257 verificata41file/110checksum, setup15f1e9f2/payloadccfc0b7f. QA43248326349 verificata40file,34comuni esatti. MainWindow dal bundle esatto PASS29205.7167ms, cleanup naturale. Core46/46, smoke WPF bounded/permanente e processi CLR distinti, statico/dialog PASS. |
+| ASUS sul payload esatto | Integrated12 PASS740.778s e Final60 PASS3606.695s: tutti tre flag misura/ambiente/stabilità validi, exit0 e cleanup naturale. UI p95 Rows115.415ms/Grid117.887ms, massimi255.563/165.290ms; limiti preregistrati p95≤250ms e massimo≤1000ms invariati. Crescita managed massima1.545MB sotto8MiB. Budget SHA63970e30,41file prodotto e34comuni QA esatti. Non è una qualifica Win7 fisico o periferiche. |
+| Merge Windows | PR138 unita normalmente in92dff410e241e5ee7c2a42a82ef4615b624537d5; albero8ae8b6bd identico248. Postmerge Security43272055077 PASS; CI43272054951 e Release43272054924 ancora RUNNING al checkpoint. Resta selezionato il pacchetto248 già qualificato, senza sostituirlo con un diverso versionstamp di main. |
+| Server qualificato | b091325, PR152 unita normalmente in5ff8577; albero b5058dd2 identico al candidato e al virtual merge956176f. Verify/CF propri43251761879/881 e main43258018081/735 PASS. Artifact58file/lock/config e replay97file/5356assert/3concorrenze verificati anche dopo merge. FAIL9ec e332 conservati: metadata replay/lint, poi regressione della rilettura clock dopo lock; b091 ripristina integralmente il corpo canonico prima dei soli due controlli di invalidazione persistente. |
+| Storico autenticato nuovo composto | Run43254453360, serverb091/client248, PASS12/12 eSQL97/5356/3; artifact13961554676/SHA5849729d verificato. Admin→entrambiPOS senza eco, ACK perso+nuovo CLR/pull prima ACK, duplicato/Undo/correzione, revoca isolata, HTTP409/history_cloud_writer_closed con zero nuovi grant/ricevute, Recovery/baseline e riconciliazioni senza nuovi movimenti; cleanup naturale. Principal bounded posseduti: prova Core/Data+HTTP+SQL+Storage+Worker+browser distinta dall’enrollment permanente WPF reale. Run23 server612/clientaa4 e precedenti qualifiche restano storia attribuita. |
+| SQL effettivamente applicato | Solo nuova migrazione20261112143448_asus019_persistent_pos_authorization_v1.sql, SHA29bd59ef; versione cloud20261112174421. Tre corpi funzione esatti, V3 precedente invariata, nuovi RPC riservati a service_role e helper privato non eseguibile direttamente. Nessun dbpush/repair globale o modifica alle29migrazioni storiche. PIN: soltanto l’operatore Minimondo ha scadenzaNULL, versione1 e PIN invariati. Conteggi cloud movement_versions/job/upload/migrationrun0 prima/dopo. |
+| HTTP effettivamente pubblicato | Version ecfd6920-bef3-441e-99f6-2a1b83aaf498, deployment8a732699-a226-40cd-a43c-4868f258826c al100%. Artifact congelato13960220868/SHAcd1e6ebe, sorgente956/treeb5058dd2, Wrangler4.123.0 con no-bundle/keep-vars, nessun rebuild. Tutti24binding e runtime conservati; metadati non-assets esatti, chiave gateway mantenuta senza lettura/rigenerazione. GET protetto e form staff HTTP200. Dopo deploy77richieste firmate riuscite, tutte tre lane idle e0risposte con lavoro. |
+| Worker operativo osservato | Host7c95955/runtime612 CJS20eb2acd invariato, qualifica host5/5 e pacchetto7 verificato; Node24.18.0/account virtuale/DPAPI/ACL, limiti nativi1GiB/un processo e heap640MiB. Stesso PID7208 running nel controllo17:54Z; nessun reinstall/rekey/restart manuale del servizio. FAIL iniziali57014/exit1 conservati. Dopo unico restart database15:24Z ripristinate le tre lane; osservazione idle prolungata, non garanzia di disponibilità notturna. Host richiede PC acceso. |
+| Consegna cassa preparata | Backup17file esatti e3DB integrityok/FK0, conteggi115tabelle conservati. Manifest qualified-cash248-windows-paths SHAe66309b6 collega12ricevute e41file; ValidateOnly exit0 riconferma pacchetto e profilo invariati. Installer canonico15f1e9f2 non ancora avviato: disponibilità umana richiesta per un solo UAC. Script cash-only lascia POS chiuso e non tocca Worker/chiavi; poi Start/PIN mascherato manuali ed effettivo enrollment v6 del vecchio format4. |
+
+Checkpoint unico privato aggiornato20261112T175420Z. Restano intervento UAC e prove sull’installato: primo login→carrello/barcode→riepilogo→ritorno, seconda apertura offline e riavvio Windows reale. Le prove sintetiche in processi distinti e oltre il vecchio limite sono PASS; nessun reboot fisico dichiarato. Revoca server sconosciuta mentre offline non è rilevabile immediatamente.
+
+Win7 fisico BLOCKED_TARGET; periferiche NOT_RUN; Getnet C MISSING e tre moderni non applicati. DPI200%/2880×1800 conservati,100/125 USER_DEFERRED. Nessun Apply/Undo/reimport reale, articolo, vendita di prova o cancellazione di profilo/code. FAIL intermedi e ricevute storiche conservati, nessuna soglia/assert/pin indebolita. Nessun DONE globale.
+
+Advisors dopo DDL conservati come inventario: [RLS senza policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy), [search_path](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), [RPC anonime](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), [RPC autenticate](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) e [protezione password](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). Nessun finding di execute pubblico per la nuova V4; permessi live verificati separatamente. Policy estranee non modificate.
+<!-- ASUS019_COMPOSED_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente153827Z conservato come storia</summary>
+
 ## Stato corrente — 20261112T153827Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Sorgente / prova | Esito attribuito |
@@ -24,7 +50,8 @@
 Advisors conservati: [RLS senza policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy) intenzionale per tabelle interne negate per default; [cinque RPC SECURITY DEFINER autenticate](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) con fence attore/shop/sessione/permessi qualificati. [INFO sulle FK](https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys) e indici nuovi registrate senza estendere la patch; finding preesistenti conservati. FirstFAIL checkout/account virtuale e due errori del controllo pubblico conservati,nessun deploy ripetuto per quei controlli.
 
 Nessun Apply/Undo/reimport reale, articolo o vendita di prova. GetnetC MISSING; Win7 fisico BLOCKED_TARGET; DPI200%/2880×1800 invariati,100/125 USER_DEFERRED. Reboot offline ancora distinto dalla riapertura app. Execution ACTIVE,nessun DONE globale. Installazione PASS,prima richiesta firmata accettata e servizio stabile FAIL restano distinti;Nuovo grant richiede accesso online valido dopo qualifica/installazione; aa4 ha login FAIL documentato. La regola offline reboot legacy resta storica,il nuovo modello v6 non usa una scadenza ordinaria; qualifica hardware Win7 distinta. Diagnosi timeout: [guida Supabase](https://supabase.com/docs/guides/database/postgres/timeouts).
-<!-- ASUS019_COMPOSED_CURRENT_END -->
+
+</details>
 
 <details>
 <summary>Checkpoint precedente235241Z conservato come storia</summary>
