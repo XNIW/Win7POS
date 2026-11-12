@@ -1,33 +1,23 @@
 # ASUS-W7POS-019 execution ledger
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
+## Stato corrente — 20261112T042745Z, stessa ASUS-W7POS-019 ACTIVE
 
-## Stato corrente — 20261112T010755Z, stessa ASUS-W7POS-019 ACTIVE
+| Ambito | Sorgente / prova | Esito attribuito |
+| --- | --- | --- |
+| Installato reale | d1b2bc3, U19CashD1bInstall01 | PASS41file e primo Start/PIN umano→carrello/barcode/riepilogo/focus; profilo conservato, POS chiuso. Secondo avvio umano e scanner fisico NOT_RUN. Nessuna installazione successiva ancora eseguita. |
+| Offline indipendente | fe069a1, PR137, merge e6ce2ee | PASS Windows15/15,Security2/2,Release41/110,QA40,ASUS Integrated12+Final60. Riapertura in CLR distinti con positivi/negativi; reboot/logoff offline BLOCKED_TIME_CONTINUITY. CI/Release postmergee6 in corso,Security43153357836 PASS. |
+| Composto cassa+storico | aa4ec25, PR135, merge0705b4ca27cc083ae95a59c1e13db041848d1a7d | PASS All43136421196 (16/16),Security43136426122 (2/2),Release43136430945 (41/110),QA43136435344 (40),ASUS Integrated12+Final60,tre flag misura validi. Main ha lo stesso albero2e768143b9e0897280d014229357e3228e5b2a7f del candidato. Postmerge CI43153687268/Security43153687263/Release43153687291 in corso; nessuna run e6 cancellata. Non installato. |
+| Coppia storica finale | server612d9bd/clientaa4ec25, run43137863338 | PASS12/12 eSQL96/5331,artifact13909032440/SHA4b07396b verificato. HTTP409/history_cloud_writer_closed reale,zero grant/receipt,Admin→entrambiPOS senza eco,revoca isolata,ACK perso+nuovo CLR,Recovery/baseline e due riconciliazioni senza nuovi movimenti,cleanup naturale. Anche22/server612-client1f PASS12/12 e96/5331. Copertura Core/Data+HTTP+SQL+Storage+Worker+browser, distinta dal WPF installato/Win7. |
+| Host Windows | 7c959553d77416a1620ccfa53fb5be15a85db291,run43152837911 | PASS5/5:1GiB nativo prima della prima istruzione,un processo,account virtuale/ACL/DPAPI,SCM e cleanup del solo figlio. Artifact13914304094/SHA38391705 verificato,7membri; Node24.18.0 già firmato OpenJS e identico al runner. CJS esatto della prova23/SHA20eb2acd. Servizio staging preparato per ASUS Win11, non installato; disponibilità limitata al PC acceso, nessun Node sul Win7. |
+| SQL staging | sorgente612,29 file canonici/SHA invariati | APPLICATE soltanto le29 migrazioni della task,171→200 registrazioni; mapping versione sorgente→cloud conservato. PASS47tabelle con RLS/PK,nessuna lettura anonima/diretta service-role,6corpi critici esatti e5dipendenze precedenti invariate. Runtime/movimenti/job/ricevute/grant/eventi0; bucketprivato20MiB con MIME previsti.6pendenti estranee e7alias preesistenti esclusi; nessun dbpush/repair globale. |
+| HTTP staging | 612d9bd,versionfaf9f1b1-10db-430a-a0ce-69ef1f6d272b,deploymentd09eb0cd-0b18-4282-bf43-ae6f8e3391bf | Artifact58file/SHA2546fc35 verificato,treeb060cb86 esatto; pubblicato100% senza rebuild. Binding,plainvars,secretbinding ecompatibilità conservati. Login pubblico200 con form/redirect corretti; gateway503 atteso perché la chiave dedicata è ancora assente. Nessun servizio operativo o accesso shop autenticato nuovo attestato. |
+| Convergenza Admin | PR149→84172406,PR150→ea9cfec2;PR151head7c/base main | Runtime/SQL/package e worker esatti612 invariati:7c aggiunge soltanto hostWindows. CI7c43153578202 VerifyPASS/SQLin corso;CF43153578259PASS,deployjobSKIPPED. Attendere i suoi gate prima del merge normale151; nessuna produzione. |
+| Installazione pronta | U19CashAa4Install01,Install-QualifiedCashAndWorker.private.ps1 | Nuovo backup prodotto coerente integrity/FK PASS,13file copiati e verificati,profilo sorgente invariato. Setupaa4/SHA722b4cf9 e host7c pronti; ValidateOnlyPASS senza mutazioni. Procedura per un solo consenso UAC,POS lasciato chiuso,ricontrollo versione backend prima della chiave. Attesa della presenza dell'utente sul desktop protetto, non di una nuova autorizzazione. |
 
-Cassa già consegnata; riapertura offline e storico hanno candidati/gate propri.
-Nessun PASS trasferito fra SHA,nessun DONE globale. Le righe datate precedenti
-sono conservate sotto come storia,anche quando descrivono installato2ad42ca.
+Advisors conservati con URL: le tabelle interne senza policy negano per default; cinque RPC SECURITY DEFINER autenticate sono contratti intenzionali con fence attore/shop/sessione/permessi qualificati. INFO su FK/indici registrate, senza estendere la patch; nessun finding preesistente cancellato. FirstFAIL checkout/account virtuale e due errori del controllo pubblico conservati,nessun deploy ripetuto per quei controlli.
 
-| Ambito | Sorgente e prova | Stato e prossimo passo |
-|---|---|---|
-| Cassa installata | d1b2bc3,setup a07430ce/payload6b44ffe3,Release42967017718; U19CashD1bInstall01 |41file installati esatti,13file profilo invariati dopo backup integrity/FK; login umano/carrello vuoto/scanner/sconosciuto annullato/riepilogo→POS/focus PASS.0righe economiche nuove. Chiusura normale; secondo Start/PIN e scanner fisico NOT_RUN |
-| Main cassa | PR136 merge normale32145b0 | CI43123779651 eSecurity43123779666 PASS. Qualifica d1b e prima prova installata distinte dallo storico |
-| Offline app reopen | fe069a1e8a4326c55b4e8d471679d5bfefba2c0b,PR137,codex/asus019-offline-reopen | implementato trustv5 + testimone DPAPI HKCU volatile fuori dai backup,hash/ricevuta/profilo/device/generazione,clock QPC/high-water e tombstone. Mirror/PIN/tentativi/durata≤12h e scadenze staff/sessione riusati. Formati1–4 solo recovery online |
-| Prove offline locali | Core02 113/113; Auth04 main+tre CLR distinti+capacity; Functional01 3/3; Required01 50/50; QaProtocol01 PASS | PIN corretto/errato,backup precedente,revoca dopo altro processo,altro profilo/device,DPAPI alterata/hive perso e zero sink provati. Soluzione/WPF/harness net48x86 PASS0warning/error. Componenti pre-freeze,non PASS globale del candidato |
-| Gate offline congelati | fe069a1,Windows43127519453 | PASS15/15,10entry artifact13904014333/SHA7cbe8f24 verificati,fingerprint9cec3fa5. Security43127519394 entrambiPASS; QApayload43127517745 PASS40file verificati. Release43127263071 ancora RUNNING_CORE; adapter ASUS12/60 preparato,non avviato senza receipt ReleasePASS. Budget63970e30 invariato |
-| Reboot Windows offline | nessun clock sicuro verificato attraverso lo spegnimento Win7 | BLOCKED_TIME_CONTINUITY: chiave volatile persa→online obbligatorio. Test hive mancante è simulato,non reboot fisico; prossimo passo qualificare una fonte temporale adeguata. Prima attivazione mai verificata negata; revoche remote sconosciute offline non immediate |
-| Storico Windows | bb2ffda3037518612daa76966392f2502cff6506,PR135 | All43126279571 PASS16/16,8entry artifact13904583951/SHAde9c504e verificati,fingerprint6d3d21d3. Security43126279594 entrambiPASS. Release43126275026 PASS; download canonico U19ReleaseBb2Remote01 PASS41file/110checksum,development-unsigned,non installato. Crash04 locale PASS5/5,commit-authority11/11 |
-| Storico SQL | 9942d6078b675f090c252b8af5b0858e385e634f,Admin151 | solo fixture: successo usa baseline_upload_create idempotente prevista dall'API.11assert e42pin invariati,preparePASS95file/5318assert ATTESI. Nessun SQLPASS locale |
-| Remote18 | server2024819/client93fd,run43124933306 | FAIL pgTAP linea30 prima dei casi autenticati; artifact13902723648 SHA bec88b0c verificato. Fixture chiamava authority non prevista da v2; sorgente rifiuta operation_invalid,nessuna causa runtime inventata |
-| Remote19 | run43127437586,server9942d60/clientbb2ffda; U19AuthenticatedRemote19 | SQLPASS95file/5318assert e10casi reali PASS,compreso conflitto negato/negativo riconciliato:0grant/0ricevute,economia immutata. RawSQL40001/canonical_economic_conflict stesso contenuto,rollback attestato. PostgREST14.14/image de2f4d04. OverallFAIL frozen_source_reconciliation/history_test_browser_upload_failed; HTTP upload non catturato,nessuna causa inventata |
-| Probe20 QA | server024258b113d45913548742c4e41a0d9392502794/client1f8ceaa62cdb4fad47852b55f69e933b8fa3aa54,run43131069842 | sorgenti runtime/migrazioni invariate9942/bb2; MIME del File sintetico coerente col chooser,uploadstatus/codiceStorage chiusi.105target/1645foundationPASS7SKIP,typecheckPASS,fingerprintdddedb9a stabile. Client harnessbuildPASS0warning/error eHTTP409esplicito obbligatorio. Pubblicati solo rami probe,PR135/151 precedenti conservate durante run. Esito servizi reali PENDING |
-| Storia preservata | Remote15/16 nove casi propri PASS ma overallFAIL; All93fd15PASS/1FAIL; SQL2c/202FAIL | artifact,run e sorgenti congelate conservati. Nessuna somma dei rerun o indebolimento di soglie/carico/timeout |
-| Vincoli |200%2880×1800 conservati;100/125 USER_DEFERRED,Win7fisico BLOCKED_TARGET,GetnetCMISSING | nessun Apply/Undo/reimport/vendita/articolo di test nel negozio reale; originali,storico,code e backup conservati |
-
-Autorizzazione notturna esplicita valida; nessuna nuova richiesta operativa.
-Interruzioni Computer Use rispettate,nessun launcher alternativo o reset per
-aggirare blocchi. Pubblicare solo evidence redatte con SHA/run/exit reali.
-
+Nessun Apply/Undo/reimport reale, articolo o vendita di prova. GetnetC MISSING; Win7 fisico BLOCKED_TARGET; DPI200%/2880×1800 invariati,100/125 USER_DEFERRED. Reboot offline ancora distinto dalla riapertura app. Execution ACTIVE,nessun DONE globale; firme gateway,installato successore e Start/PIN reali rimangono prove separate.
 <!-- ASUS019_COMPOSED_CURRENT_END -->
 
 <details>
