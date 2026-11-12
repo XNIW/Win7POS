@@ -102,12 +102,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
 
             var physicalPrinterQa = HasArg(args, "--physical-printer-qa");
+            var persistentAuthorizationRestart =
+                HasArg(args, "--authorization-persistent-restart-prepare") ||
+                HasArg(args, "--authorization-persistent-restart-verify") ||
+                HasArg(args, "--authorization-persistent-restart-denied-verify");
             var authorizationLeaseRestartPrepare =
-                HasArg(args, "--authorization-lease-restart-prepare");
+                HasArg(args, "--authorization-lease-restart-prepare") ||
+                HasArg(args, "--authorization-persistent-restart-prepare");
             var authorizationLeaseRestartVerify =
-                HasArg(args, "--authorization-lease-restart-verify");
+                HasArg(args, "--authorization-lease-restart-verify") ||
+                HasArg(args, "--authorization-persistent-restart-verify");
             var authorizationLeaseRestartDeniedVerify =
-                HasArg(args, "--authorization-lease-restart-denied-verify");
+                HasArg(args, "--authorization-lease-restart-denied-verify") ||
+                HasArg(args, "--authorization-persistent-restart-denied-verify");
             var authorizationLeaseClockCapacity =
                 HasArg(args, "--authorization-lease-clock-capacity-smoke");
             var authorizationLeaseSmoke =
@@ -506,7 +513,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (authorizationLeaseRestartPrepare)
                     {
                         var result = await AuthorizationLeaseWpfSmoke
-                            .PrepareRestartProbeAsync()
+                            .PrepareRestartProbeAsync(persistentAuthorizationRestart)
                             .ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(
@@ -524,7 +531,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (authorizationLeaseRestartVerify)
                     {
                         var result = await AuthorizationLeaseWpfSmoke
-                            .VerifyRestartProbeAsync()
+                            .VerifyRestartProbeAsync(persistentAuthorizationRestart)
                             .ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(
@@ -542,7 +549,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (authorizationLeaseRestartDeniedVerify)
                     {
                         var result = await AuthorizationLeaseWpfSmoke
-                            .VerifyRevokedRestartProbeAsync()
+                            .VerifyRevokedRestartProbeAsync(persistentAuthorizationRestart)
                             .ConfigureAwait(true);
                         File.WriteAllText(Path.Combine(artifactDirectory,
                             "authorization-lease-restart-denied-verify.txt"), result, Encoding.UTF8);

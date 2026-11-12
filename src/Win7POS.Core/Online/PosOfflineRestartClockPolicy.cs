@@ -3,8 +3,8 @@ using System.Runtime.Serialization;
 
 namespace Win7POS.Core.Online
 {
-    // This witness is stored outside profile backups in a volatile Windows-user
-    // registry key. It proves continuity between processes, never across boot.
+    // This witness lives outside profile backups. Bounded v5 uses a volatile
+    // Windows-user key; negotiated permanent v6 uses a persistent protected key.
     [DataContract]
     public sealed class PosOfflineRestartReceipt
     {
@@ -17,6 +17,7 @@ namespace Win7POS.Core.Online
         [DataMember] public long Timestamp { get; set; }
         [DataMember] public DateTimeOffset ServerAnchor { get; set; }
         [DataMember] public DateTimeOffset LocalHighWater { get; set; }
+        [DataMember] public bool PersistentAuthorization { get; set; }
     }
 
     public static class PosOfflineRestartClockPolicy
@@ -43,6 +44,27 @@ namespace Win7POS.Core.Online
                 !Same(receipt.ReceiptId, receiptId) ||
                 !Same(receipt.GenerationFingerprint, generationFingerprint))
                 return false;
+            // A permanent operating grant requires identity and rollback
+            // protection, not continuity of an expiring clock across Windows boots.
+            if (receipt.PersistentAuthorization)
+            {
+                if (string.IsNullOrWhiteSpace(clockDomain) || frequency <= 0 || timestamp < 0)
+                {
+                    code = "trusted_time_continuity_lost";
+                    return false;
+                }
+                advanced = new PosOfflineRestartReceipt
+                {
+                    ProfileScope = profileScope, StateSha256 = stateSha256,
+                    ReceiptId = receiptId, GenerationFingerprint = generationFingerprint,
+                    ClockDomain = clockDomain, Frequency = frequency, Timestamp = timestamp,
+                    ServerAnchor = receipt.ServerAnchor,
+                    LocalHighWater = localNow > receipt.LocalHighWater ? localNow : receipt.LocalHighWater,
+                    PersistentAuthorization = true
+                };
+                code = "ok";
+                return true;
+            }
             code = "trusted_time_continuity_lost";
             if (!Same(receipt.ClockDomain, clockDomain) || frequency <= 0 ||
                 receipt.Frequency != frequency || receipt.Timestamp < 0 ||

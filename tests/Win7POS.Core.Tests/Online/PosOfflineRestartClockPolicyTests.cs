@@ -93,4 +93,29 @@ public sealed class PosOfflineRestartClockPolicyTests
         Assert.IsFalse(Advance(receipt,out _,out var code,frequency:3,timestamp:1001));
         Assert.AreEqual("trusted_time_continuity_lost",code);
     }
+
+    [TestMethod]
+    public void PersistentWitness_SurvivesBootAndClockAdjustmentWithSameIdentity()
+    {
+        var receipt=Receipt();receipt.PersistentAuthorization=true;
+        Assert.IsTrue(Advance(receipt,out var next,out var code,
+            domain:"boot-b",frequency:2000,timestamp:1,now:Now.AddDays(-1)));
+        Assert.AreEqual("ok",code);
+        Assert.IsTrue(next.PersistentAuthorization);
+        Assert.AreEqual("boot-b",next.ClockDomain);
+        Assert.AreEqual(Now,next.LocalHighWater);
+    }
+
+    [TestMethod]
+    [DataRow("profile")][DataRow("state")][DataRow("receipt")][DataRow("generation")]
+    public void PersistentWitness_StillRejectsOldBackupOrDifferentIdentity(string changed)
+    {
+        var receipt=Receipt();receipt.PersistentAuthorization=true;
+        Assert.IsFalse(Advance(receipt,out _,out var code,
+            profile:changed=="profile"?"other":"profile-a",
+            state:changed=="state"?"old":"state-a",
+            id:changed=="receipt"?"old":"receipt-a",
+            generation:changed=="generation"?"revoked":"shop-device-staff-version-session-a"));
+        Assert.AreEqual("offline_attestation_invalid",code);
+    }
 }

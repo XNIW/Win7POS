@@ -39,16 +39,76 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private static readonly string ProcessInstanceId =
             Guid.NewGuid().ToString("N");
 
+        // These existing races deliberately exercise the legacy bounded mode.
+        // Ordinary public constructors and the separate persistent case below
+        // exercise the new production contract without rewriting legacy asserts.
+        private static PosTrustedDeviceStore LegacyStore() => new PosTrustedDeviceStore(false);
+        private static PosTrustedDeviceStore LegacyStore(string profile) => new PosTrustedDeviceStore(profile, false);
+
         public static Task<string> RunAsync() => TraceAsync(RunCoreAsync);
         public static Task<string> RunClockCapacityAsync() => TraceAsync(RunClockCapacityCoreAsync);
-        public static Task<string> PrepareRestartProbeAsync() => TraceAsync(PrepareRestartProbeCoreAsync);
-        public static Task<string> VerifyRestartProbeAsync() => TraceAsync(VerifyRestartProbeCoreAsync);
-        public static Task<string> VerifyRevokedRestartProbeAsync() => TraceAsync(VerifyRevokedRestartProbeCoreAsync);
+        public static Task<string> PrepareRestartProbeAsync(bool persistent = false) => TraceAsync(() => PrepareRestartProbeCoreAsync(persistent));
+        public static Task<string> VerifyRestartProbeAsync(bool persistent = false) => TraceAsync(() => VerifyRestartProbeCoreAsync(persistent));
+        public static Task<string> VerifyRevokedRestartProbeAsync(bool persistent = false) => TraceAsync(() => VerifyRevokedRestartProbeCoreAsync(persistent));
         private static async Task<string> TraceAsync(Func<Task<string>> run)
         {
             TypedQaDiagnosticWriter.BeginScenario(null, "authorization-lease");
             try { var result = await run().ConfigureAwait(true); TypedQaDiagnosticWriter.RecordResult("authorization-lease", result); return result; }
             catch (Exception error) { TypedQaDiagnosticWriter.RecordException(error); throw; }
+        }
+
+        private static async Task VerifyPersistentLocalGrantAsync(
+            UserRepository users, SecurityRepository security, string username)
+        {
+            var store = new PosTrustedDeviceStore();
+            store.Clear();
+            var oldServerResponse = BuildResponse(includeOfflineAttestation: true);
+            oldServerResponse.LocalAuthorizationPolicy = null;
+            store.SaveFirstLogin(oldServerResponse, "qa-no-persistent-negotiation");
+            Require(store.TryRead(out var unnegotiated) && !unnegotiated.PersistentLocalAuthorization &&
+                unnegotiated.TrustedStateFormatVersion == 5,
+                "an old server response silently acquired persistent authority");
+            var cappedResponse = BuildResponse(includeOfflineAttestation: true);
+            cappedResponse.Session.ExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToString("O");
+            cappedResponse.EffectiveOfflineAuthorizationExpiresAt = cappedResponse.Session.ExpiresAt;
+            store.SaveFirstLogin(cappedResponse, "qa-explicit-staff-deadline");
+            Require(store.TryRead(out var capped) && !capped.PersistentLocalAuthorization &&
+                capped.TrustedStateFormatVersion == 5,
+                "an explicit finite staff deadline was promoted to persistent authority");
+            var bounded = LegacyStore();
+            bounded.SaveFirstLogin(BuildResponse(includeOfflineAttestation: true), "qa-prior-bounded-grant");
+            var legacyBackup = File.ReadAllText(store.TrustedDeviceFilePath);
+            store.SaveFirstLogin(BuildRestartResponse(true), "qa-persistent-local-grant");
+            Require(store.TryRead(out var trusted) && trusted.PersistentLocalAuthorization &&
+                trusted.OfflineAuthorizationAttested && trusted.TrustedStateFormatVersion == 6,
+                "persistent default did not persist an integrity-bound v6 operating grant");
+            var saved = File.ReadAllText(store.TrustedDeviceFilePath);
+            File.WriteAllText(store.TrustedDeviceFilePath, legacyBackup);
+            Require(store.TryRead(out var superseded) && !superseded.OfflineAuthorizationAttested,
+                "v6 enrollment left an old bounded profile backup independently authorized");
+            File.WriteAllText(store.TrustedDeviceFilePath, saved);
+            Require(store.TryRead(out trusted) && trusted.PersistentLocalAuthorization && trusted.OfflineAuthorizationAttested,
+                "rejecting an old bounded backup invalidated the current persistent grant");
+            var localNow = DateTimeOffset.Parse(trusted.LastOkLocalAt, CultureInfo.InvariantCulture).AddYears(1);
+            var guard = new PosOfflineAuthorizationLeaseGuard(store, () => localNow);
+            var session = new OperatorSession(users, security, guard);
+            Require(await session.LoginAsync(username, WrongPin).ConfigureAwait(true) != LoginResult.Success && !session.IsLoggedIn,
+                "persistent grant bypassed the operator PIN");
+            Require(await session.LoginAsync(username, CorrectPin).ConfigureAwait(true) == LoginResult.Success && session.IsLoggedIn,
+                "persistent grant expired with the old cloud/offline window");
+            Require(session.EnsureAuthorizationValid(), "persistent grant forced a time-based logout");
+            var admitted = guard.EvaluateAuthorizationUse(out _, out var commitGuard);
+            Require(admitted.Allowed && commitGuard != null && commitGuard.Evaluate().Allowed &&
+                admitted.EffectiveExpiresAt == DateTimeOffset.MaxValue,
+                "commit proof lost the persistent operating grant");
+            store.Clear();
+            File.WriteAllText(store.TrustedDeviceFilePath, saved);
+            Require(!session.EnsureAuthorizationValid() && !session.IsLoggedIn,
+                "restoring the old profile bypassed the persistent revocation tombstone");
+            Require(store.TryRead(out var restored) && !restored.PersistentLocalAuthorization &&
+                !restored.OfflineAuthorizationAttested,
+                "an offline read recreated the persistent witness after revocation");
+            store.Clear();
         }
 
         private static async Task<string> RunCoreAsync()
@@ -93,14 +153,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 CredentialVersion).ConfigureAwait(true);
             Require(!string.IsNullOrWhiteSpace(username), "trusted mirror was not seeded");
 
-            var store = new PosTrustedDeviceStore();
+            await VerifyPersistentLocalGrantAsync(users, security, username).ConfigureAwait(true);
+
+            var store = LegacyStore();
             store.Clear();
             var legacyResponse = BuildResponse(includeOfflineAttestation: false);
             store.SaveFirstLogin(
                 legacyResponse,
                 "qa-auth-legacy-online-generation");
             Require(
-                new PosTrustedDeviceStore().TryRead(out var legacyOnlineSession),
+                LegacyStore().TryRead(out var legacyOnlineSession),
                 "legacy Admin response did not remain usable online");
             Require(
                 PosOfflineAuthorizationLeasePolicy.ValidateOnlineReceipt(
@@ -175,7 +237,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         .AddMinutes(1)
                         .ToString("O", CultureInfo.InvariantCulture)));
             Require(
-                new PosTrustedDeviceStore().TryRead(out var tamperedSession),
+                LegacyStore().TryRead(out var tamperedSession),
                 "tampered expiry prevented bounded online recovery");
             RequireDenied(
                 PosOfflineAuthorizationLeasePolicy.Evaluate(
@@ -210,7 +272,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 store.TrustedDeviceFilePath,
                 new byte[(64 * 1024) + 1]);
             Require(
-                !new PosTrustedDeviceStore().TryRead(out _),
+                !LegacyStore().TryRead(out _),
                 "oversized trusted-device state was not rejected");
             store.SaveFirstLogin(response, retryGenerationId);
             Require(
@@ -2395,6 +2457,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 CountSalesOutboxRows(factory) == concurrentOutboxBefore + 2,
                 "two concurrent authorized sales were not serialized safely");
             return "PASS authorization lease dynamic smoke" + Environment.NewLine +
+                "persistentLocalGrantBeyondLegacyWindow=True" + Environment.NewLine +
+                "persistentGrantWrongPinDenied=True" + Environment.NewLine +
+                "persistentGrantCommitProof=True" + Environment.NewLine +
+                "persistentGrantRevokedBackupDenied=True" + Environment.NewLine +
+                "persistentGrantSupersedesLegacyBackup=True" + Environment.NewLine +
                 "wrongPinDoesNotPrime=True" + Environment.NewLine +
                 "epochChangeDenied=True" + Environment.NewLine +
                 "generationChangeDenied=True" + Environment.NewLine +
@@ -3010,7 +3077,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return response;
         }
 
-        private static async Task<string> PrepareRestartProbeCoreAsync()
+        private static async Task<string> PrepareRestartProbeCoreAsync(bool persistent)
         {
             var options = PosDbOptions.Default();
             DbInitializer.EnsureCreated(options);
@@ -3028,24 +3095,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 StaffCode = StaffCode
             }).ConfigureAwait(true);
 
-            var store = new PosTrustedDeviceStore();
+            var store = persistent ? new PosTrustedDeviceStore() : LegacyStore();
             store.Clear();
             store.SaveFirstLogin(
-                BuildResponse(includeOfflineAttestation: true),
+                BuildRestartResponse(persistent),
                 "qa-auth-process-restart");
             Require(
                 store.TryRead(out var trusted) &&
-                trusted.TrustedStateFormatVersion == 5 &&
+                trusted.TrustedStateFormatVersion == (persistent ? 6 : 5) &&
+                trusted.PersistentLocalAuthorization == persistent &&
                 trusted.OfflineAuthorizationAttested,
                 "restart probe did not persist the independently witnessed offline attestation");
 
             return "PASS authorization lease restart prepare" + Environment.NewLine +
                 "processInstance=" + ProcessInstanceId + Environment.NewLine +
-                "stateFormat=5" + Environment.NewLine +
+                "persistentGrant=" + persistent + Environment.NewLine +
+                "stateFormat=" + (persistent ? 6 : 5) + Environment.NewLine +
                 "offlineAttested=True" + Environment.NewLine;
         }
 
-        private static async Task<string> VerifyRestartProbeCoreAsync()
+        private static async Task<string> VerifyRestartProbeCoreAsync(bool persistent)
         {
             var options = PosDbOptions.Default();
             DbInitializer.EnsureCreated(options);
@@ -3062,12 +3131,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 !string.IsNullOrWhiteSpace(username),
                 "restart probe could not reload the trusted remote mirror");
 
-            var store = new PosTrustedDeviceStore();
+            var store = persistent ? new PosTrustedDeviceStore() : LegacyStore();
             Require(
                 store.TryRead(out var restartedSession),
                 "restart probe state was not readable for bounded online recovery");
             Require(
-                restartedSession.TrustedStateFormatVersion == 5,
+                restartedSession.TrustedStateFormatVersion == (persistent ? 6 : 5) &&
+                restartedSession.PersistentLocalAuthorization == persistent,
                 "restart probe did not preserve the current trusted-state format");
             Require(
                 PosOfflineAuthorizationLeasePolicy.ValidateOnlineReceipt(
@@ -3084,7 +3154,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var guard = new PosOfflineAuthorizationLeaseGuard(
                 store,
-                () => DateTimeOffset.UtcNow);
+                () => persistent ? DateTimeOffset.UtcNow.AddYears(1) : DateTimeOffset.UtcNow);
             var operatorSession = new OperatorSession(users, security, guard);
             operatorSession.SetUserForTesting(new UserAccount
             {
@@ -3125,7 +3195,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "correct PIN failed after a distinct-process offline reopen");
             permissions.Demand(PermissionCodes.PosPay, "qa reopened offline permission without sale");
 
-            store.SaveFirstLogin(BuildResponse(includeOfflineAttestation: true),
+            store.SaveFirstLogin(BuildRestartResponse(persistent),
                 "qa-auth-process-new-receipt");
             var latestState = File.ReadAllText(store.TrustedDeviceFilePath);
             File.WriteAllText(store.TrustedDeviceFilePath, originalState);
@@ -3153,10 +3223,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "reopen probes wrote an economic row");
 
             store.SaveFirstLogin(
-                BuildResponse(includeOfflineAttestation: true),
+                BuildRestartResponse(persistent),
                 "qa-auth-process-restart-recovered");
             Require(
-                new PosTrustedDeviceStore().TryRead(out var recoveredSession) &&
+                LegacyStore().TryRead(out var recoveredSession) &&
                 recoveredSession.OfflineAuthorizationAttested,
                 "fresh online authorization did not recover after process restart");
             var revokedForNextProcess = File.ReadAllText(store.TrustedDeviceFilePath);
@@ -3164,6 +3234,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             File.WriteAllText(store.TrustedDeviceFilePath, revokedForNextProcess);
 
             return "PASS authorization lease restart verify" + Environment.NewLine +
+                "persistentGrant=" + persistent + Environment.NewLine +
                 "processInstance=" + ProcessInstanceId + Environment.NewLine +
                 "onlineRecoveryReadable=True" + Environment.NewLine +
                 "offlineAttestationAfterRestart=True" + Environment.NewLine +
@@ -3177,7 +3248,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "freshOnlineRecovery=True" + Environment.NewLine;
         }
 
-        private static async Task<string> VerifyRevokedRestartProbeCoreAsync()
+        private static async Task<string> VerifyRevokedRestartProbeCoreAsync(bool persistent)
         {
             // Third CLR process: there is no in-memory revocation latch from the
             // process that cleared trust then restored its previously valid file.
@@ -3187,7 +3258,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var username = await users.FindTrustedRemoteStaffUsernameAsync(ShopId, ShopCode,
                 StaffId, StaffCode, CredentialVersion).ConfigureAwait(true);
             Require(!string.IsNullOrWhiteSpace(username), "revoked restart lost the fixture PIN mirror");
-            var store = new PosTrustedDeviceStore();
+            var store = persistent ? new PosTrustedDeviceStore() : LegacyStore();
             Require(store.TryRead(out var revoked) && !revoked.OfflineAuthorizationAttested,
                 "third process recovered revoked authority from a restored profile");
             var guard = new PosOfflineAuthorizationLeaseGuard(store, () => DateTimeOffset.UtcNow);
@@ -3212,12 +3283,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     CountSalesOutboxRows(factory)==beforeOutbox,
                 "revoked restart wrote a sale or publication row");
 
-            store.SaveFirstLogin(BuildResponse(includeOfflineAttestation: true),
+            store.SaveFirstLogin(BuildRestartResponse(persistent),
                 "qa-restart-witness-negative-probes");
             var currentJson=File.ReadAllText(store.TrustedDeviceFilePath);
             Require(store.TryRead(out var valid) && valid.OfflineAuthorizationAttested,
                 "fresh receipt failed before witness negative probes");
-            var otherProfile=new PosTrustedDeviceStore("qa-restart-other-profile");
+            var otherProfile=LegacyStore("qa-restart-other-profile");
             Directory.CreateDirectory(Path.GetDirectoryName(otherProfile.TrustedDeviceFilePath));
             File.WriteAllText(otherProfile.TrustedDeviceFilePath,currentJson);
             Require(otherProfile.TryRead(out var transferred) && !transferred.OfflineAuthorizationAttested,
@@ -3233,7 +3304,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 scope=BitConverter.ToString(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(
                     Path.GetFullPath(store.TrustedDeviceFilePath).ToUpperInvariant())))
                     .Replace("-",string.Empty).ToLowerInvariant();
-            var witnessPath=@"Software\Win7POS\OfflineAuthorization\"+scope;
+            var witnessPath=(persistent ? @"Software\Win7POS\PersistentAuthorizationV6\" :
+                @"Software\Win7POS\OfflineAuthorization\")+scope;
             using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(witnessPath,true))
             {
                 Require(key!=null,"owned restart witness key missing before tamper probe");
@@ -3243,7 +3315,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             Require(store.TryRead(out var tampered) && !tampered.OfflineAuthorizationAttested,
                 "altered DPAPI witness authorized offline");
-            store.SaveFirstLogin(BuildResponse(includeOfflineAttestation:true),"qa-restart-hive-loss");
+            store.SaveFirstLogin(BuildRestartResponse(persistent),"qa-restart-hive-loss");
             // This is only the exact key belonging to the seeded synthetic data
             // root. It simulates hive unload; it does not reboot Windows.
             Microsoft.Win32.Registry.CurrentUser.DeleteSubKey(witnessPath,true);
@@ -3252,6 +3324,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Require(CountSaleRows(factory)==beforeSales && CountSalesOutboxRows(factory)==beforeOutbox,
                 "witness negative probes wrote economic rows");
             return "PASS authorization lease revoked restart verify"+Environment.NewLine+
+                "persistentGrant="+persistent+Environment.NewLine+
                 "processInstance="+ProcessInstanceId+Environment.NewLine+
                 "revocationSurvivesAnotherProcess=True"+Environment.NewLine+
                 "otherProfileDenied=True"+Environment.NewLine+
@@ -3299,7 +3372,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             File.WriteAllText(store.TrustedDeviceFilePath, json);
 
             Require(
-                new PosTrustedDeviceStore().TryRead(out var legacySession),
+                LegacyStore().TryRead(out var legacySession),
                 "legacy v" + formatVersion + " state did not reload online");
             Require(
                 legacySession.TrustedStateFormatVersion == formatVersion,
@@ -3314,12 +3387,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "legacy v" + formatVersion + " state authorized offline");
         }
 
+        private static PosFirstLoginResponse BuildRestartResponse(bool persistent)
+        {
+            var response = BuildResponse(includeOfflineAttestation: true);
+            if (persistent)
+            {
+                response.Session.ExpiresAt = PosOnlineContract.PersistentLocalAuthorizationExpiryUtc;
+                response.EffectiveOfflineAuthorizationExpiresAt = response.Session.ExpiresAt;
+            }
+            return response;
+        }
+
         internal static PosFirstLoginResponse BuildResponse(
             bool includeOfflineAttestation)
         {
             var now = DateTimeOffset.UtcNow;
             return new PosFirstLoginResponse
             {
+                LocalAuthorizationPolicy = PosOnlineContract.PersistentLocalAuthorizationPolicy,
                 EffectiveOfflineAuthorizationExpiresAt =
                     includeOfflineAttestation
                         ? now.AddHours(4).ToString(

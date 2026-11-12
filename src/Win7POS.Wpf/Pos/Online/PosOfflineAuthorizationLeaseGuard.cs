@@ -762,6 +762,8 @@ namespace Win7POS.Wpf.Pos.Online
                 LastOkServerAt = session.LastOkServerAt,
                 OfflineAuthorizationAttested =
                     session.OfflineAuthorizationAttested,
+                PersistentLocalAuthorization = session.PersistentLocalAuthorization,
+                TrustedStateFormatVersion = session.TrustedStateFormatVersion,
                 SessionExpiresAt = session.SessionExpiresAt
             };
         }

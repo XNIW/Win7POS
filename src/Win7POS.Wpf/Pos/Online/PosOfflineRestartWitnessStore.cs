@@ -10,15 +10,20 @@ using Win7POS.Core.Online;
 namespace Win7POS.Wpf.Pos.Online
 {
     // HKCU and DPAPI CurrentUser bind this witness to the Windows user/machine.
-    // Volatile keys are not saved by RegSaveKey and disappear on hive unload.
-    // Missing/corrupt witnesses are never recreated by an offline read.
+    // The v6 witness persists across Windows restarts, outside profile backups.
+    // Missing/corrupt witnesses are never recreated by an offline read. A
+    // tombstone survives restarts and prevents old profile backups reviving a grant.
     internal sealed class PosOfflineRestartWitnessStore
     {
-        private const string RegistryRoot = @"Software\Win7POS\OfflineAuthorization";
+        private const string RegistryRoot = @"Software\Win7POS\PersistentAuthorizationV6";
+        private const string LegacyRegistryRoot = @"Software\Win7POS\OfflineAuthorization";
         private const int MaximumBytes = 32 * 1024;
         private readonly string _scope;
+        private readonly bool _persistentStorage;
+        private string ActiveRegistryRoot => _persistentStorage ? RegistryRoot : LegacyRegistryRoot;
 
-        internal PosOfflineRestartWitnessStore(string scope) { _scope = scope; }
+        internal PosOfflineRestartWitnessStore(string scope, bool persistentStorage = true)
+        { _scope = scope; _persistentStorage = persistentStorage; }
 
         internal void Write(PosOfflineRestartReceipt receipt)
         {
@@ -35,7 +40,7 @@ namespace Win7POS.Wpf.Pos.Online
             try
             {
                 using (var mutex = Acquire())
-                using (var key = Registry.CurrentUser.OpenSubKey(RegistryRoot + @"\" + _scope))
+                using (var key = Registry.CurrentUser.OpenSubKey(ActiveRegistryRoot + @"\" + _scope))
                 {
                     var bytes = key?.GetValue("Witness", null,
                         RegistryValueOptions.DoNotExpandEnvironmentNames) as byte[];
@@ -52,7 +57,10 @@ namespace Win7POS.Wpf.Pos.Online
                         if (!PosOfflineRestartClockPolicy.TryAdvance(receipt, _scope,
                                 stateSha, receiptId, generation, domain, frequency,
                                 timestamp, now, out advanced, out code)) return false;
-                        WriteLocked(advanced);
+                        // Permanent grants have no clock deadline to advance.
+                        // Enrollment/heartbeat/revocation writes the independent
+                        // authority; ordinary permission reads do not rewrite it.
+                        if (!receipt.PersistentAuthorization) WriteLocked(advanced);
                         return true;
                     }
                     finally { Array.Clear(plain, 0, plain.Length); }
@@ -81,9 +89,9 @@ namespace Win7POS.Wpf.Pos.Online
                 if (plain.Length > MaximumBytes) throw new InvalidDataException("offline_witness_size");
                 var protectedValue = ProtectedData.Protect(plain, Entropy(), DataProtectionScope.CurrentUser);
                 if (protectedValue.Length > MaximumBytes) throw new InvalidDataException("offline_witness_size");
-                using (var parent = Registry.CurrentUser.CreateSubKey(RegistryRoot))
+                using (var parent = Registry.CurrentUser.CreateSubKey(ActiveRegistryRoot))
                 using (var key = parent.CreateSubKey(_scope, RegistryKeyPermissionCheck.ReadWriteSubTree,
-                           RegistryOptions.Volatile))
+                           _persistentStorage ? RegistryOptions.None : RegistryOptions.Volatile))
                 {
                     key.SetValue("Witness", protectedValue, RegistryValueKind.Binary);
                 }
@@ -91,7 +99,8 @@ namespace Win7POS.Wpf.Pos.Online
             finally { Array.Clear(plain, 0, plain.Length); }
         }
 
-        private byte[] Entropy() => Encoding.UTF8.GetBytes("Win7POS.offline-restart.v1:" + _scope);
+        private byte[] Entropy() => Encoding.UTF8.GetBytes(
+            (_persistentStorage ? "Win7POS.persistent-authority.v6:" : "Win7POS.offline-restart.v1:") + _scope);
 
         private MutexLease Acquire()
         {
