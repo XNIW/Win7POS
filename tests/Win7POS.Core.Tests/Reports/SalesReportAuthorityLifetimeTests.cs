@@ -93,6 +93,51 @@ public sealed class SalesReportAuthorityLifetimeTests
         RejectWithoutFreshRead(fixture.Coordinator, snapshot.Token);
     }
 
+    [TestMethod]
+    public async Task Commit_UsesCombinedRevisionAndNotifiesOnlyAfterReleasingPublication()
+    {
+        using var fixture = new Fixture();
+        var initial = await fixture.OpenAsync();
+        var token = initial.Token;
+        var expected = new SalesReportReadToken(token.DatasetId, token.RestoreEpoch, token.AuthorityInstanceEpoch,
+            token.DataRevision + 8, token.ScopeHash, token.OwnershipPolicyHash, token.NativeTimePolicyHash);
+        var notified = 0;
+        var released = false;
+        EventHandler broken = (_, _) => throw new InvalidOperationException("synthetic_subscriber_failure");
+        EventHandler observer = (_, _) =>
+        {
+            notified++;
+            released = fixture.Coordinator.TryUseSnapshot(expected, () => { });
+        };
+        fixture.Coordinator.SnapshotChanged += broken;
+        fixture.Coordinator.SnapshotChanged += observer;
+        try
+        {
+            using var c = fixture.Factory.Open();
+            using var t = c.BeginTransaction();
+            c.Execute("UPDATE historical_import_dataset SET data_revision=data_revision+3; UPDATE historical_cloud_cache_revision SET revision=revision+5", transaction: t);
+            using (await fixture.Coordinator.EnterPublicationAsync(CancellationToken.None))
+            {
+                fixture.Coordinator.CommitAndPublishReportRevision(c,t,t.Commit,fixture.Factory.AuthorityStamp);
+                Assert.AreEqual(0,notified,"Notification ran inside the publication gate.");
+                Assert.IsFalse(fixture.Coordinator.IsCurrent(initial.Token));
+                Assert.IsTrue(fixture.Coordinator.IsCurrent(expected));
+            }
+            Assert.AreEqual(1,notified);
+            Assert.IsTrue(released,"The observer could not use the committed snapshot after publication.");
+            Assert.AreEqual(expected.DataRevision,(await fixture.OpenAsync()).Token.DataRevision);
+            using var same = c.BeginTransaction();
+            using (await fixture.Coordinator.EnterPublicationAsync(CancellationToken.None))
+                fixture.Coordinator.CommitAndPublishReportRevision(c,same,same.Commit,fixture.Factory.AuthorityStamp);
+            Assert.AreEqual(1,notified,"An unchanged stamp caused a reload loop.");
+        }
+        finally
+        {
+            fixture.Coordinator.SnapshotChanged -= broken;
+            fixture.Coordinator.SnapshotChanged -= observer;
+        }
+    }
+
     private static void RejectWithoutFreshRead(SalesReportSnapshotCoordinator coordinator, SalesReportReadToken token)
     {
         Assert.IsFalse(coordinator.IsCurrent(token));

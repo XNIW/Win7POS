@@ -12,7 +12,8 @@ namespace Win7POS.Core.Online
         CatalogDelta = 3,
         ArticleMutationOutbox = 4,
         ProductImageOutbox = 5,
-        CustomerOrders = 6
+        CustomerOrders = 6,
+        HistoricalPayments = 7
     }
 
     public enum OnlineSyncLaneTrigger
@@ -311,6 +312,7 @@ namespace Win7POS.Core.Online
                  lane == OnlineSyncLane.CatalogImportOutbox ||
                  lane == OnlineSyncLane.ArticleMutationOutbox ||
                  lane == OnlineSyncLane.ProductImageOutbox ||
+                 lane == OnlineSyncLane.HistoricalPayments ||
                  lane == OnlineSyncLane.CustomerOrders) &&
                 outcome.HasImmediateMore)
             {
@@ -354,7 +356,7 @@ namespace Win7POS.Core.Online
                         0);
                 }
 
-                if (lane == OnlineSyncLane.CustomerOrders)
+                if (lane == OnlineSyncLane.CustomerOrders || lane == OnlineSyncLane.HistoricalPayments)
                 {
                     // Orders can arrive after an empty claim and this pull-only
                     // lane has no local commit signal. A slow jittered poll keeps

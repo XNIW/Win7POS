@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 
 function Get-HistoricalSalesQaContract {
-    param([ValidateSet('Smoke','Load','CrashProbe')][string]$Mode)
+    param([ValidateSet('Smoke','Load','CrashProbe','CloudSync')][string]$Mode)
     $smoke = [ordered]@{
         HIST01_PROFILES_PREVIEW=@('profiles_detected','header_mapping','exact_values','text_ids','policy_visible','invalid_input_blocked')
         HIST02_APPLY_REOPEN=@('durable_receipt','manifest_totals','reopened_records','operational_invariants')
@@ -14,12 +14,13 @@ function Get-HistoricalSalesQaContract {
     }
     $foundation = [ordered]@{
         HIST_CRASH_HOT_JOURNAL=@('same_existing_database','prepared_sentinel','reached_after_spill','expected_abrupt_exit','journal_recovery_completed','atomic_data_and_revision','operational_invariants','owned_process_cleanup')
-        HIST_B_COMMIT_AUTHORITY=@('apply_revoke_before_insert','apply_revoke_precommit','undo_revoke_precommit','expiry_before_commit','operator_permission_changed','linearized_commit_once')
+        HIST_B_COMMIT_AUTHORITY=@('foreground_preserves_history_cloud_writer_closed','foreground_preserves_auth_denied','foreground_preserves_history_cloud_access_denied','foreground_preserves_history_cloud_unavailable','foreground_preserves_history_response_invalid','apply_revoke_before_insert','apply_revoke_precommit','undo_revoke_precommit','expiry_before_commit','operator_permission_changed','linearized_commit_once')
         HIST_B_PROCESS_ADMISSION=@('real_holder_contender','sqlite_busy_bounded','workflow_cancel_no_orphan','auth_cancel_no_orphan','maintenance_cancel_no_orphan','lock_order_no_deadlock','commands_cart_restored')
         HIST_B_ENTRYPOINT_AUTHORITY=@('wpf_normal_rejected_before_init','wpf_safe_rejected_before_init','cli_rejected_before_seed','harness_rejected_before_init','distinct_databases_admitted','case_shortpath_alias_collide','reparse_hardlink_rejected','restart_reacquires')
         HIST_B_BACKUP_RESTORE=@('backup_validate_publish','aux_scope_reject','candidate_swap_rebind','rollback_restore','epoch_stales_plan','mapping_fk_preserved','reimport_zero','all_handles_released')
     }
     switch ($Mode) {
+        CloudSync { return @{ mode=$Mode; schemaVersion='win7pos-historical-cloud-sync-v1'; protocolVersion=1; file='historical-cloud-sync-results.json'; scenarios=([ordered]@{ HIST_C_OPEN_REPLICA=@('open_view_convergence') }); bodySeconds=60 } }
         Smoke { return @{ mode=$Mode; schemaVersion='win7pos-historical-sales-qa-v3'; protocolVersion=3; file='historical-sales-results.json'; scenarios=$smoke; bodySeconds=60 } }
         Load { return @{ mode=$Mode; schemaVersion='win7pos-historical-sales-load-v2'; protocolVersion=2; file='historical-sales-load-results.json'; scenarios=([ordered]@{ HIST_LOAD_50K=@('fixture_identity','exact_counters','phase_measurements','memory_budget','dispatcher_budget','cancellation_budget','mixed_query_budget','ownership_cold_warm','snapshot_invalidation','maintenance_writer_exclusion','environment_identity') }); bodySeconds=180 } }
         CrashProbe { return @{ mode=$Mode; schemaVersion='win7pos-historical-sales-foundation-v3'; protocolVersion=3; file='historical-sales-crash-results.json'; scenarios=$foundation; bodySeconds=330 } }
@@ -93,6 +94,7 @@ function Get-HistoryMeasurementPhases {
 
 function Assert-HistoryMeasurementStructure($Receipt) {
     $metricNames=@('analysisMs','planMs','hashingMs','dedupMs','serviceMs','admissionMs','applyMs','backupMs','backupTransitionMs','mutationMs','commitMs','applyReturnMs','rollbackMs','rollbackBackupMs','queryMs','queryColdMs','ownershipColdMs','analysisCancelMs','fixtureSetupMs','sourceGenerationMs','nativeSeedMs','privateBytesBefore','privateBytesAfter','sampledPeakPrivateBytes','dispatcherP95Ms','dispatcherMaximumMs','cancelMs','expectedSamples','observedSamples','expectedMemorySamples','observedMemorySamples','completedProbes','pendingProbes','dropped','memoryDropped','overflow','suspended','stopwatchFrequency','sampleIntervalMs','memoryIntervalMs')
+    $metricNames+=@('samplerGapCount','samplerGapFirstSequence','samplerGapFirstWaitMs','samplerGapFirstRequestedMs','samplerGapFirstMemoryMs','samplerGapFirstObservationMs','samplerGapFirstWaitSignaled','samplerGapFirstGc0','samplerGapFirstGc1','samplerGapFirstGc2')
     if ($Receipt.PSObject.Properties.Name -contains 'metrics') {
         Assert-HistoryKeys $Receipt.metrics $metricNames
         foreach($field in $Receipt.metrics.PSObject.Properties.Name){ Assert-HistoryNumber $Receipt.metrics.$field -Integral:($field -notlike '*Ms') }
@@ -242,7 +244,7 @@ function Assert-HistoricalSalesMeasurement {
 
 function ValidateHistoricalEvidenceStructureAndPrivacy {
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Receipt, [Parameter(Mandatory)][ValidateSet('Smoke','Load','CrashProbe')][string]$Mode,
+    param([Parameter(Mandatory)]$Receipt, [Parameter(Mandatory)][ValidateSet('Smoke','Load','CrashProbe','CloudSync')][string]$Mode,
         [Parameter(Mandatory)]$Expected)
     $contract = Get-HistoricalSalesQaContract $Mode
     $envelope=@('schemaVersion','protocolVersion','runId','runNonce','sourceSha','sourceFingerprintSha256','harnessSha256','wpfSha256','fixtureVersion','fixtureSha256','timePolicyVersion','startedAtUtc','completedAtUtc','startedTicks','completedTicks','durationMs','completed','status','process','summary','results','lastCheckpoint','measurementCompleted','environmentValid','thresholdsPassed','metrics','samples','memorySamples','phases','timings','measurement','workerRawExitCode','workerRawStatus','verifierExitCode')
@@ -319,7 +321,7 @@ function ValidateHistoricalEvidenceStructureAndPrivacy {
 }
 
 function Assert-HistoricalSalesQaPass {
-    param([Parameter(Mandatory)]$Receipt, [Parameter(Mandatory)][ValidateSet('Smoke','Load','CrashProbe')][string]$Mode, [Parameter(Mandatory)]$Expected)
+    param([Parameter(Mandatory)]$Receipt, [Parameter(Mandatory)][ValidateSet('Smoke','Load','CrashProbe','CloudSync')][string]$Mode, [Parameter(Mandatory)]$Expected)
     $null = ValidateHistoricalEvidenceStructureAndPrivacy $Receipt $Mode $Expected
     $contract=Get-HistoricalSalesQaContract $Mode
     if ($Receipt.PSObject.Properties.Name -notcontains 'process') {throw 'qa_history_process_missing'}

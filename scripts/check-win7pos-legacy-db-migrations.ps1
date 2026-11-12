@@ -38,7 +38,13 @@ $migrationFiles = @(
     "src/Win7POS.Data/Migrations/SchemaMigrationRegistry.cs",
     "src/Win7POS.Data/Migrations/SchemaMigrationRunner.cs",
     "src/Win7POS.Data/Migrations/LegacySchemaDetector.cs",
-    "src/Win7POS.Data/Import/HistoricalSalesSchema.cs"
+    "src/Win7POS.Data/Import/HistoricalSalesSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalCloudSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalPublicationSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalPreparationSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalOutcomeSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalBaselineSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalLegacyBaselineSchema.cs"
 )
 $testFiles = @(
     "tests/Win7POS.Core.Tests/Data/MigrationRunnerTests.cs",
@@ -92,7 +98,18 @@ Require-Text $registry 'DbInitializer\.CoreSchemaFingerprintSql' "core bootstrap
 Require-Text $registry 'DbInitializer\.DependentSchemaSql' "dependent bootstrap uses exact table definitions"
 Require-Text $registry 'DbInitializer\.PrBKnownSchemaSql' "ledgerless bootstrap is bounded to the frozen PR-B schema whitelist"
 Require-Text $registry 'IsRecognizedPostPr7LedgerlessBaseline' "post-PR7 ledgerless bootstrap uses a dedicated bounded baseline recognizer"
-Require-Text $registry 'HistoricalSalesSchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalSalesBaseline' "historical imports require the current schema invariant and explicit ledgerless baseline recognizer"
+Require-Text $registry 'HistoricalSalesSchema\.Apply,\s*IsPostHistoricalSchemaStructurallyValid,\s*IsRecognizedHistoricalSalesBaseline' "historical imports require the current schema invariant and explicit ledgerless baseline recognizer"
+Require-Text $registry 'HistoricalCloudSchema\.Apply,\s*IsPostHistoricalCloudSchemaStructurallyValid,\s*IsRecognizedHistoricalCloudBaseline' "cloud replica retains its frozen schema invariant and explicit ledgerless baseline recognizer"
+Require-Text $registry 'HistoricalPublicationSchema\.Apply,\s*IsPostHistoricalPublicationSchemaStructurallyValid,\s*IsRecognizedHistoricalPublicationBaseline' "publication outbox retains its frozen invariant and explicit ledgerless baseline recognizer"
+Require-Text $registry 'HistoricalPreparationSchema\.Apply,\s*IsPostHistoricalPreparationSchemaStructurallyValid,\s*IsRecognizedHistoricalPreparationBaseline' "preparation journal retains its frozen invariant and explicit ledgerless baseline recognizer"
+Require-Text $registry 'HistoricalOutcomeSchema\.Apply,\s*IsPostHistoricalOutcomeSchemaStructurallyValid,\s*IsRecognizedHistoricalOutcomeBaseline' "outcome witnesses require the latest invariant and explicit baseline recognizer"
+Require-Text $registry 'IsPostHistoricalPreparationSchemaStructurallyValid\(detector\) && HistoricalOutcomeSchema\.IsSatisfied\(detector\)' "current schema retains preparation invariants before validating outcome evidence"
+Require-Text $registry 'IsPostHistoricalPublicationSchemaStructurallyValid\(detector\) && HistoricalPreparationSchema\.IsSatisfied\(detector\)' "current schema retains outbox invariants before validating the preparation journal"
+Require-Text $registry 'IsPostHistoricalSchemaStructurallyValid\(detector\) && HistoricalCloudSchema\.IsSatisfied\(detector\)' "current schema retains historical invariants before validating the cloud cache"
+Require-Text $registry 'HistoricalBaselineSchema\.Apply,\s*IsPostHistoricalBaselineFlowSchemaStructurallyValid,\s*IsRecognizedHistoricalBaselineFlow' "baseline flow retains its frozen invariant and explicit baseline recognizer"
+Require-Text $registry 'HistoricalLegacyBaselineSchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalLegacyBaseline' "legacy baseline inclusion requires the latest invariant and explicit baseline recognizer"
+Require-Text $registry 'IsPostHistoricalBaselineFlowSchemaStructurallyValid\(detector\) && HistoricalLegacyBaselineSchema\.IsSatisfied\(detector\)' "current schema retains the frozen baseline invariant before legacy inclusion metadata"
+Require-Text $registry 'IsPostHistoricalOutcomeSchemaStructurallyValid\(detector\) && HistoricalBaselineSchema\.IsSatisfied\(detector\)' "current schema retains the frozen outcome invariant before baseline metadata"
 Require-Text $registry 'IsCanonicalRegistry' "special ledgerless recognition is restricted to the canonical registry"
 Require-Text $migration 'RecognizesLedgerlessBaseline' "ledgerless baseline recognition is explicit migration metadata"
 Require-Text $initializer 'PostPr7LedgerlessKnownSchemaSql' "post-PR7 receipt schema has a separate frozen whitelist"
@@ -131,7 +148,13 @@ $expectedIds = @(
     "0012-customer-order-inbox",
     "0013-catalog-import-recovery",
     "0014-catalog-import-plans-and-drafts",
-    "0015-historical-card-imports"
+    "0015-historical-card-imports",
+    "0016-historical-cloud-replica",
+    "0017-historical-publication-outbox",
+    "0018-historical-preparation-journal",
+    "0019-historical-outcome-witnesses",
+    "0020-historical-baseline-flow",
+    "0021-historical-legacy-baseline"
 )
 if (($ids -join "|") -ne ($expectedIds -join "|")) {
     Fail "registry is not the expected append-only ordered migration sequence"
@@ -155,7 +178,13 @@ $expectedChecksums = @(
     "1f2cb3c5895989825e77a8438c22879a6709907758efdadc760038fe5661e2f3",
     "475bd265683b005a91a24540358b05722f0f5bfaa9706fa48b48ee888ddef883",
     "9de54b344ac5187843970a2e310ab30e4bbb5ac919077b0063273f7a3b376aff",
-    "9e04be2f76ee6ec7e7bd1eee99c4be59ee93e137277a0314747180274d0d720e"
+    "9e04be2f76ee6ec7e7bd1eee99c4be59ee93e137277a0314747180274d0d720e",
+    "fdcb306ee7c0a7223938c3f6a40bfdf2b49330e628ea02320c4a32c3a1a84cb3",
+    "64162e83598480a4a15f864acdf48b39b83f97b281e82ba4a371704ec068661b",
+    "2f02c30616730d50bc23c37e123a97407753b693f25c7f6bf0326e0e79160712",
+    "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee",
+    "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1",
+    "cb203678ef8ed61b30d97767bc46767eff29760356c0d14321c01f3b12bce85b"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or
@@ -167,7 +196,7 @@ if (-not $failed) { Pass "published ID-to-checksum mapping is pinned in registry
 
 $trueBeforeApplyCount = [regex]::Matches(
     $registry,
-    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply)').Count
+    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply|HistoricalCloudSchema\.Apply|HistoricalPublicationSchema\.Apply|HistoricalPreparationSchema\.Apply|HistoricalOutcomeSchema\.Apply|HistoricalBaselineSchema\.Apply|HistoricalLegacyBaselineSchema\.Apply)').Count
 if ($trueBeforeApplyCount -ne $expectedIds.Count) {
     Fail "every published PR-B migration must require a pre-migration backup"
 }
@@ -194,7 +223,8 @@ foreach ($token in @(
     "LedgerlessPostPr7WithMissingOwnershipBackfill_IsNotFalselyBootstrapped",
     "AuthenticLatestLedgerWithoutReceiptSnapshotColumn_FailsCurrentSchemaValidation",
     "CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor",
-    "Ledgerless0014_BootstrapsPublishedPrefixAndAppliesOnly0015",
+    "Ledgerless0014_BootstrapsPublishedPrefixAndApplies0015And0016",
+    "LedgerlessCloudCache_PartialBaselineCannotFallBackToHistorical0015",
     "Ledgerless0015_IncompleteOrUnsafeBaselineRejectsBeforeLedgerOrBackfill",
     "MalformedSchemaWithLedgerThrough0006_DoesNotCommit0007")) {
     if ($runnerTests -notmatch [regex]::Escape($token)) {

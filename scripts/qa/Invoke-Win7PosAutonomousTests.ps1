@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Local','Windows','Staging','Win7','Hardware')][string]$Suite = 'Local',
-    [ValidateSet('All','Smoke','Load','CrashProbe')][string]$HistoricalSalesMode = 'All',
+    [ValidateSet('All','Smoke','Load','CrashProbe','CloudSync')][string]$HistoricalSalesMode = 'All',
     [string]$OutputRoot = ([IO.Path]::GetTempPath()),
     [string]$PublicOutputRoot = '',
     [ValidatePattern('^$|^[a-z0-9][a-z0-9-]{0,63}$')][string]$Profile = '',
@@ -396,7 +396,8 @@ function New-QaPlan([string]$Suite, [string]$RunDirectory, [string]$Shell, [stri
     foreach ($history in @(
         @{name='historical-sales-import-crash';mode='CrashProbe';evidence='historical-sales-foundation-v3';timeout=360;depends=@('build-harness')},
         @{name='historical-sales-import-smoke';mode='Smoke';evidence='historical-sales-smoke-v3';timeout=90;depends=@('build-harness')},
-        @{name='historical-sales-import-load';mode='Load';evidence='historical-sales-load-v2';timeout=240;depends=@('build-harness','historical-sales-import-smoke')}
+        @{name='historical-sales-import-load';mode='Load';evidence='historical-sales-load-v2';timeout=240;depends=@('build-harness','historical-sales-import-smoke')},
+        @{name='historical-sales-import-cloudsync';mode='CloudSync';evidence='historical-cloud-sync-v1';timeout=90;depends=@('build-harness')}
     )) {
         if ($HistoricalMode -ne 'All' -and $history.mode -ne $HistoricalMode -and -not ($HistoricalMode -eq 'Load' -and $history.mode -eq 'Smoke')) { continue }
         $step=New-QaStep $history.name $Shell @('-NoProfile','-File','scripts/run-historical-sales-import-smoke.ps1','-Mode',$history.mode,'-OutputDirectory',(Join-Path $RunDirectory $history.name)) $history.depends $history.timeout $history.evidence

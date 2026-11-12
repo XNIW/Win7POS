@@ -37,6 +37,20 @@ namespace Win7POS.Core.Import
         public string GenerationFingerprint { get; }
         public string StaffId { get; }
         public int CredentialVersion { get; }
+        private HistoricalLocalWriteGrant _publicationGrant;
+        internal void AttachPublicationGrant(HistoricalLocalWriteGrant grant)
+        {
+            var proof=grant?.PublicationProof;
+            if(_publicationGrant!=null||proof==null||grant.OperationId!=Guid.Parse(OperationId).ToString("D")||proof.ShopId!=ShopId||proof.DeviceId!=DeviceId
+                ||proof.DatasetId!=DatasetId||proof.RestoreEpoch!=RestoreEpoch||proof.RequestFingerprint!=RequestFingerprint)
+                throw new InvalidOperationException("history_publication_proof_mismatch");
+            grant.DemandStillValid();_publicationGrant=grant;
+        }
+        public HistoricalLocalCommitWindow CapturePublicationCommitWindow(TimeSpan minimumRemaining)
+        {
+            _demand();
+            return (_publicationGrant??throw new InvalidOperationException("history_publication_live_admission_required")).CaptureCommitWindow(minimumRemaining);
+        }
         public void DemandStillValid() => _demand();
         public void CommitIfStillValid(TimeSpan minimumRemaining, Action commit)
         {

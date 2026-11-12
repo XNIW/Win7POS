@@ -218,8 +218,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 Envelope = new HistoricalSalesQaEnvelope
                 {
-                    SchemaVersion = mode == "Load" ? "win7pos-historical-sales-load-v2" : mode == "Smoke" ? "win7pos-historical-sales-qa-v3" : "win7pos-historical-sales-foundation-v3",
-                    ProtocolVersion = mode == "Load" ? 2 : 3,
+                    SchemaVersion = mode == "CloudSync" ? "win7pos-historical-cloud-sync-v1" : mode == "Load" ? "win7pos-historical-sales-load-v2" : mode == "Smoke" ? "win7pos-historical-sales-qa-v3" : "win7pos-historical-sales-foundation-v3",
+                    ProtocolVersion = mode == "CloudSync" ? 1 : mode == "Load" ? 2 : 3,
                     RunId = Context.RunId, RunNonce = Context.RunNonce, SourceSha = Context.SourceSha, SourceFingerprintSha256 = Context.SourceFingerprintSha256,
                     HarnessSha256 = Context.HarnessSha256, WpfSha256 = Context.WpfSha256, FixtureVersion = Context.FixtureVersion, FixtureSha256 = Context.FixtureSha256, TimePolicyVersion = Context.TimePolicyVersion,
                     StartedAtUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture), StartedTicks = Stopwatch.GetTimestamp(), Summary = new HistoricalSalesQaSummary { Expected = _contract.Count },
@@ -305,6 +305,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         }
         internal static Dictionary<string, string[]> Contract(string mode)
         {
+            if(mode=="CloudSync")return new Dictionary<string,string[]>(StringComparer.Ordinal){["HIST_C_OPEN_REPLICA"]=new[]{"open_view_convergence"}};
             if (mode == "Smoke") return new Dictionary<string, string[]>(StringComparer.Ordinal)
             {
                 ["HIST01_PROFILES_PREVIEW"] = new[] { "profiles_detected", "header_mapping", "exact_values", "text_ids", "policy_visible", "invalid_input_blocked" },
@@ -323,7 +324,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return new Dictionary<string, string[]>(StringComparer.Ordinal)
             {
                 ["HIST_CRASH_HOT_JOURNAL"] = new[] { "same_existing_database", "prepared_sentinel", "reached_after_spill", "expected_abrupt_exit", "journal_recovery_completed", "atomic_data_and_revision", "operational_invariants", "owned_process_cleanup" },
-                ["HIST_B_COMMIT_AUTHORITY"] = new[] { "apply_revoke_before_insert", "apply_revoke_precommit", "undo_revoke_precommit", "expiry_before_commit", "operator_permission_changed", "linearized_commit_once" },
+                ["HIST_B_COMMIT_AUTHORITY"] = new[] { "foreground_preserves_history_cloud_writer_closed", "foreground_preserves_auth_denied", "foreground_preserves_history_cloud_access_denied", "foreground_preserves_history_cloud_unavailable", "foreground_preserves_history_response_invalid", "apply_revoke_before_insert", "apply_revoke_precommit", "undo_revoke_precommit", "expiry_before_commit", "operator_permission_changed", "linearized_commit_once" },
                 ["HIST_B_PROCESS_ADMISSION"] = new[] { "real_holder_contender", "sqlite_busy_bounded", "workflow_cancel_no_orphan", "auth_cancel_no_orphan", "maintenance_cancel_no_orphan", "lock_order_no_deadlock", "commands_cart_restored" },
                 ["HIST_B_ENTRYPOINT_AUTHORITY"] = new[] { "wpf_normal_rejected_before_init", "wpf_safe_rejected_before_init", "cli_rejected_before_seed", "harness_rejected_before_init", "distinct_databases_admitted", "case_shortpath_alias_collide", "reparse_hardlink_rejected", "restart_reacquires" },
                 ["HIST_B_BACKUP_RESTORE"] = new[] { "backup_validate_publish", "aux_scope_reject", "candidate_swap_rebind", "rollback_restore", "epoch_stales_plan", "mapping_fk_preserved", "reimport_zero", "all_handles_released" }

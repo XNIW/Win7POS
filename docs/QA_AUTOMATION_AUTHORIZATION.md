@@ -20,6 +20,7 @@ riferimento alla [documentazione ufficiale](https://developers.openai.com/codex/
 
 ```powershell
 pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Local
+pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -HistoricalSalesMode CloudSync -OutputRoot C:\Dev\_codex-evidence
 pwsh -NoProfile -File scripts/qa/Invoke-Win7PosAutonomousTests.ps1 -Suite Windows -OutputRoot C:\Dev\_codex-evidence
 pwsh -NoProfile -File tests/qa/Test-Win7PosAutonomousTests.ps1
 pwsh -NoProfile -File tests/qa/Test-Win7PosAutonomousTests.ps1 -Runtime

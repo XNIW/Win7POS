@@ -13,6 +13,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Dapper;
+using Win7POS.Core;
 using Win7POS.Core.Security;
 using Win7POS.Core.Online;
 using Win7POS.Data;
@@ -247,7 +248,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     check("stale_login_completion_never_logs_out_newer_operator", true);
                     using (var maintenance = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
                     {
-                        var workflow = new PosWorkflowService(maintenance.Options, () => DateTimeOffset.UtcNow);
+                        var workflow = maintenance.CreateWorkflow();
                         check("import_blocks_commands_then_restores_cart", await HistoricalSalesCartMaintenanceProbe.RunAsync(maintenance, workflow));
                     }
                     proofs.Status = "PASS"; save(); TypedQaDiagnosticWriter.CompleteScenario(true); return "PASS: authenticated_shell_ux";
@@ -307,13 +308,25 @@ namespace Win7POS.Wpf.UiSmokeHarness
             await WaitCatalogRetryUiAsync(() => reportView.DataContext is DailyReportViewModel &&
                 !((DailyReportViewModel)reportView.DataContext).IsBusy, token);
             reportView.Focus();
+            var overlayAtEscape=((FrameworkElement)shell.FindName("SideMenuOverlay")).Visibility;
+            var reportBusyAtEscape=((DailyReportViewModel)reportView.DataContext).IsBusy;
             shell.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(shell), Environment.TickCount,
                 Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
             await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+            // Bounded scalar state at the failing return checkpoint; no barcode
+            // text or retained control references in the evidence.
+            var selected=((TabControl)shell.FindName("MainTabControl")).SelectedIndex;
+            var sameModel=ReferenceEquals(view.DataContext,vm);var sameCart=vm.ItemsCount==quantity&&vm.Total==total;
+            var focused=box.IsKeyboardFocused;var sameInitialization=ReferenceEquals(originalInitialization,vm.InitializationTask);
+            var pending=(DispatcherOperation)typeof(PosView).GetField("_focusOperation",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(view);
+            File.AppendAllText(Path.Combine(AppPaths.DataDirectory,"shell-return-focus.private.txt"),
+                "phase="+phase+"; selected="+selected+"; same_model="+sameModel+"; same_cart="+sameCart+"; focused="+focused+
+                "; same_initialization="+sameInitialization+"; view_loaded="+view.IsLoaded+"; view_visible="+view.IsVisible+
+                "; view_enabled="+view.IsEnabled+"; box_visible="+box.IsVisible+"; window_active="+shell.IsActive+
+                "; focus_operation="+(pending?.Status.ToString()??"none")+"; keyboard_target="+(Keyboard.FocusedElement?.GetType().Name??"none")+
+                "; overlay_at_escape="+overlayAtEscape+"; report_busy_at_escape="+reportBusyAtEscape+Environment.NewLine);
             check("report_escape_preserves_cart_and_scanner_focus_" + phase,
-                ((TabControl)shell.FindName("MainTabControl")).SelectedIndex == 0 &&
-                ReferenceEquals(view.DataContext, vm) && vm.ItemsCount == quantity && vm.Total == total && box.IsKeyboardFocused &&
-                ReferenceEquals(originalInitialization, vm.InitializationTask));
+                selected==0&&sameModel&&sameCart&&focused&&sameInitialization);
         }
         private static async Task VerifyShellPaymentAsync(MainWindow shell, SqliteConnectionFactory factory,
             CatalogRetryUiCheck check, CancellationToken token, string stockBarcode="LOOP-REMOTE", string phase="ready")
@@ -548,6 +561,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 ((FrameworkElement)shell.FindName("SideMenuOverlay")).Visibility!=Visibility.Visible &&
                 (expected!=0 || ShellField<PosView>(shell,"PosViewControl")?.IsVisible==true),token);
             await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+            if(expected==0)File.AppendAllText(Path.Combine(AppPaths.DataDirectory,"shell-return-focus.private.txt"),
+                "phase=menu_pos_settled; focused="+((TextBox)ShellField<PosView>(shell,"PosViewControl").FindName("BarcodeBox")).IsKeyboardFocused+
+                "; keyboard_target="+(Keyboard.FocusedElement?.GetType().Name??"none")+Environment.NewLine);
         }
 
         private static void SubmitShellBarcode(PosView view,string text)

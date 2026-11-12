@@ -717,6 +717,9 @@ WHERE key GLOB @pattern;",
                 }
 
                 var nextEpoch = epochFloor + 1;
+                // Historical publication lineage changes only for an actual
+                // restore reset, independently of ordinary catalog generations.
+                await SetAsync(conn,tx,"pos.history.restore_lineage_id",Guid.NewGuid().ToString("N")).ConfigureAwait(false);
                 await SetAsync(
                     conn,
                     tx,

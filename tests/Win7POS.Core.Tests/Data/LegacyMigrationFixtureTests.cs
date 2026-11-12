@@ -180,7 +180,8 @@ ORDER BY migration_id;").ToArray();
                 "0012-customer-order-inbox",
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
-                "0015-historical-card-imports"
+                "0015-historical-card-imports",
+                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow","0021-historical-legacy-baseline"
             },
             appliedIds,
             "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0015.");
@@ -204,7 +205,8 @@ ORDER BY migration_id;").ToArray();
                 "0012-customer-order-inbox",
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
-                "0015-historical-card-imports"
+                "0015-historical-card-imports",
+                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow","0021-historical-legacy-baseline"
             },
             appliedIds,
             "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0015.");
@@ -234,7 +236,8 @@ ORDER BY migration_id;").ToArray();
                 "0012-customer-order-inbox",
                 "0013-catalog-import-recovery",
                 "0014-catalog-import-plans-and-drafts",
-                "0015-historical-card-imports"
+                "0015-historical-card-imports",
+                "0016-historical-cloud-replica","0017-historical-publication-outbox","0018-historical-preparation-journal","0019-historical-outcome-witnesses","0020-historical-baseline-flow","0021-historical-legacy-baseline"
             },
             appliedIds,
             "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009-0015.");

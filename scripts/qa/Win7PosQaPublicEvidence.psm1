@@ -2,7 +2,7 @@ Set-StrictMode -Version Latest
 
 function Get-QaPublicCatalog {
     $functional=@('FUNCTIONAL_VISUAL','OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
-    $steps=@('preflight','restore','restore-cli','gates','build','build-cli','core','selftest','build-wpf','build-harness','product-image-profile','functional-completion','authorization-lease','bounded-logging','product-paging-dispatcher','historical-sales-import-crash','historical-sales-import-smoke','historical-sales-import-load','source-identity','report','cleanup','public-evidence','unknown')
+    $steps=@('preflight','restore','restore-cli','gates','build','build-cli','core','selftest','build-wpf','build-harness','product-image-profile','functional-completion','authorization-lease','bounded-logging','product-paging-dispatcher','historical-sales-import-crash','historical-sales-import-smoke','historical-sales-import-load','historical-sales-import-cloudsync','source-identity','report','cleanup','public-evidence','unknown')
     return @{ functional=$functional; steps=$steps; statuses=@('PASS','FAIL','TIMEOUT','NOT_RUN','BLOCKED_EXTERNAL'); codes=@('process_exit','process_timeout','cancelled','dependency_failed','mock_exit','qa_step_failed','qa_unclassified_failure','qa_report_write_failed','qa_public_bundle_failed','qa_public_collision','qa_sources_changed_during_run','qa_history_receipt_privacy_rejected','qa_history_receipt_missing','missing_or_invalid_test_evidence','qa_smoke_evidence_export_failed','qa_previous_process_cleanup_failed','qa_step_preparation_or_supervision_failed','owned_process_cleanup_failed','qa_source_identity_missing','qa_checkout_build_locked','qa_public_projection_incomplete','qa_safe_console_failed','none','assertion_failed','not_run','timed_out','unavailable') }
 }
 
@@ -90,10 +90,19 @@ function Get-QaTypedDiagnostics {
     $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($row in @($Report.results)){
         if($row.name -cnotin @('product-image-profile','functional-completion','authorization-lease','bounded-logging','product-paging-dispatcher')){continue}
-        if(-not(Test-QaPublicField $row 'workDirectory') -or -not $row.workDirectory -or -not(Test-Path -LiteralPath $row.workDirectory -PathType Container)){
+        $inputRoot=if(Test-QaPublicField $row 'workDirectory'){$row.workDirectory}else{$null}
+        if($row.name -ceq 'functional-completion' -and (Test-QaPublicField $row 'tests')){
+            # The canonical child TEMP is separate from its copied evidence.
+            # Follow only a recognized functional case's bounded export root;
+            # never scan the common TEMP base or arbitrary profile JSON.
+            $case=@($row.tests|Where-Object {(Test-QaPublicField $_ 'name') -and $_.name -cin (Get-QaPublicCatalog).functional -and
+                (Test-QaPublicField $_ 'evidenceDirectory') -and $_.evidenceDirectory}|Select-Object -First 1)
+            if($case.Count){$inputRoot=[IO.Path]::GetDirectoryName((Assert-QaPublicPath $case[0].evidenceDirectory))}
+        }
+        if(-not $inputRoot -or -not(Test-Path -LiteralPath $inputRoot -PathType Container)){
             $events.Add([pscustomobject]@{stepId=$row.name;scenarioId=$null;assertionId=$null;status='NOT_RUN';expected=$true;actual=$null;checkpoint='unavailable';code='unavailable';sequence=0;diagnosticCompleteness='partial'});continue
         }
-        $root=Assert-QaPublicPath $row.workDirectory;$queue=[Collections.Generic.Queue[object]]::new();$queue.Enqueue(@{path=$root;depth=0});$count=0;$found=$false
+        $root=Assert-QaPublicPath $inputRoot;$queue=[Collections.Generic.Queue[object]]::new();$queue.Enqueue(@{path=$root;depth=0});$count=0;$found=$false
         while($queue.Count){
             $current=$queue.Dequeue()
             foreach($path in [IO.Directory]::EnumerateFileSystemEntries($current.path)){
@@ -207,7 +216,7 @@ function ConvertTo-QaPublicReport($Report) {
                 if ($null -eq $test) { continue }
                 $id=if ($test.PSObject.Properties.Name -contains 'name') { $test.name } elseif ($test.PSObject.Properties.Name -contains 'id') { $test.id } else { 'unknown' }
                 $known=$id -cin $catalog.functional
-                if (Get-Command Get-HistoricalSalesQaContract -ErrorAction SilentlyContinue) { foreach ($mode in @('Smoke','Load','CrashProbe')) { if ($id -cin @((Get-HistoricalSalesQaContract $mode).scenarios.Keys)) { $known=$true } } }
+                if (Get-Command Get-HistoricalSalesQaContract -ErrorAction SilentlyContinue) { foreach ($mode in @('Smoke','Load','CrashProbe','CloudSync')) { if ($id -cin @((Get-HistoricalSalesQaContract $mode).scenarios.Keys)) { $known=$true } } }
                 if (-not $known) { $tests+=@{id='unknown';status='NOT_RUN';diagnosticCompleteness='partial'};continue }
                 $testStatus=if ($test.PSObject.Properties.Name -contains 'rawStatus') {$test.rawStatus} elseif ($test.PSObject.Properties.Name -contains 'status') {$test.status} else {'NOT_RUN'}
                 if ($testStatus -cnotin $catalog.statuses) { $testStatus='FAIL' }
@@ -242,7 +251,7 @@ function Test-QaPublicBundle {
     $zipPath=Assert-QaPublicPath (Join-Path $directoryPath 'qa-public.zip') $directoryPath
     $manifest=Read-HistoricalSalesQaJson $manifestPath
     if (@($manifest.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','runId','sourceSha','sourceFingerprintSha256','zipBytes','zipSha256','entries')}).Count -or $manifest.schemaVersion -cne 'win7pos-qa-upload-v1' -or $manifest.runId -cne $ExpectedRunId -or $manifest.zipBytes -ne (Get-Item -LiteralPath $zipPath).Length -or $manifest.zipSha256 -cne (Get-QaPublicSha256 $zipPath)) { throw 'qa_public_bundle_invalid' }
-    $allowed=@('qa-results.public.json','qa-summary.public.txt','core-tests.public.json','historical-sales-smoke.public.json','historical-sales-load.public.json','historical-sales-foundation.public.json','diagnostics.public.json','visuals.public.json','qa-visual-hourly_mixed.png','qa-visual-hourly_negative.png','qa-visual-import_summary.png')
+    $allowed=@('qa-results.public.json','qa-summary.public.txt','core-tests.public.json','historical-sales-smoke.public.json','historical-sales-load.public.json','historical-sales-foundation.public.json','historical-cloud-sync.public.json','diagnostics.public.json','visuals.public.json','qa-visual-hourly_mixed.png','qa-visual-hourly_negative.png','qa-visual-import_summary.png')
     foreach($binding in @($manifest.entries)){
         if(@($binding.PSObject.Properties.Name|Where-Object {$_ -cnotin @('name','bytes','sha256')}).Count -or $binding.name -cnotin $allowed -or $binding.sha256 -cnotmatch '^[a-f0-9]{64}$' -or $binding.bytes -lt 0 -or $binding.bytes -gt 2MB){throw 'qa_public_manifest_entry_invalid'}
     }
@@ -334,7 +343,7 @@ function Publish-QaPublicBundle {
     Add-PublicEntry 'visuals.public.json' @{schemaVersion='win7pos-qa-visuals-public-v1';registryVersion='synthetic-history-visuals-v1';runId=$Report.runId;captures=$safeVisuals;diagnosticCompleteness=$(if(@($safeVisuals|Where-Object status -cne 'PASS').Count){'partial'}else{'complete'})}
     foreach ($item in $HistoricalEvidence) {
         $safe=ValidateHistoricalEvidenceStructureAndPrivacy $item.receipt $item.mode $item.expected
-        $name=switch ($item.mode) {Smoke {'historical-sales-smoke.public.json'} Load {'historical-sales-load.public.json'} CrashProbe {'historical-sales-foundation.public.json'}}
+        $name=switch ($item.mode) {Smoke {'historical-sales-smoke.public.json'} Load {'historical-sales-load.public.json'} CrashProbe {'historical-sales-foundation.public.json'} CloudSync {'historical-cloud-sync.public.json'}}
         Add-PublicEntry $name $safe
     }
     $zip=Join-Path $stage 'qa-public.zip'

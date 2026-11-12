@@ -17,6 +17,9 @@ namespace Win7POS.Data.Reports
         private readonly object _stampSync = new object();
         private Stamp _current;
         private AuthorityBinding _authority;
+        private long _changeVersion;
+        public event EventHandler SnapshotChanged;
+        public event EventHandler HistoricalSyncStatusChanged;
         private static readonly TimeSpan AuthorityTransitionTimeout = TimeSpan.FromSeconds(5);
         public static SalesReportSnapshotCoordinator ForDatabase(string canonicalPath)
         {
@@ -30,7 +33,7 @@ namespace Win7POS.Data.Reports
         public async Task<IDisposable> EnterPublicationAsync(CancellationToken cancellationToken)
         {
             await _publicationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            return new GateLease(_publicationGate);
+            return new GateLease(this, Volatile.Read(ref _changeVersion));
         }
         public bool TryUseSnapshot(SalesReportReadToken token, Action captureOnly)
         {
@@ -62,7 +65,7 @@ namespace Win7POS.Data.Reports
         }
         public void Invalidate()
         {
-            WithAuthorityPublication(() => { lock (_stampSync) { Volatile.Write(ref _current, null); } });
+            WithAuthorityPublication(() => { lock (_stampSync) { Volatile.Write(ref _current, null); Interlocked.Increment(ref _changeVersion); } });
         }
         internal void BindAuthority(object owner, Func<SalesReportAuthorityStamp> readInMemory)
         {
@@ -73,6 +76,7 @@ namespace Win7POS.Data.Reports
                 {
                     Volatile.Write(ref _current, null);
                     Volatile.Write(ref _authority, new AuthorityBinding(owner, readInMemory));
+                    Interlocked.Increment(ref _changeVersion);
                 }
             });
         }
@@ -86,13 +90,34 @@ namespace Win7POS.Data.Reports
                     if (!ReferenceEquals(_authority?.Owner, owner)) throw new ReportSnapshotStaleException();
                     publishMemoryOnly();
                     Volatile.Write(ref _current, null);
+                    Interlocked.Increment(ref _changeVersion);
                 }
             });
         }
         private void WithAuthorityPublication(Action action)
         {
             if (!_publicationGate.Wait(AuthorityTransitionTimeout)) throw new TimeoutException("report_authority_transition_timeout");
-            try { action(); } finally { _publicationGate.Release(); }
+            var before = Volatile.Read(ref _changeVersion);
+            try { action(); } finally { _publicationGate.Release(); NotifyAfterRelease(before); }
+        }
+        private void NotifyAfterRelease(long before)
+        {
+            if (before == Volatile.Read(ref _changeVersion)) return;
+            var handlers = SnapshotChanged;
+            if (handlers == null) return;
+            // Subscribers schedule their own bounded reload. No subscriber can
+            // turn an already committed write into a failed economic operation.
+            foreach (EventHandler handler in handlers.GetInvocationList())
+                try { handler(this, EventArgs.Empty); } catch { }
+        }
+        internal void NotifyHistoricalSyncStatusCommitted()
+        {
+            // Transport metadata does not change the economic report revision.
+            // Call only after committing and releasing the SQLite writer.
+            var handlers=HistoricalSyncStatusChanged;
+            if(handlers==null)return;
+            foreach(EventHandler handler in handlers.GetInvocationList())
+                try{handler(this,EventArgs.Empty);}catch{}
         }
         private static bool Matches(SalesReportAuthorityStamp authority, SalesReportReadToken token)
             => authority != null && token != null && authority.RestoreEpoch == token.RestoreEpoch && authority.AuthorityInstanceEpoch == token.AuthorityInstanceEpoch;
@@ -105,14 +130,19 @@ namespace Win7POS.Data.Reports
                 var active = Volatile.Read(ref _authority)?.Read();
                 if (active == null || active.RestoreEpoch != authority.RestoreEpoch || active.AuthorityInstanceEpoch != authority.AuthorityInstanceEpoch)
                     throw new ReportSnapshotStaleException();
-                Volatile.Write(ref _current, new Stamp(datasetId, revision, authority.RestoreEpoch, authority.AuthorityInstanceEpoch));
+                var next = new Stamp(datasetId, revision, authority.RestoreEpoch, authority.AuthorityInstanceEpoch);
+                var old = Volatile.Read(ref _current);
+                Volatile.Write(ref _current, next);
+                if (old == null || old.Dataset != next.Dataset || old.Revision != next.Revision ||
+                    old.RestoreEpoch != next.RestoreEpoch || old.Authority != next.Authority)
+                    Interlocked.Increment(ref _changeVersion);
             }
         }
         public void CommitAndPublishReportRevision(SqliteConnection connection, SqliteTransaction transaction, Action commit, SalesReportAuthorityStamp authority)
         {
             if (connection == null || transaction == null || commit == null) throw new ArgumentNullException();
             // The caller must have acquired EnterPublicationAsync before its final authority check.
-            var row = connection.QuerySingle<StateRow>("SELECT dataset_id AS DatasetId, data_revision AS DataRevision FROM historical_import_dataset WHERE singleton_id=1", transaction: transaction);
+            var row = connection.QuerySingle<StateRow>("SELECT dataset_id AS DatasetId, data_revision+(SELECT revision FROM historical_cloud_cache_revision WHERE singleton_id=1) AS DataRevision FROM historical_import_dataset WHERE singleton_id=1", transaction: transaction);
             commit();
             PublishCommitted(row.DatasetId, row.DataRevision, authority);
         }
@@ -135,9 +165,16 @@ namespace Win7POS.Data.Reports
         private sealed class StateRow { public string DatasetId { get; set; } public long DataRevision { get; set; } }
         private sealed class GateLease : IDisposable
         {
-            private SemaphoreSlim _gate;
-            internal GateLease(SemaphoreSlim gate) { _gate = gate; }
-            public void Dispose() { Interlocked.Exchange(ref _gate, null)?.Release(); }
+            private SalesReportSnapshotCoordinator _owner;
+            private readonly long _before;
+            internal GateLease(SalesReportSnapshotCoordinator owner, long before) { _owner = owner; _before = before; }
+            public void Dispose()
+            {
+                var owner = Interlocked.Exchange(ref _owner, null);
+                if (owner == null) return;
+                owner._publicationGate.Release();
+                owner.NotifyAfterRelease(_before);
+            }
         }
     }
 }

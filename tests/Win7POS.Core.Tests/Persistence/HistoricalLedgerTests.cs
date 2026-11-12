@@ -9,7 +9,7 @@ using Win7POS.Data.Import;
 namespace Win7POS.Core.Tests.Persistence;
 
 [TestClass]
-public sealed class HistoricalLedgerTests
+public sealed partial class HistoricalLedgerTests
 {
     [TestMethod]
     public async Task ThreeCyclesKeepAuditAndUseNewInternalIds()
@@ -330,6 +330,111 @@ public sealed class HistoricalLedgerTests
         var applied = await f.Service.ApplyAsync(plan, f.Guard(plan), f.Backup(), default);
         using var connection = f.Factory.Open();
         Assert.AreEqual("synthetic-v1;interpretation=LegacyLocal;CLP=explicitly-approved", connection.ExecuteScalar<string>("SELECT temporal_policy FROM historical_import_file WHERE batch_id=@BatchId", applied));
+    }
+
+    [TestMethod]
+    public async Task PublicationIntent_IsAtomicWithLedgerAndReceiptAndSurvivesRestartWithoutAnotherApply()
+    {
+        using var f=new Fixture();var seed=await f.Plan();
+        const string shop="a0000000-0000-4000-8000-000000000019",device="b0000000-0000-4000-8000-000000000019";
+        var plan=new HistoricalSalesImportPlan(seed.OperationId,shop,seed.DatasetId,seed.DataRevision,seed.RestoreEpoch,seed.Analysis,seed.Assignments,seed.NativeStartBusinessDateTime,seed.OverlapEvidenceReference);
+        var guard=new HistoricalImportAuthorizationCommitGuard(HistoricalImportOperationKind.Apply,plan.OperationId,plan.RequestFingerprint,shop,"SYNTHETIC",device,1,plan.DatasetId,plan.RestoreEpoch,1,"generation","staff",1,()=>{},(_,commit)=>commit());
+        var lineage=(await f.Service.ReadDatasetAsync(default)).RestoreLineageId;
+        using var draft=HistoricalPublicationDraft.ForApply(plan,device,lineage);
+        using var identicalDraft=HistoricalPublicationDraft.ForApply(plan,device,lineage);
+        Assert.AreEqual(draft.ContentDigest,identicalDraft.ContentDigest);
+        var preview=await f.Service.PreviewAsync(plan,default);
+        var proof=new HistoricalPublicationProof(Guid.NewGuid().ToString("D"),Guid.Parse(plan.OperationId).ToString("D"),shop,device,plan.DatasetId,"c0000000-0000-4000-8000-000000000019",draft.RestoreLineageId,plan.RestoreEpoch,1,draft.ContentDigest,plan.RequestFingerprint,"content_authorized_v2",
+            new HistoricalPublicationLocalDecision(preview.NewCount,preview.DuplicateCount,plan.Analysis.RejectedRows.Count,plan.CorrectionApprovals.Count,0,preview.NewGrossClp,preview.NewCount),
+            new HistoricalPublicationCanonicalDecision(Guid.NewGuid().ToString("D"),7,preview.NewCount,preview.DuplicateCount,0,preview.NewGrossClp));
+        await PersistProofIntent(f,draft,proof);
+        guard.AttachPublicationGrant(new HistoricalLocalWriteGrant(proof.OperationId,"1",60000,0,()=>{},publicationProof:proof));
+        var receipt=await f.Service.ApplyAsync(plan,guard,f.Backup(),default,publicationDraft:draft,publicationProof:proof);
+        f.Restart();File.Delete(f.Source);
+        var replay=await f.Service.ApplyAsync(plan,guard,f.Backup(),default,publicationDraft:draft,publicationProof:proof);
+        Assert.IsTrue(replay.IsReplay);Assert.AreEqual(receipt.BatchId,replay.BatchId);
+        using var c=f.Factory.Open();
+        Assert.AreEqual(1L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox"));
+        Assert.AreEqual((long)draft.PageCount,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_page"));
+        Assert.AreEqual("pending",c.ExecuteScalar<string>("SELECT status FROM historical_publication_delivery"));
+        Assert.AreEqual(draft.ContentDigest,c.ExecuteScalar<string>("SELECT content_digest FROM historical_publication_outbox"));
+        Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox"));
+        Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales"));
+        Assert.Throws<Microsoft.Data.Sqlite.SqliteException>(()=>c.Execute("UPDATE historical_publication_page SET page_json='[]'"));
+        Assert.Throws<Microsoft.Data.Sqlite.SqliteException>(()=>c.Execute("DELETE FROM historical_publication_outbox"));
+    }
+
+    [TestMethod]
+    public async Task FailedCommit_RollsBackHistoricalPayloadAndNeverLeavesAnIntentForTransport()
+    {
+        using var f=new Fixture();var plan=await f.Plan();
+        f.Hooks.AtPhase=(phase,c,t)=>
+        {
+            if(phase!="before_commit")return;
+            Assert.AreEqual(1L,c!.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox",transaction:t));
+            Assert.IsTrue(c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_page",transaction:t)>0);
+            throw new InvalidOperationException("synthetic_after_intent_before_commit");
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.ApplyAsync(plan,f.Guard(plan),f.Backup(),default));
+        using var db=f.Factory.Open();
+        foreach(var table in new[]{"historical_transactions","historical_import_operation","historical_publication_outbox","historical_publication_page","historical_publication_delivery"})
+            Assert.AreEqual(0L,db.ExecuteScalar<long>("SELECT COUNT(*) FROM "+table));
+    }
+
+    [TestMethod]
+    public async Task MissingPublicationProof_IsExplicitAttentionAndUndoDependsOnTheOriginalApply()
+    {
+        using var f=new Fixture();var plan=await f.Plan();var apply=await f.Service.ApplyAsync(plan,f.Guard(plan),f.Backup(),default);
+        var undo=f.UndoGuard(apply.BatchId,1);await f.Service.UndoAsync(apply.BatchId,1,undo,f.Backup(),default);f.Restart();
+        var state=await new HistoricalPublicationOutbox(f.Factory).ReadStatusAsync(plan.OperationId,plan.ShopId,default);
+        Assert.AreEqual("needs_attention",state.Status);Assert.AreEqual("history_publication_proof_missing",state.ReasonCode);
+        using var c=f.Factory.Open();
+        Assert.AreEqual(plan.OperationId,c.ExecuteScalar<string>("SELECT depends_on_operation_id FROM historical_publication_outbox WHERE operation_id=@OperationId",undo));
+        Assert.AreEqual(2L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_outbox"));
+        Assert.AreEqual(0L,c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_publication_delivery WHERE status='pending'"));
+    }
+
+    [TestMethod]
+    public async Task PublicationDraft_BoundsPagesAndAllowsAsyncInterleavedReadersWithoutHoldingAFileMonitor()
+    {
+        using var f=new Fixture();var seed=await f.Plan();var source=seed.Analysis.Files.Single();
+        var rejected=Enumerable.Range(0,400).Select(i=>new HistoricalSalesRejectedRow(new HistoricalSalesSource(source.FileId,"synthetic",i+3),"DENEGADA",null)).ToArray();
+        var file=new HistoricalSalesImportFile(source.FileId,source.Path,source.Sha256,source.Bytes,source.SheetName,source.Profile,401);
+        var old=seed.Analysis.Summary;
+        var summary=new HistoricalSalesImportSummary(401,1,1,0,400,1234,1234,0,1234,1,0,0,old.FromBusinessDateTime,old.ToBusinessDateTime);
+        var analysis=new HistoricalSalesImportAnalysis(new[]{file},seed.Analysis.AcceptedTransactions,rejected,Array.Empty<HistoricalSalesImportDiagnostic>(),summary,false);
+        var plan=new HistoricalSalesImportPlan(seed.OperationId,seed.ShopId,seed.DatasetId,seed.DataRevision,seed.RestoreEpoch,analysis,seed.Assignments,seed.NativeStartBusinessDateTime,seed.OverlapEvidenceReference);
+        using var draft=HistoricalPublicationDraft.ForApply(plan,"device",(await f.Service.ReadDatasetAsync(default)).RestoreLineageId);
+        Assert.IsTrue(draft.PageCount>1);var records=0;
+        using var reader=draft.Pages(default).GetEnumerator();Assert.IsTrue(await Task.Run(reader.MoveNext));Assert.AreEqual(1,reader.Current.Ordinal);
+        foreach(var page in draft.Pages(default))
+        {
+            Assert.IsTrue(System.Text.Encoding.UTF8.GetByteCount(page.Json)<=HistoricalPublicationDraft.MaximumPageBytes);
+            using var json=System.Text.Json.JsonDocument.Parse(page.Json);var count=json.RootElement.GetArrayLength();Assert.IsTrue(count<=200);records+=count;
+        }
+        Assert.AreEqual(405,records);Assert.IsTrue(await Task.Run(reader.MoveNext));Assert.AreEqual(2,reader.Current.Ordinal);
+        Assert.AreEqual(draft.Pages(default).Last().Json,draft.ReadPage(draft.PageCount,default).Json);
+        Assert.AreEqual(draft.Pages(default).First().Digest,draft.ReadPage(1,default).Digest);
+        Assert.Throws<ArgumentOutOfRangeException>(()=>draft.ReadPage(0,default));
+        Assert.Throws<ArgumentOutOfRangeException>(()=>draft.ReadPage(draft.PageCount+1,default));
+        var digest=Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(string.Concat(draft.Pages(default).Select(p=>p.Digest+"\n")))));
+        Assert.AreEqual(digest,draft.ContentDigest);
+        draft.Dispose();Assert.Throws<ObjectDisposedException>(()=>draft.Pages(default).First());
+    }
+
+    [TestMethod]
+    public async Task HistoricalLineage_SurvivesCatalogRepairAndRestartButRotatesInTheRestoreReset()
+    {
+        using var f=new Fixture();var before=await f.Service.ReadDatasetAsync(default);
+        var catalog=new Win7POS.Data.Online.CatalogShopStateRepository(f.Factory);
+        var bound=await catalog.EnsureAndLoadCursorAsync("shop-test","SHOP");
+        await catalog.RequestFullRepairAsync("shop-test","SHOP",bound.Epoch);
+        f.Factory.RefreshAuthorityStamp();f.Restart();
+        Assert.AreEqual(before.RestoreLineageId,(await f.Service.ReadDatasetAsync(default)).RestoreLineageId);
+        await new Win7POS.Data.Online.CatalogShopStateRepository(f.Factory).ResetForRestoreReviewAsync("shop-test","SHOP");
+        f.Restart();var after=await f.Service.ReadDatasetAsync(default);
+        Assert.AreNotEqual(before.RestoreLineageId,after.RestoreLineageId);
+        Assert.AreEqual(before.DatasetId,after.DatasetId);Assert.AreEqual(before.DataRevision,after.DataRevision);
     }
 
     private sealed class Fixture : IDisposable

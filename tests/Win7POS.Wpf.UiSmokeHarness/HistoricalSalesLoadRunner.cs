@@ -241,6 +241,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private long _pendingPosted, _stopAt;
             private bool _stop, _closed, _environment = true;
             private int _overflow;
+            private long _lastWaitStart, _lastWaitEnd, _lastMemoryDuration, _lastDispatchObservation;
+            private int _lastWaitRequested, _waitGc0, _waitGc1, _waitGc2, _gapCount, _firstGapSequence;
+            private bool _lastWaitSignaled;
+            private double _firstGapWaitMs, _firstGapRequestedMs, _firstGapMemoryMs, _firstGapObservationMs;
+            private int _firstGapGc0, _firstGapGc1, _firstGapGc2, _firstGapWaitSignaled;
             private Action<string> _onObservation;
             internal Action<string> OnObservation { set { lock (_sync) _onObservation = value; } }
             internal long StartTicks { get; private set; }
@@ -276,6 +281,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     lock (_sync)
                     {
+                        _waitGc0 = GC.CollectionCount(0); _waitGc1 = GC.CollectionCount(1); _waitGc2 = GC.CollectionCount(2);
                         StartTicks = Stopwatch.GetTimestamp();
                         _phases.Add(new HistoricalSalesQaPhase { Sequence = 0, Id = "analysis", StartTicks = StartTicks });
                         _environment = QualifiedDesktop() && ReadAwake(out _);
@@ -301,12 +307,31 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             if (suspended) _environment = false;
                             if (slot > last)
                             {
+                                // Diagnostic witnesses only: no clock, interval, workload,
+                                // sampling priority or acceptance rule is changed.
+                                var missed = checked((int)(slot - last - 1));
+                                if (missed > 0)
+                                {
+                                    if (_gapCount == 0)
+                                    {
+                                        _firstGapSequence = checked((int)slot);
+                                        _firstGapWaitMs = _lastWaitEnd > _lastWaitStart ? Milliseconds(_lastWaitStart, _lastWaitEnd) : 0;
+                                        _firstGapRequestedMs = _lastWaitRequested;
+                                        _firstGapMemoryMs = _lastMemoryDuration * 1000d / Stopwatch.Frequency;
+                                        _firstGapObservationMs = _lastDispatchObservation > 0 ? Milliseconds(_lastDispatchObservation, now) : Milliseconds(StartTicks, now);
+                                        _firstGapWaitSignaled = _lastWaitSignaled ? 1 : 0;
+                                        _firstGapGc0 = GC.CollectionCount(0) - _waitGc0;
+                                        _firstGapGc1 = GC.CollectionCount(1) - _waitGc1;
+                                        _firstGapGc2 = GC.CollectionCount(2) - _waitGc2;
+                                    }
+                                    _gapCount = checked(_gapCount + missed);
+                                }
                                 var due = Due(slot, 50); var phase = PhaseAt(due);
                                 if (!_pending.HasValue) { _pending = _probes.Count; _pendingPosted = now; _probes.Add(_pending.Value, null); post = _pending; }
                                 var sample = new HistoricalSalesQaSample { Sequence = checked((int)slot), Phase = phase.Id, PhaseSequence = phase.Sequence, DueTicks = due, MonotonicTicks = now,
                                     ProbeId = _pending.Value, PostedTicks = _pendingPosted, PendingAgeMs = Milliseconds(_pendingPosted, now), Dropped = checked((int)(slot - last - 1)), Suspended = suspended ? 1 : 0 };
                                 if (_samples.Count < 4096) _samples.Add(sample); else _overflow++;
-                                last = slot; observed = _onObservation; observedPhase = phase.Id;
+                                last = slot; _lastDispatchObservation = now; observed = _onObservation; observedPhase = phase.Id;
                             }
                         }
                         if (post.HasValue)
@@ -317,7 +342,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         if (memorySlot > memoryLast)
                         {
                             // Process.Refresh is independent IO; it never holds the lock needed by a UI callback.
+                            var memoryStarted = Stopwatch.GetTimestamp();
                             var bytes = Memory(); var qualified = QualifiedDesktop(); var observedAt = Stopwatch.GetTimestamp();
+                            _lastMemoryDuration = observedAt - memoryStarted;
                             lock (_sync)
                             {
                                 _environment &= qualified;
@@ -340,7 +367,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         }
                         var next = Math.Min(Due(last + 1, 50), Due(memoryLast + 1, 100));
                         var remaining = Milliseconds(Stopwatch.GetTimestamp(), next);
-                        if (remaining > 0) _wake.WaitOne((int)Math.Min(50, Math.Ceiling(remaining)));
+                        if (remaining > 0)
+                        {
+                            _lastWaitRequested = (int)Math.Min(50, Math.Ceiling(remaining));
+                            _waitGc0 = GC.CollectionCount(0); _waitGc1 = GC.CollectionCount(1); _waitGc2 = GC.CollectionCount(2);
+                            _lastWaitStart = Stopwatch.GetTimestamp();
+                            _lastWaitSignaled = _wake.WaitOne(_lastWaitRequested);
+                            _lastWaitEnd = Stopwatch.GetTimestamp();
+                        }
                     }
                     _done.TrySetResult(true);
                 }
@@ -366,6 +400,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         ExpectedSlots = Slots(StartTicks, p.EndTicks == 0 ? end : p.EndTicks, 50) - Slots(StartTicks, p.StartTicks, 50),
                         ExpectedMemorySlots = Slots(StartTicks, p.EndTicks == 0 ? end : p.EndTicks, 100) - Slots(StartTicks, p.StartTicks, 100) }).ToList();
                     envelope.MeasurementCompleted = false;
+                    envelope.Metrics["samplerGapCount"] = _gapCount;
+                    envelope.Metrics["samplerGapFirstSequence"] = _firstGapSequence;
+                    envelope.Metrics["samplerGapFirstWaitMs"] = _firstGapWaitMs;
+                    envelope.Metrics["samplerGapFirstRequestedMs"] = _firstGapRequestedMs;
+                    envelope.Metrics["samplerGapFirstMemoryMs"] = _firstGapMemoryMs;
+                    envelope.Metrics["samplerGapFirstObservationMs"] = _firstGapObservationMs;
+                    envelope.Metrics["samplerGapFirstWaitSignaled"] = _firstGapWaitSignaled;
+                    envelope.Metrics["samplerGapFirstGc0"] = _firstGapGc0;
+                    envelope.Metrics["samplerGapFirstGc1"] = _firstGapGc1;
+                    envelope.Metrics["samplerGapFirstGc2"] = _firstGapGc2;
                 }
             }
             public void Dispose()

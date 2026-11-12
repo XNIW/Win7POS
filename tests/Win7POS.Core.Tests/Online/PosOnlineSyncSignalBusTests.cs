@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Core.Online;
+using Win7POS.Data.Online;
 using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Core.Tests.Online;
@@ -8,6 +9,49 @@ namespace Win7POS.Core.Tests.Online;
 [DoNotParallelize]
 public sealed class PosOnlineSyncSignalBusTests
 {
+    [TestMethod]
+    public async Task ForegroundRequests_UseTheCurrentOwnerRegistrationAndFailClosedAfterDisposal()
+    {
+        var generation=new OnlineSyncGeneration("bus-foreground","session","device","shop","SHOP");
+        using var supervisor=new OnlineSyncSupervisor(generation,(_,_,_)=>Task.FromResult(TerminalSuccess()),
+            _=>Task.FromResult(true),(_,_)=>Task.CompletedTask,
+            credentialProvider:g=>Task.FromResult(new OnlineSyncRequestCredentials(g,"device-token","session-token","stamp")));
+        var old=PosOnlineSyncSignalBus.Register((_,_)=>{},(_,_,_)=>Task.FromResult(TerminalSuccess()),()=>Task.CompletedTask,_=>Task.CompletedTask);
+        var current=PosOnlineSyncSignalBus.Register((_,_)=>{},(_,_,_)=>Task.FromResult(TerminalSuccess()),()=>Task.CompletedTask,_=>Task.CompletedTask,supervisor);
+        try
+        {
+            old.Dispose();
+            Assert.AreEqual("stamp",await PosOnlineSyncSignalBus.ExecuteCredentialedRequestAsync(generation,OnlineSyncLane.HistoricalPayments,
+                (credentials,_)=>Task.FromResult(credentials.CredentialStamp),_=>"",default));
+            current.Dispose();var called=false;
+            await Assert.ThrowsAsync<OnlineSyncGenerationChangedException>(()=>PosOnlineSyncSignalBus.ExecuteCredentialedRequestAsync(
+                generation,OnlineSyncLane.HistoricalPayments,(_,_)=>{called=true;return Task.FromResult(1);},_=>"",default));
+            Assert.IsFalse(called);
+        }
+        finally{old.Dispose();current.Dispose();}
+    }
+
+    [TestMethod]
+    public async Task ForegroundRequests_CannotBypassMaintenance()
+    {
+        var generation=new OnlineSyncGeneration("bus-maintenance","session","device","shop","SHOP");var calls=0;
+        using var supervisor=new OnlineSyncSupervisor(generation,(_,_,_)=>Task.FromResult(TerminalSuccess()),
+            _=>Task.FromResult(true),(_,_)=>Task.CompletedTask,
+            credentialProvider:g=>Task.FromResult(new OnlineSyncRequestCredentials(g,"device-token","session-token","stamp")));
+        using var registration=PosOnlineSyncSignalBus.Register((_,_)=>{},(_,_,_)=>Task.FromResult(TerminalSuccess()),()=>Task.CompletedTask,_=>Task.CompletedTask,supervisor);
+        try
+        {
+            await PosOnlineSyncSignalBus.StopAsync();
+            await Assert.ThrowsAsync<OnlineSyncGenerationChangedException>(()=>PosOnlineSyncSignalBus.ExecuteCredentialedRequestAsync(
+                generation,OnlineSyncLane.HistoricalPayments,(_,_)=>{calls++;return Task.FromResult(1);},_=>"",default));
+            Assert.AreEqual(0,calls);await PosOnlineSyncSignalBus.ResumeAsync();
+            Assert.AreEqual(1,await PosOnlineSyncSignalBus.ExecuteCredentialedRequestAsync(generation,OnlineSyncLane.HistoricalPayments,
+                (_,_)=>{calls++;return Task.FromResult(1);},_=>"",default));
+            Assert.AreEqual(1,calls);
+        }
+        finally{while(PosOnlineSyncSignalBus.IsMaintenanceActive)await PosOnlineSyncSignalBus.ExitMaintenanceWithoutResumeAsync();}
+    }
+
     [TestMethod]
     public async Task FailedResume_RemainsInMaintenanceAndSecondResumeRetries()
     {

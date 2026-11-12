@@ -1,5 +1,12 @@
 # PR-F4 Sales-sync outbox repository extraction
 
+ASUS019 coverage clarification (10 November): this repository proves durable
+outbound native sale/refund/void delivery and its ACK. It does not implement a
+read replica of every register's sales. Such consultation must use a separate,
+scoped read model and must never invoke sale/stock/fiscal/printing writers.
+Current bilateral coverage and open gates are in the same ASUS019
+`CLOUD-CONTINUATION.md`, not inferred from an empty outbound queue.
+
 ## Goal
 
 Continue the staged `SaleRepository` decomposition by moving canonical

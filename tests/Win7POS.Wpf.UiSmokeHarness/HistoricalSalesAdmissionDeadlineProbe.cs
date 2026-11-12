@@ -11,7 +11,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
     {
         internal static async Task<bool> RunAsync(HistoricalSalesFoundationRunner.Fixture fixture)
         {
-            var workflow = new PosWorkflowService(fixture.Options, () => DateTimeOffset.UtcNow);
+            var workflow = fixture.CreateWorkflow();
             workflow.SetHistoricalAdmissionBudgetForTesting(TimeSpan.FromMilliseconds(500));
             var plan = await fixture.PlanAsync(id: "shared-admission-deadline");
             var baseline = fixture.State();

@@ -199,7 +199,7 @@ function Test-PublicationCommitProtocol([string]$helper, [string]$coordinatorCom
 \A\s*public\s+void\s+CommitAndPublishReportRevision\s*\(
 \s*SqliteConnection\s+connection\s*,\s*SqliteTransaction\s+transaction\s*,\s*Action\s+commit\s*,\s*SalesReportAuthorityStamp\s+authority\s*\)\s*\{
 \s*if\s*\(\s*connection\s*==\s*null\s*\|\|\s*transaction\s*==\s*null\s*\|\|\s*commit\s*==\s*null\s*\)\s*throw\s+new\s+ArgumentNullException\(\s*\)\s*;
-\s*var\s+row\s*=\s*connection\.QuerySingle<StateRow>\(\s*"SELECT[ ]dataset_id[ ]AS[ ]DatasetId,[ ]data_revision[ ]AS[ ]DataRevision[ ]FROM[ ]historical_import_dataset[ ]WHERE[ ]singleton_id=1"\s*,\s*transaction:\s*transaction\s*\)\s*;
+\s*var\s+row\s*=\s*connection\.QuerySingle<StateRow>\(\s*"SELECT[ ]dataset_id[ ]AS[ ]DatasetId,[ ]data_revision\+\(SELECT[ ]revision[ ]FROM[ ]historical_cloud_cache_revision[ ]WHERE[ ]singleton_id=1\)[ ]AS[ ]DataRevision[ ]FROM[ ]historical_import_dataset[ ]WHERE[ ]singleton_id=1"\s*,\s*transaction:\s*transaction\s*\)\s*;
 \s*commit\(\s*\)\s*;
 \s*PublishCommitted\(\s*row\.DatasetId\s*,\s*row\.DataRevision\s*,\s*authority\s*\)\s*;
 \s*\}\s*\z
@@ -672,6 +672,7 @@ if ($commitHelpers.Count -eq 1) {
     $acceptCoordinator = { param($candidate) Test-PublicationCommitProtocol $helper $candidate }
     Assert-RejectedMutation 'commit before revision read' $coordinatorCommit ($coordinatorCommit.Replace('var row =', 'commit(); var row =')) $acceptCoordinator
     Assert-RejectedMutation 'revision outside supplied transaction' $coordinatorCommit ($coordinatorCommit.Replace('transaction: transaction', 'transaction: null')) $acceptCoordinator
+    Assert-RejectedMutation 'cloud revision omitted from publication stamp' $coordinatorCommit ($coordinatorCommit.Replace('data_revision+(SELECT revision FROM historical_cloud_cache_revision WHERE singleton_id=1)', 'data_revision')) $acceptCoordinator
     $publishBeforeCommit = [regex]::Replace($coordinatorCommit, 'commit\(\);\s*(PublishCommitted\([^;]+;)', '$1 commit();')
     Assert-RejectedMutation 'stamp published before durable commit' $coordinatorCommit $publishBeforeCommit $acceptCoordinator
 }

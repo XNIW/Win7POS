@@ -103,10 +103,12 @@ ACK handling also requires transport success, a response value and `Ok=true`.
 
 ## Coordinator and schedule
 
-`CatalogSyncCoordinator` provides single-flight execution per trusted shop/session.
-Concurrent triggers set a dirty bit and coalesce into at most one follow-up run per
-drain. A drain therefore executes at most two runs and cannot create an unbounded
-queue.
+The ordinary shell owns one `PosOnlineSyncSupervisorHost` and one
+generation-scoped `OnlineSyncSupervisor`. Heartbeat, sales, catalog imports,
+catalog pull, article mutations, images, orders and historical payments use independent single-flight
+lanes. Concurrent triggers coalesce per lane; there is no serial dependency on a
+successful catalog request before a sale can be sent. `CatalogSyncCoordinator`
+remains a compatibility adapter, not the global scheduler of the ordinary shell.
 
 The adaptive schedule uses:
 
@@ -117,13 +119,28 @@ The adaptive schedule uses:
 - reset of the failure backoff after success;
 - polling stop after authentication denial.
 
-Each coordinated run preserves the established operation order: heartbeat, sales
-outbox, catalog-import outbox, then catalog pull. A healthy periodic trigger does
-not schedule full; independently persisted repair evidence can still require full.
+The shared request gate admits at most two requests: heartbeat has priority 3,
+sales/orders 2, catalog import/pull 1, articles/images 0. A lane releases its
+request slot between requests. Durable per-entity dependencies and blocked rows
+do not become a global queue lock. A healthy periodic trigger does not schedule
+full; independently persisted repair evidence can still require full.
+The history lane also uses priority 0, bounded two-operation delivery and
+eight-page receive turns. It polls at 25-35 seconds when idle and resumes
+immediate work at 1-5 seconds. Historical discovery is signalled without
+extending the commercial start-of-day/foreground result. A history permission
+denial remains domain-scoped; a genuine shared authorization stop still stops
+all credentialed requests. Readable replica publication notifies open views
+after the short report boundary, without a screen-owned network timer.
 After normal POS opening the scheduler remains active even when start-of-day has
 already completed. Ordinary pending, retry and in-progress sales never block the
 register; the 25-row sales batches continue on scheduled runs until the measured
 outbox counters reach zero. `failed_blocked` remains an operator-action condition.
+
+The ASUS019 historical extension uses this same supervisor, a separate domain
+cursor/outbox and bounded turns. Its implementation/qualification status is in
+`docs/plans/ASUS-W7POS-019_GETNET_HISTORY/CLOUD-CONTINUATION.md`; the presence of
+this policy is not evidence that the extension is delivered. UI input latency
+(250 ms) and end-to-end convergence latency are measured separately.
 
 ## Diagnostics and UI contract
 
@@ -154,3 +171,14 @@ recorded:
 
 Authenticated staging, a physical Windows 7 SP1 run and attached POS hardware are
 separate runtime evidence and must not be inferred from these automated results.
+
+### Operator history requests and the shared gate — ASUS019
+
+History preparation, authority and freeze acknowledgement use the active host's
+existing credentialed request executor. The expected generation is checked before
+admission, live credentials are read after acquiring the same two-slot priority
+gate, and a response cannot cross a generation change. Caller cancellation owns
+only that foreground request; shutdown/relink cancel and drain it with lane work.
+No commercial maintenance or gate spans HTTP. This bridge adds no scheduler or
+durable queue. History-only403 remains scoped; genuine auth_denied uses the shared
+credential-stamp revocation guard. Incremental v2 admission/ingestion remains WIP.

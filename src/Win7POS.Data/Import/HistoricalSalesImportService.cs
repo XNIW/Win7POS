@@ -169,6 +169,7 @@ namespace Win7POS.Data.Import
     {
         public string DatasetId { get; set; }
         public long DataRevision { get; set; }
+        public string RestoreLineageId { get; set; }
     }
 
     /// <summary>Isolated historical ledger; never calls the native sale, stock, fiscal or outbox writers.</summary>
@@ -192,8 +193,62 @@ namespace Win7POS.Data.Import
         public async Task<HistoricalSalesDatasetState> ReadDatasetAsync(CancellationToken ct)
         {
             using var c = await _factory.OpenAsync(ct).ConfigureAwait(false);
-            return await c.QuerySingleAsync<HistoricalSalesDatasetState>(new CommandDefinition("SELECT dataset_id AS DatasetId,data_revision AS DataRevision FROM historical_import_dataset WHERE singleton_id=1", cancellationToken: ct)).ConfigureAwait(false);
+            return await c.QuerySingleAsync<HistoricalSalesDatasetState>(new CommandDefinition("SELECT dataset_id AS DatasetId,data_revision AS DataRevision,(SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id') AS RestoreLineageId FROM historical_import_dataset WHERE singleton_id=1", cancellationToken: ct)).ConfigureAwait(false);
         }
+        public Task<HistoricalPublicationDraft> PreparePublicationDraftAsync(HistoricalSalesImportPlan plan,string device,CancellationToken ct)
+            =>Task.Run(()=>
+            {
+                if(plan==null)throw new ArgumentNullException(nameof(plan));
+                ct.ThrowIfCancellationRequested();var stamp=_authority();
+                if(stamp.RestoreEpoch!=plan.RestoreEpoch||plan.CorrectionApprovals.Count>HistoricalSalesApplyPreview.MaxDisplayedCorrections)
+                    throw new InvalidOperationException("historical_plan_stale");
+                var owners=new Dictionary<long,HistoricalPublicationCorrectionReference>();string lineage;
+                using(var c=_factory.Open())
+                using(var tx=c.BeginTransaction(deferred:true))
+                {
+                    var state=c.QuerySingle<HistoricalSalesDatasetState>("SELECT dataset_id AS DatasetId,data_revision AS DataRevision,(SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id') AS RestoreLineageId FROM historical_import_dataset WHERE singleton_id=1",transaction:tx);
+                    if(state.DatasetId!=plan.DatasetId||state.DataRevision!=plan.DataRevision)throw new InvalidOperationException("historical_plan_stale");
+                    lineage=state.RestoreLineageId;
+                    foreach(var id in plan.CorrectionApprovals.Select(x=>x.PreviousTransactionId).Distinct())
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        var owner=c.QuerySingleOrDefault<PublicationOwnerRow>(@"SELECT t.batch_id AS BatchId,b.apply_operation_id AS ApplyOperationId
+FROM historical_transactions t JOIN historical_import_batch b ON b.id=t.batch_id AND b.shop_id=t.shop_id
+JOIN historical_import_operation o ON o.operation_id=b.apply_operation_id AND o.batch_id=b.id AND o.shop_id=b.shop_id AND o.dataset_id=b.dataset_id AND o.operation_kind='Apply'
+WHERE t.id=@id AND t.shop_id=@ShopId AND b.dataset_id=@DatasetId AND t.is_active=0",new{id,plan.ShopId,plan.DatasetId},tx);
+                        if(owner==null)throw new InvalidOperationException("history_publication_correction_owner_required");
+                        owners.Add(id,new HistoricalPublicationCorrectionReference(plan,lineage,id,owner.BatchId,owner.ApplyOperationId));
+                    }
+                    tx.Commit();
+                }
+                var current=_authority();ct.ThrowIfCancellationRequested();
+                if(current.RestoreEpoch!=stamp.RestoreEpoch||current.AuthorityInstanceEpoch!=stamp.AuthorityInstanceEpoch)throw new InvalidOperationException("historical_plan_stale");
+                // The SQLite snapshot is closed before content spooling. No
+                // database lock spans serialization or later HTTP preparation.
+                return HistoricalPublicationDraft.ForApply(plan,device,lineage,owners,ct);
+            },ct);
+        public Task<HistoricalPublicationDraft> PrepareUndoPublicationDraftAsync(string operation,string shop,string device,string dataset,long restore,
+            string batchId,long batchRevision,CancellationToken ct)
+            =>Task.Run(()=>
+            {
+                ct.ThrowIfCancellationRequested();var stamp=_authority();
+                if(stamp.RestoreEpoch!=restore)throw new InvalidOperationException("historical_plan_stale");
+                HistoricalSalesDatasetState state;PublicationOwnerRow batch;
+                using(var c=_factory.Open())
+                using(var tx=c.BeginTransaction(deferred:true))
+                {
+                    state=c.QuerySingle<HistoricalSalesDatasetState>("SELECT dataset_id AS DatasetId,data_revision AS DataRevision,(SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id') AS RestoreLineageId FROM historical_import_dataset WHERE singleton_id=1",transaction:tx);
+                    batch=c.QuerySingleOrDefault<PublicationOwnerRow>(@"SELECT b.id AS BatchId,b.apply_operation_id AS ApplyOperationId
+FROM historical_import_batch b JOIN historical_import_operation o ON o.operation_id=b.apply_operation_id AND o.batch_id=b.id AND o.shop_id=b.shop_id AND o.dataset_id=b.dataset_id AND o.operation_kind='Apply'
+WHERE b.id=@batchId AND b.shop_id=@shop AND b.dataset_id=@dataset AND b.revision=@batchRevision AND b.state='Active'",new{batchId,shop,dataset,batchRevision},tx);
+                    if(state.DatasetId!=dataset||batch==null)throw new InvalidOperationException("historical_batch_stale");
+                    tx.Commit();
+                }
+                var current=_authority();ct.ThrowIfCancellationRequested();
+                if(current.RestoreEpoch!=stamp.RestoreEpoch||current.AuthorityInstanceEpoch!=stamp.AuthorityInstanceEpoch)throw new InvalidOperationException("historical_plan_stale");
+                return HistoricalPublicationDraft.ForUndo(operation,shop,device,dataset,restore,state.DataRevision,batchId,batchRevision,batch.ApplyOperationId,state.RestoreLineageId);
+            },ct);
+        private sealed class PublicationOwnerRow{public string BatchId{get;set;} public string ApplyOperationId{get;set;}}
         public async Task<IReadOnlyList<HistoricalMerchantBindingInfo>> GetMerchantBindingsAsync(string shopId, CancellationToken ct)
         {
             HistoricalMerchantAssignment.Required(shopId);
@@ -286,7 +341,8 @@ FROM historical_import_batch b LEFT JOIN historical_transactions t ON t.batch_id
         }
         public async Task<HistoricalSalesOperationReceipt> ApplyAsync(HistoricalSalesImportPlan plan,
             HistoricalImportAuthorizationCommitGuard guard, string backupPath, CancellationToken ct,
-            HistoricalSalesVerifiedSources verifiedSources = null, CancellationToken admissionToken = default, Action maintenanceAdmitted = null)
+            HistoricalSalesVerifiedSources verifiedSources = null, CancellationToken admissionToken = default, Action maintenanceAdmitted = null,
+            HistoricalPublicationDraft publicationDraft = null, HistoricalPublicationProof publicationProof = null)
         {
             if (plan == null) throw new ArgumentNullException(nameof(plan));
             ValidateGuard(guard, HistoricalImportOperationKind.Apply, plan.OperationId, plan.RequestFingerprint, plan.ShopId, plan.DatasetId, plan.RestoreEpoch);
@@ -294,6 +350,9 @@ FROM historical_import_batch b LEFT JOIN historical_transactions t ON t.batch_id
             if (!admissionToken.CanBeCanceled) admission.CancelAfter(TimeSpan.FromSeconds(60));
             var replay = await TryReplayAsync(guard, admission.Token).ConfigureAwait(false);
             if (replay != null) return replay; // No source access or backup for an authorized terminal replay.
+            using var ownedDraft=publicationDraft==null?await PreparePublicationDraftAsync(plan,guard.DeviceId,admission.Token).ConfigureAwait(false):null;
+            publicationDraft ??= ownedDraft;
+            publicationDraft.DemandMatches(guard);
             using var ownedSources = verifiedSources == null ? await VerifySourcesAsync(plan, ct).ConfigureAwait(false) : null;
             using var sourceUse = (verifiedSources ?? ownedSources).AcquireUse(plan.RequestFingerprint);
             HistoricalSalesOperationReceipt result = null;
@@ -368,18 +427,20 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 }
                 result = new HistoricalSalesOperationReceipt { OperationId = plan.OperationId, OperationKind = "Apply", BatchId = batch, InsertedCount = inserted, DuplicateCount = duplicates, RejectedCount = plan.Analysis.RejectedRows.Count, SignedAmountClp = amount, CorrectionCount = approvedCorrections.Count, CorrectionApprovals = approvedCorrections.ToArray(), CurrentBatchState = "Active", CurrentBatchRevision = 1 };
                 InsertReceipt(c, tx, guard, result, now);
+                HistoricalPublicationOutbox.Enqueue(c,tx,guard,publicationDraft,publicationProof,result,null,now,ct);
                 _testHooks?.AtPhase?.Invoke("before_commit", c, tx);
                 ct.ThrowIfCancellationRequested();
                 guard.DemandStillValid();
                 using (await _coordinator.EnterPublicationAsync(ct).ConfigureAwait(false))
-                    _coordinator.CommitAndPublishReportRevision(c, tx, () => guard.CommitIfStillValid(SqliteConnectionFactory.DurableCommitSafetyBudget, tx.Commit), _authority());
+                    _coordinator.CommitAndPublishReportRevision(c, tx, () => CommitWithWitness(c,tx,guard,publicationProof), _authority());
                 _testHooks?.AtPhase?.Invoke("after_commit", c, tx);
             }, TimeSpan.FromSeconds(30), admission.Token).ConfigureAwait(false);
             return result;
         }
         public async Task<HistoricalSalesOperationReceipt> UndoAsync(string batchId, long expectedBatchRevision,
             HistoricalImportAuthorizationCommitGuard guard, string backupPath, CancellationToken ct,
-            CancellationToken admissionToken = default, Action maintenanceAdmitted = null)
+            CancellationToken admissionToken = default, Action maintenanceAdmitted = null,
+            HistoricalPublicationDraft publicationDraft = null, HistoricalPublicationProof publicationProof = null)
         {
             if (guard == null) throw new ArgumentNullException(nameof(guard));
             var fingerprint = HistoricalSalesImportPlan.UndoFingerprint(guard.OperationId, guard.ShopId, guard.DatasetId, batchId, expectedBatchRevision, guard.RestoreEpoch);
@@ -401,6 +462,8 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 using var tx = c.BeginTransaction();
                 result = Replay(c, tx, guard); if (result != null) { tx.Rollback(); return; }
                 DemandDataset(c, tx, guard, null);
+                var baseRevision=c.ExecuteScalar<long>("SELECT data_revision FROM historical_import_dataset WHERE singleton_id=1",transaction:tx);
+                if(publicationDraft!=null&&publicationDraft.BaseRevision!=baseRevision)throw new InvalidOperationException("historical_plan_stale");
                 var batch = c.QuerySingleOrDefault<HistoricalSalesBatch>("SELECT id,state,revision FROM historical_import_batch WHERE id=@batchId AND shop_id=@ShopId", new { batchId, guard.ShopId }, tx);
                 if (batch == null || batch.Revision != expectedBatchRevision || batch.State != "Active") throw new InvalidOperationException("historical_batch_stale");
                 var amount = c.ExecuteScalar<long>("SELECT COALESCE(SUM(signed_amount_clp),0) FROM historical_transactions WHERE batch_id=@batchId AND is_active=1", new { batchId }, tx);
@@ -408,13 +471,25 @@ VALUES(@id,@batch,@Sha256,@profile,'getnet-ooxml-v1',@policy,@evidence,@SourceRo
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 c.Execute("UPDATE historical_import_batch SET state='Undone',revision=revision+1,undone_at=@now,undo_operation_id=@OperationId WHERE id=@batchId", new { now, guard.OperationId, batchId }, tx);
                 result = new HistoricalSalesOperationReceipt { OperationId = guard.OperationId, OperationKind = "Undo", BatchId = batchId, InsertedCount = count, SignedAmountClp = amount, CurrentBatchState = "Undone", CurrentBatchRevision = expectedBatchRevision + 1 };
-                InsertReceipt(c, tx, guard, result, now); _testHooks?.AtPhase?.Invoke("before_undo_commit", c, tx); ct.ThrowIfCancellationRequested(); guard.DemandStillValid();
+                InsertReceipt(c, tx, guard, result, now);
+                var applyOperation=c.ExecuteScalar<string>("SELECT apply_operation_id FROM historical_import_batch WHERE id=@batchId",new{batchId},tx);
+                using var ownedDraft=publicationDraft==null?HistoricalPublicationDraft.ForUndo(guard.OperationId,guard.ShopId,guard.DeviceId,guard.DatasetId,guard.RestoreEpoch,
+                    baseRevision,batchId,expectedBatchRevision,applyOperation,c.ExecuteScalar<string>("SELECT value FROM app_settings WHERE key='pos.history.restore_lineage_id'",transaction:tx)):null;
+                HistoricalPublicationOutbox.Enqueue(c,tx,guard,publicationDraft??ownedDraft,publicationProof,result,applyOperation,now,ct);
+                _testHooks?.AtPhase?.Invoke("before_undo_commit", c, tx); ct.ThrowIfCancellationRequested(); guard.DemandStillValid();
                 using (await _coordinator.EnterPublicationAsync(ct).ConfigureAwait(false))
-                    _coordinator.CommitAndPublishReportRevision(c, tx, () => guard.CommitIfStillValid(SqliteConnectionFactory.DurableCommitSafetyBudget, tx.Commit), _authority());
+                    _coordinator.CommitAndPublishReportRevision(c, tx, () => CommitWithWitness(c,tx,guard,publicationProof), _authority());
                 _testHooks?.AtPhase?.Invoke("after_commit", c, tx);
             }, TimeSpan.FromSeconds(30), admission.Token).ConfigureAwait(false);
             return result;
         }
+        private static void CommitWithWitness(SqliteConnection c,SqliteTransaction t,HistoricalImportAuthorizationCommitGuard guard,HistoricalPublicationProof proof)
+            =>guard.CommitIfStillValid(SqliteConnectionFactory.DurableCommitSafetyBudget,()=>
+            {
+                if(proof!=null)HistoricalPublicationJournal.SealCommitWitness(c,t,guard,guard.CapturePublicationCommitWindow(SqliteConnectionFactory.DurableCommitSafetyBudget));
+                t.Commit();
+            });
+
         private void ValidateGuard(HistoricalImportAuthorizationCommitGuard g, HistoricalImportOperationKind kind, string operation, string fingerprint, string shop, string dataset, long epoch)
         {
             if (g == null) throw new ArgumentNullException(nameof(g)); g.DemandStillValid();

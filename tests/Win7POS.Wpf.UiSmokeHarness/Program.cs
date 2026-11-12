@@ -312,7 +312,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             if (PosDatabaseAuthorityQaProbe.TryRun(args, PosDbOptions.Default(), "harness", out var authorityProbeExit))
             { Environment.ExitCode = authorityProbeExit; return; }
             if (HasArg(args, "--authenticated-shell-ux-smoke") || HasArg(args, "--operator-dialog-geometry-smoke") || HasArg(args, "--historical-sales-import-foundation") || HasArg(args, "--historical-sales-import-crash-probe") ||
-                HasArg(args, "--historical-sales-import-crash-verify") || HasArg(args, "--historical-sales-import-smoke") || HasArg(args, "--historical-sales-import-load"))
+                HasArg(args, "--historical-sales-import-crash-verify") || HasArg(args, "--historical-sales-import-smoke") || HasArg(args, "--historical-sales-import-load") || HasArg(args,"--historical-cloud-sync-probe"))
             {
                 if (Application.ResourceAssembly == null) Application.ResourceAssembly = typeof(ProductEditDialog).Assembly;
                 var historicalApplication = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -334,6 +334,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             File.WriteAllText(Path.Combine(dataDir, "operator-dialog-geometry-smoke.txt"), result);
                             exitCode = result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1;
                         }
+                        else if (HasArg(args,"--historical-cloud-sync-probe")) exitCode=await HistoricalSalesLateReportProbe.RunCloudProbeAsync(args).ConfigureAwait(true);
                         else if (HasArg(args, "--historical-sales-import-smoke")) exitCode = await HistoricalSalesSmokeRunner.RunAsync(args).ConfigureAwait(true);
                         else if (HasArg(args, "--historical-sales-import-load")) exitCode = await HistoricalSalesLoadRunner.RunAsync(args).ConfigureAwait(true);
                         else exitCode = await HistoricalSalesFoundationRunner.RunAsync(args).ConfigureAwait(true);

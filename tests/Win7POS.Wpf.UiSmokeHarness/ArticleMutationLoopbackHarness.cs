@@ -354,10 +354,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         dialog.FindName("HistoryButton")==null && server.CatalogRequestCount==0 && server.FirstLoginRequestCount==1);
                     if(geometry!=null && positive)
                     {
+                        // This component owns a manually-triggered host, without
+                        // a startup coordinator or continuous lanes. Register its
+                        // real credentialed request gate for the real loopback HTTP
+                        // admission; maintenance has no background runner to stop.
+                        using var historyRequests=PosOnlineSyncSignalBus.Register(host.Signal,host.TriggerAsync,
+                            ()=>Task.CompletedTask,_=>Task.CompletedTask,requestHost:host);
                         var catalog=await host.TriggerAsync(OnlineSyncLane.CatalogDelta,OnlineSyncLaneTrigger.FirstBootstrap,cancellationToken);
                         CheckCatalogRetryUi(proof,persist,"geometry_component_has_verified_empty",catalog.Code=="catalog_authoritatively_empty");
                         var access=await HistoricalOnboardingAccess.CreateAsync(factory,session,host.CurrentGeneration,cancellationToken);
                         var service=new Win7POS.Wpf.Pos.PosWorkflowService(factory,()=>DateTimeOffset.UtcNow);
+                        await HistoricalPublicationAdmissionFixture.ConfirmInitialBaselineAsync(factory,session,host.CurrentGeneration,
+                            "90000000-0000-4000-8000-000000000245",cancellationToken);
                         var workspace=new HistoricalOnboardingDialog(access,service){Owner=owner};
                         workspace.Show();await Dispatcher.Yield(DispatcherPriority.ContextIdle);
                         await geometry.VerifyWorkspaceAsync(workspace,factory,cancellationToken);workspace.Close();
@@ -1488,6 +1496,8 @@ GROUP BY mutation_kind;")).ToDictionary(
             private TaskCompletionSource<bool> _releaseNextCatalogResponse =
                 new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             private readonly TcpListener _listener;
+            private readonly HistoricalPublicationAdmissionFixture _historicalPublication =
+                new HistoricalPublicationAdmissionFixture(ShopId,DeviceId,"90000000-0000-4000-8000-000000000245",allNewFixture:true);
             private readonly Task _serverTask;
             private readonly Dictionary<string, RemoteProduct> _products =
                 new Dictionary<string, RemoteProduct>(
@@ -1724,6 +1734,35 @@ GROUP BY mutation_kind;")).ToDictionary(
                             Serialize(BuildFirstLoginResponse()),
                             cancellationToken)
                         .ConfigureAwait(false);
+                        return;
+                    }
+                    if (request.RequestLine.StartsWith("POST /api/pos/payment-history ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // The geometry scenario uses the real net48 HTTP client:
+                        // verify actual lease tokens and return only the local-write contract.
+                        var history = Deserialize<HistoricalCloudRequest>(request.Body);
+                        var lease = BuildFirstLoginResponse();
+                        if (history == null || history.DeviceId != DeviceId || history.SessionId != SessionId ||
+                            history.DeviceToken != lease.TrustedDeviceToken || history.SessionToken != lease.Session.SessionToken ||
+                            StaffRoleKey != "pos_admin")
+                        {
+                            await WriteResponseAsync(stream, 403, Encoding.UTF8.GetBytes("{\"ok\":false,\"code\":\"history_cloud_access_denied\"}"), cancellationToken).ConfigureAwait(false);
+                            return;
+                        }
+                        string result;
+                        if (history.Operation == "authority")
+                            result = "{\"dataset_id\":\"90000000-0000-4000-8000-000000000245\",\"revision\":\"0\",\"writer_epoch\":\"1\",\"writer_authority\":\"local\",\"inventory_verified\":false,\"protocol_version\":1}";
+                        else if (history.Operation == "local_prepare" || history.Operation == "local_stage" || history.Operation == "local_review" || history.Operation == "local_authorize")
+                        {
+                            lock(_gate) result=HistoricalPublicationAdmissionFixture.Wire(history.Operation,_historicalPublication.Request(history.Operation,history.Payload));
+                        }
+                        else
+                        {
+                            await WriteResponseAsync(stream, 400, Encoding.UTF8.GetBytes("{\"ok\":false,\"code\":\"history_input_invalid\"}"), cancellationToken).ConfigureAwait(false);
+                            return;
+                        }
+                        var body = "{\"ok\":true,\"shop_id\":\"" + ShopId + "\",\"device_id\":\"" + DeviceId + "\",\"session_id\":\"" + SessionId + "\",\"result\":" + result + "}";
+                        await WriteResponseAsync(stream, 200, Encoding.UTF8.GetBytes(body), cancellationToken).ConfigureAwait(false);
                         return;
                     }
                     if (request.RequestLine.StartsWith("POST /api/pos/session/heartbeat ", StringComparison.OrdinalIgnoreCase))

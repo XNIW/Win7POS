@@ -1,5 +1,19 @@
 # ASUS019 — handoff al coordinatore mobile TASK-146
 
+Aggiornamento10novembre: il chiarimento bilaterale e lo storico incrementale sono
+stati trasmessi nella stessa nota TASK146/PR29, commento6722613449; parte storica
+conservata byte per byte e aggiornamento riletto. Contratto v2 ancora WIP locale,
+non distribuito né consumabile come API stabile. Matrice e gap canonici in
+CLOUD-CONTINUATION.md: shadow/intenti e origini articolo esistenti riusati,
+local/frozen/web, replay ricevuta distinto da prima consegna tardiva, nessuna
+replica di consultazione riesegue stock/pagamento/fiscale/stampa/cassetto.
+Reader nativo inter-postazione e convergenza autentica per dominio restano aperti.
+Nessun test Windows qualifica iOS/Android o avvia un'Execution mobile concorrente.
+Cart136/149c978 è separato: CI/Security/WPF/Release verdi,41/40/34file verificati;
+Integrated12min+soak60min42897760117 in corso;
+installato2ad42ca. Cloud135/151 ancora in implementazione, nessun rollout/DONE.
+Riferimento: https://github.com/XNIW/iOSMerchandiseControl/pull/29#issuecomment-6722613449
+
 Questo è un raccordo della stessa Execution Windows; non apre una execution mobile
 concorrente e non certifica iOS/Android. Coordinatore: iOS TASK-146/PR29.
 
@@ -43,3 +57,9 @@ pubbliche con supervisor reale, commit locale/manuale e Core175 mirati PASS di
 sviluppo. Qualifica congelata/pacchetto/installazione nuovi ancora aperti. Draft
 cloud135/Admin151 distinti, nessun merge/deploy implicito. Riferimenti aggiornati
 in PLAN/EXECUTION/report e nella PR136.
+
+Checkpoint21:00Z: la stessa nota6722613449 è aggiornata con gate condiviso33test,
+stati/ledger67test, CloudView04 e smoke8/52/required50PASS, SQL isolato76file/4694
+assert e foundation1484PASS/7SKIP. E2E TASK094 precedente FAIL auth_denied distinto
+dai gate SQL; nuovo API v2 non aperto. Storia del commento conservata byte per byte.
+Non è autorizzazione a consumare un endpoint futuro o prova di app mobile.

@@ -11,7 +11,7 @@ using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.UiSmokeHarness
 {
-    internal static class HistoricalSalesLateReportProbe
+    internal static partial class HistoricalSalesLateReportProbe
     {
         internal static async Task<bool> RunAsync(string data, HistoricalSalesQaCase test)
             => await RunCaseAsync(data, test, false) && await RunCaseAsync(data, test, true);
@@ -23,7 +23,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using (var fixture = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             {
                 var receipt = await fixture.ApplyAsync(await fixture.PlanAsync());
-                var workflow = new PosWorkflowService(fixture.Options, () => DateTimeOffset.UtcNow);
+                var workflow = fixture.CreateWorkflow();
                 using (var report = new DailyReportViewModel(workflow, permissions: new PermissionService(fixture.Operator), session: fixture.Operator))
                 using (var readiness = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
                 {

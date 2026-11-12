@@ -136,6 +136,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static async Task CommitAuthorityAsync(string data, HistoricalSalesQaCase test)
         {
+            using (var fixture = await Fixture.CreateAsync(data))
+            {
+                var plan=await fixture.PlanAsync();var workflow=fixture.CreateWorkflow();var before=fixture.State();
+                foreach(var item in new[]{
+                    new{Code="history_cloud_writer_closed",Denied=false,Retryable=false},
+                    new{Code="auth_denied",Denied=true,Retryable=false},
+                    new{Code="history_cloud_access_denied",Denied=true,Retryable=false},
+                    new{Code="history_cloud_unavailable",Denied=false,Retryable=true},
+                    new{Code="history_response_invalid",Denied=false,Retryable=false}})
+                {
+                    workflow.SetHistoricalCloudRequestForTesting((actor,operation,payload,ct)=>
+                        Task.FromResult(item.Code=="history_response_invalid"
+                            ?PosOnlineResult<HistoricalCloudResponse>.Ok(new HistoricalCloudResponse{Ok=true,ShopId=actor.Trusted.ShopId,DeviceId=actor.Trusted.ShopDeviceId,SessionId=actor.Trusted.PosSessionId,Result=null})
+                            :PosOnlineResult<HistoricalCloudResponse>.Failure(item.Code,"Synthetic transport rejection",item.Denied,retryable:item.Retryable)));
+                    HistoricalCloudRequestException failure=null;
+                    try{await workflow.ApplyHistoricalSalesAsync(plan,fixture.Operator,CancellationToken.None);}
+                    catch(HistoricalCloudRequestException error){failure=error;}
+                    test.Check("foreground_preserves_"+item.Code,failure?.Code==item.Code&&failure.Denied==item.Denied&&failure.Retryable==item.Retryable&&fixture.State()==before&&!workflow.IsHistoricalMaintenanceActive);
+                }
+            }
             foreach (var item in new[] { new[] { "apply_revoke_before_insert", "before_insert", "revoke" }, new[] { "apply_revoke_precommit", "before_commit", "revoke" }, new[] { "expiry_before_commit", "before_commit", "expiry" }, new[] { "operator_permission_changed", "before_commit", "permission" } })
             {
                 using (var fixture = await Fixture.CreateAsync(data))
@@ -190,7 +210,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 release.SetResult(true); await maintenance;
                 var reentered = false; await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() => { reentered = true; return Task.CompletedTask; });
                 test.Check("maintenance_cancel_no_orphan", maintenanceCancelled && reentered);
-                var workflow = new PosWorkflowService(fixture.Options, () => DateTimeOffset.UtcNow);
+                var workflow = fixture.CreateWorkflow();
                 var plan = await fixture.PlanAsync();
                 bool workflowCancelled;
                 using (await workflow.EnterHistoricalWorkflowGateForTestingAsync(CancellationToken.None))
@@ -317,6 +337,44 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal sealed class Fixture : IDisposable
         {
+            private static string _smokeTemplate, _smokeTemplateHash;
+            private static FileStream _smokeTemplateHold;
+            internal static bool ReuseEmptySchemaForSmoke { get; set; }
+            internal static void ReleaseSmokeTemplate()
+            {
+                _smokeTemplateHold?.Dispose(); _smokeTemplateHold = null;
+                _smokeTemplate = null; _smokeTemplateHash = null; ReuseEmptySchemaForSmoke = false;
+            }
+            private static void InitializeFixtureSchema(PosDbOptions options, string data)
+            {
+                if (!ReuseEmptySchemaForSmoke) { DbInitializer.EnsureCreated(options); return; }
+                if (_smokeTemplate == null)
+                {
+                    DbInitializer.EnsureCreated(options);
+                    // Capture only the pristine, closed DELETE-journal schema,
+                    // before any actor, generation, source file or ledger fact.
+                    var template = Path.Combine(data, "empty-history-schema-" + Guid.NewGuid().ToString("N") + ".db");
+                    File.Copy(options.DbPath, template, overwrite: false);
+                    _smokeTemplateHold = new FileStream(template, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    _smokeTemplateHash = HashFile(template); _smokeTemplate = template;
+                    return;
+                }
+                // AcquireSyntheticNew already established this new fixture's
+                // own authority. Copies never share connections or mutable data.
+                File.Copy(_smokeTemplate, options.DbPath, overwrite: false);
+                if (HashFile(options.DbPath) != _smokeTemplateHash) throw new InvalidOperationException("qa_history_schema_copy_changed");
+                using (var c = new SqliteConnectionFactory(options).Open())
+                {
+                    if (c.ExecuteScalar<long>("SELECT (SELECT COUNT(*) FROM users)+(SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM historical_import_operation)+(SELECT COUNT(*) FROM historical_transactions)+(SELECT COUNT(*) FROM pos_sync_session_generation WHERE active=1)") != 0)
+                        throw new InvalidOperationException("qa_history_schema_template_not_empty");
+                    c.Execute("UPDATE historical_import_dataset SET dataset_id=@dataset WHERE singleton_id=1; UPDATE app_settings SET value=@lineage WHERE key='pos.history.restore_lineage_id'",
+                        new { dataset = Guid.NewGuid().ToString("N"), lineage = Guid.NewGuid().ToString("N") });
+                }
+            }
+            private static long _schemaMs, _mirrorMs, _loginMs, _fixtureCount;
+            internal static string SetupTimings() => "fixtures=" + Interlocked.Read(ref _fixtureCount) +
+                ";schema_ms=" + Interlocked.Read(ref _schemaMs) + ";mirror_ms=" + Interlocked.Read(ref _mirrorMs) +
+                ";login_ms=" + Interlocked.Read(ref _loginMs);
             internal string Root; internal PosDbOptions Options; internal PosDatabaseAuthorityLease Owner; internal SqliteConnectionFactory Factory;
             internal HistoricalSalesImportTestHooks Hooks = new HistoricalSalesImportTestHooks(); internal HistoricalSalesImportService Service; internal OperatorSession Operator;
             internal OnlineSyncGeneration Generation; internal string ShopId; internal string ShopCode; private PosTrustedDeviceStore _store; private long _expiryTicks;
@@ -331,6 +389,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private static PosFirstLoginResponse FreshFixtureResponse(out PosAuthoritativeReceiptClock receiptClock)
             {
                 var response = AuthorizationLeaseWpfSmoke.BuildResponse(true);
+                // Real history endpoints use UUID identities. Keep the older
+                // authorization-only fixture unchanged outside this history fixture.
+                response.Shop.ShopId = "10000000-0000-4000-8000-000000003019";
+                response.Device.ShopDeviceId = "20000000-0000-4000-8000-000000003019";
+                response.Staff.StaffId = "30000000-0000-4000-8000-000000003019";
+                // A delegated manager keeps permission-removal probes meaningful: no local admin bypass.
+                response.Staff.RoleKey = "manager";
+                response.Session.PosSessionId = "40000000-0000-4000-8000-000000003019";
                 var previousAnchor = DateTimeOffset.Parse(response.ServerTime, CultureInfo.InvariantCulture);
                 var offlineLifetime = DateTimeOffset.Parse(response.EffectiveOfflineAuthorizationExpiresAt, CultureInfo.InvariantCulture) - previousAnchor;
                 var sessionLifetime = DateTimeOffset.Parse(response.Session.ExpiresAt, CultureInfo.InvariantCulture) - previousAnchor;
@@ -346,21 +412,64 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal static Task<Fixture> CreateAsync(string data, string name) => CreateAsync(data);
             internal static async Task<Fixture> CreateAsync(string data)
             {
+                var setup = Stopwatch.StartNew();
                 var f = new Fixture { Root = Path.Combine(data, "B." + Guid.NewGuid().ToString("N").Substring(0, 10)) }; Directory.CreateDirectory(f.Root);
-                f.Options = PosDbOptions.ForPath(Path.Combine(f.Root, "pos.db")); f.Owner = PosDatabaseAuthorityLease.AcquireSyntheticNew(f.Options); f.Options = f.Options.WithAccessContext(f.Owner.AccessContext); DbInitializer.EnsureCreated(f.Options);
+                f.Options = PosDbOptions.ForPath(Path.Combine(f.Root, "pos.db")); f.Owner = PosDatabaseAuthorityLease.AcquireSyntheticNew(f.Options); f.Options = f.Options.WithAccessContext(f.Owner.AccessContext); InitializeFixtureSchema(f.Options, data);
                 f.Factory = new SqliteConnectionFactory(f.Options); f.Service = new HistoricalSalesImportService(f.Factory, () => f.Factory.AuthorityStamp, f.Hooks);
+                Interlocked.Add(ref _schemaMs, setup.ElapsedMilliseconds); setup.Restart();
                 var response = FreshFixtureResponse(out var receiptClock); f.ShopId = response.Shop.ShopId; f.ShopCode = response.Shop.ShopCode;
                 await new ShopOfficialSnapshotRepository(f.Factory).SaveAsync(new OfficialShopSnapshot { ShopId = f.ShopId, ShopCode = f.ShopCode, ShopName = "Synthetic QA", ShopStatus = "active", Source = "qa_harness" });
                 var users = new UserRepository(f.Factory);
                 await users.UpsertRemoteStaffMirrorAsync(new RemoteStaffMirrorInput { Credential = "2468", CredentialVersion = response.Staff.CredentialVersion, DisplayName = response.Staff.DisplayName, RemoteRoleKey = response.Staff.RoleKey, RemoteShopId = f.ShopId, RemoteStaffId = response.Staff.StaffId, ShopCode = f.ShopCode, StaffCode = response.Staff.StaffCode });
+                Interlocked.Add(ref _mirrorMs, setup.ElapsedMilliseconds); setup.Restart();
                 f._store = new PosTrustedDeviceStore(FixtureTicks, TimeSpan.TicksPerSecond, FixtureClockDomain); f._store.Clear(); f._store.SaveFirstLogin(response, "qa-history-session-" + Guid.NewGuid().ToString("N"), receiptClock);
                 if (!f._store.TryRead(out var trusted) || !PosOnlineSyncSupervisorHost.TryCreateGeneration(trusted, out f.Generation)) throw new InvalidOperationException("qa_history_trust_setup_failed");
                 f._expiryTicks = checked(receiptClock.MonotonicTimestamp + (DateTimeOffset.Parse(trusted.EffectiveOfflineAuthorizationExpiresAt, CultureInfo.InvariantCulture) - DateTimeOffset.Parse(trusted.LastOkServerAt, CultureInfo.InvariantCulture)).Ticks);
                 f.Operator = new OperatorSession(users, new SecurityRepository(f.Factory), new PosOfflineAuthorizationLeaseGuard(f._store, FixtureNow, FixtureTicks, TimeSpan.TicksPerSecond));
                 var username = await users.FindTrustedRemoteStaffUsernameAsync(f.ShopId, f.ShopCode, response.Staff.StaffId, response.Staff.StaffCode, response.Staff.CredentialVersion);
                 if (await f.Operator.LoginAsync(username, "2468") != LoginResult.Success) throw new InvalidOperationException("qa_history_login_failed");
+                Interlocked.Add(ref _loginMs, setup.ElapsedMilliseconds); Interlocked.Increment(ref _fixtureCount);
                 f.Operator.CurrentUser.PermissionCodes = new[] { PermissionCodes.RegisterImportHistory, PermissionCodes.RegisterCancelHistory, PermissionCodes.RegisterViewAll, PermissionCodes.RegisterView, PermissionCodes.DailyCloseView, PermissionCodes.PosPay };
                 File.WriteAllText(Path.Combine(f.Root, "source.bin"), "synthetic-history-source-v1", new UTF8Encoding(false)); return f;
+            }
+            internal int LocalWriteRequests;
+            private readonly Dictionary<string,HistoricalSalesImportPlan> _decisionPlans=new Dictionary<string,HistoricalSalesImportPlan>(StringComparer.Ordinal);
+            internal PosWorkflowService CreateWorkflow(string rejection = null,bool allNewHistoryFixture=false,bool initialBaseline=true)
+            {
+                if(initialBaseline)HistoricalPublicationAdmissionFixture.ConfirmInitialBaselineAsync(Factory,Operator,Generation,
+                    "90000000-0000-4000-8000-000000003019",CancellationToken.None).GetAwaiter().GetResult();
+                var workflow = new PosWorkflowService(Options, () => DateTimeOffset.UtcNow);
+                var publication=new HistoricalPublicationAdmissionFixture(ShopId,Generation.ShopDeviceId,"90000000-0000-4000-8000-000000003019",(operation,kind,batch)=>
+                {
+                    // Local preview is fixture input, not a claimed server E2E.
+                    if(kind=="Apply")
+                    {
+                        if(!_decisionPlans.TryGetValue(Guid.Parse(operation).ToString("N"),out var plan))
+                        {
+                            if(allNewHistoryFixture&&Count("historical_transactions")==0)return null;
+                            throw new InvalidOperationException("qa_history_decision_plan_required");
+                        }
+                        var preview=Service.PreviewAsync(plan,CancellationToken.None).GetAwaiter().GetResult();
+                        return new HistoricalPublicationAdmissionFixture.Decision{Inserted=preview.NewCount,Duplicates=preview.DuplicateCount,
+                            Rejected=plan.Analysis.RejectedRows.Count,Corrections=plan.CorrectionApprovals.Count,Gross=preview.NewGrossClp};
+                    }
+                    using var c=Factory.Open();return new HistoricalPublicationAdmissionFixture.Decision{
+                        Deactivated=checked((int)c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE batch_id=@batch AND is_active=1",new{batch})),
+                        Gross=c.ExecuteScalar<long>("SELECT COALESCE(SUM(signed_amount_clp),0) FROM historical_transactions WHERE batch_id=@batch AND is_active=1",new{batch})};
+                },allNewFixture:allNewHistoryFixture);
+                workflow.SetHistoricalCloudRequestForTesting((actor, operation, payload, ct) =>
+                {
+                    ct.ThrowIfCancellationRequested(); actor.DemandCurrent();
+                    if (actor.Trusted.ShopId != ShopId) throw new InvalidOperationException("qa_history_cloud_scope_invalid");
+                    if (operation == "authority")
+                    {
+                        if (rejection == "offline") throw new InvalidOperationException("qa_history_cloud_offline");
+                        return Task.FromResult(PosOnlineResult<HistoricalCloudResponse>.Ok(new HistoricalCloudResponse { Ok=true,ShopId=actor.Trusted.ShopId,DeviceId=actor.Trusted.ShopDeviceId,SessionId=actor.Trusted.PosSessionId,Result=new HistoricalCloudResult { DatasetId = "90000000-0000-4000-8000-000000003019", Revision = "0", WriterEpoch = "1", WriterAuthority = rejection == "frozen" || rejection == "web" ? rejection : "local", ProtocolVersion = 1 } }));
+                    }
+                    var result=publication.Request(operation,payload,rejection);LocalWriteRequests=publication.Authorizations;
+                    return Task.FromResult(PosOnlineResult<HistoricalCloudResponse>.Ok(new HistoricalCloudResponse { Ok=true,ShopId=actor.Trusted.ShopId,DeviceId=actor.Trusted.ShopDeviceId,SessionId=actor.Trusted.PosSessionId,Result=result }));
+                });
+                return workflow;
             }
             internal async Task<HistoricalSalesImportPlan> PlanAsync(int count = 1, string id = "000123")
             {
@@ -371,13 +480,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var summary = new HistoricalSalesImportSummary(count, count, count, 0, 0, count * 1000L, count * 1000L, 0, count * 1000L, count, 0, 0, start, start.AddSeconds(count - 1));
                 var analysis = new HistoricalSalesImportAnalysis(new[] { file }, rows, Array.Empty<HistoricalSalesRejectedRow>(), Array.Empty<HistoricalSalesImportDiagnostic>(), summary, false); var state = await Service.ReadDatasetAsync(CancellationToken.None);
                 var key = HistoricalMerchantAssignment.MerchantKey(merchant).Substring(0, 16);
-                return new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"), ShopId, state.DatasetId, state.DataRevision, Factory.AuthorityStamp.RestoreEpoch, analysis, new[] { new HistoricalMerchantAssignment(merchant, "synthetic-scope-" + key, "synthetic-binding-" + key, "synthetic-evidence") }, new DateTime(2001, 1, 1), "synthetic-start-proof");
+                var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"), ShopId, state.DatasetId, state.DataRevision, Factory.AuthorityStamp.RestoreEpoch, analysis, new[] { new HistoricalMerchantAssignment(merchant, "synthetic-scope-" + key, "synthetic-binding-" + key, "synthetic-evidence") }, new DateTime(2001, 1, 1), "synthetic-start-proof");
+                _decisionPlans[plan.OperationId]=plan;return plan;
             }
             internal async Task<HistoricalSalesImportPlan> PreparePlanAsync(HistoricalSalesImportAnalysis analysis)
             {
                 var state = await Service.ReadDatasetAsync(CancellationToken.None);
                 var assignments = analysis.AcceptedTransactions.Select(x => x.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select(g => new HistoricalMerchantAssignment(g.First(), "synthetic-scope-" + g.Key.Substring(0, 16), "synthetic-binding-" + g.Key.Substring(0, 16), "synthetic-evidence")).ToArray();
-                return new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"), ShopId, state.DatasetId, state.DataRevision, Factory.AuthorityStamp.RestoreEpoch, analysis, assignments, new DateTime(2040, 1, 1), "synthetic-start-proof");
+                var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"), ShopId, state.DatasetId, state.DataRevision, Factory.AuthorityStamp.RestoreEpoch, analysis, assignments, new DateTime(2040, 1, 1), "synthetic-start-proof");
+                _decisionPlans[plan.OperationId]=plan;return plan;
             }
             internal async Task<HistoricalSalesOperationReceipt> ApplyAsync(HistoricalSalesImportPlan plan)
             { using (var use = await Operator.BeginHistoricalAuthorizationUseAsync(HistoricalImportOperationKind.Apply, plan.OperationId, plan.RequestFingerprint, plan.DatasetId, plan.RestoreEpoch, () => Factory.AccessContext.DemandPath(Factory.DbPath), CancellationToken.None)) return await Service.ApplyAsync(plan, use.Guard, Backup(), CancellationToken.None); }
@@ -404,7 +515,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal string Backup() => Path.Combine(Root, "backup-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".db");
             internal long Count(string table) { if (!new[] { "historical_transactions", "historical_import_batch", "historical_import_operation" }.Contains(table)) throw new ArgumentException(); using (var c = Factory.Open()) return c.ExecuteScalar<long>("SELECT COUNT(*) FROM " + table); }
             internal string State() { using (var c = Factory.Open()) return string.Join("|", c.ExecuteScalar<long>("SELECT data_revision FROM historical_import_dataset WHERE singleton_id=1"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_batch"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales"), c.ExecuteScalar<long>("SELECT COUNT(*) FROM sales_sync_outbox")); }
-            public void Dispose() { _store?.Clear(); SqliteConnectionFactory.ClearAllPools(); Owner?.Dispose(); } // Evidence remains owned and retained.
+            public void Dispose() { _decisionPlans.Clear(); _store?.Clear(); SqliteConnectionFactory.ClearAllPools(); Owner?.Dispose(); } // Evidence remains owned and retained.
         }
 
         [DataContract] private sealed class CrashProof

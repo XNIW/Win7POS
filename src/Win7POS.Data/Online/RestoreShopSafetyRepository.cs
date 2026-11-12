@@ -75,6 +75,7 @@ SELECT
    FROM customer_order_inbox
    WHERE state <> 'acked');"
                 ).ConfigureAwait(false);
+                unresolvedOutbox += await CountHistoricalPublicationsAsync(conn,null).ConfigureAwait(false);
                 return unresolvedOutbox == 0
                     ? RestoreSafetyResult.Success()
                     : RestoreSafetyResult.Failure("restore_candidate_outbox_unresolved");
@@ -131,6 +132,8 @@ WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
                 {
                     return RestoreSafetyResult.Failure("restore_live_sales_outbox_unresolved");
                 }
+                if(await CountHistoricalPublicationsAsync(conn,tx).ConfigureAwait(false)>0)
+                    return RestoreSafetyResult.Failure("restore_live_history_outbox_unresolved");
 
                 var unresolvedCatalogImports = await conn.ExecuteScalarAsync<long>(@"
 SELECT (SELECT COUNT(1) FROM catalog_import_outbox
@@ -243,6 +246,7 @@ SELECT
   (SELECT COUNT(1) FROM customer_order_inbox
    WHERE state <> 'acked');",
                     transaction: tx).ConfigureAwait(false);
+                unresolved += await CountHistoricalPublicationsAsync(conn,tx).ConfigureAwait(false);
                 if (unresolved > 0)
                 {
                     tx.Rollback();
@@ -277,6 +281,20 @@ ON CONFLICT(key) DO UPDATE SET value = 'false';",
             return DateTimeOffset.TryParse(candidate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var candidateTime) &&
                 DateTimeOffset.TryParse(baseline, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var baselineTime) &&
                 candidateTime >= baselineTime;
+        }
+
+        private static async Task<long> CountHistoricalPublicationsAsync(Microsoft.Data.Sqlite.SqliteConnection conn,Microsoft.Data.Sqlite.SqliteTransaction tx)
+        {
+            var tables=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN('historical_publication_outbox','historical_publication_page','historical_publication_delivery')",transaction:tx).ConfigureAwait(false);
+            if(tables==0)return 0; // Pre-0017 verified source; no incremental queue existed.
+            if(tables!=3)throw new InvalidOperationException("restore_history_outbox_schema_invalid");
+            var pending=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM historical_publication_outbox o LEFT JOIN historical_publication_delivery d ON d.operation_id=o.operation_id WHERE d.operation_id IS NULL OR d.status<>'synchronized'",transaction:tx).ConfigureAwait(false);
+            var journalTables=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN('historical_preparation_intent','historical_preparation_page','historical_preparation_outcome')",transaction:tx).ConfigureAwait(false);
+            if(journalTables!=0&&journalTables!=3)throw new InvalidOperationException("restore_history_journal_schema_invalid");
+            if(journalTables==3)pending+=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM historical_preparation_outcome WHERE state IN('staging','prepared','authorized')",transaction:tx).ConfigureAwait(false);
+            if(await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='historical_commit_witness'",transaction:tx).ConfigureAwait(false)==1)
+                pending+=await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM historical_commit_witness WHERE server_resolution IS NULL",transaction:tx).ConfigureAwait(false);
+            return pending;
         }
 
         private static Task<string> GetAsync(
