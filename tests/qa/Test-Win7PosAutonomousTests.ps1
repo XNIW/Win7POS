@@ -625,6 +625,48 @@ $typedEnvelope|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $typedPath
 $readEvents=@(Get-QaTypedDiagnostics $typedReport $repoRoot)
 Assert-QaTest ($readEvents[0].diagnosticCompleteness -ceq 'partial' -and $null -eq $readEvents[0].assertionId) 'Stale run typed diagnostics were accepted'
 
+# UI observations are source-bound identifiers, not arbitrary literal values
+# elsewhere on the assertion line. Both extraction and ZIP projection retain
+# their identities while unknown/wrong-scenario observations remain private.
+function New-LiteralUiObservation([string]$Stem,[string]$Scenario,[string]$Id,[string]$SourcePattern,[int]$Sequence) {
+    $sourceLines=[IO.File]::ReadAllLines((Join-Path $repoRoot ('tests/Win7POS.Wpf.UiSmokeHarness/'+$Stem+'.cs')))
+    $matching=@(for($i=0;$i -lt $sourceLines.Length;$i++){if($sourceLines[$i].Contains($SourcePattern)){$i+1}})
+    Assert-QaTest ($matching.Count -eq 1) 'UI observation test source is ambiguous'
+    return [pscustomobject]@{sequence=$Sequence;stepId='functional-completion';scenarioId=$Scenario;assertionId=('QA_'+$Stem+'_L'+$matching[0]);observationId=$Id;status='PASS';expected=$true;actual=$true;checkpoint='assertion';code='none'}
+}
+$literalReport=$typedReport|ConvertTo-Json -Depth 10|ConvertFrom-Json;$literalReport.runId='synthetic-literal-ui'
+$literalEvents=@(
+    (New-LiteralUiObservation 'HistoricalImportGuidedUxSmoke' 'HISTORY_IMPORT_GUIDED_UX' 'retry_requires_explicit_command' 'Check("retry_requires_explicit_command",' 0)
+    (New-LiteralUiObservation 'HistoricalImportGuidedUxSmoke' 'HISTORY_WEB_IMPORT_UX' 'web_prepare_pending_is_terminal_without_commit' 'Check("web_prepare_pending_is_terminal_without_commit",' 1)
+    (New-LiteralUiObservation 'OperatorDialogGeometrySmoke' 'OPERATOR_DIALOG_GEOMETRY' 'geometry_matrix_complete' 'observationId:"geometry_matrix_complete"' 2)
+    (New-LiteralUiObservation 'OperatorDialogGeometrySmoke' 'OPERATOR_DIALOG_GEOMETRY' 'geometry_qualified_review_ready' ',"geometry_qualified_review_ready");' 3)
+)
+$literalEnvelope=[pscustomobject]@{schemaVersion='win7pos-qa-diagnostics-v1';runId=$literalReport.runId;sourceFingerprintSha256=('b'*64);harnessSha256=$harnessHash;diagnosticCompleteness='complete';results=$literalEvents}
+$literalEnvelope|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $typedPath
+$literalProjected=@(Get-QaTypedDiagnostics $literalReport $repoRoot)
+Assert-QaTest ($literalProjected.Count -eq 4 -and @($literalProjected|Where-Object diagnosticCompleteness -cne 'complete').Count -eq 0) 'Known UI observation details were discarded'
+Assert-QaTest (($literalProjected.observationId -join '|') -ceq ($literalEvents.observationId -join '|')) 'UI observation identity changed during extraction'
+$literalBundle=Publish-QaPublicBundle $literalReport $publicRaw $publicParent -Diagnostics $literalProjected
+$zip=[IO.Compression.ZipFile]::OpenRead($literalBundle.zipPath)
+try{$reader=[IO.StreamReader]::new($zip.GetEntry('diagnostics.public.json').Open());try{$literalReadback=$reader.ReadToEnd()|ConvertFrom-Json}finally{$reader.Dispose()}}finally{$zip.Dispose()}
+Assert-QaTest ($literalReadback.diagnosticCompleteness -ceq 'complete' -and ($literalReadback.results.observationId -join '|') -ceq ($literalEvents.observationId -join '|')) 'UI observation details did not survive public ZIP publication'
+foreach($bad in @('unknown','wrong_line','wrong_scenario','working','queued')){
+    $rejectedEvent=$literalEvents[0]|ConvertTo-Json -Depth 5|ConvertFrom-Json
+    switch($bad){
+        'unknown' {$rejectedEvent.observationId='private_sentinel'}
+        'wrong_line' {$rejectedEvent.assertionId='QA_HistoricalImportGuidedUxSmoke_L1'}
+        'wrong_scenario' {$rejectedEvent.scenarioId='IMPORT_completion'}
+        'working' {$rejectedEvent=New-LiteralUiObservation 'HistoricalImportGuidedUxSmoke' 'HISTORY_IMPORT_GUIDED_UX' 'working' 'Check("transfer_failure_has_terminal_outcome",' 0}
+        'queued' {$rejectedEvent=New-LiteralUiObservation 'HistoricalImportGuidedUxSmoke' 'HISTORY_WEB_IMPORT_UX' 'queued' 'Check("verified_web_sources_need_no_original_disk_read",' 0}
+    }
+    $literalEnvelope.results=@($rejectedEvent);$literalEnvelope|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $typedPath
+    $withheld=@(Get-QaTypedDiagnostics $literalReport $repoRoot)
+    Assert-QaTest ($withheld.Count -eq 1 -and $withheld[0].diagnosticCompleteness -ceq 'partial' -and $withheld[0].status -ceq 'NOT_RUN') 'Unbound UI observation was accepted'
+    $literalReport.runId='synthetic-literal-reject-'+$bad.Replace('_','-')
+    Must-Fail {Publish-QaPublicBundle $literalReport $publicRaw $publicParent -Diagnostics @($rejectedEvent)} 'qa_public_diagnostic_privacy_rejected'
+    $literalReport.runId='synthetic-literal-ui'
+}
+
 # Visual evidence is a closed registry of actual synthetic view regions. A
 # missing capture remains NOT_RUN; no generated bitmap substitutes for a view.
 $visualPath=Join-Path $publicRaw 'qa-visuals.json'

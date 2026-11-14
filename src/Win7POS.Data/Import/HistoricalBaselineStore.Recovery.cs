@@ -13,6 +13,7 @@ namespace Win7POS.Data.Import
     {
         public string RequestId{get;set;} public string FlowId{get;set;} public string SessionId{get;set;} public int CredentialVersion{get;set;}
         public string PreviousReviewDigest{get;set;} public string State{get;set;} public string AckJson{get;set;}
+        public string PreviousRecoveryRequestId{get;set;}
     }
     public sealed partial class HistoricalBaselineStore
     {
