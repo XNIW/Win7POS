@@ -80,9 +80,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var generation=await store.BeginAsync(f.ShopId,manifest,CancellationToken.None);
             await store.StageAsync(generation,new HistoricalCloudResult{DatasetId=dataset,Revision="1",WriterEpoch="2",Cursor=cursor,Done=true,Checksum=checksum,Movements=1,Batches=1,Entities=entities},CancellationToken.None);
             var clock=Stopwatch.StartNew();await store.PublishAsync(generation,CancellationToken.None);
-            while(clock.ElapsedMilliseconds<3000&&(!report.ReportNumbersVisible||report.PeriodNetAmount!=5000||report.IsBusy||import.IsBusy||import.CanImport))
+            while(clock.ElapsedMilliseconds<3000&&(!report.ReportNumbersVisible||report.PeriodNetAmount!=5000||report.IsBusy||import.IsBusy||!import.LocalHistoryWriterClosed||!import.CanImport))
                 await Task.Delay(10);
-            var converged=report.ReportNumbersVisible&&report.PeriodNetAmount==5000&&!report.IsBusy&&!import.CanImport;
+            var converged=report.ReportNumbersVisible&&report.PeriodNetAmount==5000&&!report.IsBusy&&import.LocalHistoryWriterClosed&&import.CanImport&&
+                !import.ApplyCommand.CanExecute(null)&&f.LocalWriteRequests==0;
             var selection=report.SelectedTabIndex==1&&report.HistoryFromText=="2000-01-02"&&report.HistoryToText=="2000-01-03"&&
                 report.SelectedHistoryRow?.Date==new DateTime(2000,1,3)&&!report.HistoryRows[0].IsMarked&&report.HistoryRows[1].IsMarked&&
                 import.SelectedBatch?.ApplyOperationId==original.OperationId;

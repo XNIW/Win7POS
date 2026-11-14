@@ -102,7 +102,7 @@ function New-FunctionalDataRoot([string]$BaseDirectory, [string]$RepoRoot) {
     $path = [IO.Path]::GetFullPath((Join-Path $BaseDirectory ('W7F.' + [Guid]::NewGuid().ToString('N'))))
     # Native SQLite backup paths append their own names and temporary suffixes.
     # Reports may be deep; the data path must reserve room below MAX_PATH.
-    if ((Join-Path $path 'case-00').Length -gt 89) { throw 'Functional temporary base is too long for native SQLite paths.' }
+    if ((Join-Path $path 'Web\Win7POS-QA').Length -gt 89) { throw 'Functional temporary base is too long for native SQLite paths.' }
     $forbidden = @($RepoRoot, 'C:\POSData')
     foreach ($base in @([Environment]::GetFolderPath('CommonApplicationData'), [Environment]::GetFolderPath('LocalApplicationData'), $env:APPDATA, [IO.Path]::GetTempPath())) {
         if ($base) { $forbidden += Join-Path $base 'Win7POS' }
@@ -143,7 +143,7 @@ if (-not $HarnessDirectory) {
     $HarnessDirectory = Join-Path $repoRoot "tests\Win7POS.Wpf.UiSmokeHarness\bin\$Platform\$Configuration\net48"
 }
 $exe = [IO.Path]::GetFullPath((Join-Path $HarnessDirectory 'Win7POS.Wpf.UiSmokeHarness.exe'))
-$scenarios = @('OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
+$scenarios = @('OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','HISTORY_IMPORT_GUIDED_UX','HISTORY_WEB_IMPORT_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
 $selectableScenarios = @('FUNCTIONAL_VISUAL') + $scenarios
 foreach ($selected in $Scenario) {
     if ($selected -cnotin $selectableScenarios) { throw "Unknown functional scenario: $selected" }
@@ -184,11 +184,13 @@ try {
     foreach ($name in $cases) {
         $evidenceDir = Join-Path $OutputDirectory $name
         New-Item -ItemType Directory -Path $evidenceDir | Out-Null
-        $dataDir = Join-Path $dataRoot ('case-{0:D2}' -f $caseIndex++)
+        $caseName = if ($name -eq 'HISTORY_IMPORT_GUIDED_UX') { 'Win7POS-QA' } elseif($name -eq 'HISTORY_WEB_IMPORT_UX'){'Web\Win7POS-QA'} else { 'case-{0:D2}' -f $caseIndex }
+        $caseIndex++
+        $dataDir = Join-Path $dataRoot $caseName
         New-Item -ItemType Directory -Path $dataDir | Out-Null
         $visual = $name -eq 'FUNCTIONAL_VISUAL'
         $timeoutMs = 60000 # ASUS-W7POS-019 R3: each isolated process retains the declared budget.
-        $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } elseif ($name -eq 'AUTHENTICATED_SHELL_UX') { Join-Path $dataDir 'authenticated-shell-ux-smoke.txt' } elseif ($name -eq 'OPERATOR_DIALOG_GEOMETRY') { Join-Path $dataDir 'operator-dialog-geometry-smoke.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
+        $resultPath = if ($visual) { Join-Path $evidenceDir 'ui-ux-final-closeout.txt' } elseif($name -eq 'HISTORY_WEB_IMPORT_UX'){Join-Path $dataDir 'historical-web-import-ux-smoke.txt'} elseif ($name -eq 'HISTORY_IMPORT_GUIDED_UX') { Join-Path $dataDir 'historical-import-guided-ux-smoke.txt' } elseif ($name -eq 'AUTHENTICATED_SHELL_UX') { Join-Path $dataDir 'authenticated-shell-ux-smoke.txt' } elseif ($name -eq 'OPERATOR_DIALOG_GEOMETRY') { Join-Path $dataDir 'operator-dialog-geometry-smoke.txt' } else { Join-Path $dataDir 'functional-completion.txt' }
         $record = [ordered]@{ name=$name; status='NOT_RUN'; exitCode=$null; evidenceDirectory=$evidenceDir; dataDirectory=$dataDir; elapsedMs=0; timeoutMs=$timeoutMs; pid=$null; creationTimeUtc=$null; executable=$exe; observedExecutable=$null; cleanupSucceeded=$null; cleanupError=$null; evidenceExportError=$null; error=$null }
         $process = $null; $childOutput = $null
         $threadObserver = $null
@@ -198,7 +200,7 @@ try {
             if (-not $harnessHash) { throw 'Build the x86 WPF harness first.' }
             $arguments = @('--data-dir', ('"' + $dataDir + '"'))
             if ($visual) { $arguments += @('--ui-ux-final-closeout','--output-dir', ('"' + $evidenceDir + '"')) }
-            elseif ($name -eq 'AUTHENTICATED_SHELL_UX') { $arguments += '--authenticated-shell-ux-smoke' } elseif ($name -eq 'OPERATOR_DIALOG_GEOMETRY') { $arguments += '--operator-dialog-geometry-smoke' } else { $arguments += @('--functional-completion-smoke','--scenario',$name) }
+            elseif($name -eq 'HISTORY_WEB_IMPORT_UX'){$arguments+='--historical-web-import-ux-smoke'} elseif ($name -eq 'HISTORY_IMPORT_GUIDED_UX') { $arguments += '--historical-import-guided-ux-smoke' } elseif ($name -eq 'AUTHENTICATED_SHELL_UX') { $arguments += '--authenticated-shell-ux-smoke' } elseif ($name -eq 'OPERATOR_DIALOG_GEOMETRY') { $arguments += '--operator-dialog-geometry-smoke' } else { $arguments += @('--functional-completion-smoke','--scenario',$name) }
             $childOutput = Start-FunctionalChild $exe $arguments (Join-Path $evidenceDir 'stdout.log') (Join-Path $evidenceDir 'stderr.log')
             $process = $childOutput.Process
             $record.pid = $process.Id

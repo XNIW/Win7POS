@@ -49,7 +49,8 @@ namespace Win7POS.Data.Import
             var prepared=await Request("local_prepare",new HistoricalCloudPayload{OperationId=operation,Kind=draft.Kind,
                 LocalDatasetId=draft.DatasetId,RestoreEpoch=S(draft.RestoreEpoch),RestoreLineageId=draft.RestoreLineageId,
                 BaseRevision=S(draft.BaseRevision),WriterEpoch=S(writerEpoch),RequestFingerprint=draft.RequestFingerprint,
-                ContentDigest=draft.ContentDigest,PageCount=draft.PageCount,ProtocolVersion=2,LocalNonce=nonce},ct).ConfigureAwait(false);
+                ContentDigest=draft.ContentDigest,PageCount=draft.PageCount,ProtocolVersion=2,LocalNonce=nonce,
+                Qualification=draft.Qualification==null?null:new HistoricalCloudQualification{ConfigDigest=draft.Qualification.ConfigDigest,ResolverFingerprint=draft.Qualification.ResolverFingerprint,EvidenceIds=System.Linq.Enumerable.ToArray(draft.Qualification.EvidenceIds)}},ct).ConfigureAwait(false);
             DemandProgress(prepared,draft,operation,1);
             if(prepared.PublicationPageCount!=draft.PageCount)throw new InvalidOperationException("history_publication_preparation_mismatch");
             var next=prepared.NextOrdinal;

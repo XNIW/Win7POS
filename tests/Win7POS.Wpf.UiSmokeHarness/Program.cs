@@ -180,18 +180,21 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var productImageStagingAcceptance =
                 HasArg(args, "--product-image-staging-acceptance");
+            var historicalImportGuidedUx = HasArg(args, "--historical-import-guided-ux-smoke");
+            var historicalWebImportUx = HasArg(args,"--historical-web-import-ux-smoke");
+            var historicalGuidedApplication=historicalImportGuidedUx||historicalWebImportUx;
             var productImageAcceptanceRunnerToken =
                 Environment.GetEnvironmentVariable(
                     ProductImageStagingAcceptance
                         .AcceptanceRunnerTokenEnvironmentVariable);
-            var restrictedQaData = physicalPrinterQa ||
+            var restrictedQaData = historicalGuidedApplication || physicalPrinterQa ||
                                    authorizationLeaseMode ||
                                    productImageStagingAcceptance ||
                                    HasArg(args, "--offline-sales-sandbox") ||
                                    (HasArg(args, "--seed") &&
                                     seedTrustedSession);
             var requireEmptyQaData =
-                physicalPrinterQa ||
+                historicalGuidedApplication || physicalPrinterQa ||
                 HasArg(args, "--offline-sales-sandbox") ||
                 (HasArg(args, "--seed") && seedTrustedSession) ||
                 (authorizationLeaseModeRequiresSeed &&
@@ -278,7 +281,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             var artifactDirectory =
                 authorizationLeaseMode ? diagnosticsDir : dataDir;
-            var automatedRun = HasArg(args, "--functional-completion-smoke") || HasArg(args, "--cart-performance") || HasArg(args, "--seed") ||
+            var automatedRun = historicalGuidedApplication || HasArg(args, "--functional-completion-smoke") || HasArg(args, "--cart-performance") || HasArg(args, "--seed") ||
                                authorizationLeaseSmoke ||
                                authorizationLeaseRestartPrepare ||
                                authorizationLeaseRestartVerify ||
@@ -318,7 +321,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Environment.SetEnvironmentVariable("WIN7POS_SAFE_START", "1");
             if (PosDatabaseAuthorityQaProbe.TryRun(args, PosDbOptions.Default(), "harness", out var authorityProbeExit))
             { Environment.ExitCode = authorityProbeExit; return; }
-            if (HasArg(args, "--authenticated-shell-ux-smoke") || HasArg(args, "--operator-dialog-geometry-smoke") || HasArg(args, "--historical-sales-import-foundation") || HasArg(args, "--historical-sales-import-crash-probe") ||
+            if (historicalGuidedApplication || HasArg(args, "--authenticated-shell-ux-smoke") || HasArg(args, "--operator-dialog-geometry-smoke") || HasArg(args, "--historical-sales-import-foundation") || HasArg(args, "--historical-sales-import-crash-probe") ||
                 HasArg(args, "--historical-sales-import-crash-verify") || HasArg(args, "--historical-sales-import-smoke") || HasArg(args, "--historical-sales-import-load") || HasArg(args,"--historical-cloud-sync-probe"))
             {
                 if (Application.ResourceAssembly == null) Application.ResourceAssembly = typeof(ProductEditDialog).Assembly;
@@ -329,7 +332,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var exitCode = 1;
                     try
                     {
-                        if (HasArg(args, "--authenticated-shell-ux-smoke"))
+                        if (historicalGuidedApplication)
+                        {
+                            var result = await (historicalWebImportUx?HistoricalImportGuidedUxSmoke.RunWebAsync(dataDir):HistoricalImportGuidedUxSmoke.RunAsync(dataDir)).ConfigureAwait(true);
+                            File.WriteAllText(Path.Combine(dataDir, historicalWebImportUx?"historical-web-import-ux-smoke.txt":"historical-import-guided-ux-smoke.txt"), result);
+                            exitCode = result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1;
+                        }
+                        else if (HasArg(args, "--authenticated-shell-ux-smoke"))
                         {
                             var result = await ArticleMutationLoopbackHarness.VerifyAuthenticatedShellUxAsync(dataDir).ConfigureAwait(true);
                             File.WriteAllText(Path.Combine(dataDir, "authenticated-shell-ux-smoke.txt"), result);

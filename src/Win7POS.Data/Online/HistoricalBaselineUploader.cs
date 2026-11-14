@@ -13,7 +13,7 @@ using Win7POS.Data.Import;
 namespace Win7POS.Data.Online
 {
     /// <summary>One bounded source POST to the configured Admin origin. No redirects, retries or backup upload.</summary>
-    public sealed class HistoricalBaselineUploader:IDisposable
+    public sealed partial class HistoricalBaselineUploader:IDisposable
     {
         private readonly HttpClient _http;private readonly Uri _admin;
         public HistoricalBaselineUploader(PosAdminWebOptions options,HttpMessageHandler handler=null)
