@@ -1,7 +1,16 @@
 # Codex Asus Task Index
 
-<!-- ASUS019_CURRENT_START -->
-## Stato corrente —14novembre2026, stessa ASUS-W7POS-019 ACTIVE
+## ASUS-W7POS-019 — indice della stessa Execution
+
+Stato **ACTIVE_UAC_PENDING**. Prove, consegna effettiva e residui sono nella
+[matrice finale canonica](plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md#matrice-finale-asus-w7pos-019).
+Nessuna installazione nuova o chiusura globale dichiarata da questo indice.
+
+<details>
+<summary>Checkpoint b4b7928 del 14 novembre conservato come storia</summary>
+
+<!-- ASUS019_HISTORY_B4B7928_20261114_START -->
+## Stato storico —14novembre2026, checkpoint b4b7928 prima dei gate finali
 
 Installato248e689/v6 preservato; due avvii online e navigazione/focus già
 verificati, offline reale e Win7 fisico separati. POS chiuso normalmente prima
@@ -26,7 +35,9 @@ Getnet C manca; il nuovo riscontro utente conferma i campi raw già conosciuti.
 Gate finali/pacchetti/installazione/baselineACKreplica restano aperti. Win7
 BLOCKED_TARGET;100/125 USER_DEFERRED,200% preservato. Piano ed evidence nella
 [stessa Execution](plans/ASUS-W7POS-019_GETNET_HISTORY/PLAN.md). Nessun DONE.
-<!-- ASUS019_CURRENT_END -->
+<!-- ASUS019_HISTORY_B4B7928_20261114_END -->
+
+</details>
 
 <details>
 <summary>Checkpoint precedente5d8e704 conservato come storia</summary>
@@ -49,6 +60,9 @@ Le sezioni sotto sono checkpoint storici, non lo stato corrente. Nessun DONE.
 This file tracks Asus Windows build-machine tasks. Detailed evidence belongs in
 dated reports under `docs/reports/`.
 
+<details>
+<summary>Note ASUS019 precedenti del 9 novembre conservate come storia</summary>
+
 ## 2026-11-09 — ASUS019 successor qualification ACTIVE
 
 Canonical01 e6aa13/15, Core1745, smoke8/52 and load11PASS; functional worker
@@ -58,7 +72,7 @@ newer-operator regression retained. Focused successor16.544s and50required gates
 PASS. Exact successor canonical/CI/package/install and real retained-profile
 navigation/review are pending. a828 remains installed; original ledger unchanged.
 
-## ASUS-W7POS-019 — current continuation
+## ASUS-W7POS-019 — historical continuation (9 novembre)
 
 ACTIVE, same R3. Combined authenticated-empty shell/navigation and shared dialog
 geometry implemented locally; focused real MainWindow navigation and scanner/
@@ -83,9 +97,13 @@ Fix comune implementato, focused22misure200% PASS, guard50/50/build x86 PASS;
 Recovery nuovo codice30.160s PASS, prima failure weakref conservata. Candidato
 geometria in qualifica,100/125 e installato/riapertura finale ancora aperti.
 
+</details>
+
+## Task index
+
 | Task ID | Status | Title | Commit | Evidence |
 | --- | --- | --- | --- | --- |
-| ASUS-W7POS-019 | ACTIVE; software REVIEW, corrected package delivered | Getnet history and real onboarding residuals | a8286c6 qualified/installed41/41; four exact-SHA workflows SUCCESS; Admin148/9016054, Workera68ebec2 | [Current E2E evidence](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md): downloaded smoke8/52 in49.678s, canonical15/functional20/foundation5-37/load11 PASS. New daily shortcut/profile/login/empty/workbench/import and ledger preservation PASS. UI7/legacy4 committed, original receipt/report/detail/CSV before update PASS; LIVE_REOPEN_PENDING on successor. Native100/125 whole form observed, restore200 pending; keyboard coverage limited. First UI/CI/local Recovery/path/ownership/GitHub/UAC failures retained. A/B VERIFIED, C modern MISSING, CSV_INPUT BLOCKED_INPUT; Win7 unavailable, changed-source kit prepared,182 unchanged. No undo of valid import or DONE. |
+| ASUS-W7POS-019 | ACTIVE_UAC_PENDING | Getnet history and real onboarding residuals | Stato e SHA nella matrice canonica | [Matrice finale canonica](plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md#matrice-finale-asus-w7pos-019): qualifiche, consegna effettiva, residui e prossima azione della stessa Execution; nessun DONE globale. |
 | ASUS-W7POS-018 | DONE_SOFTWARE — OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA | Post-PR111 latency, queue, memory and qualification validator | Qualified source aea65314b9de; final PR 272d5f1dd18b; normal merge c3af7f2177c4 | [Final software closeout and historical evidence](reports/2026-09-26_POST_PR111_ROOT_CAUSE_OPTIMIZATION.md): audit PASS, 1,033 Core/Data tests, nine WPF scenarios and hosted run 36510437821 reused (738.848s/660 scans; 3601.349s/3220 scans, both M/E/S=true). Qualified src/tests/scripts/.github trees remain identical. Exact PR CI 36908943636 / Security 36908943627 and merge CI 36911424442 / Security 36911424816 PASS. Exact-merge Release Pack 36911424362 canonically verified: manifest, three archive digests, 41-file payload/ZIP/dist, Setup and provenance; Release x86/net48, development-unsigned, installation NOT_EXECUTED. Owner decision recorded 2026-10-01: ASUS-THIRD-SCAN OWNER_ACCEPTED_DEFERRED_EXTERNAL_QA, root cause unproven; Asus physical Integrated/Final NOT_EXECUTED / OWNER_DEFERRED. Windows 7 SP1, Xprinter/spooler, barcode scanner, installer lifecycle and staging/image recovery separately deferred. Software blockers=0 in the approved scope; productionCertified=false. No product change, signing purchase, license change, SAC bypass or budget relaxation; 55 unrelated worktrees and image checkpoint preserved. |
 | ASUS-W7POS-017 | Software fixes validated; GitHub delivery attested externally; external qualification remains separate | Post-PR109 staging prerequisites, renderer/soak and installer qualification | Starts at `be370ba3`; PR110/111 and external final attestation | [Post-PR109 report](reports/2026-09-25_POST_PR109_RESIDUAL_CLOSEOUT.md): 60-minute measurement PASS, stability qualification FAIL; staging/installer hardware/policy runs NOT_EXECUTED with one owner card. ASUS-W7POS-016 remains closed. |
 | ASUS-W7POS-016 | Software implementation and local validation complete; delivery attested by exact-SHA CI/package | Functional correctness, durable held carts, scan performance and runtime completion | Delivery PR and release manifest identify the exact commit | [2026-09-25 functional/performance report](reports/2026-09-25_FUNCTIONAL_PERFORMANCE_COMPLETION.md); F01–F11 regressions, 1,033 Core/Data tests, isolated WPF/visual matrix and reproducible 20k/100k measurements. Physical qualification remains separate. |
@@ -104,6 +122,15 @@ geometria in qualifica,100/125 e installato/riapertura finale ancora aperti.
 | ASUS-W7POS-013 | Done | Non-blocking catalog display-text recovery, authoritative exactness and final article-sync acceptance | Final software main `2eeb58b`; closeout docs PR | `docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`; final staging PASS, `USER_CONFIRMED_CLOSURE`, P0/P1/P2/P3=0/0/0/0, cleanup `READY_FOR_MAC_FINAL_CLEANUP`. |
 | ASUS-W7POS-014 | Closed historical | Catalog SQLite batch apply and controlled performance evidence | `bb4178b` | `docs/reports/2026-07-14_ASUS-W7POS-014_CATALOG_BATCH_PERFORMANCE.md`; staging portion historically `BLOCKED_EXTERNAL`. |
 | ASUS-W7POS-015 | Done — owner-accepted external defer | Trusted POS product image Phase B and staging acceptance | Final closeout main; exact SHA in Admin TASK-150 final evidence | Repository integration and software gates complete; fresh staging acceptance is recorded canonically by Admin `TASK-150`; all exact-final Windows 7/peripheral rows are terminal `DONE_OWNER_ACCEPTED_DEFERRED`, so production remains not qualified. |
+
+<details>
+<summary>Riga indice ASUS019 precedente, conservata come storia</summary>
+
+| Task ID | Status | Title | Commit | Evidence |
+| --- | --- | --- | --- | --- |
+| ASUS-W7POS-019 | ACTIVE; software REVIEW, corrected package delivered | Getnet history and real onboarding residuals | a8286c6 qualified/installed41/41; four exact-SHA workflows SUCCESS; Admin148/9016054, Workera68ebec2 | [Current E2E evidence](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md): downloaded smoke8/52 in49.678s, canonical15/functional20/foundation5-37/load11 PASS. New daily shortcut/profile/login/empty/workbench/import and ledger preservation PASS. UI7/legacy4 committed, original receipt/report/detail/CSV before update PASS; LIVE_REOPEN_PENDING on successor. Native100/125 whole form observed, restore200 pending; keyboard coverage limited. First UI/CI/local Recovery/path/ownership/GitHub/UAC failures retained. A/B VERIFIED, C modern MISSING, CSV_INPUT BLOCKED_INPUT; Win7 unavailable, changed-source kit prepared,182 unchanged. No undo of valid import or DONE. |
+
+</details>
 
 ## External Hardware — terminal owner decision
 
