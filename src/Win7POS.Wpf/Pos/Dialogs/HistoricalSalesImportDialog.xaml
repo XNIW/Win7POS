@@ -8,39 +8,20 @@
  <Grid Margin="20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <TextBlock Text="{loc:Loc history.title}" Style="{StaticResource DialogTitleStyle}"/>
-  <TabControl Grid.Row="1" Margin="0,12,0,8">
+  <TabControl Grid.Row="1" Margin="0,12,0,8" SelectedIndex="{Binding SelectedTabIndex}">
    <TabItem Header="{loc:Loc history.importTab}">
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
      <StackPanel Margin="12">
-      <TextBlock Text="{loc:Loc history.localWriterClosed}" TextWrapping="Wrap" Margin="0,0,0,8"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding LocalHistoryWriterClosed}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+      <TextBlock Text="{Binding ImportStepText}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock Text="{Binding HistoryWriteNotice}" TextWrapping="Wrap" Margin="0,0,0,8"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding LocalHistoryWriterClosed}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
       <TextBlock Text="{loc:Loc history.instructions}" TextWrapping="Wrap" Margin="0,0,0,8"/>
       <StackPanel Orientation="Horizontal"><Button Content="{loc:Loc history.select}" Command="{Binding SelectCommand}" MinHeight="36"/><TextBlock Text="{Binding SelectedFiles}" Margin="12,0" VerticalAlignment="Center"/></StackPanel>
-      <StackPanel IsEnabled="{Binding CanEdit}" Margin="0,8,0,0">
-       <CheckBox Content="{loc:Loc history.legacyClp}" IsChecked="{Binding LegacyClpConfirmed}" Margin="0,4"/>
-       <Label Content="{loc:Loc history.timePolicy}" Target="{Binding ElementName=TimePolicy}"/>
-       <ComboBox x:Name="TimePolicy" ItemsSource="{Binding TimeChoices}" SelectedIndex="{Binding TimeChoice}" AutomationProperties.Name="{loc:Loc history.timePolicy}"/>
-       <Label Content="{loc:Loc history.timeEvidence}" Target="{Binding ElementName=TimeEvidence}"/>
-       <TextBox x:Name="TimeEvidence" Text="{Binding TemporalEvidence,UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{loc:Loc history.timeEvidence}"/>
-      </StackPanel>
       <Button Content="{loc:Loc history.analyze}" Command="{Binding AnalyzeCommand}" HorizontalAlignment="Left" Margin="0,8" MinHeight="36"/>
       <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,4,0,8" AutomationProperties.LiveSetting="Polite"/>
-      <TextBlock Text="{Binding CoverageDetails}" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.Name="{loc:Loc history.coverageTitle}"/>
-      <StackPanel IsEnabled="{Binding CanEdit}">
-       <TextBlock Text="{loc:Loc history.mappingInstructions}" TextWrapping="Wrap"/>
-       <Button Content="{loc:Loc history.addGroup}" Command="{Binding AddGroupCommand}" HorizontalAlignment="Left" Margin="0,4"/>
-       <ItemsControl ItemsSource="{Binding Merchants}">
-        <ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="220"/></Grid.ColumnDefinitions>
-         <TextBlock Text="{Binding MerchantLabel}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-         <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.Groups,RelativeSource={RelativeSource AncestorType=ItemsControl}}" SelectedItem="{Binding Group,UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{loc:Loc history.groupLabel}"/>
-        </Grid></DataTemplate></ItemsControl.ItemTemplate>
-       </ItemsControl>
-       <Label Content="{loc:Loc history.merchantEvidence}" Target="{Binding ElementName=MerchantEvidence}"/>
-       <TextBox x:Name="MerchantEvidence" Text="{Binding MerchantEvidence,UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{loc:Loc history.merchantEvidence}"/>
-       <Label Content="{loc:Loc history.nativeStart}" Target="{Binding ElementName=NativeStart}"/>
-       <DatePicker x:Name="NativeStart" SelectedDate="{Binding NativeStart}" AutomationProperties.Name="{loc:Loc history.nativeStart}"/>
-       <Label Content="{loc:Loc history.overlapEvidence}" Target="{Binding ElementName=OverlapEvidence}"/>
-       <TextBox x:Name="OverlapEvidence" Text="{Binding OverlapEvidence,UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{loc:Loc history.overlapEvidence}"/>
-      </StackPanel>
+      <TextBlock Text="{Binding RequirementsText}" TextWrapping="Wrap" Margin="0,4,0,12" AutomationProperties.Name="{loc:Loc history.requirementsLabel}" AutomationProperties.LiveSetting="Polite"/>
+      <Expander Header="{loc:Loc history.coverageTitle}" IsExpanded="False" Margin="0,0,0,8">
+       <TextBlock Text="{Binding CoverageDetails}" TextWrapping="Wrap" AutomationProperties.Name="{loc:Loc history.coverageTitle}"/>
+      </Expander>
       <StackPanel Orientation="Horizontal" Margin="0,10"><Button Content="{loc:Loc history.preview}" Command="{Binding PreviewCommand}" MinHeight="36"/><TextBlock Text="{Binding Shop}" Margin="12,0" VerticalAlignment="Center"/></StackPanel>
       <TextBox Text="{Binding CorrectionSummary,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="240" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="{loc:Loc history.correctionCountLabel}"/>
       <StackPanel IsEnabled="{Binding CanApproveCorrections}" Margin="0,8">
@@ -65,8 +46,7 @@
      <StackPanel Margin="12">
       <TextBlock Text="{Binding PublicationStatus}" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
       <TextBlock Text="{Binding ReceptionStatus}" TextWrapping="Wrap" Margin="0,0,0,16" AutomationProperties.LiveSetting="Polite"/>
-      <TextBlock Text="{loc:Loc history.cloudInstructions}" TextWrapping="Wrap" Margin="0,0,0,16"/>
-      <Button Content="{loc:Loc history.cloudPrepare}" Command="{Binding PrepareCloudCommand}" MinHeight="42" HorizontalAlignment="Left" AutomationProperties.Name="{loc:Loc history.cloudPrepare}"/>
+      <TextBlock Text="{loc:Loc history.technicalConsole}" TextWrapping="Wrap" Margin="0,0,0,16"/>
       <TextBlock Text="{loc:Loc history.cloudSyncInstructions}" TextWrapping="Wrap" Margin="0,20,0,12"/>
       <Button Content="{loc:Loc history.cloudSync}" Command="{Binding SyncCloudCommand}" MinHeight="42" HorizontalAlignment="Left" AutomationProperties.Name="{loc:Loc history.cloudSync}"/>
      </StackPanel>
@@ -76,7 +56,7 @@
   <ScrollViewer Grid.Row="2" MaxHeight="160" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4" AutomationProperties.LiveSetting="Assertive"/></ScrollViewer>
   <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
    <Button Content="{loc:Loc history.cancelWork}" Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
-   <Button Content="{loc:Loc history.apply}" Command="{Binding ApplyCommand}" Style="{StaticResource DialogActionButtonStyle}" Margin="8,0"/>
+   <Button Content="{loc:Loc history.apply}" Command="{Binding ApplyCommand}" Style="{StaticResource DialogActionButtonStyle}" Visibility="{Binding ImportConfirmationVisibility}" Margin="8,0"/>
    <Button Content="{loc:Loc common.close}" IsCancel="True" IsEnabled="{Binding CanEdit}" Click="Close_Click" Style="{StaticResource DialogCancelButtonStyle}"/>
   </StackPanel>
  </Grid>

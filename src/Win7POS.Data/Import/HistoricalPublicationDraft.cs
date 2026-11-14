@@ -53,6 +53,7 @@ namespace Win7POS.Data.Import
         public string DatasetId{get;} public long RestoreEpoch{get;} public long BaseRevision{get;}
         public string RestoreLineageId{get;}
         public string RequestFingerprint{get;} public string ContentDigest{get;} public int PageCount{get;}
+        public HistoricalQualifiedInputSelection Qualification{get;private set;}
         internal HistoricalPublicationDraft(string operation,string kind,string shop,string device,string dataset,long restore,long revision,string fingerprint,string lineage,
             string expectedRoot,int expectedPages,IEnumerable<Page> persisted,CancellationToken ct)
         {
@@ -72,6 +73,7 @@ namespace Win7POS.Data.Import
                 }
                 writer.Flush();_spool.Flush(true);hash.TransformFinalBlock(Array.Empty<byte>(),0,0);ContentDigest=Hex(hash.Hash);PageCount=count;
                 if(count!=expectedPages||count<1||ContentDigest!=expectedRoot)throw new InvalidOperationException("history_preparation_content_changed");
+                Qualification=ReadQualification(ReadPage(1,ct).Json);
             }
             catch{_spool.Dispose();throw;}
         }
@@ -145,7 +147,7 @@ namespace Win7POS.Data.Import
                 owner.DemandMatches(p,lineage,approval.PreviousTransactionId);owners[approval.PreviousTransactionId]=owner;
             }
             if(correctionOwners!=null&&correctionOwners.Count!=owners.Count)throw new InvalidOperationException("history_publication_correction_owner_invalid");
-            return new HistoricalPublicationDraft(p.OperationId,"Apply",p.ShopId,device,p.DatasetId,p.RestoreEpoch,p.DataRevision,p.RequestFingerprint,lineage,()=>ApplyRecords(p,device,lineage,owners),ct);
+            return new HistoricalPublicationDraft(p.OperationId,"Apply",p.ShopId,device,p.DatasetId,p.RestoreEpoch,p.DataRevision,p.RequestFingerprint,lineage,()=>ApplyRecords(p,device,lineage,owners),ct){Qualification=p.Qualification};
         }
         internal static void DemandReceiptCapacity(HistoricalSalesImportPlan p)
         {
@@ -171,14 +173,22 @@ namespace Win7POS.Data.Import
             =>Row("operation","protocol_version","2","operation_id",operation,"operation_kind",kind,"shop_id",shop,"device_id",device,"local_dataset_id",dataset,"restore_epoch",S(restore),"restore_lineage_id",lineage,"base_revision",S(revision),"request_fingerprint",fingerprint);
         private static IEnumerable<Record> ApplyRecords(HistoricalSalesImportPlan p,string device,string lineage,IReadOnlyDictionary<long,HistoricalPublicationCorrectionReference> owners)
         {
-            yield return Header(p.OperationId,"Apply",p.ShopId,device,p.DatasetId,p.RestoreEpoch,p.DataRevision,p.RequestFingerprint,lineage);
+            var header=Header(p.OperationId,"Apply",p.ShopId,device,p.DatasetId,p.RestoreEpoch,p.DataRevision,p.RequestFingerprint,lineage);
+            if(p.Qualification!=null)
+            {
+                header.Fields.Add("qualification_config_digest",p.Qualification.ConfigDigest);
+                header.Fields.Add("qualification_resolver_fingerprint",p.Qualification.ResolverFingerprint);
+                header.Fields.Add("qualification_evidence_ids",p.Qualification.EvidenceIdsJson);
+            }
+            yield return header;
             yield return Row("overlap","native_start_ticks",S(p.NativeStartBusinessDateTime.Ticks),"evidence_reference",p.OverlapEvidenceReference);
             foreach(var f in p.Analysis.Files.OrderBy(f=>f.FileId,StringComparer.Ordinal))
                 yield return Row("file","id",f.FileId,"sha256",f.Sha256,"profile",f.Profile.ToString(),"source_rows",S(f.SourceRows));
             foreach(var a in p.Assignments.OrderBy(a=>a.AliasKey,StringComparer.Ordinal))
                 yield return Row("binding","alias_key",a.AliasKey,"local_scope_id",a.ScopeId,"local_binding_id",a.BindingId,"evidence_reference",a.EvidenceReference);
             foreach(var r in p.Analysis.AcceptedTransactions)
-                yield return Row("movement","source_file_id",r.Source.FileId,"source_sheet",r.Source.SheetName,"source_row",S(r.Source.RowNumber),
+            {
+                var movement=Row("movement","source_file_id",r.Source.FileId,"source_sheet",r.Source.SheetName,"source_row",S(r.Source.RowNumber),
                     "external_namespace",r.ExternalNamespace,"external_id",r.ExternalId,"business_ticks",S(r.BusinessDateTime.Value.Ticks),
                     "profile",r.Profile.ToString(),"alias_key",HistoricalMerchantAssignment.MerchantKey(r.Merchant),
                     "merchant_local",r.Merchant.Local,"merchant_seller",r.Merchant.Seller,"merchant_seller_id",r.Merchant.SellerId,"merchant_local_number",r.Merchant.LocalNumber,"merchant_rut",r.Merchant.Rut,
@@ -189,6 +199,9 @@ namespace Win7POS.Data.Import
                     "time_policy_version",r.Timestamp.PolicyVersion,"time_evidence_reference",r.Timestamp.EvidenceReference,
                     "card_subtype",r.CardSubtype.ToString(),"payment_id",r.PaymentId,"authorization_code",r.AuthorizationCode,
                     "original_card_type",r.OriginalCardType,"original_prepaid",r.OriginalPrepaid,"terminal",r.Terminal,"settlement_date_raw",r.RawSettlementDate);
+                if(p.Qualification!=null)movement.Fields.Add("parser_version",r.ParserVersion);
+                yield return movement;
+            }
             foreach(var r in p.Analysis.RejectedRows)
                 yield return Row("rejected","source_file_id",r.Source.FileId,"source_sheet",r.Source.SheetName,"source_row",S(r.Source.RowNumber),"transaction_state",r.TransactionStatus,"requested_clp",S(r.RequestedClp));
             foreach(var a in p.CorrectionApprovals.OrderBy(a=>a.SourceFileId,StringComparer.Ordinal).ThenBy(a=>a.SourceSheet,StringComparer.Ordinal).ThenBy(a=>a.SourceRow))
@@ -203,6 +216,22 @@ namespace Win7POS.Data.Import
             var fields=new Dictionary<string,string>(StringComparer.Ordinal);
             for(var i=0;i<values.Length;i+=2)fields.Add(values[i],values[i+1]);
             return new Record{Kind=kind,Fields=fields};
+        }
+        private static HistoricalQualifiedInputSelection ReadQualification(string firstPage)
+        {
+            using var stream=new MemoryStream(Encoding.UTF8.GetBytes(firstPage));
+            var rows=(Record[])new DataContractJsonSerializer(typeof(Record[]),new DataContractJsonSerializerSettings{UseSimpleDictionaryFormat=true}).ReadObject(stream);
+            var header=rows?.FirstOrDefault();
+            if(header?.Kind!="operation"||header.Fields==null)throw new InvalidOperationException("history_preparation_content_changed");
+            var fields=header.Fields;var names=new[]{"qualification_config_digest","qualification_resolver_fingerprint","qualification_evidence_ids"};
+            var count=names.Count(fields.ContainsKey);if(count==0)return null;
+            if(count!=3||!fields.TryGetValue("operation_kind",out var kind)||kind!="Apply"||fields[names[2]]==null||fields[names[2]].Length>8192)
+                throw new InvalidOperationException("history_preparation_content_changed");
+            using var idsStream=new MemoryStream(Encoding.UTF8.GetBytes(fields[names[2]]));
+            var ids=(string[])new DataContractJsonSerializer(typeof(string[])).ReadObject(idsStream);
+            var selection=new HistoricalQualifiedInputSelection(fields[names[0]],fields[names[1]],ids);
+            if(selection.EvidenceIdsJson!=fields[names[2]])throw new InvalidOperationException("history_preparation_content_changed");
+            return selection;
         }
         private static string S(long? value)=>value?.ToString(CultureInfo.InvariantCulture);
         internal static string NormalizeLineage(string value)

@@ -18,7 +18,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
     // a desktop/window screenshot and never accepts arbitrary text or paths.
     internal sealed class SyntheticQaVisualWriter
     {
-        internal const string SummaryOracle = "Rows 1; sales 1; cancellations 0; rejected 0. Signed gross 1000 CLP; known net 1000 CLP (1/1 movements). Coverage 2000-01-02 08:00:00 → 2000-01-02 08:00:00.";
+        internal const string SummaryOracle = "Source rows 1; sales 1; cancellations 0; provider-declined payments 0, excluded from income. Signed gross 1000 CLP; known settlement net 1000 CLP (1/1 movements). Observed interval — → —.";
         private readonly string _dataRoot, _output;
         private readonly Envelope _envelope;
         internal SyntheticQaVisualWriter(HistoricalSalesQaContext context, string dataRoot, string output)
@@ -28,7 +28,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HarnessSha256 = context.HarnessSha256, FixtureSha256 = context.FixtureSha256, Captures = new[] {
                     New("hourly_mixed", "HIST07_REPORTS_EXPORT", "hourly_mixed_realized", "no_text"),
                     New("hourly_negative", "HIST07_REPORTS_EXPORT", "hourly_negative_realized", "no_text"),
-                    New("import_summary", "HIST08_UI_LIFECYCLE", "import_summary_analyzed", "one_row_1000_v1") } };
+                    New("import_summary", "HIST08_UI_LIFECYCLE", "import_summary_analyzed", "one_row_1000_unresolved_v2") } };
             Flush();
         }
         private static CaptureRecord New(string id, string scenario, string point, string textRegistry) => new CaptureRecord {
@@ -41,7 +41,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 var fixtureRoot = Path.GetFullPath(fixture.Root);
                 if (!fixtureRoot.StartsWith(_dataRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                    fixture.ShopId != "qa-auth-shop" || fixture.ShopCode != "QA-AUTH" || fixture.Owner.FixtureToken == null ||
+                    fixture.ShopId != HistoricalSalesFoundationRunner.Fixture.SyntheticShopId || fixture.ShopCode != "QA-AUTH" || fixture.Owner.FixtureToken == null ||
                     !string.Equals(fixture.Factory.DbPath, fixture.Owner.DbPath, StringComparison.OrdinalIgnoreCase) ||
                     File.ReadAllText(fixture.Owner.DbPath + ".synthetic-owner") != fixture.Owner.FixtureToken)
                     throw new InvalidOperationException("qa_visual_fixture_invalid");

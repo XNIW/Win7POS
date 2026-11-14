@@ -59,9 +59,6 @@
         <!-- Filtri rapidi (pill) -->
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
             <WrapPanel Margin="0,0,0,6">
-                <TextBlock Text="{loc:Loc historyReport.origin}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <ComboBox ItemsSource="{Binding ReportOriginLabels}" SelectedIndex="{Binding ReportOriginIndex}" MinWidth="190" Margin="0,0,8,0"/>
-                <Button Content="{loc:Loc reportTimePolicy.configure}" Command="{Binding ConfigureReportTimePolicyCommand}" Style="{StaticResource OutlineButtonStyle}" MinHeight="30" Margin="0,0,8,0"/>
                 <Button Content="{loc:Loc common.cancel}" Command="{Binding CancelReportCommand}" Style="{StaticResource OutlineButtonStyle}" MinHeight="30"/>
                 <TextBlock Text="{loc:Loc historyReport.cardCoverage}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="12,0,0,0" MaxWidth="480" FontSize="10" Foreground="#666"/>
             </WrapPanel>
@@ -117,14 +114,14 @@
             </Grid.ColumnDefinitions>
             <Border Grid.Column="0" Background="#E3F2FD" BorderBrush="#90A4C0" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,4,0" MinHeight="48">
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{loc:Loc common.net}" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{loc:Loc historyReport.movementBalance}" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
                     <TextBlock Text="{Binding NetAmountDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#1565C0"/>
                 </StackPanel>
             </Border>
             <Border Grid.Column="1" Background="#F3E5F5" BorderBrush="#9B7BAD" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0" MinHeight="48">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
-                    <TextBlock Text="{Binding SalesCountDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#7B1FA2"/>
+                    <TextBlock Text="{Binding NativeReceiptCountText, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#7B1FA2"/>
                 </StackPanel>
             </Border>
             <Border Grid.Column="2" Background="#E8F5E9" BorderBrush="#81B082" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0" MinHeight="48">
@@ -207,7 +204,7 @@
                                         <TextBlock Text="{loc:Loc common.card}" FontSize="11" Margin="0,4,0,0"/>
                                         <TextBlock Text="{loc:Loc common.gross}" FontSize="11" Margin="0,4,0,0"/>
                                         <TextBlock Text="{loc:Loc common.returns}" FontSize="11" Margin="0,4,0,0"/>
-                                        <TextBlock Text="{loc:Loc common.net}" FontSize="11" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                                        <TextBlock Text="{loc:Loc historyReport.movementBalance}" FontSize="11" FontWeight="SemiBold" Margin="0,6,0,0"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" HorizontalAlignment="Right">
                                         <TextBlock Text="{Binding CashAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,2,0,0"/>
@@ -335,15 +332,19 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Toolbar: Da, A, pulsanti + messaggio intervallo invalido + a destra "N giorni caricati · M selezionati" -->
+                    <!-- Controls wrap within the available width; coverage is on its own row. -->
                     <StackPanel Grid.Row="0" Margin="0,0,0,8">
                         <Border Background="#F7F7F7" BorderBrush="#E3E3E3" BorderThickness="1" CornerRadius="8" Padding="10">
-                            <DockPanel LastChildFill="False">
-                                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                            <StackPanel>
+                                <WrapPanel VerticalAlignment="Center" ItemHeight="44">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="{loc:Loc common.from}" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
                                     <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="112" HorizontalContentAlignment="Center" Margin="0,0,12,0" Style="{StaticResource ModernTextBoxStyle}"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="{loc:Loc common.to}" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
                                     <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="112" HorizontalContentAlignment="Center" Margin="0,0,16,0" Style="{StaticResource ModernTextBoxStyle}"/>
+                                    </StackPanel>
                                     <Button MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" ToolTip="{loc:Loc reports.loadHistoryTooltip}">
                                         <StackPanel Style="{StaticResource IconButtonContent}">
                                             <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
@@ -369,9 +370,9 @@
                                             <TextBlock Text="{loc:Loc common.clearSelection}" Margin="8,0,0,0"/>
                                         </StackPanel>
                                     </Button>
-                                </StackPanel>
-                                <TextBlock DockPanel.Dock="Right" Text="{Binding HistoryToolbarSummary, Mode=OneWay}" Foreground="#666" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                            </DockPanel>
+                                </WrapPanel>
+                                <TextBlock Text="{Binding HistoryToolbarSummary, Mode=OneWay}" TextWrapping="Wrap" Foreground="#666" FontSize="11" Margin="0,6,0,0"/>
+                            </StackPanel>
                         </Border>
                         <TextBlock Text="{loc:Loc reports.invalidRange}" FontSize="11" Foreground="#C62828" Margin="12,4,0,0"
                                    Visibility="{Binding HasInvalidHistoryRange, Converter={StaticResource BoolToVis}}"/>
@@ -393,7 +394,7 @@
                                 <TextBlock Text="{Binding HistoryToolbarSummary, Mode=OneWay}" FontSize="11" Foreground="#666"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                                <TextBlock Text="{loc:Loc common.net}" FontSize="10" Foreground="#666"/>
+                                <TextBlock Text="{loc:Loc historyReport.movementBalance}" FontSize="10" Foreground="#666"/>
                                 <TextBlock Text="{Binding PeriodNetDisplay, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2" Margin="8,0,0,0">
@@ -402,7 +403,7 @@
                             </StackPanel>
                             <StackPanel Grid.Column="3" Margin="8,0,0,0">
                                 <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="10" Foreground="#666"/>
-                                <TextBlock Text="{Binding PeriodSalesCount, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding PeriodNativeReceiptCountText, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"/>
                             </StackPanel>
                             <StackPanel Grid.Column="4" Margin="8,0,0,0">
                                 <TextBlock Text="{loc:Loc common.cash}" FontSize="10" Foreground="#666"/>
@@ -444,7 +445,8 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="{loc:Loc reports.dateIso}" Binding="{Binding DateText}" Width="90" IsReadOnly="True">
+                                    <DataGridTextColumn Binding="{Binding DateText}" Width="90" IsReadOnly="True">
+                                        <DataGridTextColumn.Header><TextBlock Text="{loc:Loc reports.dateIso}" TextWrapping="Wrap" Width="74"/></DataGridTextColumn.Header>
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="HorizontalAlignment" Value="Left"/>
@@ -452,7 +454,8 @@
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="{loc:Loc historyReport.originNative}" Binding="{Binding SalesCount}" Width="70">
+                                    <DataGridTextColumn Binding="{Binding NativeReceiptCountText}" Width="70">
+                                        <DataGridTextColumn.Header><TextBlock Text="{loc:Loc historyReport.originNative}" TextWrapping="Wrap" Width="54"/></DataGridTextColumn.Header>
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -461,7 +464,8 @@
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="{loc:Loc common.gross}" Binding="{Binding GrossDisplay}" Width="85">
+                                    <DataGridTextColumn Binding="{Binding GrossDisplay}" Width="85">
+                                        <DataGridTextColumn.Header><TextBlock Text="{loc:Loc common.gross}" TextWrapping="Wrap" Width="69"/></DataGridTextColumn.Header>
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -470,7 +474,8 @@
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="{loc:Loc common.returns}" Binding="{Binding RefundsDisplay}" Width="75">
+                                    <DataGridTextColumn Binding="{Binding RefundsDisplay}" Width="75">
+                                        <DataGridTextColumn.Header><TextBlock Text="{loc:Loc common.returns}" TextWrapping="Wrap" Width="59"/></DataGridTextColumn.Header>
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -479,7 +484,8 @@
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="{loc:Loc common.net}" Binding="{Binding NetDisplay}" Width="85">
+                                    <DataGridTextColumn Binding="{Binding NetDisplay}" Width="85">
+                                        <DataGridTextColumn.Header><TextBlock Text="{loc:Loc historyReport.movementBalance}" TextWrapping="Wrap" Width="69"/></DataGridTextColumn.Header>
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -488,7 +494,8 @@
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="{loc:Loc common.cash}" Binding="{Binding CashDisplay}" Width="80">
+                                    <DataGridTextColumn Binding="{Binding CashDisplay}" Width="80">
+                                        <DataGridTextColumn.Header><TextBlock Text="{loc:Loc common.cash}" TextWrapping="Wrap" Width="64"/></DataGridTextColumn.Header>
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -497,7 +504,8 @@
                                             </Style>
                                         </DataGridTextColumn.ElementStyle>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Header="{loc:Loc common.card}" Binding="{Binding CardDisplay}" Width="80">
+                                    <DataGridTextColumn Binding="{Binding CardDisplay}" Width="80">
+                                        <DataGridTextColumn.Header><TextBlock Text="{loc:Loc common.card}" TextWrapping="Wrap" Width="64"/></DataGridTextColumn.Header>
                                         <DataGridTextColumn.ElementStyle>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -545,7 +553,7 @@
                                 </DataGrid.ColumnHeaderStyle>
                             </DataGrid>
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding ShowHistoryEmptyMessage, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="{loc:Loc reports.noMovements}" HorizontalAlignment="Center" Foreground="#888" FontSize="13"/>
+                                <TextBlock Text="{loc:Loc historyReport.noRecordedData}" HorizontalAlignment="Center" Foreground="#888" FontSize="13"/>
                                 <TextBlock Text="{loc:Loc reports.setPeriodAndLoad}" HorizontalAlignment="Center" Foreground="#AAA" FontSize="11" Margin="0,6,0,0"/>
                             </StackPanel>
                         </Grid>
@@ -579,7 +587,7 @@
                                     </Border>
                                 </StackPanel>
                                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
-                                    <StackPanel>
+                                    <StackPanel Margin="0,0,18,0">
                                         <Grid Visibility="{Binding ShowMultiDaySummary, Converter={StaticResource BoolToVis}}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -589,13 +597,13 @@
                                                 <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="11" Foreground="#666"/>
                                                 <TextBlock Text="{loc:Loc common.gross}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.returns}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
-                                                <TextBlock Text="{loc:Loc common.net}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{loc:Loc historyReport.movementBalance}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.cash}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.card}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc historyReport.nativeAverage}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                                <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding MarkedNativeReceiptCountText, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
                                                 <TextBlock Text="{Binding MarkedGrossDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{Binding MarkedRefundsDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{Binding MarkedNetDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
@@ -613,13 +621,13 @@
                                                 <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="11" Foreground="#666"/>
                                                 <TextBlock Text="{loc:Loc common.gross}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.returns}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
-                                                <TextBlock Text="{loc:Loc common.net}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{loc:Loc historyReport.movementBalance}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.cash}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.card}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc historyReport.nativeAverage}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                                <TextBlock Text="{Binding SalesCountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding NativeReceiptCountText, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
                                                 <TextBlock Text="{Binding GrossSalesAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{Binding RefundsAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{Binding NetAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
@@ -637,13 +645,13 @@
                                                 <TextBlock Text="{loc:Loc historyReport.originNative}" FontSize="11" Foreground="#666"/>
                                                 <TextBlock Text="{loc:Loc common.gross}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.returns}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
-                                                <TextBlock Text="{loc:Loc common.net}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{loc:Loc historyReport.movementBalance}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.cash}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc common.card}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{loc:Loc historyReport.nativeAverage}" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                                <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding MarkedNativeReceiptCountText, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
                                                 <TextBlock Text="{Binding MarkedGrossDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{Binding MarkedRefundsDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{Binding MarkedNetDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>

@@ -13,27 +13,25 @@ namespace Win7POS.Wpf.Pos
 {
     public sealed partial class PosWorkflowService
     {
-        private Func<HistoricalCloudActor,string,HistoricalCloudPayload,CancellationToken,Task<HistoricalCloudResult>> _historyCloudRequestForTesting;
-        internal void SetHistoricalCloudRequestForTesting(Func<HistoricalCloudActor,string,HistoricalCloudPayload,CancellationToken,Task<HistoricalCloudResult>> request)
+        private Func<HistoricalCloudActor,string,HistoricalCloudPayload,CancellationToken,Task<PosOnlineResult<HistoricalCloudResponse>>> _historyCloudRequestForTesting;
+        internal void SetHistoricalCloudRequestForTesting(Func<HistoricalCloudActor,string,HistoricalCloudPayload,CancellationToken,Task<PosOnlineResult<HistoricalCloudResponse>>> request)
             =>_historyCloudRequestForTesting=request;
         private async Task<HistoricalCloudResult> RequestHistoricalCloudAsync(HistoricalCloudActor actor,string operation,HistoricalCloudPayload payload,CancellationToken ct)
         {
-            actor.DemandCurrent();HistoricalCloudResult value;
-            if(_historyCloudRequestForTesting!=null)value=await _historyCloudRequestForTesting(actor,operation,payload,ct).ConfigureAwait(false);
+            actor.DemandCurrent();var trusted=actor.Trusted;PosOnlineResult<HistoricalCloudResponse> response;
+            if(_historyCloudRequestForTesting!=null)response=await _historyCloudRequestForTesting(actor,operation,payload,ct).ConfigureAwait(false);
             else
             {
                 if(!PosAdminWebOptions.TryLoad(out var options,out _))throw new InvalidOperationException("history_cloud_connection_required");
-                using var client=new PosAdminWebClient(options);var trusted=actor.Trusted;
+                using var client=new PosAdminWebClient(options);
                 if(!Online.PosOnlineSyncSupervisorHost.TryCreateGeneration(trusted,out var generation))throw new OnlineSyncGenerationChangedException();
-                var response=await Online.PosOnlineSyncSignalBus.ExecuteCredentialedRequestAsync(generation,OnlineSyncLane.HistoricalPayments,
+                response=await Online.PosOnlineSyncSignalBus.ExecuteCredentialedRequestAsync(generation,OnlineSyncLane.HistoricalPayments,
                     (credentials,token)=>client.HistoricalCloudAsync(new HistoricalCloudRequest{DeviceId=credentials.ShopDeviceId,SessionId=credentials.PosSessionId,
                         DeviceToken=credentials.DeviceToken,SessionToken=credentials.SessionToken,Operation=operation,Payload=payload??new HistoricalCloudPayload()},token),
                     result=>result!=null&&SharedAuthStopPolicy.IsAuthenticationDenied(result.Code)?result.Code:string.Empty,ct).ConfigureAwait(false);
-                if(!response.Success&&response.Code=="history_resnapshot_required")throw new HistoricalCloudResnapshotRequiredException();
-                if(!response.Success||response.Value?.Ok!=true||response.Value.ShopId!=trusted.ShopId||response.Value.DeviceId!=trusted.ShopDeviceId||response.Value.SessionId!=trusted.PosSessionId||response.Value.Result==null)throw new InvalidOperationException("history_cloud_request_rejected");
-                value=response.Value.Result;
             }
-            actor.DemandCurrent();ct.ThrowIfCancellationRequested();return value??throw new InvalidOperationException("history_cloud_response_invalid");
+            var value=HistoricalCloudResponseMapper.RequireResult(response,trusted.ShopId,trusted.ShopDeviceId,trusted.PosSessionId);
+            actor.DemandCurrent();ct.ThrowIfCancellationRequested();return value;
         }
         private async Task<HistoricalLocalWriteGrant> AcquireHistoricalLocalWriteAsync(OperatorSession session,string shop,string operation,HistoricalImportOperationKind kind,HistoricalPublicationDraft draft,CancellationToken ct)
         {

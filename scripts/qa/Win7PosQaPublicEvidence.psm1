@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 
 function Get-QaPublicCatalog {
-    $functional=@('FUNCTIONAL_VISUAL','OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
+    $functional=@('FUNCTIONAL_VISUAL','OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','HISTORY_IMPORT_GUIDED_UX','HISTORY_WEB_IMPORT_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
     $steps=@('preflight','restore','restore-cli','gates','build','build-cli','core','selftest','build-wpf','build-harness','product-image-profile','functional-completion','authorization-lease','bounded-logging','product-paging-dispatcher','historical-sales-import-crash','historical-sales-import-smoke','historical-sales-import-load','historical-sales-import-cloudsync','source-identity','report','cleanup','public-evidence','unknown')
     return @{ functional=$functional; steps=$steps; statuses=@('PASS','FAIL','TIMEOUT','NOT_RUN','BLOCKED_EXTERNAL'); codes=@('process_exit','process_timeout','cancelled','dependency_failed','mock_exit','qa_step_failed','qa_unclassified_failure','qa_report_write_failed','qa_public_bundle_failed','qa_public_collision','qa_sources_changed_during_run','qa_history_receipt_privacy_rejected','qa_history_receipt_missing','missing_or_invalid_test_evidence','qa_smoke_evidence_export_failed','qa_previous_process_cleanup_failed','qa_step_preparation_or_supervision_failed','owned_process_cleanup_failed','qa_source_identity_missing','qa_checkout_build_locked','qa_public_projection_incomplete','qa_safe_console_failed','none','assertion_failed','not_run','timed_out','unavailable') }
 }
@@ -141,13 +141,13 @@ function Get-QaTypedDiagnostics {
 }
 
 function Get-QaSyntheticVisualCatalog {
-    $summary='Rows 1; sales 1; cancellations 0; rejected 0. Signed gross 1000 CLP; known net 1000 CLP (1/1 movements). Coverage 2000-01-02 08:00:00 → 2000-01-02 08:00:00.'
+    $summary='Source rows 1; sales 1; cancellations 0; provider-declined payments 0, excluded from income. Signed gross 1000 CLP; known settlement net 1000 CLP (1/1 movements). Observed interval — → —.'
     $emptyHash=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([byte[]]::new(0))).ToLowerInvariant()
     $summaryHash=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($summary))).ToLowerInvariant()
     return @(
         @{id='hourly_mixed';scenarioId='HIST07_REPORTS_EXPORT';capturePoint='hourly_mixed_realized';textRegistryId='no_text';textSha256=$emptyHash},
         @{id='hourly_negative';scenarioId='HIST07_REPORTS_EXPORT';capturePoint='hourly_negative_realized';textRegistryId='no_text';textSha256=$emptyHash},
-        @{id='import_summary';scenarioId='HIST08_UI_LIFECYCLE';capturePoint='import_summary_analyzed';textRegistryId='one_row_1000_v1';textSha256=$summaryHash}
+        @{id='import_summary';scenarioId='HIST08_UI_LIFECYCLE';capturePoint='import_summary_analyzed';textRegistryId='one_row_1000_unresolved_v2';textSha256=$summaryHash}
     )
 }
 
@@ -164,7 +164,7 @@ function Read-QaSyntheticVisualEvidence {
         if($known.Count -ne 1 -or $capture.scenarioId -cne $known[0].scenarioId -or $capture.capturePoint -cne $known[0].capturePoint -or $capture.textRegistryId -cne $known[0].textRegistryId -or $capture.status -cnotin @('PASS','NOT_RUN') -or $capture.code -cnotin @('none','unavailable')){throw 'qa_public_visual_registry_invalid'}
         $safe=[ordered]@{id=$capture.id;scenarioId=$capture.scenarioId;capturePoint=$capture.capturePoint;textRegistryId=$capture.textRegistryId;status=$capture.status;code=$capture.code;diagnosticCompleteness=$(if($capture.status -ceq 'PASS'){'complete'}else{'partial'})}
         if($capture.status -ceq 'PASS'){
-            if($capture.code -cne 'none' -or $capture.nativeFixture -ne $true -or $capture.shopId -cne 'qa-auth-shop' -or $capture.fixtureToken -cnotmatch '^[a-f0-9]{32}$' -or $capture.textSha256 -cne $known[0].textSha256 -or $capture.relativePath -cne ('qa-visual-'+$capture.id+'.png') -or $capture.pngSha256 -cnotmatch '^[a-f0-9]{64}$' -or $capture.width -lt 8 -or $capture.width -gt 2048 -or $capture.height -lt 8 -or $capture.height -gt 1024){throw 'qa_public_visual_provenance_invalid'}
+            if($capture.code -cne 'none' -or $capture.nativeFixture -ne $true -or $capture.shopId -cne '10000000-0000-4000-8000-000000003019' -or $capture.fixtureToken -cnotmatch '^[a-f0-9]{32}$' -or $capture.textSha256 -cne $known[0].textSha256 -or $capture.relativePath -cne ('qa-visual-'+$capture.id+'.png') -or $capture.pngSha256 -cnotmatch '^[a-f0-9]{64}$' -or $capture.width -lt 8 -or $capture.width -gt 2048 -or $capture.height -lt 8 -or $capture.height -gt 1024){throw 'qa_public_visual_provenance_invalid'}
             $fixtureRoot=Assert-QaPublicPath $capture.fixtureRoot $OwnedDataRoot
             $marker=Assert-QaPublicPath (Join-Path $fixtureRoot 'pos.db.synthetic-owner') $OwnedDataRoot
             if(-not(Test-Path -LiteralPath (Join-Path $fixtureRoot 'pos.db') -PathType Leaf) -or (Get-Item -LiteralPath $marker).Length -ne 32 -or [IO.File]::ReadAllText($marker) -cne $capture.fixtureToken){throw 'qa_public_visual_fixture_invalid'}

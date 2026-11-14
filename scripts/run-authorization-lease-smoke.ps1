@@ -196,6 +196,8 @@ $restartDataDir = Join-Path $runRoot "restart-data"
 $restartDiagnosticsDir = Join-Path $runRoot "restart-diagnostics"
 $capacityDataDir = Join-Path $runRoot "capacity-data"
 $capacityDiagnosticsDir = Join-Path $runRoot "capacity-diagnostics"
+$persistentDataDir = Join-Path $runRoot "persistent-restart-data"
+$persistentDiagnosticsDir = Join-Path $runRoot "persistent-restart-diagnostics"
 
 try {
     $smoke = Invoke-AuthorizationHarness `
@@ -216,12 +218,69 @@ try {
         -Mode "--authorization-lease-restart-verify" `
         -ArtifactName "authorization-lease-restart-verify.txt" `
         -RequirePreparedData
+    $revokedVerify = Invoke-AuthorizationHarness `
+        -DataDirectory $restartDataDir `
+        -DiagnosticsDirectory $restartDiagnosticsDir `
+        -Mode "--authorization-lease-restart-denied-verify" `
+        -ArtifactName "authorization-lease-restart-denied-verify.txt" `
+        -RequirePreparedData
     $capacity = Invoke-AuthorizationHarness `
         -DataDirectory $capacityDataDir `
         -DiagnosticsDirectory $capacityDiagnosticsDir `
         -Mode "--authorization-lease-clock-capacity-smoke" `
         -ArtifactName "authorization-lease-clock-capacity.txt" `
         -SeedTrustedSession
+
+    $persistentPrepare = Invoke-AuthorizationHarness `
+        -DataDirectory $persistentDataDir -DiagnosticsDirectory $persistentDiagnosticsDir `
+        -Mode "--authorization-persistent-restart-prepare" `
+        -ArtifactName "authorization-lease-restart-prepare.txt" -SeedTrustedSession
+    $persistentVerify = Invoke-AuthorizationHarness `
+        -DataDirectory $persistentDataDir -DiagnosticsDirectory $persistentDiagnosticsDir `
+        -Mode "--authorization-persistent-restart-verify" `
+        -ArtifactName "authorization-lease-restart-verify.txt" -RequirePreparedData
+    $persistentDenied = Invoke-AuthorizationHarness `
+        -DataDirectory $persistentDataDir -DiagnosticsDirectory $persistentDiagnosticsDir `
+        -Mode "--authorization-persistent-restart-denied-verify" `
+        -ArtifactName "authorization-lease-restart-denied-verify.txt" -RequirePreparedData
+    $persistentInstances = @($persistentPrepare, $persistentVerify, $persistentDenied) | ForEach-Object {
+        if ((Read-ResultValue -Text $_.Result -Name "persistentGrant") -ne 'True') {
+            throw 'Persistent authorization restart accidentally used the bounded compatibility mode.'
+        }
+        Read-ResultValue -Text $_.Result -Name "processInstance"
+    }
+    if (@($persistentInstances | Select-Object -Unique).Count -ne 3 -or
+        (Read-ResultValue -Text $persistentPrepare.Result -Name "stateFormat") -ne '6') {
+        throw 'Persistent authorization must use protected v6 state in three independent CLR processes.'
+    }
+    foreach ($check in @('correctPinAfterRestart','wrongPinAfterRestartDenied',
+        'oldBackupAfterRestartDenied','revokedBackupAfterRestartDenied')) {
+        if ((Read-ResultValue -Text $persistentVerify.Result -Name $check) -ne 'True') {
+            throw "Persistent reopen check missing: $check"
+        }
+    }
+    foreach ($check in @('revocationSurvivesAnotherProcess','otherProfileDenied',
+        'changedDeviceDenied','alteredWitnessDenied','lostBootWitnessDenied')) {
+        if ((Read-ResultValue -Text $persistentDenied.Result -Name $check) -ne 'True') {
+            throw "Persistent witness negative check missing: $check"
+        }
+    }
+    foreach ($probe in @($persistentVerify,$persistentDenied)) {
+        foreach ($check in @('unauthorizedSaleSinkRows','unauthorizedPublicationOutboxRows')) {
+            if ((Read-ResultValue -Text $probe.Result -Name $check) -ne '0') {
+                throw "Persistent probe reached an unauthorized economic sink."
+            }
+        }
+    }
+    foreach ($check in @('persistentLocalGrantBeyondLegacyWindow','persistentGrantWrongPinDenied',
+        'persistentGrantCommitProof','persistentGrantRevokedBackupDenied','persistentGrantSupersedesLegacyBackup')) {
+        if ((Read-ResultValue -Text $smoke.Result -Name $check) -ne 'True') {
+            throw "Persistent ordinary-use regression missing: $check"
+        }
+    }
+    Write-Host $persistentPrepare.Result
+    Write-Host $persistentVerify.Result
+    Write-Host $persistentDenied.Result
 
 if ((Read-ResultValue -Text $smoke.Result -Name "frozenClockMonotonicExpiry") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "frozenClockUnauthorizedSaleSinkRows") -ne "0" -or
@@ -306,17 +365,37 @@ if ([string]::Equals(
         [StringComparison]::Ordinal)) {
     throw "Authorization lease restart regression did not use two distinct process instances."
 }
-if ((Read-ResultValue -Text $verify.Result -Name "offlineAttestationAfterRestart") -ne "False" -or
-    (Read-ResultValue -Text $verify.Result -Name "offlineDenial") -ne "offline_attestation_required" -or
+if ((Read-ResultValue -Text $verify.Result -Name "offlineAttestationAfterRestart") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "correctPinAfterRestart") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "wrongPinAfterRestartDenied") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "oldBackupAfterRestartDenied") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "revokedBackupAfterRestartDenied") -ne "True" -or
+    (Read-ResultValue -Text $verify.Result -Name "offlineDenialAfterRevocation") -ne "offline_attestation_required" -or
     (Read-ResultValue -Text $verify.Result -Name "unauthorizedSaleSinkRows") -ne "0" -or
     (Read-ResultValue -Text $verify.Result -Name "unauthorizedPublicationOutboxRows") -ne "0" -or
     (Read-ResultValue -Text $verify.Result -Name "freshOnlineRecovery") -ne "True") {
-    throw "Authorization lease restart regression did not prove fail-closed authorization and online recovery."
+    throw "Authorization lease restart regression did not prove witnessed app reopen, PIN isolation, rollback/revocation rejection and online recovery."
 }
 
     Write-Host $smoke.Result
     Write-Host $prepare.Result
     Write-Host $verify.Result
+    $revokedInstance = Read-ResultValue -Text $revokedVerify.Result -Name "processInstance"
+    if ($revokedInstance -eq $prepareInstance -or $revokedInstance -eq $verifyInstance) {
+        throw "Revoked restart verification must use a third distinct process."
+    }
+    foreach ($as019RestartCheck in @('revocationSurvivesAnotherProcess','otherProfileDenied',
+        'changedDeviceDenied','alteredWitnessDenied','lostBootWitnessDenied')) {
+        if ((Read-ResultValue -Text $revokedVerify.Result -Name $as019RestartCheck) -ne 'True') {
+            throw "Restart witness negative check missing: $as019RestartCheck"
+        }
+    }
+    foreach ($as019RestartCheck in @('unauthorizedSaleSinkRows','unauthorizedPublicationOutboxRows')) {
+        if ((Read-ResultValue -Text $revokedVerify.Result -Name $as019RestartCheck) -ne '0') {
+            throw "Revoked restart probe reached an economic sink."
+        }
+    }
+    Write-Host $revokedVerify.Result
     Write-Host $capacity.Result
     Write-Host "AUTHORIZATION_LEASE_DATA_DIAGNOSTICS_SEPARATED=True"
     Write-Host "AUTHORIZATION_LEASE_RESTART_SEEDED_ONCE=True"

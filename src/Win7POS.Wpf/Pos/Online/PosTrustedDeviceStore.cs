@@ -15,7 +15,9 @@ namespace Win7POS.Wpf.Pos.Online
 {
     public sealed class PosTrustedDeviceStore
     {
-        private const int CurrentFormatVersion = 4;
+        private const int CurrentFormatVersion = 6;
+        private const int RestartScopedFormatVersion = 5;
+        private const int ProcessScopedFormatVersion = 4;
         private const int PreviousFormatVersion = 3;
         private const int OlderFormatVersion = 2;
         private const int LegacyFormatVersion = 1;
@@ -27,8 +29,6 @@ namespace Win7POS.Wpf.Pos.Online
         private const int MaximumProfileNameCharacters = 80;
         private const int MinimumProfileNameCharacters = 8;
         private static readonly object StateGate = new object();
-        private static readonly string ProcessAuthorizationScope =
-            CreateProcessAuthorizationScope();
         private static readonly string DefaultMonotonicClockDomain =
             "system-stopwatch";
         private static ProcessAuthorizationClockState
@@ -38,13 +38,14 @@ namespace Win7POS.Wpf.Pos.Online
         private readonly long _monotonicFrequency;
         private readonly string _monotonicClockDomain;
         private readonly string _profileName;
+        private readonly bool _persistentLocalAuthorization;
 
         public PosTrustedDeviceStore()
             : this(
                 Stopwatch.GetTimestamp,
                 Stopwatch.Frequency,
                 DefaultMonotonicClockDomain,
-                null)
+                null, true)
         {
         }
 
@@ -53,7 +54,7 @@ namespace Win7POS.Wpf.Pos.Online
                 Stopwatch.GetTimestamp,
                 Stopwatch.Frequency,
                 DefaultMonotonicClockDomain,
-                NormalizeProfileName(profileName))
+                NormalizeProfileName(profileName), true)
         {
         }
 
@@ -65,15 +66,27 @@ namespace Win7POS.Wpf.Pos.Online
                 monotonicTimestamp,
                 monotonicFrequency,
                 monotonicClockDomain,
-                null)
+                null, false)
         {
         }
+
+        // Explicit compatibility mode lets the legacy bounded-lease regression
+        // continue to exercise that contract, independently of ordinary POS grants.
+        internal PosTrustedDeviceStore(bool persistentLocalAuthorization)
+            : this(Stopwatch.GetTimestamp, Stopwatch.Frequency,
+                DefaultMonotonicClockDomain, null, persistentLocalAuthorization) { }
+
+        internal PosTrustedDeviceStore(string profileName, bool persistentLocalAuthorization)
+            : this(Stopwatch.GetTimestamp, Stopwatch.Frequency,
+                DefaultMonotonicClockDomain, NormalizeProfileName(profileName),
+                persistentLocalAuthorization) { }
 
         private PosTrustedDeviceStore(
             Func<long> monotonicTimestamp,
             long monotonicFrequency,
             string monotonicClockDomain,
-            string profileName)
+            string profileName,
+            bool persistentLocalAuthorization)
         {
             _monotonicTimestamp = monotonicTimestamp ??
                 throw new ArgumentNullException(nameof(monotonicTimestamp));
@@ -86,6 +99,7 @@ namespace Win7POS.Wpf.Pos.Online
                     ? rawMonotonicClockDomain.Trim()
                     : string.Empty;
             _profileName = profileName;
+            _persistentLocalAuthorization = persistentLocalAuthorization;
         }
 
         public string TrustedDeviceFilePath => string.IsNullOrEmpty(_profileName)
@@ -145,7 +159,8 @@ namespace Win7POS.Wpf.Pos.Online
                     Stopwatch.GetTimestamp,
                     Stopwatch.Frequency,
                     DefaultMonotonicClockDomain,
-                    normalizedProfileName);
+                    normalizedProfileName,
+                    _persistentLocalAuthorization);
                 isolatedStore.EnsureProfilePathSafe(createDirectory: false);
                 if (File.Exists(isolatedStore.TrustedDeviceFilePath))
                 {
@@ -181,12 +196,13 @@ namespace Win7POS.Wpf.Pos.Online
                 {
                     state.GenerationId = OnlineSyncGeneration.CreateGenerationId();
                     session.GenerationId = state.GenerationId;
-                    if (state.FormatVersion == CurrentFormatVersion &&
+                    if ((state.FormatVersion == CurrentFormatVersion ||
+                         state.FormatVersion == RestartScopedFormatVersion) &&
                         session.OfflineAuthorizationAttested)
                     {
                         state.ProtectedOfflineAuthorizationBinding =
                             ProtectString(
-                                ComputeOfflineAuthorizationBinding(session));
+                                ComputeOfflineAuthorizationBinding(session, state.OfflineReceiptId));
                     }
                     SaveState(state);
                 }
@@ -253,7 +269,8 @@ namespace Win7POS.Wpf.Pos.Online
             lock (StateGate)
             {
                 if (!TryReadState(out var state, out var session) ||
-                    state.FormatVersion != CurrentFormatVersion ||
+                    state.FormatVersion != (HasPersistentOnlineGrant(response)
+                        ? CurrentFormatVersion : RestartScopedFormatVersion) ||
                     !PosOnlineSyncSupervisorHost.TryCreateGeneration(
                         session,
                         out var generation) ||
@@ -372,9 +389,14 @@ namespace Win7POS.Wpf.Pos.Online
                 StaffDisplayName = response.Staff?.DisplayName,
                 StaffId = response.Staff?.StaffId,
                 StaffRoleKey = response.Staff?.RoleKey,
-                TrustedStateFormatVersion = CurrentFormatVersion
+                TrustedStateFormatVersion = _persistentLocalAuthorization
+                    ? CurrentFormatVersion : RestartScopedFormatVersion
             };
             EnsureFreshOnlineReceipt(candidate, localReceiptAt);
+            candidate.PersistentLocalAuthorization = candidate.OfflineAuthorizationAttested &&
+                HasPersistentOnlineGrant(response);
+            candidate.TrustedStateFormatVersion = candidate.PersistentLocalAuthorization
+                ? CurrentFormatVersion : RestartScopedFormatVersion;
             var state = CreateStoredState(candidate);
 
             lock (StateGate)
@@ -392,7 +414,7 @@ namespace Win7POS.Wpf.Pos.Online
                         "Invalid POS authorization lease: " +
                         clockFailureCode);
                 }
-                SaveState(state);
+                SaveState(state, preparedClockState);
                 _processAuthorizationClockState = preparedClockState;
             }
         }
@@ -454,6 +476,8 @@ namespace Win7POS.Wpf.Pos.Online
                 LastOkServerAt = response.ServerTime,
                 OfflineAuthorizationAttested =
                     expectedSession.OfflineAuthorizationAttested,
+                PersistentLocalAuthorization = expectedSession.PersistentLocalAuthorization,
+                TrustedStateFormatVersion = expectedSession.TrustedStateFormatVersion,
                 PosSessionId = responsePosSessionId,
                 SessionExpiresAt = response.Session.ExpiresAt,
                 ShopDeviceId = expectedSession.ShopDeviceId
@@ -482,6 +506,7 @@ namespace Win7POS.Wpf.Pos.Online
                     LastOkServerAt = candidate.LastOkServerAt,
                     OfflineAuthorizationAttested =
                         currentSession.OfflineAuthorizationAttested,
+                    PersistentLocalAuthorization = currentSession.PersistentLocalAuthorization,
                     PosSessionId = responsePosSessionId,
                     SessionToken = sessionToken,
                     SessionExpiresAt = response.Session.ExpiresAt,
@@ -494,7 +519,7 @@ namespace Win7POS.Wpf.Pos.Online
                     StaffDisplayName = currentSession.StaffDisplayName,
                     StaffId = currentSession.StaffId,
                     StaffRoleKey = currentSession.StaffRoleKey,
-                    TrustedStateFormatVersion = CurrentFormatVersion
+                    TrustedStateFormatVersion = currentSession.TrustedStateFormatVersion
                 };
 
                 EnsureFreshOnlineReceipt(refreshedCandidate, localReceiptAt);
@@ -509,10 +534,23 @@ namespace Win7POS.Wpf.Pos.Online
                 {
                     return false;
                 }
-                SaveState(CreateStoredState(refreshedCandidate));
+                SaveState(CreateStoredState(refreshedCandidate), preparedClockState);
                 _processAuthorizationClockState = preparedClockState;
                 return TryReadState(out _, out refreshedSession);
             }
+        }
+
+        private bool HasPersistentOnlineGrant(PosFirstLoginResponse response)
+        {
+            // An explicit staff credential deadline remains a real authority
+            // cap. Only the negotiated no-deadline receipt can select v6.
+            return _persistentLocalAuthorization &&
+                string.Equals(response.LocalAuthorizationPolicy,
+                    PosOnlineContract.PersistentLocalAuthorizationPolicy, StringComparison.Ordinal) &&
+                PosOfflineAuthorizationLeasePolicy.IsPersistentAuthorizationExpiry(
+                    response.Session?.ExpiresAt) &&
+                PosOfflineAuthorizationLeasePolicy.IsPersistentAuthorizationExpiry(
+                    response.EffectiveOfflineAuthorizationExpiresAt);
         }
 
         private static void EnsureFreshOnlineReceipt(
@@ -533,6 +571,8 @@ namespace Win7POS.Wpf.Pos.Online
         {
             lock (StateGate)
             {
+                RestartWitnessStore().Invalidate();
+                RestartWitnessStore(RestartScopedFormatVersion).Invalidate();
                 DeleteStateBestEffort();
                 _processAuthorizationClockState =
                     _processAuthorizationClockState.WithoutActiveAnchor();
@@ -552,6 +592,8 @@ namespace Win7POS.Wpf.Pos.Online
                     return false;
                 }
 
+                RestartWitnessStore().Invalidate();
+                RestartWitnessStore(RestartScopedFormatVersion).Invalidate();
                 var cleared = DeleteStateBestEffort();
                 _processAuthorizationClockState =
                     _processAuthorizationClockState.WithoutActiveAnchor();
@@ -833,6 +875,8 @@ namespace Win7POS.Wpf.Pos.Online
                 state = Deserialize<StoredTrustedDeviceState>(stateJson);
                 if (state == null ||
                     (state.FormatVersion != CurrentFormatVersion &&
+                     state.FormatVersion != RestartScopedFormatVersion &&
+                     state.FormatVersion != ProcessScopedFormatVersion &&
                      state.FormatVersion != PreviousFormatVersion &&
                      state.FormatVersion != OlderFormatVersion &&
                      state.FormatVersion != LegacyFormatVersion) ||
@@ -852,6 +896,8 @@ namespace Win7POS.Wpf.Pos.Online
                     GenerationId = state.GenerationId,
                     LastOkLocalAt = state.LastOkLocalAt,
                     LastOkServerAt = state.LastOkServerAt,
+                    PersistentLocalAuthorization = state.FormatVersion == CurrentFormatVersion &&
+                        state.PersistentLocalAuthorization,
                     PosSessionId = state.PosSessionId,
                     SessionExpiresAt = state.SessionExpiresAt,
                     SessionToken = UnprotectToString(state.ProtectedSessionSecret),
@@ -867,9 +913,12 @@ namespace Win7POS.Wpf.Pos.Online
                     TrustedStateFormatVersion = state.FormatVersion,
                 };
                 session.OfflineAuthorizationAttested =
-                    HasValidOfflineAuthorizationBinding(state, session);
+                    HasValidOfflineAuthorizationBinding(state, session, stateJson);
                 if (!session.OfflineAuthorizationAttested)
+                {
                     session.EffectiveOfflineAuthorizationExpiresAt = null;
+                    session.PersistentLocalAuthorization = false;
+                }
                 return true;
             }
             catch
@@ -896,6 +945,7 @@ namespace Win7POS.Wpf.Pos.Online
                 string.Equals(expected.SessionToken, current.SessionToken, StringComparison.Ordinal) &&
                 expected.OfflineAuthorizationAttested ==
                     current.OfflineAuthorizationAttested &&
+                expected.PersistentLocalAuthorization == current.PersistentLocalAuthorization &&
                 string.Equals(
                     expected.EffectiveOfflineAuthorizationExpiresAt,
                     current.EffectiveOfflineAuthorizationExpiresAt,
@@ -984,15 +1034,21 @@ namespace Win7POS.Wpf.Pos.Online
             AppendBoundedValue(
                 material,
                 session.TrustedStateFormatVersion.ToString());
+            if (session.TrustedStateFormatVersion >= CurrentFormatVersion)
+            {
+                AppendBoundedValue(material, session.PersistentLocalAuthorization ? "1" : "0");
+                AppendBoundedValue(material, session.StaffRoleKey);
+            }
             return ComputeSha256(material.ToString());
         }
 
-        private static StoredTrustedDeviceState CreateStoredState(
+        private StoredTrustedDeviceState CreateStoredState(
             PosTrustedDeviceSession session)
         {
             var state = new StoredTrustedDeviceState
             {
-                FormatVersion = CurrentFormatVersion,
+                FormatVersion = session.TrustedStateFormatVersion,
+                PersistentLocalAuthorization = session.PersistentLocalAuthorization,
                 GenerationId = session.GenerationId,
                 LastOkLocalAt = session.LastOkLocalAt,
                 LastOkServerAt = session.LastOkServerAt,
@@ -1013,10 +1069,11 @@ namespace Win7POS.Wpf.Pos.Online
 
             if (session.OfflineAuthorizationAttested)
             {
+                state.OfflineReceiptId = Guid.NewGuid().ToString("N");
                 state.EffectiveOfflineAuthorizationExpiresAt =
                     session.EffectiveOfflineAuthorizationExpiresAt;
                 state.ProtectedOfflineAuthorizationBinding = ProtectString(
-                    ComputeOfflineAuthorizationBinding(session));
+                    ComputeOfflineAuthorizationBinding(session, state.OfflineReceiptId));
             }
             return state;
         }
@@ -1060,11 +1117,14 @@ namespace Win7POS.Wpf.Pos.Online
             return candidate;
         }
 
-        private static bool HasValidOfflineAuthorizationBinding(
+        private bool HasValidOfflineAuthorizationBinding(
             StoredTrustedDeviceState state,
-            PosTrustedDeviceSession session)
+            PosTrustedDeviceSession session,
+            string stateJson)
         {
-            if (state.FormatVersion != CurrentFormatVersion ||
+            if ((state.FormatVersion != CurrentFormatVersion &&
+                 state.FormatVersion != RestartScopedFormatVersion) ||
+                (state.FormatVersion == CurrentFormatVersion && !state.PersistentLocalAuthorization) ||
                 string.IsNullOrWhiteSpace(
                     state.EffectiveOfflineAuthorizationExpiresAt) ||
                 string.IsNullOrWhiteSpace(
@@ -1073,17 +1133,41 @@ namespace Win7POS.Wpf.Pos.Online
                 return false;
             }
 
-            var expected = ComputeOfflineAuthorizationBinding(session);
+            if (state.OfflineReceiptId == null || state.OfflineReceiptId.Length != 32)
+                return false;
+            var expected = ComputeOfflineAuthorizationBinding(session, state.OfflineReceiptId);
             var actual = UnprotectToString(
                 state.ProtectedOfflineAuthorizationBinding);
-            return FixedTimeEquals(expected, actual);
+            if (!FixedTimeEquals(expected, actual) ||
+                !TryCreateGenerationFingerprint(session, out var generation) ||
+                !TryCaptureMonotonicTimestamp(out var timestamp))
+                return false;
+            if (!RestartWitnessStore(state.FormatVersion).TryAdvance(
+                    ComputeSha256(stateJson), state.OfflineReceiptId, generation,
+                    _monotonicClockDomain, _monotonicFrequency, timestamp,
+                    DateTimeOffset.UtcNow, out var receipt, out var failureCode))
+            {
+                session.OfflineAuthorizationFailureCode = failureCode;
+                return false;
+            }
+            if (!TryRestoreRestartClock(receipt))
+            {
+                session.OfflineAuthorizationFailureCode = "trusted_time_continuity_lost";
+                return false;
+            }
+            return true;
         }
 
-        private static string ComputeOfflineAuthorizationBinding(
-            PosTrustedDeviceSession session)
+        private string ComputeOfflineAuthorizationBinding(
+            PosTrustedDeviceSession session, string receiptId)
         {
             var material = new StringBuilder();
-            AppendBoundedValue(material, CurrentFormatVersion.ToString());
+            AppendBoundedValue(material, session.TrustedStateFormatVersion.ToString());
+            if (session.TrustedStateFormatVersion >= CurrentFormatVersion)
+            {
+                AppendBoundedValue(material, session.PersistentLocalAuthorization ? "1" : "0");
+                AppendBoundedValue(material, session.StaffRoleKey);
+            }
             AppendBoundedValue(material, session.GenerationId);
             AppendBoundedValue(material, session.LastOkServerAt);
             AppendBoundedValue(material, session.LastOkLocalAt);
@@ -1101,28 +1185,44 @@ namespace Win7POS.Wpf.Pos.Online
                 material,
                 session.EffectiveOfflineAuthorizationExpiresAt);
             AppendBoundedValue(material, ComputeSecretStamp(session));
-            // The repository has no trustworthy persisted monotonic boot clock on
-            // Windows 7. Keep offline authority process-scoped so a restart cannot
-            // reset the in-memory server-time high-water and replay this binding.
-            AppendBoundedValue(material, ProcessAuthorizationScope);
+            AppendBoundedValue(material, ProfileScope());
+            AppendBoundedValue(material, receiptId);
             return ComputeSha256(material.ToString());
         }
 
-        private static string CreateProcessAuthorizationScope()
+        private string ProfileScope()
         {
-            var bytes = new byte[32];
-            try
+            using (var sha = SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(
+                    Path.GetFullPath(TrustedDeviceFilePath).ToUpperInvariant())))
+                    .Replace("-", string.Empty).ToLowerInvariant();
+        }
+
+        private PosOfflineRestartWitnessStore RestartWitnessStore(int version = CurrentFormatVersion) =>
+            new PosOfflineRestartWitnessStore(ProfileScope(), version >= CurrentFormatVersion);
+
+        private bool TryRestoreRestartClock(PosOfflineRestartReceipt receipt)
+        {
+            var current = _processAuthorizationClockState;
+            var active = current.ActiveAnchor;
+            if (active != null && (active.ClockDomain != receipt.ClockDomain ||
+                active.Frequency != receipt.Frequency)) return false;
+            var key = new ProcessClockKey(receipt.ClockDomain, receipt.Frequency);
+            var highWaters = new Dictionary<ProcessClockKey, ProcessTrustedTimeHighWater>(current.HighWaters);
+            var trustedNow = receipt.ServerAnchor;
+            if (highWaters.TryGetValue(key, out var highWater))
             {
-                using (var random = RandomNumberGenerator.Create())
-                {
-                    random.GetBytes(bytes);
-                }
-                return Convert.ToBase64String(bytes);
+                if (!TryAdvanceServerAnchor(highWater.ServerAnchor, highWater.MonotonicTimestamp,
+                        receipt.Timestamp, receipt.Frequency, out var minimum)) return false;
+                if (minimum > trustedNow) trustedNow = minimum;
             }
-            finally
-            {
-                Array.Clear(bytes, 0, bytes.Length);
-            }
+            else if (highWaters.Count >= MaximumProcessClockScopes) return false;
+            highWaters[key] = new ProcessTrustedTimeHighWater(trustedNow, receipt.Timestamp,
+                receipt.Frequency, receipt.ClockDomain);
+            _processAuthorizationClockState = new ProcessAuthorizationClockState(highWaters,
+                new ProcessAuthorizationClockAnchor(receipt.GenerationFingerprint, trustedNow,
+                    receipt.Timestamp, receipt.Frequency, receipt.ClockDomain));
+            return true;
         }
 
         private sealed class ProcessClockKey :
@@ -1292,7 +1392,8 @@ namespace Win7POS.Wpf.Pos.Online
             return difference == 0;
         }
 
-        private void SaveState(StoredTrustedDeviceState state)
+        private void SaveState(StoredTrustedDeviceState state,
+            ProcessAuthorizationClockState preparedClockState = null)
         {
             AppPaths.EnsureDataDirectories();
             EnsureProfilePathSafe(createDirectory: true);
@@ -1303,7 +1404,25 @@ namespace Win7POS.Wpf.Pos.Online
                 throw new InvalidDataException(
                     "Trusted-device state exceeds the supported size.");
             }
+            // Enrollment supersedes the old bounded authority too. A pre-v6
+            // profile backup cannot revive that independent legacy witness.
+            if (state.PersistentLocalAuthorization)
+                RestartWitnessStore(RestartScopedFormatVersion).Invalidate();
             WriteAllTextAtomic(TrustedDeviceFilePath, serialized);
+            var anchor = preparedClockState?.ActiveAnchor;
+            if (anchor != null && !string.IsNullOrEmpty(state.OfflineReceiptId))
+            {
+                RestartWitnessStore(state.FormatVersion).Write(new PosOfflineRestartReceipt
+                {
+                    ProfileScope = ProfileScope(), StateSha256 = ComputeSha256(serialized),
+                    ReceiptId = state.OfflineReceiptId, GenerationFingerprint = anchor.GenerationFingerprint,
+                    ClockDomain = anchor.ClockDomain, Frequency = anchor.Frequency,
+                    Timestamp = anchor.MonotonicTimestamp, ServerAnchor = anchor.ServerAnchor,
+                    LocalHighWater = DateTimeOffset.UtcNow,
+                    PersistentAuthorization = state.PersistentLocalAuthorization
+                });
+            }
+            else RestartWitnessStore(state.FormatVersion).Invalidate();
         }
 
         private void EnsureProfilePathSafe(bool createDirectory)
@@ -1463,8 +1582,13 @@ namespace Win7POS.Wpf.Pos.Online
         [DataContract]
         private sealed class StoredTrustedDeviceState
         {
+            [DataMember(Name = "offlineReceiptId", EmitDefaultValue = false)]
+            public string OfflineReceiptId { get; set; }
             [DataMember(Name = "formatVersion")]
             public int FormatVersion { get; set; }
+
+            [DataMember(Name = "persistentLocalAuthorization", EmitDefaultValue = false)]
+            public bool PersistentLocalAuthorization { get; set; }
 
             [DataMember(Name = "generationId", EmitDefaultValue = false)]
             public string GenerationId { get; set; }

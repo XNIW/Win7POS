@@ -10,18 +10,30 @@ namespace Win7POS.Wpf.Pos
 {
     public sealed class SalesReportContext
     {
-        public SalesReportContext(SalesReportFilter filter, SalesReportTimePolicy policy, SalesReportSnapshot snapshot, ISalesReportQuery query, SalesReportSnapshotCoordinator coordinator)
-        { Filter = filter; NativeTimePolicy = policy; Snapshot = snapshot; Query = query; Coordinator = coordinator; }
+        public SalesReportContext(SalesReportFilter filter, SalesReportTimePolicy policy, SalesReportSnapshot snapshot, ISalesReportQuery query, SalesReportSnapshotCoordinator coordinator,bool nativeComponentUnavailable=false)
+        { Filter = filter; NativeTimePolicy = policy; Snapshot = snapshot; Query = query; Coordinator = coordinator;NativeComponentUnavailable=nativeComponentUnavailable; }
         public SalesReportFilter Filter { get; }
         public SalesReportTimePolicy NativeTimePolicy { get; }
         public SalesReportSnapshot Snapshot { get; }
         public ISalesReportQuery Query { get; }
         public SalesReportSnapshotCoordinator Coordinator { get; }
+        public bool NativeComponentUnavailable { get; }
     }
 
     public sealed partial class PosWorkflowService
     {
         internal SalesReportSnapshotCoordinator ReportSnapshotCoordinator => SalesReportSnapshotCoordinator.ForDatabase(_factory.DbPath);
+
+        public async Task<SalesReportContext> OpenAvailableAnalyticalReportAsync(DateTime fromInclusive,DateTime toExclusive,
+            SalesReportOrigins origins,bool canViewAllOperators,int? operatorId,CancellationToken cancellationToken)
+        {
+            var context=await OpenAnalyticalReportAsync(fromInclusive,toExclusive,origins,canViewAllOperators,operatorId,null,cancellationToken).ConfigureAwait(false);
+            if(origins!=SalesReportOrigins.All||context.Snapshot.Coverage.Status!=SalesReportCoverageStatus.PolicyRequired)return context;
+            // A missing native conversion rule cannot hide already qualified card history.
+            // The effective filter and token remain historical-only, including exports.
+            var available=await OpenAnalyticalReportAsync(fromInclusive,toExclusive,SalesReportOrigins.Historical,canViewAllOperators,operatorId,null,cancellationToken).ConfigureAwait(false);
+            return new SalesReportContext(available.Filter,available.NativeTimePolicy,available.Snapshot,available.Query,available.Coordinator,true);
+        }
 
         public Task<SalesReportContext> OpenAnalyticalReportAsync(DateTime fromInclusive, DateTime toExclusive,
             SalesReportOrigins origins, bool canViewAllOperators, int? operatorId, string referenceSearch, CancellationToken cancellationToken, IEnumerable<DateTime> selectedDates = null)

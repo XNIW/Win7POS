@@ -22,8 +22,9 @@ namespace Win7POS.Core.Online
         [DataMember(Name="payload")] public HistoricalCloudPayload Payload { get; set; }
     }
     [DataContract]
-    public sealed class HistoricalCloudPayload
+    public sealed partial class HistoricalCloudPayload
     {
+        [DataMember(Name="qualification",EmitDefaultValue=false)] public HistoricalCloudQualification Qualification { get; set; }
         [DataMember(Name="request_key",EmitDefaultValue=false)] public string RequestKey { get; set; }
         [DataMember(Name="operation_id",EmitDefaultValue=false)] public string OperationId { get; set; }
         [DataMember(Name="kind",EmitDefaultValue=false)] public string Kind { get; set; }
@@ -68,6 +69,13 @@ namespace Win7POS.Core.Online
         [DataMember(Name="recovery_request_key",EmitDefaultValue=false)] public string RecoveryRequestKey { get; set; }
         [DataMember(Name="apply_request_key",EmitDefaultValue=false)] public string ApplyRequestKey { get; set; }
         [DataMember(Name="previous_review_digest",EmitDefaultValue=false)] public string PreviousReviewDigest { get; set; }
+    }
+    [DataContract]
+    public sealed class HistoricalCloudQualification
+    {
+        [DataMember(Name="config_digest")] public string ConfigDigest{get;set;}
+        [DataMember(Name="resolver_fingerprint")] public string ResolverFingerprint{get;set;}
+        [DataMember(Name="evidence_ids")] public string[] EvidenceIds{get;set;}
     }
     [DataContract]
     public sealed class HistoricalCloudResponse
@@ -120,6 +128,52 @@ namespace Win7POS.Core.Online
         [DataMember(Name="can_apply")] public bool? CanApply { get; set; }
         [DataMember(Name="receipt_json")] public string BaselineReceiptJson { get; set; }
         [DataMember(Name="recovery_ack_json")] public string BaselineRecoveryAckJson { get; set; }
+        [DataMember(Name="schema_version")] public string QualificationSchemaVersion { get; set; }
+        [DataMember(Name="shop_id")] public string QualificationShopId { get; set; }
+        [DataMember(Name="config_digest")] public string QualificationConfigDigest { get; set; }
+        [DataMember(Name="runtime")] public HistoricalQualificationRuntimeDto QualificationRuntime { get; set; }
+        [DataMember(Name="evidence")] public HistoricalQualifiedEvidenceDto[] QualifiedEvidence { get; set; }
+        [DataMember(Name="local_scope_bindings")] public HistoricalLocalScopeBindingDto[] QualificationLocalScopeBindings { get; set; }
+    }
+    [DataContract]
+    public sealed class HistoricalLocalScopeBindingDto
+    {
+        [DataMember(Name="local_scope_id")] public string LocalScopeId { get; set; }
+        [DataMember(Name="merchant_id")] public string MerchantId { get; set; }
+        [DataMember(Name="source_run_id")] public string SourceRunId { get; set; }
+        [DataMember(Name="witness_id")] public string WitnessId { get; set; }
+    }
+    [DataContract]
+    public sealed class HistoricalQualificationRuntimeDto
+    {
+        [DataMember(Name="dataset_id")] public string DatasetId { get; set; }
+        [DataMember(Name="writer_epoch")] public string WriterEpoch { get; set; }
+        [DataMember(Name="writer_authority")] public string WriterAuthority { get; set; }
+    }
+    [DataContract]
+    public sealed class HistoricalQualifiedEvidenceDto
+    {
+        [DataMember(Name="id")] public string Id { get; set; }
+        [DataMember(Name="shop_id")] public string ShopId { get; set; }
+        [DataMember(Name="kind")] public string Kind { get; set; }
+        [DataMember(Name="state")] public string State { get; set; }
+        [DataMember(Name="issuer")] public string Issuer { get; set; }
+        [DataMember(Name="qualification_version")] public string QualificationVersion { get; set; }
+        [DataMember(Name="merchant_id")] public string MerchantId { get; set; }
+        [DataMember(Name="alias_key")] public string AliasKey { get; set; }
+        [DataMember(Name="profile")] public string Profile { get; set; }
+        [DataMember(Name="parser_version")] public string ParserVersion { get; set; }
+        [DataMember(Name="files")] public string[] Files { get; set; }
+        [DataMember(Name="from_ticks")] public string FromTicks { get; set; }
+        [DataMember(Name="to_ticks")] public string ToTicks { get; set; }
+        [DataMember(Name="policy_version")] public string PolicyVersion { get; set; }
+        [DataMember(Name="reference")] public string Reference { get; set; }
+        [DataMember(Name="interpretation")] public string Interpretation { get; set; }
+        [DataMember(Name="native_start_ticks")] public string NativeStartTicks { get; set; }
+        // Nullable distinguishes a missing protocol field from an explicit false.
+        [DataMember(Name="provider_verified")] public bool? ProviderVerified { get; set; }
+        [DataMember(Name="document_sha256")] public string DocumentSha256 { get; set; }
+        [DataMember(Name="document_upload_id")] public string DocumentUploadId { get; set; }
     }
     [DataContract]
     public sealed class HistoricalBaselineContext

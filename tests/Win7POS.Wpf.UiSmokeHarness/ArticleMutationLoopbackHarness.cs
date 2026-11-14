@@ -18,10 +18,12 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using Dapper;
 using Win7POS.Core;
+using Win7POS.Core.Import;
 using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Data;
+using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure.Security;
@@ -366,6 +368,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         var service=new Win7POS.Wpf.Pos.PosWorkflowService(factory,()=>DateTimeOffset.UtcNow);
                         await HistoricalPublicationAdmissionFixture.ConfirmInitialBaselineAsync(factory,session,host.CurrentGeneration,
                             "90000000-0000-4000-8000-000000000245",cancellationToken);
+                        server.QualifyHistoricalSourcesForGeometry();
                         var workspace=new HistoricalOnboardingDialog(access,service){Owner=owner};
                         workspace.Show();await Dispatcher.Yield(DispatcherPriority.ContextIdle);
                         await geometry.VerifyWorkspaceAsync(workspace,factory,cancellationToken);workspace.Close();
@@ -1498,6 +1501,15 @@ GROUP BY mutation_kind;")).ToDictionary(
             private readonly TcpListener _listener;
             private readonly HistoricalPublicationAdmissionFixture _historicalPublication =
                 new HistoricalPublicationAdmissionFixture(ShopId,DeviceId,"90000000-0000-4000-8000-000000000245",allNewFixture:true);
+            private HistoricalQualifiedConfigFixture _historicalQualification;
+            internal void QualifyHistoricalSourcesForGeometry()
+            {
+                var sources=new[]{"synthetic-legacy.xlsx","synthetic-modern.xlsx"}.Select(name=>
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"fixtures","historical-sales-getnet-v1",name)).ToArray();
+                var analysis=new HistoricalSalesImportAnalyzer().Analyze(sources,new HistoricalSalesImportOptions());
+                lock(_gate)_historicalQualification=new HistoricalQualifiedConfigFixture(ShopId,analysis,
+                    "90000000-0000-4000-8000-000000000245");
+            }
             private readonly Task _serverTask;
             private readonly Dictionary<string, RemoteProduct> _products =
                 new Dictionary<string, RemoteProduct>(
@@ -1752,6 +1764,10 @@ GROUP BY mutation_kind;")).ToDictionary(
                         string result;
                         if (history.Operation == "authority")
                             result = "{\"dataset_id\":\"90000000-0000-4000-8000-000000000245\",\"revision\":\"0\",\"writer_epoch\":\"1\",\"writer_authority\":\"local\",\"inventory_verified\":false,\"protocol_version\":1}";
+                        else if(history.Operation=="qualified_config"&&_historicalQualification!=null)
+                        {
+                            lock(_gate)result=Encoding.UTF8.GetString(Serialize(_historicalQualification.Read()));
+                        }
                         else if (history.Operation == "local_prepare" || history.Operation == "local_stage" || history.Operation == "local_review" || history.Operation == "local_authorize")
                         {
                             lock(_gate) result=HistoricalPublicationAdmissionFixture.Wire(history.Operation,_historicalPublication.Request(history.Operation,history.Payload));
@@ -2212,12 +2228,17 @@ GROUP BY mutation_kind;")).ToDictionary(
             }
 
             internal string StaffRoleKey = "pos_admin";
+            internal volatile bool PersistentLocalAuthorization;
 
             private PosFirstLoginResponse BuildFirstLoginResponse()
             {
                 var now = DateTimeOffset.UtcNow;
+                var expiry = PersistentLocalAuthorization
+                    ? DateTimeOffset.MaxValue.AddTicks(-9) : now.AddHours(4);
                 return new PosFirstLoginResponse
                 {
+                    LocalAuthorizationPolicy = PersistentLocalAuthorization
+                        ? PosOnlineContract.PersistentLocalAuthorizationPolicy : null,
                     Device = new PosTrustedDeviceResponse
                     {
                         ShopDeviceId = DeviceId,
@@ -2225,7 +2246,7 @@ GROUP BY mutation_kind;")).ToDictionary(
                         Trusted = true
                     },
                     EffectiveOfflineAuthorizationExpiresAt =
-                        now.AddHours(4).ToString(
+                        expiry.ToString(
                             "O",
                             CultureInfo.InvariantCulture),
                     Ok = true,
@@ -2235,7 +2256,7 @@ GROUP BY mutation_kind;")).ToDictionary(
                         CultureInfo.InvariantCulture),
                     Session = new PosSessionResponse
                     {
-                        ExpiresAt = now.AddHours(4).ToString(
+                        ExpiresAt = expiry.ToString(
                             "O",
                             CultureInfo.InvariantCulture),
                         HeartbeatAfterSeconds = 300,

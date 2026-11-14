@@ -8,6 +8,11 @@ namespace Win7POS.Core.Online
         public string LastOkLocalAt { get; set; }
         public string LastOkServerAt { get; set; }
         public bool OfflineAuthorizationAttested { get; set; }
+        // An ordinary operating grant is distinct from the legacy expiring session.
+        // Set only after validating the protected v6 receipt and its independent witness.
+        public bool PersistentLocalAuthorization { get; set; }
+        // Local validation result only; never persisted as an authority claim.
+        public string OfflineAuthorizationFailureCode { get; set; }
         public string PosSessionId { get; set; }
         public string SessionExpiresAt { get; set; }
         public string SessionToken { get; set; }

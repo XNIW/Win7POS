@@ -1,7 +1,37 @@
 # Codex Asus Task Index
 
 <!-- ASUS019_CURRENT_START -->
-## Stato corrente —5d8e704 qualificato, consegna reale aperta
+## Stato corrente —14novembre2026, stessa ASUS-W7POS-019 ACTIVE
+
+Installato248e689/v6 preservato; due avvii online e navigazione/focus già
+verificati, offline reale e Win7 fisico separati. POS chiuso normalmente prima
+delle nuove fixture. Nuova UX candidata in A19ImportUx01, non installata:
+resolver/parser63/63, client/mapper74/74, pubblicazione qualificata2/2 e delta
+ledger correlato226/226 PASS. Guided esclusivo61check/13.458s, nuovo scenario
+web32check/9.423s e smoke canonico8/52 in43.130s PASS; budget originali invariati.
+Gate obbligatori50/50, soluzione e WPF net48/x86 PASS. Ultimo ricontrollo visuale
+conferma intestazioni, riepilogo e valori separati dalla scrollbar. CI completa,
+pacchetti e installazione del commit congelato restano aperti; i precedenti
+FAIL/TIMEOUT e i risultati prima dell'ultimo ritocco visuale sono conservati.
+
+Admin mainca9f239/PR154 e PUTf467 già pubblicati/verificati. Stessa baseline:
+archivio presente e verificato, runfailed history_worker_timeout,6000oggetti e
+0movimenti; tentativo1 e revisione0, ultima copia locale conservata. Worker
+successore locale00b6937:90testPASS, nuovo stagingversionato/deadline/diagnostica;
+SQL reale/volume, servizio5/5 e consegna ancora NOT_RUN. La compressione da sola
+non è qualificata come soluzione120s. Master/qualifiche/client condiviso WIP.
+
+Nessuna nuova riconciliazione o importazione per i25947/2577 già spiegati.
+Getnet C manca; il nuovo riscontro utente conferma i campi raw già conosciuti.
+Gate finali/pacchetti/installazione/baselineACKreplica restano aperti. Win7
+BLOCKED_TARGET;100/125 USER_DEFERRED,200% preservato. Piano ed evidence nella
+[stessa Execution](plans/ASUS-W7POS-019_GETNET_HISTORY/PLAN.md). Nessun DONE.
+<!-- ASUS019_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente5d8e704 conservato come storia</summary>
+
+## Stato storico —5d8e704 qualificato, consegna reale allora aperta
 
 Stessa ASUS019/R3 ACTIVE: Windows-All15/15 PASS (Core1745, functional22,
 crash5, smoke8/52, load11), quattro workflow exact-SHA SUCCESS, pacchetto41/QA40
@@ -15,7 +45,7 @@ vecchi kit invariati. Moderni C MISSING e CSV_INPUT BLOCKED_INPUT separati.
 Admin B/C soltanto Planning pubblicato d202332, nessun backend cambiato.
 Dettagli e riferimenti: [report canonico](reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
 Le sezioni sotto sono checkpoint storici, non lo stato corrente. Nessun DONE.
-<!-- ASUS019_CURRENT_END -->
+</details>
 This file tracks Asus Windows build-machine tasks. Detailed evidence belongs in
 dated reports under `docs/reports/`.
 

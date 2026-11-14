@@ -63,6 +63,19 @@ namespace Win7POS.Wpf.Pos
             var context = await GetHistoricalImportContextAsync(session, ct).ConfigureAwait(false);
             return await HistoricalLedger.GetMerchantBindingsAsync(context.ShopId, ct).ConfigureAwait(false);
         }
+        public async Task<bool> AreHistoricalFilesAlreadyActiveAsync(HistoricalSalesImportAnalysis analysis,OperatorSession session,CancellationToken ct)
+        {
+            var version=session.CurrentOperatorAuthorityVersion;
+            var context=await GetHistoricalImportContextAsync(session,ct).ConfigureAwait(false);
+            // Data-layer asynchronous readers may complete synchronously.
+            // Full source-row recognition must not run on the WPF Dispatcher.
+            var result=await Task.Run(()=>HistoricalLedger.AreFilesAlreadyActiveAsync(context.ShopId,analysis,ct),ct).ConfigureAwait(false);
+            var current=await GetHistoricalImportContextAsync(session,ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            if(version!=session.CurrentOperatorAuthorityVersion||context.ShopId!=current.ShopId||context.DatasetId!=current.DatasetId||context.DataRevision!=current.DataRevision||context.RestoreEpoch!=current.RestoreEpoch)
+                throw new InvalidOperationException("historical_read_scope_changed");
+            return result;
+        }
         public async Task<IReadOnlyList<HistoricalSalesBatch>> ReadHistoricalBatchesAsync(OperatorSession session, CancellationToken ct)
         {
             var version = session.CurrentOperatorAuthorityVersion;

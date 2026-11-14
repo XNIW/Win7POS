@@ -6,11 +6,29 @@ Non aggiunge dipendenze al prodotto net48/x86 né richiede `pwsh` sul target Win
 Se l'SDK verificato è installato fuori PATH, aggiungerne temporaneamente la
 directory soltanto alla sessione che avvia il comando; non cambiare `global.json`.
 
-ASUS019 geometria: il runner functional esistente include22scenari, aggiungendo
-OPERATOR_DIALOG_GEOMETRY e AUTHENTICATED_SHELL_UX in processi separati con receipt propria e lo stesso
-limite60s. Usa esclusivamente login loopback, dati/finestre sintetici posseduti
-e misure native; non usa il profilo del negozio. Il worker storico resta60s/52assert
-e il passo superiore90s. Nessun POS reale può concorrere con il harness UI.
+ASUS019 geometria e importazione: il runner functional esistente include 24 scenari.
+OPERATOR_DIALOG_GEOMETRY e AUTHENTICATED_SHELL_UX usano processi separati con
+receipt propria e limite di 60 s. HISTORY_IMPORT_GUIDED_UX usa un processo
+separato con lo stesso limite:
+selezione file e comandi dei controlli WPF, esiti terminali per scheda, rifiuti
+provider, deduplica senza riscrittura, callback tardive e copertura del report.
+La qualifica sintetica passa dal trasporto `qualified_config`, dal mapper DTO
+e dal resolver del prodotto: anteprima valida, revoca e scope di file estraneo
+non assegnano direttamente analisi o piani alla view model.
+HISTORY_WEB_IMPORT_UX ha un proprio processo isolato con limite di 60 s e
+deadline interna di 52 s. Il ramo writer web usa una fixture HTTP loopback: trasporti e upload
+canonici, stato di preparazione terminato, review, conferma WPF, ACK perso,
+nuovo accesso v6 dello stesso principal e ricevuta senza seconda scrittura.
+Le prove web hanno versione parser propria; il test non promuove prove C#.
+La fixture HTTP è una prova del client e dei controlli; la catena autorizzata
+del backend/SQL resta nel harness autenticato canonico, con XLSX e documenti
+sintetici realmente verificati prima della qualifica.
+Il selettore file riceve soltanto un risultato I/O sintetico: parser, comandi,
+binding, autorizzazione del servizio e ledger restano quelli del prodotto.
+Usa esclusivamente login loopback, dati/finestre sintetici posseduti
+e misure native; non usa il profilo del negozio. Il worker storico conserva
+8 casi, 52 assert e 60 s; il passo superiore conserva 90 s. Nessun POS reale può
+concorrere con il harness UI.
 
 Invocabile direttamente da terminale, CI o da una chat Codex autorizzata a eseguire
 questi test. `codex-cli 0.142.4` è stato verificato con `codex --version` e
@@ -32,7 +50,7 @@ Windows esegue la sequenza canonica: restore locked soluzione, required gates,
 build soluzione, Core/Data, selftest, build WPF/harness x86 e i cinque runner
 immagini/serializzazione, functional, authorization lease, logging e paging
 Dispatcher. Functional conserva il budget di 60.000 ms per processo scenario;
-deve produrre esattamente visual + 21 risultati distinti. Un suo FAIL non impedisce
+deve produrre esattamente visual + 23 risultati distinti. Un suo FAIL non impedisce
 gli smoke successivi. Un prerequisito fallito blocca soltanto i propri dipendenti.
 Nessuna suite vuota o TRX con zero test può produrre PASS.
 

@@ -7,6 +7,197 @@ La tabella corrente distingue qualifiche effettive, fallimenti e gate aperti
 di PR135/Admin151 e della consegna cassa136. I riepiloghi precedenti sono
 conservati come storia. Installato248 verificato con primo/secondo avvio online; offline reale e storico operativo restano aperti, nessun DONE.
 
+## Addendum mirato13novembre — preparazione, UX e consegna
+
+Stessa Execution, stessi tre proprietari: Worker/preparazione, UI/resolver,
+Master. Ripresa dopo aggiornamento Codex dai diff e dalle ricevute esistenti;
+POS reale chiuso dall'utente e processo assente, nessuna nuova richiesta di
+chiusura. Non ripetere riconciliazione, export o import dei25947movimenti per
+la differenza di filtro già spiegata. PUT/archivio server verificati restano
+acquisiti. La baseline usa migration-worker/local-export-reader, non il parser
+XLSX. Diagnostiche redatte per fasi/RPC/ordinali/memoria/cancellazione; propagare
+il segnale120s fino al port RPC e distinguere fallimento run da uscita servizio.
+
+Le prove temporizzate sullo stesso host sono serializzate. Primo confronto
+di rete artificiale e prime UI eseguiti con contesa: conservati ma non qualificano
+le prestazioni. Gzip da solo non è ancora una soluzione120s dimostrata.
+Nessun cambio unilaterale a blocchi200, ordinali, fence,120s o limiti memoria;
+ogni eventuale contratto diverso deve essere versionato e qualificato con SQL
+reale isolato, gateway e exportv2 sintetico rappresentativo. Nessun reset diretto
+o pubblicazione parziale. Per il retry usare identità/stato e recupero canonici.
+
+UI: requisiti e rimedio prima dei dettagli espandibili, CLP moderno dal file;
+configurazione console fresca fino al piano, header/content e ammissione server.
+Il no-op richiede copertura ancora attiva, non la sola ricevuta. Test portable
+mirati226/226 PASS, compresi fingerprint/pubblicazione qualificata e vecchi
+contratti; WPFbuildPASS0warning/error. Al14novembre client/mapper74/74 e
+pubblicazione qualificata2/2 PASS; Guided61/13.458s, web32/9.423s e smoke8/52
+in43.130s PASS su fixture isolate. Gate obbligatori50/50 e soluzione PASS.
+CI completa/release/installazione del commit congelato ancora da qualificare;
+vecchi FAIL/TIMEOUT conservati. Smoke8/52/60 invariato.
+
+Dopo test mirati congelare server, Worker e WPF e completare i gate applicabili
+senza rilanciare suite generali per modifiche solo documentali. Consegna Worker
+dedicato separata dal deploy Cloudflare. Matrice finale unica negli indici,
+piano/evidence e handoff esistenti dopo consolidamento. Nessun duplicato di
+MASTER-PLAN nel repository Windows. ModernoC/Win7 fisico restano gate esterni;
+baseline incompleta o UI non consegnata non consentono DONE/REVIEW finale.
+
+## Addendum 12 novembre — importazione utilizzabile e riconciliazione
+
+Stessa Execution ACTIVE. Base Windows92dff410; installato248e689 con v6
+permanente preservato. Nuovo ramo codex/asus019-getnet-import-ux, nessuna modifica
+al checkout dell'utente. Il successore server PUT PR154/f467be7 è qualificato,
+integrato in ca9f239 e pubblicato (versione9d82f4ed). Il caricamento reale è
+verificato,869952byte; la successiva analisi Worker è FAIL history_worker_timeout
+dopo6000oggetti/0movimenti. Nessun retry live o modifica dei budget; non è una
+sincronizzazione completata. Diagnosi e confronto sintetico del trasporto in
+U19BaselineActual01/U19BaselineVolume01, separati dal delta UX.
+
+Riconciliazione privata in sola lettura: sette originali con hash invariati,
+25947righe legacy confrontate senza differenze; il filtro12giugno–12novembre
+contiene esattamente2577movimenti. Il calendario non dimostra copertura o zeri.
+Oracolo agosto ricontrollato; rifiuti provider distinti da errori e incassi.
+Baseline server needs_attention, ultima copia locale conservata e zero versioni
+economiche alla lettura successiva al fallimento.
+
+Sequenza implementativa richiesta:
+1. Stati terminali per operazione/tab, generation fence, piano invalidato su
+   ogni cambio pertinente; scegli/verifica/conferma/risultato e duplicato senza
+   scrittura aggiuntiva.
+2. Resolver sulle prove persistite qualificate, applicabili e non revocate:
+   shop/esercente/formato/versione/intervallo/file. Nessun testo libero o
+   checkbox diventa prova verificata; CLP moderno deriva dal contenuto.
+3. Report ordinario senza Origin/editor tecnico, componente disponibile
+   esplicita e giorni sconosciuti distinti da zero. Nessun dettaglio storico
+   contanti/prodotti inventato, netto Getnet distinto da vendite native.
+4. Configurazione/migrazione/freeze/cutover/recovery nella gestione Master,
+   riuso dei pannelli e controllo server; verificare adapter POS web-writer.
+5. Harness attraverso controlli reali, confini/revoca/dedup/report, gate propri
+   e consegna verificata da Start sull'installato. Fixture separate dal negozio.
+
+Resolver qualificazioni PASS63/63; UX/service/harness ancora WIP e gate Windows
+nuovi NOT_RUN. Il riconoscimento file già importato deve confrontare SHA,parser,
+shop,dataset e copertura delle righe ancora attive, compresi riferimenti di
+deduplica: una ricevuta storica da sola non basta dopo un Undo.
+Getnet C manca: preview moderna consentita, apply bloccato
+finché esiste prova temporale applicabile. Win7 fisico BLOCKED_TARGET;
+200%/2880x1800 conservati,100/125 USER_DEFERRED. Nessun reset ledger, vendita,
+Undo reale, paywall o nuova task. Evidence private U19GetnetReconcile01.
+
+<!-- ASUS019_DELIVERY_COMPOSITION_START -->
+## Composizione candidata — stessa ASUS-W7POS-019 ACTIVE
+
+Il ramo codex/asus019-delivery-offline-history integra il client storico
+1f8ceaa62cdb4fad47852b55f69e933b8fa3aa54 con offline reopen
+fe069a1e8a4326c55b4e8d471679d5bfefba2c0b, base comune d1b2bc3.
+Nessuna correzione prodotto manuale durante il merge: conflitti soltanto nei
+due documenti, risolti conservando entrambe le cronologie. Gli altri file
+sono integrati da Git; Program e catalogo QA richiedono i gate del composto.
+
+Cassa reale d1b installata/41file e prima UX PASS; secondo Start/PIN e scanner
+fisico NOT_RUN. Nessuna installazione di questo composto e nessuna vendita,
+articolo,Apply/Undo/reimport sul negozio reale.200%/2880x1800 conservati.
+
+Prove dei componenti, distinte dalle prove del composto:
+- Offline fe: Windows43127519453 PASS15/15,Security43127519394 entrambiPASS,
+  Release43127263071 e download41file/110checksum PASS. QA40/prodotto41,
+  34file comuni esatti; ASUS Integrated12 PASS,Final60 in corso. Offline
+  reopen nella stessa sessione Windows e negativi in tre CLR provati;
+  reboot/logoff offline BLOCKED_TIME_CONTINUITY. Win7fisico BLOCKED_TARGET.
+- Storico precedente bb2: Windows43126279571 PASS16/16,Security entrambiPASS,
+  Release/download41/110 PASS. Client1f richiede ed esporta l'HTTP409 effettivo;
+  propri All43133339400/Release43133380130 ancora in corso,Security entrambiPASS.
+- Servizi reali21: SQL95/5318 e10casi PASS,HTTP409/history_cloud_writer_closed
+  non retryable,uploadZIP200. OverallFAIL alla riconciliazione congelata:
+  sette duplicati attivi e una riga inattiva ricreata,benchè già canonica
+  con identità/digest/economia/stato esatti. Artifact3f22cde0 conservato.
+- Correttivo server separato612d9bd: migrazione additiva riusa una sola
+  versione inattiva esatta nello stesso shop; ambiguità bloccata,guardie di
+  mapping e classificazioni attive/baseline conservate.13nuovi assert,
+  vecchi28overlay/pin invariati,prepare43pin PASS; SQL96/5331 e prova22
+  run43135972944 in corso. Non ancora PASS del successore o deploy operativo.
+
+Gate propri di questo composto ancora NOT_RUN: required/dialog/build,
+Windows-All net48/x86 con storicoAll,Security,Release esatto/QA payload,
+prove autenticazione/riapertura e nuova ASUS Integrated12/Final60 sul suo SHA.
+I PASS dei componenti non si trasferiscono. Nessun DONE globale. Dopo il
+freeze eseguire i gate remoti senza caricare l'ASUS durante la misura fe.
+Le sezioni seguenti conservano il contesto dei componenti alle rispettive date.
+<!-- ASUS019_DELIVERY_COMPOSITION_END -->
+
+<details>
+<summary>Contesto del componente offline fe069a1 conservato integralmente</summary>
+
+<!-- ASUS019_OFFLINE_REOPEN_CURRENT_START -->
+## Addendum 11 novembre — cassa consegnata e riapertura offline
+
+Stessa Execution ACTIVE. Cassa d1b2bc3 installata tramite installer canonico
+Release42967017718 dopo backup prodotto verificato;41file corrispondono al
+pacchetto e13file profilo invariati. Primo Start/login→carrello vuoto/scanner→
+riepilogo→POS/focus verificati, senza nuove righe economiche. PR136 integrata
+normalmente in main32145b0; secondo avvio reale e scanner fisico NOT_RUN.
+Il pacchetto installato conserva il precedente limite offline process-scoped.
+
+Questo successore indipendente estende l'offline alla riapertura dell'app nella
+stessa sessione Windows. Non rinnova le12ore massime, né la scadenza più breve
+di staff/sessione. Riusa mirror shop/staff/versione credenziale, verificatore
+PIN, tentativi e controllo della generazione durevole prima dell'autorizzazione.
+Prima attivazione senza un accesso server verificato resta negata.
+
+Il formato trust v5 sostituisce il segreto del solo processo con ricevuta casuale
+e binding DPAPI a profilo canonico,device,shop,staff/versione e sessione. Un secondo
+testimone DPAPI CurrentUser, nel registro HKCU volatile fuori dai backup profilo,
+vincola l'esatto hash del file e la ricevuta corrente. Memorizza l'ancora temporale
+server/QPC e il massimo tempo locale osservato; gli accessi successivi avanzano
+questi valori, mai la scadenza. File vecchi/alterati,altro profilo/device e perdita
+del testimone non ricreano autorità. Clear/TryClear registrano una tombstone prima
+di eliminare il file; il ripristino del profilo non annulla una revoca già nota.
+Mutex per profilo serializza gli accessi al testimone. Formati1–4 restano leggibili
+per recovery online ma non acquisiscono automaticamente autorità offline v5.
+Nessuna password leggibile o recuperabile; i token DPAPI già esistenti restano
+distinti dal verificatore PIN. Nessun nuovo schema SQLite,contratto cloud o SDK.
+
+Riavvio Windows offline: BLOCKED_TIME_CONTINUITY. La chiave volatile scompare
+quando viene scaricato l'hive; non viene ricreata leggendo il vecchio profilo.
+Dopo reboot/logoff serve una nuova attestazione online. Non è provato un clock
+fidato che includa il tempo trascorso a macchina spenta su Win7; prossimo passo:
+scegliere e qualificare tale fonte prima di consentire reboot offline. Perdita
+del testimone simulata nei test ≠ reboot fisico eseguito. Revoche server ancora
+sconosciute senza rete non sono rilevate immediatamente. Ripristino dell'intero
+OS/VM e codice ostile eseguito come lo stesso utente Windows non costituiscono
+un confine di sicurezza offerto da DPAPI/registro applicativo.
+
+Fonti API: [QPC e Stopwatch su Windows7](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps),
+[chiavi volatile ed esclusione da RegSaveKey](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regcreatekeyexw).
+
+Prove del delta su fixture isolate:113Core mirati PASS,buildWPF/harness net48x86
+PASS0warning/error,gate offline e standard dialog ALLPASS. Smoke principale
+conserva le precedenti race/limiti/zero sink; prepare/verify in due CLR prova
+riapertura e PIN,un terzo CLR prova la revoca persistita,altro profilo/device,
+testimone alterato e testimone Windows mancante. UX3/3 PASS: AUTHENTICATED_SHELL_UX,
+INTEGRATED_login_sale_retry_receipt_restart,F05_same_clock_recovery_restart_active_cart.
+Questi PASS locali non equivalgono a Windows-All/Release/pacchetto qualificati.
+Congelare il successore ed eseguire i propri gate prima della consegna.
+
+Storico bilaterale conserva le sorgenti/run precedenti. Client bb2ffda aggiunge
+soltanto i5ID mancanti nei due cataloghi QA; CrashProbe completo5/5 PASS con11
+assert nel commit-authority,compresi i6precedenti. Server2024819 corregge solo
+il seed duplicato del fixture SQL; run autenticata43124933306 con client93fd
+in corso. Timeout o errore generico non valgono come writer_closed. Win7fisico
+BLOCKED_TARGET;200%/2880×1800 mantenuti,100/125 USER_DEFERRED. Nessun DONE globale.
+<!-- ASUS019_OFFLINE_REOPEN_CURRENT_END -->
+
+
+</details>
+
+Addenda correnti10novembre: sincronizzazione automatica storica e matrice di
+tutti i domini commerciali condivisi nella stessa Execution. Il delta, percorsi
+letti, gap e livelli di prova sono in [CLOUD-CONTINUATION](CLOUD-CONTINUATION.md).
+PR136 conserva qualifica/consegna propria; PR135/Admin151 implementano i nuovi
+contratti. Il riepilogo precedente sottostante è storico, non prova di rollout
+cloud. Installato verificato2ad42ca; nuovi gate bilaterali NOT_RUN, nessun DONE.
+
 <!-- ASUS019_COMPOSED_CURRENT_START -->
 ## Stato corrente — 20261112T205249Z, stessa ASUS-W7POS-019 ACTIVE
 

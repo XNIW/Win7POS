@@ -100,10 +100,17 @@ $functionalStep = New-QaStep functional fake @() @() 1 'functional'
 $functionalPath = Join-Path $functionalDir 'functional-results.json'
 @{ schemaVersion=1; results=@() } | ConvertTo-Json | Set-Content -LiteralPath $functionalPath
 Must-Fail { Assert-QaEvidence $functionalStep $root } 'incomplete_functional_tests'
-$expected = @('FUNCTIONAL_VISUAL','OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
+$expected = @('FUNCTIONAL_VISUAL','OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','HISTORY_IMPORT_GUIDED_UX','HISTORY_WEB_IMPORT_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
 $records = @($expected | ForEach-Object { [pscustomobject]@{ name=$_; status='PASS'; exitCode=0 } })
 @{ schemaVersion=1; results=$records } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $functionalPath
 Assert-QaEvidence $functionalStep $root
+$withoutGuided = @($records | Where-Object name -cne 'HISTORY_IMPORT_GUIDED_UX')
+@{ schemaVersion=1; results=$withoutGuided } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $functionalPath
+Must-Fail { Assert-QaEvidence $functionalStep $root } 'incomplete_functional_tests'
+$withoutWeb = @($records | Where-Object name -cne 'HISTORY_WEB_IMPORT_UX')
+@{ schemaVersion=1; results=$withoutWeb } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $functionalPath
+Must-Fail { Assert-QaEvidence $functionalStep $root } 'incomplete_functional_tests'
+@{ schemaVersion=1; results=$records } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $functionalPath
 $records[-1].name='UNKNOWN'
 @{ schemaVersion=1; results=$records } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $functionalPath
 Must-Fail { Assert-QaEvidence $functionalStep $root } 'functional_scenario_missing'
@@ -634,7 +641,7 @@ Must-Fail {Read-QaSyntheticVisualEvidence $visualPath $historyExpected $typedRoo
 $visuals=New-SyntheticVisualEnvelope;$visuals.captures[0]|Add-Member NoteProperty renderedText 'PRIVATE_SENTINEL';$visuals|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $visualPath
 Must-Fail {Read-QaSyntheticVisualEvidence $visualPath $historyExpected $typedRoot} 'qa_public_visual_privacy_rejected'
 $visuals=New-SyntheticVisualEnvelope;$visuals.captures[2].status='PASS';$visuals.captures[2].code='none'
-foreach($binding in @{nativeFixture=$true;shopId='qa-auth-shop';fixtureToken=('a'*32);textSha256=('f'*64);relativePath='qa-visual-import_summary.png';pngSha256=('a'*64);width=100;height=40}.GetEnumerator()){$visuals.captures[2]|Add-Member NoteProperty $binding.Key $binding.Value -Force}
+foreach($binding in @{nativeFixture=$true;shopId='10000000-0000-4000-8000-000000003019';fixtureToken=('a'*32);textSha256=('f'*64);relativePath='qa-visual-import_summary.png';pngSha256=('a'*64);width=100;height=40}.GetEnumerator()){$visuals.captures[2]|Add-Member NoteProperty $binding.Key $binding.Value -Force}
 $visuals|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $visualPath
 Must-Fail {Read-QaSyntheticVisualEvidence $visualPath $historyExpected $typedRoot} 'qa_public_visual_provenance_invalid'
 $visualReport=$publicReport|ConvertTo-Json -Depth 10|ConvertFrom-Json;$visualReport.runId=$historyExpected.runId

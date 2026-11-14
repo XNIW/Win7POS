@@ -102,10 +102,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
 
             var physicalPrinterQa = HasArg(args, "--physical-printer-qa");
+            var persistentAuthorizationRestart =
+                HasArg(args, "--authorization-persistent-restart-prepare") ||
+                HasArg(args, "--authorization-persistent-restart-verify") ||
+                HasArg(args, "--authorization-persistent-restart-denied-verify");
             var authorizationLeaseRestartPrepare =
-                HasArg(args, "--authorization-lease-restart-prepare");
+                HasArg(args, "--authorization-lease-restart-prepare") ||
+                HasArg(args, "--authorization-persistent-restart-prepare");
             var authorizationLeaseRestartVerify =
-                HasArg(args, "--authorization-lease-restart-verify");
+                HasArg(args, "--authorization-lease-restart-verify") ||
+                HasArg(args, "--authorization-persistent-restart-verify");
+            var authorizationLeaseRestartDeniedVerify =
+                HasArg(args, "--authorization-lease-restart-denied-verify") ||
+                HasArg(args, "--authorization-persistent-restart-denied-verify");
             var authorizationLeaseClockCapacity =
                 HasArg(args, "--authorization-lease-clock-capacity-smoke");
             var authorizationLeaseSmoke =
@@ -114,6 +123,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 authorizationLeaseSmoke ||
                 authorizationLeaseRestartPrepare ||
                 authorizationLeaseRestartVerify ||
+                authorizationLeaseRestartDeniedVerify ||
                 authorizationLeaseClockCapacity;
             var seedTrustedSession =
                 HasArg(args, "--seed-trusted-session");
@@ -162,7 +172,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 throw new InvalidOperationException(
                     "This authorization lease mode requires --seed-trusted-session.");
             }
-            if (authorizationLeaseRestartVerify && seedTrustedSession)
+            if ((authorizationLeaseRestartVerify || authorizationLeaseRestartDeniedVerify) && seedTrustedSession)
             {
                 throw new InvalidOperationException(
                     "Restart verification must reuse prepared state without --seed-trusted-session.");
@@ -170,18 +180,21 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var productImageStagingAcceptance =
                 HasArg(args, "--product-image-staging-acceptance");
+            var historicalImportGuidedUx = HasArg(args, "--historical-import-guided-ux-smoke");
+            var historicalWebImportUx = HasArg(args,"--historical-web-import-ux-smoke");
+            var historicalGuidedApplication=historicalImportGuidedUx||historicalWebImportUx;
             var productImageAcceptanceRunnerToken =
                 Environment.GetEnvironmentVariable(
                     ProductImageStagingAcceptance
                         .AcceptanceRunnerTokenEnvironmentVariable);
-            var restrictedQaData = physicalPrinterQa ||
+            var restrictedQaData = historicalGuidedApplication || physicalPrinterQa ||
                                    authorizationLeaseMode ||
                                    productImageStagingAcceptance ||
                                    HasArg(args, "--offline-sales-sandbox") ||
                                    (HasArg(args, "--seed") &&
                                     seedTrustedSession);
             var requireEmptyQaData =
-                physicalPrinterQa ||
+                historicalGuidedApplication || physicalPrinterQa ||
                 HasArg(args, "--offline-sales-sandbox") ||
                 (HasArg(args, "--seed") && seedTrustedSession) ||
                 (authorizationLeaseModeRequiresSeed &&
@@ -254,7 +267,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
                     dataDir,
                     requireEmptyQaData,
-                    authorizationLeaseRestartVerify);
+                    authorizationLeaseRestartVerify || authorizationLeaseRestartDeniedVerify);
             }
 
             Directory.CreateDirectory(dataDir);
@@ -264,14 +277,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
                     dataDir,
                     requireEmptyQaData,
-                    authorizationLeaseRestartVerify);
+                    authorizationLeaseRestartVerify || authorizationLeaseRestartDeniedVerify);
             }
             var artifactDirectory =
                 authorizationLeaseMode ? diagnosticsDir : dataDir;
-            var automatedRun = HasArg(args, "--functional-completion-smoke") || HasArg(args, "--cart-performance") || HasArg(args, "--seed") ||
+            var automatedRun = historicalGuidedApplication || HasArg(args, "--functional-completion-smoke") || HasArg(args, "--cart-performance") || HasArg(args, "--seed") ||
                                authorizationLeaseSmoke ||
                                authorizationLeaseRestartPrepare ||
                                authorizationLeaseRestartVerify ||
+                               authorizationLeaseRestartDeniedVerify ||
                                authorizationLeaseClockCapacity ||
                                HasArg(args, "--product-paging-dispatcher-smoke") ||
                                HasArg(args, "--bounded-logging-smoke") ||
@@ -307,7 +321,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Environment.SetEnvironmentVariable("WIN7POS_SAFE_START", "1");
             if (PosDatabaseAuthorityQaProbe.TryRun(args, PosDbOptions.Default(), "harness", out var authorityProbeExit))
             { Environment.ExitCode = authorityProbeExit; return; }
-            if (HasArg(args, "--authenticated-shell-ux-smoke") || HasArg(args, "--operator-dialog-geometry-smoke") || HasArg(args, "--historical-sales-import-foundation") || HasArg(args, "--historical-sales-import-crash-probe") ||
+            if (historicalGuidedApplication || HasArg(args, "--authenticated-shell-ux-smoke") || HasArg(args, "--operator-dialog-geometry-smoke") || HasArg(args, "--historical-sales-import-foundation") || HasArg(args, "--historical-sales-import-crash-probe") ||
                 HasArg(args, "--historical-sales-import-crash-verify") || HasArg(args, "--historical-sales-import-smoke") || HasArg(args, "--historical-sales-import-load") || HasArg(args,"--historical-cloud-sync-probe"))
             {
                 if (Application.ResourceAssembly == null) Application.ResourceAssembly = typeof(ProductEditDialog).Assembly;
@@ -318,7 +332,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var exitCode = 1;
                     try
                     {
-                        if (HasArg(args, "--authenticated-shell-ux-smoke"))
+                        if (historicalGuidedApplication)
+                        {
+                            var result = await (historicalWebImportUx?HistoricalImportGuidedUxSmoke.RunWebAsync(dataDir):HistoricalImportGuidedUxSmoke.RunAsync(dataDir)).ConfigureAwait(true);
+                            File.WriteAllText(Path.Combine(dataDir, historicalWebImportUx?"historical-web-import-ux-smoke.txt":"historical-import-guided-ux-smoke.txt"), result);
+                            exitCode = result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1;
+                        }
+                        else if (HasArg(args, "--authenticated-shell-ux-smoke"))
                         {
                             var result = await ArticleMutationLoopbackHarness.VerifyAuthenticatedShellUxAsync(dataDir).ConfigureAwait(true);
                             File.WriteAllText(Path.Combine(dataDir, "authenticated-shell-ux-smoke.txt"), result);
@@ -502,7 +522,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (authorizationLeaseRestartPrepare)
                     {
                         var result = await AuthorizationLeaseWpfSmoke
-                            .PrepareRestartProbeAsync()
+                            .PrepareRestartProbeAsync(persistentAuthorizationRestart)
                             .ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(
@@ -520,7 +540,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (authorizationLeaseRestartVerify)
                     {
                         var result = await AuthorizationLeaseWpfSmoke
-                            .VerifyRestartProbeAsync()
+                            .VerifyRestartProbeAsync(persistentAuthorizationRestart)
                             .ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(
@@ -532,6 +552,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             result.StartsWith("PASS", StringComparison.Ordinal)
                                 ? 0
                                 : 1);
+                        return;
+                    }
+
+                    if (authorizationLeaseRestartDeniedVerify)
+                    {
+                        var result = await AuthorizationLeaseWpfSmoke
+                            .VerifyRevokedRestartProbeAsync(persistentAuthorizationRestart)
+                            .ConfigureAwait(true);
+                        File.WriteAllText(Path.Combine(artifactDirectory,
+                            "authorization-lease-restart-denied-verify.txt"), result, Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
                         return;
                     }
 

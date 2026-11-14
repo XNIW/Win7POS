@@ -41,7 +41,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private long _periodNativePositiveSalesClp;
         public ICommand ImportHistoryCommand { get; private set; }
         public ICommand CancelReportCommand { get; private set; }
-        public ICommand ConfigureReportTimePolicyCommand { get; private set; }
         public Task ReloadAnalyticalAsync() => SelectedTabIndex == 1 ? LoadAnalyticalHistoryAsync() : LoadAnalyticalDailyAsync();
         public string[] ReportOriginLabels => new[] { PosLocalization.T("historyReport.originAll"), PosLocalization.T("historyReport.originNative"), PosLocalization.T("historyReport.originGetnet") };
         public int ReportOriginIndex
@@ -53,7 +52,23 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool ReportNumbersVisible => Volatile.Read(ref _reportAuthorityCurrent) && _reportContext != null &&
             _reportSession?.IsSalesReportReadAuthorityCurrent(_reportReadAuthority, _reportContext.Filter) == true &&
             _reportContext.Snapshot.Coverage.CanPublish && _reportContext.Coordinator.IsCurrent(_reportContext.Snapshot.Token);
-        public string ReportCoverageText => _reportContext == null ? PosLocalization.T("historyReport.coverageNotLoaded") : PosLocalization.T("historyReport.coverage." + _reportContext.Snapshot.Coverage.Status);
+        public bool NativeReportComponentAvailable => ReportNumbersVisible&&(_reportContext.Filter.Origins&SalesReportOrigins.Native)!=0;
+        public string NativeReceiptCountText => NativeReportComponentAvailable?SalesCountDisplay.ToString(CultureInfo.CurrentCulture):PosLocalization.T("historyReport.notAvailable");
+        public string PeriodNativeReceiptCountText => NativeReportComponentAvailable?PeriodSalesCount.ToString(CultureInfo.CurrentCulture):PosLocalization.T("historyReport.notAvailable");
+        public string MarkedNativeReceiptCountText => NativeReportComponentAvailable?MarkedSalesCount.ToString(CultureInfo.CurrentCulture):PosLocalization.T("historyReport.notAvailable");
+        public string ReportCoverageText => CoverageText(_reportContext);
+        private static string CoverageText(SalesReportContext context)
+        {
+            if(context==null)return PosLocalization.T("historyReport.coverageNotLoaded");
+            var text=PosLocalization.T("historyReport.coverage."+context.Snapshot.Coverage.Status);
+            if(context.NativeComponentUnavailable)text=PosLocalization.T("historyReport.nativeUnavailable")+" "+text;
+            if(context.Snapshot.Coverage.CanPublish)
+            {
+                var calendar=context.Filter.SelectedDates.Count>0?context.Filter.SelectedDates.Count:(context.Filter.ToExclusive-context.Filter.FromInclusive).Days;
+                text+=" "+PosLocalization.F("historyReport.observedDays",context.Snapshot.Days.Count,Math.Max(0,calendar-context.Snapshot.Days.Count));
+            }
+            return text;
+        }
         public string HistoricalMovementCountText => ReportNumbersVisible ? PosLocalization.F("historyReport.importedCount", SelectedTabIndex == 1
             ? (MarkedCount > 0 ? HistoryRows.Where(row => row.IsMarked).Sum(row => row.HistoricalMovementCount) : SelectedHistoryRow?.HistoricalMovementCount ?? 0)
             : _reportContext.Snapshot.Summary.HistoricalMovementCount) : string.Empty;
@@ -64,8 +79,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ImportHistoryCommand = new AsyncRelayCommand(async () => { if (importHistoryAction != null) { await importHistoryAction().ConfigureAwait(true); if (_reportContext != null && !_reportContext.Coordinator.IsCurrent(_reportContext.Snapshot.Token)) InvalidateAnalyticalReport(); } },
                 _ => !IsBusy && importHistoryAction != null && (_reportPermissions?.Has(PermissionCodes.RegisterImportHistory) == true || _reportPermissions?.Has(PermissionCodes.RegisterCancelHistory) == true));
             CancelReportCommand = new RelayCommand(() => _reportCancellation?.Cancel(), _ => _reportCancellation != null && !_reportFinalizing);
-            ConfigureReportTimePolicyCommand = new AsyncRelayCommand(OpenReportTimePolicyConfigurationAsync,
-                _ => !IsBusy && _reportSession != null && _reportPermissions?.Has(PermissionCodes.RegisterImportHistory) == true);
             if (_reportSession != null) _reportSession.SessionChanged += OnReportSessionChanged;
             _reportDispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
             PosOnlineSyncRevocationLatch.AuthorizationStateChanged += OnReportSessionChanged;
@@ -125,14 +138,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
             internal Dictionary<DateTime,bool> Marks { get; }
             internal DateTime? Selected { get; }
         }
-        private async Task OpenReportTimePolicyConfigurationAsync()
-        {
-            _reportPermissions.Demand(PermissionCodes.RegisterImportHistory, PosLocalization.T("reportTimePolicy.title"));
-            var model = new SalesReportTimePolicyViewModel(_service, _reportSession, _reportPermissions);
-            var dialog = new SalesReportTimePolicyDialog(model) { Owner = DialogOwnerHelper.GetSafeOwner() };
-            WindowSizingHelper.CapMaxHeightToOwner(dialog); dialog.ShowDialog();
-            if (model.IsActivated) { InvalidateAnalyticalReport(); await ReloadAnalyticalAsync().ConfigureAwait(true); }
-        }
         private void OnReportSessionChanged()
         {
             Volatile.Write(ref _reportAuthorityCurrent, false);
@@ -167,6 +172,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
         private void NotifyReportCoverage()
         {
+            OnPropertyChanged(nameof(NativeReportComponentAvailable));OnPropertyChanged(nameof(NativeReceiptCountText));OnPropertyChanged(nameof(PeriodNativeReceiptCountText));OnPropertyChanged(nameof(MarkedNativeReceiptCountText));
             OnPropertyChanged(nameof(ReportNumbersVisible)); OnPropertyChanged(nameof(ReportCoverageText)); OnPropertyChanged(nameof(HistoricalMovementCountText));
             OnPropertyChanged(nameof(ReportOriginLabels)); OnPropertyChanged(nameof(ShowHistoryEmptyMessage));
             RaiseCanExecuteChanged(); (ImportHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (CancelReportCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -219,7 +225,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 GetAnalyticalOperatorScope(out var canAll, out var operatorId);
-                var context = await _service.OpenAnalyticalReportAsync(date, date.AddDays(1), origin, canAll, operatorId, null, cancellation.Token).ConfigureAwait(true);
+                var context = await _service.OpenAvailableAnalyticalReportAsync(date, date.AddDays(1), origin, canAll, operatorId, cancellation.Token).ConfigureAwait(true);
                 cancellation.Token.ThrowIfCancellationRequested(); DemandAnalyticalPermission();
                 if (_disposed || version != _reportLoadVersion) return;
                 var authority = _reportSession.CaptureSalesReportReadAuthority(context.Filter, PermissionCodes.DailyCloseView);
@@ -242,7 +248,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 GetAnalyticalOperatorScope(out var canAll, out var operatorId);
-                var context = await _service.OpenAnalyticalReportAsync(from, to.AddDays(1), origin, canAll, operatorId, null, cancellation.Token).ConfigureAwait(true);
+                var context = await _service.OpenAvailableAnalyticalReportAsync(from, to.AddDays(1), origin, canAll, operatorId, cancellation.Token).ConfigureAwait(true);
                 cancellation.Token.ThrowIfCancellationRequested(); DemandAnalyticalPermission();
                 if (_disposed || version != _reportLoadVersion) return;
                 var authority = _reportSession.CaptureSalesReportReadAuthority(context.Filter, PermissionCodes.DailyCloseView);
@@ -288,15 +294,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var rows = new ObservableCollection<HistoryRow>();
             if (history && snapshot.Coverage.CanPublish)
             {
-                var byDate = snapshot.Days.ToDictionary(day => day.Date, day => day.Summary);
-                for (var date = from; date <= to; date = date.AddDays(1))
+                foreach(var day in snapshot.Days.Where(day=>day.Date>=from&&day.Date<=to).OrderBy(day=>day.Date))
                 {
-                    var summary = byDate.TryGetValue(date, out var value) ? value : SalesReportSummary.Empty;
+                    var date=day.Date;var summary=day.Summary;
                     rows.Add(new HistoryRow { Date = date, DateText = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), SalesCount = checked((int)summary.NativePositiveReceiptCount),
+                        NativeComponentAvailable=(context.Filter.Origins&SalesReportOrigins.Native)!=0,
                         NativePositiveSalesClp = summary.NativePositiveSalesClp, HistoricalMovementCount = summary.HistoricalMovementCount, NetAmount = summary.BalanceClp,
                         GrossAmount = summary.GrossPositiveClp, RefundsAmount = summary.ReversalsClp, CashAmount = summary.CashClp, CardAmount = summary.CardClp,
                         GrossDisplay = MoneyClp.FormatDisplay(summary.GrossPositiveClp), RefundsDisplay = MoneyClp.FormatDisplay(summary.ReversalsClp), NetDisplay = MoneyClp.FormatDisplay(summary.BalanceClp),
-                        CashDisplay = MoneyClp.FormatDisplay(summary.CashClp), CardDisplay = MoneyClp.FormatDisplay(summary.CardClp),
+                        CashDisplay = (context.Filter.Origins&SalesReportOrigins.Native)!=0?MoneyClp.FormatDisplay(summary.CashClp):PosLocalization.T("historyReport.notAvailable"), CardDisplay = MoneyClp.FormatDisplay(summary.CardClp),
                         IsMarked = selection == null || !selection.Marks.TryGetValue(date, out var marked) || marked });
                 }
             }
@@ -306,7 +312,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 NormalizedHeight = maximum == 0 ? 0 : (double)((decimal)snapshot.HourlyAmounts[hour] / maximum), IsPeak = snapshot.HourlyAmounts[hour] > 0 && snapshot.HourlyAmounts[hour] == snapshot.HourlyAmounts.Max() });
             var selected = rows.FirstOrDefault(row => row.Date == selection?.Selected) ?? rows.FirstOrDefault();
             var displayed = history ? snapshot.Days.FirstOrDefault(day => day.Date == from)?.Summary ?? SalesReportSummary.Empty : snapshot.Summary;
-            var preview = snapshot.Coverage.CanPublish ? RenderAnalyticalSummary(from, LegacySummary(from, displayed), PosLocalization.T("historyReport.coverage." + snapshot.Coverage.Status)) : string.Empty;
+            var preview = snapshot.Coverage.CanPublish ? RenderAnalyticalSummary(from, LegacySummary(from, displayed), CoverageText(context),(context.Filter.Origins&SalesReportOrigins.Native)!=0) : string.Empty;
             var headerSummary = history ? snapshot.Summary : displayed;
             var header = new HeaderSummary { SalesCount = checked((int)headerSummary.NativePositiveReceiptCount), NativePositiveSalesClp = headerSummary.NativePositiveSalesClp,
                 NetAmount = headerSummary.BalanceClp, CashAmount = headerSummary.CashClp, CardAmount = headerSummary.CardClp, GrossAmount = headerSummary.GrossPositiveClp, RefundsAmount = headerSummary.ReversalsClp };
@@ -368,6 +374,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void NotifyAnalyticalValues()
         {
             foreach (var property in new[] { nameof(HistoryRows), nameof(HourlySalesPoints), nameof(SelectedHistoryRow), nameof(HistoryRowCount), nameof(HasHistoryRows), nameof(ShowHistoryEmptyMessage),
+                nameof(NativeReportComponentAvailable),nameof(NativeReceiptCountText),nameof(PeriodNativeReceiptCountText),nameof(MarkedNativeReceiptCountText),
                 nameof(SalesCount), nameof(TotalAmount), nameof(CashAmount), nameof(CardAmount), nameof(GrossSalesAmount), nameof(RefundsAmount), nameof(NetAmount),
                 nameof(SalesCountDisplay), nameof(NetAmountDisplay), nameof(CashAmountDisplay), nameof(CardAmountDisplay), nameof(GrossSalesAmountDisplay), nameof(RefundsAmountDisplay), nameof(TicketMedioDisplay),
                 nameof(SummaryReceiptPreview), nameof(SingleMarkedReceiptPreview), nameof(IsHistoryPreviewLoading), nameof(IsMarkedPreviewLoading), nameof(HourlyPeakText), nameof(HourlyDayTotalText),
@@ -386,15 +393,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
         private static DailySalesSummary LegacySummary(DateTime date, SalesReportSummary summary) => new DailySalesSummary { Date = date, SalesCount = checked((int)summary.NativePositiveReceiptCount),
             TotalAmount = summary.BalanceClp, NetAmount = summary.BalanceClp, GrossSalesAmount = summary.GrossPositiveClp, RefundsAmount = summary.ReversalsClp, CashAmount = summary.CashClp, CardAmount = summary.CardClp };
-        private string RenderAnalyticalSummary(DateTime date, DailySalesSummary summary, string coverageText = null)
+        private string RenderAnalyticalSummary(DateTime date, DailySalesSummary summary, string coverageText = null,bool? nativeAvailable=null)
         {
             var width = _useReceipt42 ? 42 : 32; var lines = new List<string>();
             lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.WrapText(PosLocalization.T("historyReport.analyticalTitle"), width));
             lines.Add(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
             lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.WrapText(coverageText ?? ReportCoverageText, width));
-            lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.net"), MoneyClp.FormatDisplay(summary.NetAmount), width));
+            lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.TwoColumnLine(PosLocalization.T("historyReport.movementBalance"), MoneyClp.FormatDisplay(summary.NetAmount), width));
             lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.card"), MoneyClp.FormatDisplay(summary.CardAmount), width));
-            lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.cash"), MoneyClp.FormatDisplay(summary.CashAmount), width));
+            lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.cash"), (nativeAvailable??NativeReportComponentAvailable)?MoneyClp.FormatDisplay(summary.CashAmount):PosLocalization.T("historyReport.notAvailable"), width));
+            lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.WrapText(PosLocalization.T("historyReport.beforeFees"),width));
             lines.AddRange(Win7POS.Core.Receipt.ReceiptTextLayout.WrapText(PosLocalization.T("historyReport.cardCoverage"), width));
             return string.Join(Environment.NewLine, lines);
         }

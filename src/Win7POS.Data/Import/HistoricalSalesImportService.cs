@@ -58,11 +58,12 @@ namespace Win7POS.Data.Import
         public HistoricalSalesImportPlan(string operationId, string shopId, string datasetId, long dataRevision, long restoreEpoch,
             HistoricalSalesImportAnalysis analysis, IEnumerable<HistoricalMerchantAssignment> assignments,
             DateTime nativeStartBusinessDateTime, string overlapEvidenceReference,
-            IEnumerable<HistoricalSalesCorrectionApproval> correctionApprovals = null)
+            IEnumerable<HistoricalSalesCorrectionApproval> correctionApprovals = null,HistoricalQualifiedInputSelection qualification=null)
         {
             OperationId = HistoricalMerchantAssignment.Required(operationId); ShopId = HistoricalMerchantAssignment.Required(shopId);
             DatasetId = HistoricalMerchantAssignment.Required(datasetId); DataRevision = dataRevision; RestoreEpoch = restoreEpoch;
             Analysis = analysis ?? throw new ArgumentNullException(nameof(analysis));
+            Qualification=qualification;
             Assignments = new ReadOnlyCollection<HistoricalMerchantAssignment>((assignments ?? throw new ArgumentNullException(nameof(assignments))).ToArray());
             if (Assignments.Count > MaximumMerchantAssignments) throw new InvalidOperationException("historical_merchant_assignment_limit");
             NativeStartBusinessDateTime = DateTime.SpecifyKind(nativeStartBusinessDateTime, DateTimeKind.Unspecified);
@@ -98,6 +99,11 @@ namespace Win7POS.Data.Import
                 r.Source.RowNumber.ToString(CultureInfo.InvariantCulture), r.TransactionStatus, r.RequestedClp?.ToString(CultureInfo.InvariantCulture) ?? "null" }) yield return value;
             foreach (var approval in CorrectionApprovals.OrderBy(a => a.SourceFileId, StringComparer.Ordinal).ThenBy(a => a.SourceSheet, StringComparer.Ordinal).ThenBy(a => a.SourceRow))
             { yield return "approved-inactive-correction-v1"; yield return approval.Fingerprint; }
+            if(Qualification!=null)
+            {
+                yield return "qualified-input-selection-v1";yield return Qualification.ConfigDigest;yield return Qualification.ResolverFingerprint;
+                yield return Qualification.EvidenceIdsJson;
+            }
         }
         public string OperationId { get; }
         public string ShopId { get; }
@@ -105,6 +111,7 @@ namespace Win7POS.Data.Import
         public long DataRevision { get; }
         public long RestoreEpoch { get; }
         public HistoricalSalesImportAnalysis Analysis { get; }
+        public HistoricalQualifiedInputSelection Qualification{get;}
         public IReadOnlyList<HistoricalMerchantAssignment> Assignments { get; }
         public IReadOnlyList<HistoricalSalesCorrectionApproval> CorrectionApprovals { get; }
         public DateTime NativeStartBusinessDateTime { get; }
@@ -173,7 +180,7 @@ namespace Win7POS.Data.Import
     }
 
     /// <summary>Isolated historical ledger; never calls the native sale, stock, fiscal or outbox writers.</summary>
-    public sealed class HistoricalSalesImportService
+    public sealed partial class HistoricalSalesImportService
     {
         private readonly SqliteConnectionFactory _factory;
         private readonly HistoricalSalesImportTestHooks _testHooks;

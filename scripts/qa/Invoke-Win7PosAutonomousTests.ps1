@@ -423,7 +423,7 @@ function Export-QaSmokeEvidence([string]$WorkDirectory, [string]$DestinationDire
     if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw 'qa_smoke_work_directory_missing' }
     if ((Test-QaWithin $destination $source) -or (Test-QaWithin $source $destination)) { throw 'qa_smoke_export_paths_overlap' }
     $allowed = @('harness-error.txt','product-image-profile-smoke.txt','bounded-logging-smoke.txt','product-paging-dispatcher-smoke.txt')
-    foreach ($mode in @('smoke','restart-prepare','restart-verify','clock-capacity')) {
+    foreach ($mode in @('smoke','restart-prepare','restart-verify','restart-denied-verify','clock-capacity')) {
         $artifact = 'authorization-lease-' + $mode + '.txt'
         $allowed += @($artifact, ($artifact + '.stdout.txt'), ($artifact + '.stderr.txt'))
     }
@@ -479,8 +479,8 @@ function Assert-QaEvidence($Step, [string]$RunDirectory) {
     if ($Step.evidence -eq 'functional') {
         $manifest = Get-Content -LiteralPath (Join-Path $RunDirectory 'functional/functional-results.json') -Raw | ConvertFrom-Json
         $results = @($manifest.results)
-        if ($manifest.schemaVersion -ne 1 -or $results.Count -ne 22 -or @($results.name | Select-Object -Unique).Count -ne 22) { throw 'incomplete_functional_tests' }
-        $expected = @('FUNCTIONAL_VISUAL','OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
+        if ($manifest.schemaVersion -ne 1 -or $results.Count -ne 24 -or @($results.name | Select-Object -Unique).Count -ne 24) { throw 'incomplete_functional_tests' }
+        $expected = @('FUNCTIONAL_VISUAL','OPERATOR_DIALOG_GEOMETRY','AUTHENTICATED_SHELL_UX','HISTORY_IMPORT_GUIDED_UX','HISTORY_WEB_IMPORT_UX','IMPORT_completion','IMPORT_RECOVERY_completion','PRICE_HISTORY_completion','REFUND_completion','REVERSAL_authorization','F06_reversed_preview_delete_close','F01_export_gate','F07_settings_rollback','HARDWARE_settings_scanner','CUSTOMERDISPLAY_polish','CUSTOMERDISPLAY_completion','STOCK_fractional_input','F02_F03_workflow_stable_identity_batch_dispatcher','F05_same_clock_recovery_restart_active_cart','F08_discount_preview_lifetime','INTEGRATED_login_sale_retry_receipt_restart','LOAD_sync_backup_x86','P109_product_editor_late_render_close','PERF_visual_lifetime_and_public_commands')
         foreach ($name in $expected) { if (@($results | Where-Object { $_.name -ceq $name }).Count -ne 1) { throw 'functional_scenario_missing' } }
         if (@($results | Where-Object { $_.status -cne 'PASS' -or $null -eq $_.exitCode -or $_.exitCode -ne 0 }).Count) { throw 'functional_tests_failed' }
     }
