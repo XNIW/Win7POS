@@ -14,6 +14,7 @@ using Win7POS.Core.Online;
 using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Dialogs;
 
 namespace Win7POS.Wpf.UiSmokeHarness
@@ -38,8 +39,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using var import=new HistoricalSalesImportViewModel(service,f.Operator);
             report.ReportOriginIndex=2;report.SelectedTabIndex=1;report.HistoryFromText="2000-01-02";report.HistoryToText="2000-01-03";
             await report.ReloadAnalyticalAsync();await import.RefreshBatchesForTestingAsync();
-            if(!report.ReportNumbersVisible||report.PeriodNetAmount!=1000||report.HistoryRows.Count!=2)return false;
-            report.HistoryRows[0].IsMarked=false;report.SelectedHistoryRow=report.HistoryRows[1];
+            var recordedDay=new DateTime(2000,1,2);
+            var unknownDay=new DateTime(2000,1,3);
+            var observedOnly=report.ReportNumbersVisible&&report.PeriodNetAmount==1000&&report.HistoryRows.Count==1&&
+                report.HistoryRows[0].Date==recordedDay&&report.ReportCoverageText.Contains(PosLocalization.F("historyReport.observedDays",1,1));
+            test.PrivateDiagnostic("open_replica_initial_observed_only="+observedOnly+";rows="+report.HistoryRows.Count);
+            if(!observedOnly)return false;
+            report.HistoryRows[0].IsMarked=false;report.SelectedHistoryRow=report.HistoryRows[0];
             import.SelectedBatch=import.Batches.Single();var before=f.State();
             var outbox=new HistoricalPublicationOutbox(f.Factory);
             var pending=await outbox.ReadSummaryAsync(f.ShopId,CancellationToken.None);
@@ -80,19 +86,22 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var generation=await store.BeginAsync(f.ShopId,manifest,CancellationToken.None);
             await store.StageAsync(generation,new HistoricalCloudResult{DatasetId=dataset,Revision="1",WriterEpoch="2",Cursor=cursor,Done=true,Checksum=checksum,Movements=1,Batches=1,Entities=entities},CancellationToken.None);
             var clock=Stopwatch.StartNew();await store.PublishAsync(generation,CancellationToken.None);
-            while(clock.ElapsedMilliseconds<3000&&(!report.ReportNumbersVisible||report.PeriodNetAmount!=5000||report.IsBusy||import.IsBusy||import.CanImport))
+            while(clock.ElapsedMilliseconds<3000&&(!report.ReportNumbersVisible||report.PeriodNetAmount!=5000||report.IsBusy||import.IsBusy||!import.LocalHistoryWriterClosed||!import.CanImport))
                 await Task.Delay(10);
-            var converged=report.ReportNumbersVisible&&report.PeriodNetAmount==5000&&!report.IsBusy&&!import.CanImport;
+            var converged=report.ReportNumbersVisible&&report.PeriodNetAmount==5000&&!report.IsBusy&&import.LocalHistoryWriterClosed&&import.CanImport&&
+                !import.ApplyCommand.CanExecute(null)&&f.LocalWriteRequests==0;
             var selection=report.SelectedTabIndex==1&&report.HistoryFromText=="2000-01-02"&&report.HistoryToText=="2000-01-03"&&
-                report.SelectedHistoryRow?.Date==new DateTime(2000,1,3)&&!report.HistoryRows[0].IsMarked&&report.HistoryRows[1].IsMarked&&
+                report.SelectedHistoryRow?.Date==recordedDay&&report.HistoryRows.Count==1&&!report.HistoryRows[0].IsMarked&&
                 import.SelectedBatch?.ApplyOperationId==original.OperationId;
+            var unknownCoverage=report.HistoryRows.All(row=>row.Date!=unknownDay)&&
+                report.ReportCoverageText.Contains(PosLocalization.F("historyReport.observedDays",1,1));
             var replicaMilliseconds=clock.ElapsedMilliseconds;
             var previousReception=import.ReceptionStatus;var observationClock=Stopwatch.StartNew();
             await store.ObserveAuthorityAsync(f.ShopId,new HistoricalCloudResult{DatasetId=dataset,Revision="2",WriterEpoch="2",WriterAuthority="web",ProtocolVersion=1},CancellationToken.None);
             while(observationClock.ElapsedMilliseconds<3000&&(import.IsBusy||import.ReceptionStatus==previousReception))await Task.Delay(10);
             var newerKnown=!import.IsBusy&&import.ReceptionStatus!=previousReception&&!string.IsNullOrEmpty(import.ReceptionStatus)&&report.ReportNumbersVisible&&report.PeriodNetAmount==5000&&before==f.State();
-            test.PrivateDiagnostic("open_replica_views;converged="+converged+";selection="+selection+";pending_seen="+pendingSeen+";confirmed_seen="+confirmedSeen+";newer_known="+newerKnown+";delivery_ms="+deliveryMilliseconds+";unchanged="+(before==f.State())+";elapsed_ms="+replicaMilliseconds+";observation_ms="+observationClock.ElapsedMilliseconds);
-            return converged&&selection&&pendingSeen&&confirmedSeen&&newerKnown&&before==f.State();
+            test.PrivateDiagnostic("open_replica_views;converged="+converged+";selection="+selection+";unknown_coverage="+unknownCoverage+";pending_seen="+pendingSeen+";confirmed_seen="+confirmedSeen+";newer_known="+newerKnown+";delivery_ms="+deliveryMilliseconds+";unchanged="+(before==f.State())+";elapsed_ms="+replicaMilliseconds+";observation_ms="+observationClock.ElapsedMilliseconds);
+            return converged&&selection&&unknownCoverage&&pendingSeen&&confirmedSeen&&newerKnown&&before==f.State();
         }
         private static async Task<(HistoricalSalesOperationReceipt Receipt,HistoricalPublicationProof Proof)> ApplySyntheticPublicationAsync(HistoricalSalesFoundationRunner.Fixture f)
         {

@@ -67,7 +67,7 @@ function Get-AnalyticalReceiptViolations([string]$daily,[string]$analytical) {
         $operators -notmatch 'canAll\s*=\s*_reportPermissions\.Has\(PermissionCodes\.RegisterViewAll\)' -or $operators -notmatch 'operatorId\s*=\s*canAll\s*\?\s*\(int\?\)null\s*:\s*user\.Id'){$errors.Add('analytical operator scope must derive from the current bound user and ViewAll grant')}
     foreach($loader in @($day,$history)){
         if($loader -notmatch 'GetAnalyticalOperatorScope\(out var canAll,\s*out var operatorId\)' -or
-            $loader -notmatch 'OpenAnalyticalReportAsync\([^;]*,\s*origin,\s*canAll,\s*operatorId,\s*null,\s*cancellation\.Token\)' -or
+            $loader -notmatch 'OpenAvailableAnalyticalReportAsync\([^;]*,\s*origin,\s*canAll,\s*operatorId,\s*cancellation\.Token\)' -or
             $loader -notmatch 'version\s*!=\s*_reportLoadVersion' -or $loader -notmatch 'cancellation\.Token\.ThrowIfCancellationRequested\(\)' -or
             $loader -notmatch 'CaptureSalesReportReadAuthority\(context\.Filter,\s*PermissionCodes\.DailyCloseView\)' -or $loader -notmatch 'PublishAnalyticalSnapshot\(context,\s*authority,'){$errors.Add('daily/history loaders must use the same versioned analytical scope and captured authority')}
     }
@@ -77,7 +77,8 @@ function Get-AnalyticalReceiptViolations([string]$daily,[string]$analytical) {
         $current -notmatch 'await\s+_service\.DemandAnalyticalReportCurrentAsync\(context,\s*cancellationToken\)' -or $current -notmatch 'context\.Coordinator\.IsCurrent\(context\.Snapshot\.Token\)'){$errors.Add('analytical current check must revalidate permission, scope, token and context around the query')}
     if($capture -notmatch 'context\.Coordinator\.TryUseSnapshot\(context\.Snapshot\.Token,\s*\(\)\s*=>' -or
         $capture -notmatch 'TryUseSalesReportReadAuthority\(authority,\s*context\.Filter,\s*captureOnly\)' -or $capture -notmatch 'throw new ReportSnapshotStaleException' -or
-        $publish -notmatch 'snapshot\.Days\.ToDictionary' -or $publish -notmatch 'snapshot\.Coverage\.CanPublish' -or $publish -notmatch 'TryCaptureAnalyticalSnapshot\(context,\s*authority,'){$errors.Add('analytical publication must capture the common snapshot atomically under coordinator and authorization gates')}
+        $publish -notmatch 'foreach\s*\(var day in snapshot\.Days\.Where\(' -or $publish -match 'for\s*\([^)]*date\s*=\s*from' -or
+        $publish -notmatch 'var summary=day\.Summary' -or $publish -notmatch 'snapshot\.Coverage\.CanPublish' -or $publish -notmatch 'TryCaptureAnalyticalSnapshot\(context,\s*authority,'){$errors.Add('analytical publication must capture observed days from the common snapshot atomically under coordinator and authorization gates')}
     $calls=[regex]::Matches($analytical,'TryCaptureAnalyticalSnapshot\s*\(\s*context\s*,\s*(?:_reportReadAuthority|authority)\s*,\s*\(\)\s*=>')
     # Four call sites cover five paths: selected and single-marked share one
     # loader; initial publish, marked aggregates and header cover the others.
@@ -99,6 +100,19 @@ function Get-AnalyticalReceiptViolations([string]$daily,[string]$analytical) {
         $print -notmatch 'PrintReceiptTextAsync\(\s*textToPrint,\s*_useReceipt42,\s*"STAMPA_RIEPILOGO_"[\s\S]*explicitUserAction:\s*true\)'){$errors.Add('single marked print must use the exact fenced preview, configured width and explicit print route')}
     if($analytical -notmatch 'await\s+importHistoryAction\(\)\.ConfigureAwait\(true\);\s*if\s*\(_reportContext != null && !_reportContext\.Coordinator\.IsCurrent\(_reportContext\.Snapshot\.Token\)\) InvalidateAnalyticalReport\(\)' -or
         $analytical -notmatch 'AuthorizationStateChanged\s*\+=\s*OnReportSessionChanged'){$errors.Add('import/session authorization changes must invalidate displayed analytical receipts')}
+    return $errors.ToArray()
+}
+
+function Get-AvailableReportViolations([string]$workflow) {
+    $errors=[Collections.Generic.List[string]]::new()
+    $available=Get-ReceiptMethod $workflow 'OpenAvailableAnalyticalReportAsync'
+    if($available -notmatch 'if\(origins!=SalesReportOrigins\.All\|\|context\.Snapshot\.Coverage\.Status!=SalesReportCoverageStatus\.PolicyRequired\)return context;' -or
+       $available -notmatch 'OpenAnalyticalReportAsync\(fromInclusive,toExclusive,origins,canViewAllOperators,operatorId,null,cancellationToken\)' -or
+       $available -notmatch 'OpenAnalyticalReportAsync\(fromInclusive,toExclusive,SalesReportOrigins\.Historical,canViewAllOperators,operatorId,null,cancellationToken\)' -or
+       $available -notmatch 'new SalesReportContext\(available\.Filter,available\.NativeTimePolicy,available\.Snapshot,available\.Query,available\.Coordinator,true\)' -or
+       $available -match '\bcatch\b|TimeZoneInfo\.Local|DateTime\.Now') {
+        $errors.Add('available report must retain the exact operator scope, effective historical filter/token and missing-native marker; fallback only for missing native policy')
+    }
     return $errors.ToArray()
 }
 
@@ -133,6 +147,7 @@ $historyVm = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterViewModel.c
 $historyXaml = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterDialog.xaml"
 $dailyVm = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/DailyReportViewModel.cs"
 $dailyAnalytical = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/DailyReportViewModel.Analytical.cs"
+$reportWorkflow = Read-Required "src/Win7POS.Wpf/Pos/PosWorkflowService.SalesReports.cs"
 $reportPublication = Read-Required "src/Win7POS.Wpf/Infrastructure/Security/OperatorSession.SalesReportPublication.cs"
 $reportRevocation = Read-Required "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs"
 $dailyXaml = Read-Required "src/Win7POS.Wpf/Pos/DailyReportView.xaml"
@@ -258,14 +273,26 @@ if($analyticalViolations.Count){foreach($violation in $analyticalViolations){Fai
 # no application, database, printer or mutable checkout is touched.
 $receiptMutations=@(
     @{name='row identity';daily=$dailyVm;analytical=$dailyAnalytical.Replace('if (!ReferenceEquals(selected, row)) return;','')},
-    @{name='operator scope';daily=$dailyVm;analytical=$dailyAnalytical.Replace('origin, canAll, operatorId, null, cancellation.Token','origin, true, null, null, cancellation.Token')},
+    @{name='operator scope';daily=$dailyVm;analytical=$dailyAnalytical.Replace('origin, canAll, operatorId, cancellation.Token','origin, true, null, cancellation.Token')},
     @{name='authorization latch';daily=$dailyVm;analytical=$dailyAnalytical.Replace('TryUseSalesReportReadAuthority(authority, context.Filter, captureOnly)','TryUseUnboundCapture(authority, context.Filter, captureOnly)')},
     @{name='silent capture';daily=$dailyVm;analytical=$dailyAnalytical.Replace('_singleMarkedReceiptPreview = preview;','_singleMarkedReceiptPreview = preview; OnPropertyChanged(nameof(SingleMarkedReceiptPreview));')},
     @{name='shared day snapshot';daily=$dailyVm;analytical=$dailyAnalytical.Replace('context.Snapshot.Days.FirstOrDefault','GetUnrelatedSnapshot().Days.FirstOrDefault')},
+    @{name='observed day source';daily=$dailyVm;analytical=$dailyAnalytical.Replace('var summary=day.Summary;','var summary=SalesReportSummary.Empty;')},
     @{name='exact marked payload';daily=$dailyVm.Replace('textToPrint = SingleMarkedReceiptPreview;','textToPrint = SummaryReceiptPreview;');analytical=$dailyAnalytical}
 )
 foreach($mutation in $receiptMutations){
     if(($mutation.daily -ceq $dailyVm -and $mutation.analytical -ceq $dailyAnalytical) -or @(Get-AnalyticalReceiptViolations $mutation.daily $mutation.analytical).Count -eq 0){Fail ('analytical receipt mutation escaped: '+$mutation.name)}else{Pass ('analytical receipt negative fixture rejected: '+$mutation.name)}
+}
+$availableViolations=@(Get-AvailableReportViolations $reportWorkflow)
+if($availableViolations.Count){foreach($violation in $availableViolations){Fail $violation}}else{Pass 'available component uses the canonical query, unchanged operator scope and effective filter/token'}
+$availableMutations=@(
+    @{name='scope';text=$reportWorkflow.Replace('origins,canViewAllOperators,operatorId,null,cancellationToken','origins,true,null,null,cancellationToken')},
+    @{name='fallback reason';text=$reportWorkflow.Replace('Status!=SalesReportCoverageStatus.PolicyRequired','Status!=SalesReportCoverageStatus.PendingOwnershipVerification')},
+    @{name='effective filter';text=$reportWorkflow.Replace('available.Filter,available.NativeTimePolicy','context.Filter,available.NativeTimePolicy')},
+    @{name='unavailable marker';text=$reportWorkflow.Replace('available.Coordinator,true','available.Coordinator,false')}
+)
+foreach($mutation in $availableMutations){
+    if($mutation.text -ceq $reportWorkflow -or @(Get-AvailableReportViolations $mutation.text).Count -eq 0){Fail ('available report mutation escaped: '+$mutation.name)}else{Pass ('available report negative fixture rejected: '+$mutation.name)}
 }
 $readAuthorityViolations=@(Get-ReportReadAuthorityViolations $reportPublication $reportRevocation)
 if($readAuthorityViolations.Count){foreach($violation in $readAuthorityViolations){Fail $violation}}else{Pass 'Dispatcher report authority uses only immutable memory stamps, expiry and exact scope'}

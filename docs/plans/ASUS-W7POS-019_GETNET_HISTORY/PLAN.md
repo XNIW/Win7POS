@@ -1,5 +1,83 @@
 # ASUS-W7POS-019 — Importazione storico Getnet
 
+## Addendum mirato13novembre — preparazione, UX e consegna
+
+Stessa Execution, stessi tre proprietari: Worker/preparazione, UI/resolver,
+Master. Ripresa dopo aggiornamento Codex dai diff e dalle ricevute esistenti;
+POS reale chiuso dall'utente e processo assente, nessuna nuova richiesta di
+chiusura. Non ripetere riconciliazione, export o import dei25947movimenti per
+la differenza di filtro già spiegata. PUT/archivio server verificati restano
+acquisiti. La baseline usa migration-worker/local-export-reader, non il parser
+XLSX. Diagnostiche redatte per fasi/RPC/ordinali/memoria/cancellazione; propagare
+il segnale120s fino al port RPC e distinguere fallimento run da uscita servizio.
+
+Le prove temporizzate sullo stesso host sono serializzate. Primo confronto
+di rete artificiale e prime UI eseguiti con contesa: conservati ma non qualificano
+le prestazioni. Gzip da solo non è ancora una soluzione120s dimostrata.
+Nessun cambio unilaterale a blocchi200, ordinali, fence,120s o limiti memoria;
+ogni eventuale contratto diverso deve essere versionato e qualificato con SQL
+reale isolato, gateway e exportv2 sintetico rappresentativo. Nessun reset diretto
+o pubblicazione parziale. Per il retry usare identità/stato e recupero canonici.
+
+UI: requisiti e rimedio prima dei dettagli espandibili, CLP moderno dal file;
+configurazione console fresca fino al piano, header/content e ammissione server.
+Il no-op richiede copertura ancora attiva, non la sola ricevuta. Test portable
+mirati226/226 PASS, compresi fingerprint/pubblicazione qualificata e vecchi
+contratti; WPFbuildPASS0warning/error. Al14novembre client/mapper74/74 e
+pubblicazione qualificata2/2 PASS; Guided61/13.458s, web32/9.423s e smoke8/52
+in43.130s PASS su fixture isolate. Gate obbligatori50/50 e soluzione PASS.
+CI completa/release/installazione del commit congelato ancora da qualificare;
+vecchi FAIL/TIMEOUT conservati. Smoke8/52/60 invariato.
+
+Dopo test mirati congelare server, Worker e WPF e completare i gate applicabili
+senza rilanciare suite generali per modifiche solo documentali. Consegna Worker
+dedicato separata dal deploy Cloudflare. Matrice finale unica negli indici,
+piano/evidence e handoff esistenti dopo consolidamento. Nessun duplicato di
+MASTER-PLAN nel repository Windows. ModernoC/Win7 fisico restano gate esterni;
+baseline incompleta o UI non consegnata non consentono DONE/REVIEW finale.
+
+## Addendum 12 novembre — importazione utilizzabile e riconciliazione
+
+Stessa Execution ACTIVE. Base Windows92dff410; installato248e689 con v6
+permanente preservato. Nuovo ramo codex/asus019-getnet-import-ux, nessuna modifica
+al checkout dell'utente. Il successore server PUT PR154/f467be7 è qualificato,
+integrato in ca9f239 e pubblicato (versione9d82f4ed). Il caricamento reale è
+verificato,869952byte; la successiva analisi Worker è FAIL history_worker_timeout
+dopo6000oggetti/0movimenti. Nessun retry live o modifica dei budget; non è una
+sincronizzazione completata. Diagnosi e confronto sintetico del trasporto in
+U19BaselineActual01/U19BaselineVolume01, separati dal delta UX.
+
+Riconciliazione privata in sola lettura: sette originali con hash invariati,
+25947righe legacy confrontate senza differenze; il filtro12giugno–12novembre
+contiene esattamente2577movimenti. Il calendario non dimostra copertura o zeri.
+Oracolo agosto ricontrollato; rifiuti provider distinti da errori e incassi.
+Baseline server needs_attention, ultima copia locale conservata e zero versioni
+economiche alla lettura successiva al fallimento.
+
+Sequenza implementativa richiesta:
+1. Stati terminali per operazione/tab, generation fence, piano invalidato su
+   ogni cambio pertinente; scegli/verifica/conferma/risultato e duplicato senza
+   scrittura aggiuntiva.
+2. Resolver sulle prove persistite qualificate, applicabili e non revocate:
+   shop/esercente/formato/versione/intervallo/file. Nessun testo libero o
+   checkbox diventa prova verificata; CLP moderno deriva dal contenuto.
+3. Report ordinario senza Origin/editor tecnico, componente disponibile
+   esplicita e giorni sconosciuti distinti da zero. Nessun dettaglio storico
+   contanti/prodotti inventato, netto Getnet distinto da vendite native.
+4. Configurazione/migrazione/freeze/cutover/recovery nella gestione Master,
+   riuso dei pannelli e controllo server; verificare adapter POS web-writer.
+5. Harness attraverso controlli reali, confini/revoca/dedup/report, gate propri
+   e consegna verificata da Start sull'installato. Fixture separate dal negozio.
+
+Resolver qualificazioni PASS63/63; UX/service/harness ancora WIP e gate Windows
+nuovi NOT_RUN. Il riconoscimento file già importato deve confrontare SHA,parser,
+shop,dataset e copertura delle righe ancora attive, compresi riferimenti di
+deduplica: una ricevuta storica da sola non basta dopo un Undo.
+Getnet C manca: preview moderna consentita, apply bloccato
+finché esiste prova temporale applicabile. Win7 fisico BLOCKED_TARGET;
+200%/2880x1800 conservati,100/125 USER_DEFERRED. Nessun reset ledger, vendita,
+Undo reale, paywall o nuova task. Evidence private U19GetnetReconcile01.
+
 <!-- ASUS019_DELIVERY_COMPOSITION_START -->
 ## Composizione candidata — stessa ASUS-W7POS-019 ACTIVE
 

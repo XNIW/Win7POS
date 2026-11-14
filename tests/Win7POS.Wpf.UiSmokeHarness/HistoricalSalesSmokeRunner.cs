@@ -133,7 +133,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using (var f = await HistoricalSalesFoundationRunner.Fixture.CreateAsync(data))
             using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
             {
-                var workflow = f.CreateWorkflow(allNewHistoryFixture:true);
+                var config=new HistoricalQualifiedConfigFixture(f.ShopId,new HistoricalSalesImportAnalyzer().Analyze(SourceFiles(),Options()));
+                var workflow = f.CreateWorkflow(allNewHistoryFixture:true,qualifiedConfig:config.Read);
                 using (var model = new HistoricalSalesImportViewModel(workflow, f.Operator))
                 {
                     var owner = new Window { Width = 1000, Height = 760, ShowInTaskbar = false };
@@ -150,18 +151,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     try
                     {
                         dialog.Show();
-                        model.LegacyClpConfirmed = true; model.TimeChoice = 1; model.TemporalEvidence = "synthetic-explicit-time";
                         await model.AnalyzeFilesForTestingAsync(SourceFiles());
-                        foreach (var merchant in model.Merchants)
-                        {
-                            model.AddGroupCommand.Execute(null);
-                            merchant.Group = model.Groups.Last();
-                        }
-                        model.NativeStart = new DateTime(2040, 1, 1); model.MerchantEvidence = "synthetic-merchant"; model.OverlapEvidence = "synthetic-overlap";
                         // Reuse one real dialog/analysis: reject a stale review,
                         // then re-review and commit once with reentry denied.
                         for (var stage = 0; stage < 2; stage++)
                         {
+                            if(stage>0)await model.AnalyzeFilesForTestingAsync(SourceFiles());
                             var changeReview = stage == 0;
                             model.PreviewCommand.Execute(null);
                             while (model.IsBusy) { deadline.Token.ThrowIfCancellationRequested(); await Dispatcher.Yield(DispatcherPriority.Background); }
@@ -177,7 +172,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 var popups = Application.Current.Windows.OfType<Win7POS.Wpf.Import.ApplyConfirmDialog>().Where(w => w.IsVisible && w.Owner == dialog).ToArray();
                                 if (popups.Length == 0) return;
                                 confirm.Stop(); var popup = popups.Single();
-                                if (changeReview) model.OverlapEvidence = "synthetic-review-changed-during-confirmation";
+                                if (changeReview) config.AdvanceDocumentRevision();
                                 else
                                 {
                                     confirmationDeniedReentry = !model.ApplyCommand.CanExecute(null);
@@ -190,7 +185,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             while (model.IsBusy) { deadline.Token.ThrowIfCancellationRequested(); await Dispatcher.Yield(DispatcherPriority.Background); }
                             test.PrivateDiagnostic("synthetic_vm_apply;changedReview=" + changeReview + ";denied=" + confirmationDeniedReentry + ";status=" + model.Status);
                             if (changeReview && (f.Count("historical_import_operation") != 0 || f.Count("historical_transactions") != 0 ||
-                                model.ApplyCommand.CanExecute(null) || model.Status != Win7POS.Wpf.Localization.PosLocalization.T("history.reviewStale"))) return false;
+                                model.ApplyCommand.CanExecute(null) || model.Status != Win7POS.Wpf.Localization.PosLocalization.T("history.reviewStale")+Environment.NewLine+
+                                    Win7POS.Wpf.Localization.PosLocalization.T("history.diagnosticCode")+": reviewStale")) return false;
                         }
                         var contentProofSaved=await Task.Run(()=>
                         {
@@ -416,7 +412,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     report.DateText = "2000-01-02"; report.ReportOriginIndex = 2; await report.ReloadAnalyticalAsync();
                     var source = WriteModern(f.Root, "expiry-analysis", new[] { HistoricalSalesFixtureWriter.ModernRow("expiry-input", 1000) });
-                    import.LegacyClpConfirmed = true; import.TimeChoice = 1; import.TemporalEvidence = "synthetic-expiry-evidence";
                     await import.AnalyzeFilesForTestingAsync(new[] { source });
                     var loaded = report.ReportNumbersVisible && report.NetAmount == 1000 && import.ImportReadAuthorityCurrent && !string.IsNullOrEmpty(import.Summary);
                     var changes = 0; Action changed = () => changes++; f.Operator.SessionChanged += changed;
@@ -532,7 +527,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     test.Check("dialog_standard", dialog is DialogShellWindow && dialog.WindowStartupLocation == WindowStartupLocation.Manual && Math.Abs(dialog.MinWidth - Math.Min(720, dialog.MaxWidth)) < 0.1 && dialog.Owner == owner && Descendants<Button>(dialog).Any(button => ReferenceEquals(button.Style, dialog.FindResource("DialogActionButtonStyle"))));
                     test.Check("nonblocking_dispatcher", await VerifyAnalysisHeartbeatAsync(f, service));
                     var summarySource = WriteModern(f.Root, "visual-summary", new[] { HistoricalSalesFixtureWriter.ModernRow("synthetic-visual-only", 1000) });
-                    model.LegacyClpConfirmed = true; model.TimeChoice = 1; model.TemporalEvidence = "synthetic-explicit-UTC-evidence";
                     await model.AnalyzeFilesForTestingAsync(new[] { summarySource }); await PumpAsync(); dialog.UpdateLayout();
                     var summaryRegion = Descendants<TextBlock>(dialog).FirstOrDefault(item => item.Text == model.Summary && !string.IsNullOrEmpty(model.Summary));
                     summaryRegion?.BringIntoView(); await PumpAsync(); dialog.UpdateLayout();
@@ -726,21 +720,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         try
                         {
                             await PumpAsync(); deadline.Token.ThrowIfCancellationRequested();
-                            var policy = (ComboBox)dialog.FindName("TimePolicy"); var evidence = (TextBox)dialog.FindName("TimeEvidence");
-                            policy.BringIntoView(); policy.Focus(); await PumpAsync();
-                            var entered = dialog.IsActive && policy.IsKeyboardFocusWithin && policy.IsVisible;
-                            ProcessHistoricalKey(dialog, Key.Tab); await PumpAsync();
-                            var tabbed = evidence.IsKeyboardFocused && evidence.IsVisible && !policy.IsKeyboardFocusWithin;
-                            var group = Descendants<Button>(dialog).Single(button => ReferenceEquals(button.Command, model.AddGroupCommand));
-                            group.BringIntoView(); group.Focus(); await PumpAsync();
-                            var groupHadFocus = group.IsKeyboardFocused && group.IsVisible && group.IsEnabled;
-                            var groups = model.Groups.Count; var clicks = 0;
-                            RoutedEventHandler clicked = (_, __) => clicks++; group.Click += clicked;
-                            try { ProcessHistoricalKey(dialog, Key.Enter); await PumpAsync(); }
-                            finally { group.Click -= clicked; }
-                            var enteredCommand = clicks == 1 && model.Groups.Count == groups + 1;
+                            var select=Descendants<Button>(dialog).Single(button=>ReferenceEquals(button.Command,model.SelectCommand));
+                            var analyze=Descendants<Button>(dialog).Single(button=>ReferenceEquals(button.Command,model.AnalyzeCommand));
+                            var selections=0;model.SelectFilesForTesting=_=>{selections++;return SourceFiles();};
+                            select.BringIntoView();select.Focus();await PumpAsync();
+                            var entered=dialog.IsActive&&select.IsKeyboardFocused&&select.IsVisible&&select.IsEnabled;
+                            var clicks=0;RoutedEventHandler clicked=(_,__)=>clicks++;select.Click+=clicked;
+                            try{ProcessHistoricalKey(dialog,Key.Enter);await PumpAsync();}
+                            finally{select.Click-=clicked;}
+                            var enteredCommand=clicks==1&&selections==1&&model.AnalyzeCommand.CanExecute(null);
+                            ProcessHistoricalKey(dialog,Key.Tab);await PumpAsync();
+                            var tabbed=analyze.IsKeyboardFocused&&analyze.IsVisible&&analyze.IsEnabled&&!select.IsKeyboardFocused;
                             deadline.Token.ThrowIfCancellationRequested(); ProcessHistoricalKey(dialog, Key.Escape); await PumpAsync();
-                            scripted.TrySetResult(entered && tabbed && groupHadFocus && enteredCommand && !dialog.IsVisible);
+                            scripted.TrySetResult(entered && tabbed && enteredCommand && !dialog.IsVisible);
                         }
                         catch { scripted.TrySetResult(false); }
                         finally { if (dialog.IsVisible) dialog.Close(); }

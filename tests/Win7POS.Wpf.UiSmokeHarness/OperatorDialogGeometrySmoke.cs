@@ -4,11 +4,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -42,6 +45,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private OperatorDialogGeometrySmoke(string data) { _receipt = Path.Combine(data, "operator-dialog-geometry.private.json"); }
         internal static async Task<string> RunAsync(string data)
         {
+            TypedQaDiagnosticWriter.BeginScenario("OPERATOR_DIALOG_GEOMETRY","functional-completion");
             var probe = new OperatorDialogGeometrySmoke(data);
             if (!_registered)
             {
@@ -57,12 +61,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 probe._arithmetic = VerifyArithmetic();
                 var ok = probe._observations.Count >= 16 && probe._observations.All(x => x.Centered && x.Contained && x.FooterVisible && x.FirstNativeCentered) &&
                     probe._cancelSafe && probe._singleCommit && probe._traversal && probe._returnToOwner && probe._arithmetic && probe._resizeSafe && probe._userMovePreserved && IsProcessDPIAware();
+                TypedQaDiagnosticWriter.RecordAssertion(probe._observations.Count>=16,observationId:"geometry_matrix_complete");
+                TypedQaDiagnosticWriter.RecordAssertion(probe._observations.All(x=>x.Centered&&x.Contained&&x.FooterVisible&&x.FirstNativeCentered),observationId:"geometry_all_surfaces_fit");
+                TypedQaDiagnosticWriter.RecordAssertion(probe._cancelSafe,observationId:"geometry_cancel_zero_writes");
+                TypedQaDiagnosticWriter.RecordAssertion(probe._singleCommit,observationId:"geometry_confirm_single_commit");
+                TypedQaDiagnosticWriter.RecordAssertion(probe._traversal,observationId:"geometry_focus_traversal");
+                TypedQaDiagnosticWriter.RecordAssertion(probe._returnToOwner,observationId:"geometry_return_to_owner");
+                TypedQaDiagnosticWriter.RecordAssertion(probe._arithmetic,observationId:"geometry_independent_arithmetic");
+                TypedQaDiagnosticWriter.RecordAssertion(probe._resizeSafe,observationId:"geometry_resize_contained");
+                TypedQaDiagnosticWriter.RecordAssertion(probe._userMovePreserved,observationId:"geometry_user_move_preserved");
+                TypedQaDiagnosticWriter.RecordAssertion(IsProcessDPIAware(),observationId:"geometry_process_dpi_aware");
                 probe.Write(ok ? "PASS" : "FAIL");
+                TypedQaDiagnosticWriter.CompleteScenario(ok);
                 return (ok ? "PASS" : "FAIL") + ": operator_dialog_geometry; measurements=" + probe._observations.Count;
             }
             catch (Exception error)
             {
                 probe.Write("FAIL", error.GetType().Name);
+                TypedQaDiagnosticWriter.CompleteScenario(false,error);
                 return "FAIL: operator_dialog_geometry; " + error.GetType().Name;
             }
             finally { _active = null; }
@@ -243,12 +259,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private async Task VerifyImportAsync(HistoricalSalesImportDialog dialog, SqliteConnectionFactory factory, CancellationToken token)
         {
             var model = (HistoricalSalesImportViewModel)dialog.DataContext;
-            model.LegacyClpConfirmed = true; model.TimeChoice = 1; model.TemporalEvidence = "synthetic-explicit-UTC";
             var sources = new[] { "synthetic-legacy.xlsx", "synthetic-modern.xlsx" }.Select(x => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fixtures", "historical-sales-getnet-v1", x)).ToArray();
-            await model.AnalyzeFilesForTestingAsync(sources);
-            foreach (var merchant in model.Merchants) { model.AddGroupCommand.Execute(null); merchant.Group = model.Groups.Last(); }
-            model.NativeStart = new DateTime(2040, 1, 1); model.MerchantEvidence = "synthetic-merchant"; model.OverlapEvidence = "synthetic-overlap";
-            model.PreviewCommand.Execute(null); await UntilAsync(() => !model.IsBusy, token);
+            model.SelectFilesForTesting=owner=>sources;
+            await InvokeImportCommandAsync(dialog,model.SelectCommand,token);
+            await InvokeImportCommandAsync(dialog,model.AnalyzeCommand,token);
+            await InvokeImportCommandAsync(dialog,model.PreviewCommand,token);
+            Require(model.ApplyCommand.CanExecute(null),"geometry_qualified_review_ready");
             Measure(dialog, "import-analysis-review");
             Program.HarnessWindow.SaveVisual(dialog.Content as FrameworkElement,
                 Path.Combine(Path.GetDirectoryName(_receipt), "operator-import-loaded-render.png"));
@@ -272,17 +288,43 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                     catch (Exception error) { done.TrySetException(error); }
                 }));
-                model.ApplyCommand.Execute(null); await done.Task; await UntilAsync(() => !model.IsBusy, token);
+                await InvokeImportCommandAsync(dialog,model.ApplyCommand,token); await done.Task;
+                // The modal frame can close before ApplyAsync starts its busy
+                // operation. Wait for its terminal model state, not merely the
+                // confirmation click or an initially false IsBusy.
+                await UntilAsync(()=>!model.IsBusy&&(accept
+                    ?model.ImportStepText==PosLocalization.T("history.stepResult")
+                    :model.ApplyCommand.CanExecute(null)),token);
                 using (var c = factory.Open())
                 {
                     var operations = c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_import_operation");
                     if (!accept) _cancelSafe = operations == 0;
-                    else _singleCommit = operations == 1 && c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1") == 5;
+                    else
+                    {
+                        var active=c.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_transactions WHERE is_active=1");
+                        TypedQaDiagnosticWriter.RecordAssertion(operations==1,1L,operations,observationId:"geometry_confirm_operation_count");
+                        TypedQaDiagnosticWriter.RecordAssertion(active==5,5L,active,observationId:"geometry_confirm_active_count");
+                        _singleCommit = operations == 1 && active == 5;
+                    }
                 }
             }
             await ShowMessageAsync(dialog, new ModernMessageDialog("QA receipt", string.Join("\n", Enumerable.Repeat("Synthetic receipt detail for layout verification.", 100))), token);
             await ShowMessageAsync(dialog, new ModernMessageDialog("QA error", "Synthetic error and return to owner."), token);
             Measure(dialog, "return-to-import");
+        }
+        private static void Require(bool condition,string code,[CallerFilePath]string sourceFile="",[CallerLineNumber]int sourceLine=0)
+        {
+            TypedQaDiagnosticWriter.RecordAssertion(condition,sourceFile:sourceFile,sourceLine:sourceLine,observationId:code);
+            if(!condition)throw new InvalidOperationException(code);
+        }
+        private static async Task InvokeImportCommandAsync(FrameworkElement view,ICommand command,CancellationToken token)
+        {
+            var button=Descendants<Button>(view).Single(x=>ReferenceEquals(x.Command,command));
+            button.BringIntoView();await Dispatcher.Yield(DispatcherPriority.ContextIdle);view.UpdateLayout();
+            Require(button.IsVisible&&button.IsEnabled&&command.CanExecute(null),"geometry_import_control_enabled");
+            ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
+            await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+            await UntilAsync(()=>!(view.DataContext as HistoricalSalesImportViewModel).IsBusy,token);
         }
         private async Task ShowMessageAsync(Window owner, Window popup, CancellationToken token)
         {

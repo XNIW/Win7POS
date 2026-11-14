@@ -8,6 +8,13 @@ namespace Win7POS.Wpf.Localization
         {
             var rows = new[]
             {
+                new[] { "historyReport.nativeUnavailable", "Showing imported card movements. POS receipts are unavailable until Master qualifies the shop time rules.", "Se muestran movimientos de tarjeta importados. Los comprobantes POS no están disponibles hasta que Master califique las reglas horarias.", "Sono mostrati i movimenti carta importati. Gli scontrini POS non sono disponibili finché Master non qualifica le regole orarie del negozio.", "当前显示已导入银行卡流水。Master 核准门店时间规则前，POS 小票数据不可用。" },
+                new[] { "historyReport.observedDays", "Days with recorded movements: {0}. Other days: {1}, coverage unknown; no zero sales inferred.", "Días con movimientos registrados: {0}. Otros días: {1}, cobertura desconocida; no se infieren ventas cero.", "Giorni con movimenti registrati: {0}. Altri giorni: {1}, copertura sconosciuta; non indicano vendite zero.", "有已记录流水的日期：{0}。其他日期：{1}，覆盖范围未知，不能视为零销售。" },
+                new[] { "historyReport.noRecordedData", "No recorded data available for this selection.", "No hay datos registrados disponibles para esta selección.", "Nessun dato registrato disponibile per questa selezione.", "此筛选范围内没有可用的已记录数据。" },
+                new[] { "historyReport.recordedDays", "{0} days with recorded movements", "{0} días con movimientos registrados", "{0} giorni con movimenti registrati", "{0} 天有已记录流水" },
+                new[] { "historyReport.recordedDaysSelected", "{0} days with recorded movements; {1} selected", "{0} días con movimientos registrados; {1} seleccionados", "{0} giorni con movimenti registrati; {1} selezionati", "{0} 天有已记录流水，已选 {1} 天" },
+                new[] { "historyReport.movementBalance", "Movement balance", "Saldo de movimientos", "Saldo movimenti", "流水余额" },
+                new[] { "historyReport.beforeFees", "Movement amounts are before provider fees. Getnet settlement net is a separate amount.", "Los importes de movimientos son anteriores a las comisiones. El neto de liquidación Getnet es un importe distinto.", "Gli importi dei movimenti precedono le commissioni. Il netto di regolamento Getnet è un importo distinto.", "流水金额为扣除支付机构费用前的金额。Getnet 结算净额是另一项金额。" },
                 new[] { "historyReport.analyticalTitle", "Sales summary · analytical", "Resumen de ventas · analítico", "Riepilogo vendite · analitico", "销售汇总 · 分析" },
                 new[] { "historyReport.origin", "Origin", "Origen", "Origine", "来源" },
                 new[] { "historyReport.originAll", "POS + imported", "POS + importadas", "POS + importate", "POS + 导入" },

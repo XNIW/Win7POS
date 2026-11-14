@@ -1,6 +1,11 @@
-# Importazione locale dello storico carta
+# Importazione dello storico carta
 
-La funzione importa i movimenti Getnet in un registro separato. Non crea vendite
+Guida del candidato ASUS-W7POS-019 in qualifica. L'installato attestato resta
+248e689/v6 finché non sono completati gate e consegna del successore. Codice,
+risultati del candidato e comportamento installato sono prove distinte.
+
+La funzione importa i movimenti Getnet nello storico separato, locale o condiviso
+secondo l'autorità verificata del negozio. Non crea vendite
 con articoli, movimenti di magazzino, cassa, rimborsi, documenti fiscali o invii
 commerciali al server. Conservare gli originali Excel: l'analisi li legge e
 l'applicazione ne verifica nuovamente l'integrità.
@@ -39,8 +44,10 @@ cambiare silenziosamente i totali dell'operatore.
 Menu → Riepilogo/registro giornaliero → Cronologia → Importa storico è il percorso
 volontario. Close, X ed Escape chiudono la secondaria e ritornano allo stesso
 contesto. Permessi storici e policy temporale del report nativo sono indipendenti
-dal catalogo e dalla presenza del carrello. Scadenza/revoca invalida accesso e dati
-protetti. Questo percorso non sostituisce prove esercente, tempo e overlap.
+dal catalogo e dalla presenza del carrello. Autorizzazione ordinaria POSv6 e PIN
+Minimondo non hanno scadenza ordinaria; cambio manuale e revoca nota restano
+verificati. Le ammissioni privilegiate rimangono brevi e legate all'operazione.
+Questo percorso non sostituisce prove esercente, tempo e overlap.
 
 Dal riepilogo aprire **Importazione storico**. Il permesso
 `register.import_history` abilita l'importazione; `register.cancel_history` abilita
@@ -48,32 +55,43 @@ l'annullamento. La consultazione dei lotti richiede anche la visibilità di tutt
 gli operatori. I nuovi permessi non vengono assegnati automaticamente a cassieri
 o responsabili.
 
-1. Selezionare uno o più export originali. Il riconoscimento usa le intestazioni,
-   non il nome del file. Confermare esplicitamente CLP per il formato legacy.
-2. Analizzare. Vendite, annullamenti e richieste respinte sono distinti; le respinte
-   non contribuiscono ai ricavi. Il netto sconosciuto rimane sconosciuto.
-3. Controllare la copertura osservata di ciascun file. Giorni mancanti non sono
-   certificati come giorni senza vendite. Per le date moderne ancora irrisolte,
-   esaminare entrambe le interpretazioni e il riferimento della prova.
-4. Assegnare le identità esportate a gruppi esercente documentati. Un gruppo comune
-   significa che le prove identificano lo stesso esercente. Il negozio proviene
-   dalla sessione autorizzata; non viene dedotto dal nome dell'esercente.
-5. Inserire data d'avvio POS verificata e riferimento della verifica di overlap.
-   Lo storico deve precedere tale data. Il controllo non sostituisce le prove.
-6. Eseguire **Verifica importazione** e leggere nuovi movimenti, duplicati,
-   conflitti e importi delle sole righe nuove. Una correzione di una versione già
-   annullata richiede una revisione esplicita delle differenze e un'approvazione
-   riferita a quella precisa versione. Gli attivi in conflitto non sono sostituiti.
+1. **Scegli file**: selezionare gli originali. Intestazioni e contenuto determinano
+   il formato; il nome non certifica periodo, negozio o valuta.
+2. **Verifica dati**: controllare vendite, annullamenti e pagamenti rifiutati dal
+   circuito. Questi ultimi sono esclusi dagli incassi e distinti dagli errori
+   di lettura. CLP esplicito nel moderno deriva dal file. Il netto sconosciuto
+   rimane sconosciuto. Requisiti e rimedio precedono i dettagli espandibili.
+3. **Verifica importazione**: leggere nuovi, già presenti, esclusi, conflitti e
+   totali delle sole righe nuove. Il POS rilegge le qualificazioni applicabili;
+   nello storico condiviso la review autorevole è quella del server. Una
+   preparazione pendente ha un esito esplicito: ripremere la verifica consulta
+   la stessa operazione, senza confermarla.
+4. **Conferma importazione → Risultato**: confermare una sola volta il piano
+   corrente e conservare la ricevuta. Un file già registrato e ancora attivo
+   dà un no-op senza seconda scrittura. La sola ricevuta o lo SHA non provano
+   che un proprietario annullato sia ancora attivo.
+
+Valuta legacy, esercente, tempo moderno e confine d'avvio POS sono qualificazioni
+documentate nella console autorizzata. Testo libero e checkbox non conferiscono
+questa autorità. Le prove valgono solo per shop/esercente, file/hash, formato,
+parser/versione, intervallo e stato non revocato. I parser `getnet-ooxml-v1`
+locale e `getnet-ooxml-web-v1` server sono distinti: non si deduce la validità
+per uno dalla prova dell'altro.
+
+Un Master effettivo o delegato esplicito registra il documento in **Console →
+Pagamenti storici → Qualificazioni**. Un badge o il codice1001 non assegnano
+privilegi tecnici. Origini, migrazione, freeze, cutover e recovery sono nella
+stessa gestione autorizzata; l'import ordinario rimane disponibile dal POS.
 
 `NeedsEvidence` consente la preview e impedisce l'applicazione. La presenza di `Z`
 e di un offset nell'export non costituisce da sola l'approvazione della semantica
 temporale del provider. Non scegliere una policy per far scomparire il blocco.
 
-**Analizza** è distinto da **Verifica importazione**: la prima fase legge gli
-originali e mostra anche dati con prove mancanti; la seconda prepara un piano
-solo con analisi applicabile, gruppi esercente, data/confine d'inizio POS e
-riferimenti delle prove validi. **Applica** richiede quel piano ancora corrente
-e una conferma. Cambiare file, opzioni, mapping o autorizzazione invalida il piano.
+**Verifica dati** legge gli originali anche con prove mancanti. **Verifica
+importazione** prepara il piano o consulta la preparazione server. **Conferma**
+richiede review e autorità correnti: cambio di file, policy, documento, sessione
+o autorità di scrittura invalida il piano. Un vecchio callback non pubblica sotto
+la nuova selezione. Le schede mantengono stati indipendenti e terminali.
 
 Valutare le prove per il formato selezionato. Gli orari commerciali locali del
 legacy restano distinti dall'interpretazione Z/offset dei moderni: una prova
@@ -101,9 +119,11 @@ prima di riprovare aprire **Lotti importati**, aggiornare e consultare la ricevu
 originaria. Se il lotto valido è già presente, conservarlo; non usare **Annulla**
 come pulizia. Dopo la chiusura e riapertura, un eventuale reimport identico deve
 mostrare zero nuovi movimenti e duplicati coerenti, con totali invariati.
-Durante l'analisi successiva, il prodotto ricarica i binding esercente già
-registrati: conservarli se le prove non sono cambiate, evitando di creare un
-nuovo gruppo per il solo scopo di ripetere gli stessi file.
+Nel percorso condiviso intento e chiave di commit sono persistiti prima della
+richiesta. Dopo un ACK perso la verifica cerca la ricevuta della stessa
+operazione; un nuovo accesso dello stesso principale non cambia quella chiave.
+La ricevuta esistente non richiede un altro backup o una rilettura dell'originale.
+Le nuove scritture richiedono invece fonti verificate e conferma corrente.
 Se la verifica cambia mentre la conferma è aperta, chiudere e verificare di nuovo
 il piano; non confermare un riepilogo precedente.
 
@@ -114,7 +134,9 @@ uno storico annullato usare una nuova analisi/importazione.
 
 ## Riepilogo, registro ed esportazione
 
-Usare il filtro di origine per POS, storico o entrambi. I dati storici senza
+La vista ordinaria compone le componenti disponibili senza selettore tecnico
+Origin. Se manca la policy temporale POS, mostra lo storico carta e dichiara
+indisponibili scontrini e contanti POS. I dati storici senza
 operatore originale richiedono `register.view_all`. Il riepilogo richiede
 `daily_close.view`, il registro `register.view`; senza `register.view_all`
 giorno, storico, lista, dettaglio e CSV sono limitati all'operatore corrente.
@@ -123,11 +145,16 @@ annullamenti mantengono il loro segno anche nel grafico. La copertura esplicita
 distingue un sottoinsieme verificato da un totale completo o da dati indisponibili.
 
 Per includere i nativi serve una policy temporale canonica approvata per il negozio.
-Il pulsante **Fuso report** legge un file JSON con hash, versione, provenienza e
-segmenti UTC; mostra l'anteprima e richiede evidenza e autorizzazione prima di
-attivarlo con backup e audit. Richiede `register.import_history`. Il formato è quello di
-`SalesReportTimePolicyRepository.SerializeApprovedFile`. Nessuna zona del PC viene
-usata come fallback. Un file di esempio sintetico non approva la zona di un negozio.
+La configurazione tecnica è amministrata separatamente; il POS non propone
+l'editor del fuso nel riepilogo ordinario. Nessuna zona del PC è usata come
+fallback. Un esempio sintetico non approva la zona di un negozio.
+
+La tabella contiene giornate con movimenti registrati. Gli altri giorni sono
+copertura sconosciuta, non zeri certificati. I conteggi descrivono il filtro:
+2577movimenti dal12giugno e25947nell'intero lotto non dimostrano una perdita.
+Saldo prima delle commissioni e netto di regolamento Getnet rimangono distinti.
+Nessuno scontrino, contante o articolo storico viene inventato per completare
+le componenti mancanti.
 
 Lista, dettaglio, aggregati e CSV si riferiscono allo stesso snapshot. Se cambia
 il database, lo shop o l'autorizzazione, aggiornare il report. Il CSV contiene un
@@ -137,6 +164,17 @@ L'esportazione protegge i campi testuali da formule e conserva i numeri firmati.
 La sostituzione di un file esistente richiede consenso esplicito sul percorso.
 
 ## Qualificazione e limiti correnti
+
+Al14novembre il successore resta in Execution: resolver63/63, delta portable
+226/226 e primo giro guidato esclusivo61check con smoke8/52 PASS. Ulteriore
+client condiviso, gate del candidato congelato e installazione sono ancora da
+consolidare. La baseline usa lo stesso archivio originale verificato sul server:
+un timeout di preparazione non è una ricevuta di pubblicazione. Ultima copia e
+ledger sono conservati; ACK e selezione della replica richiedono convergenza
+canonica. Continuità del servizio e successo della sincronizzazione sono distinti.
+
+<details>
+<summary>Checkpoint9novembre conservato come storia</summary>
 
 Checkpoint9novembre2026: codice/pacchetto a8286c6 qualificato e installato,
 versione1.0.0-dev.a8286c669a7c. La conferma mantiene il piano stabile, impedisce
@@ -154,6 +192,8 @@ risolve la semantica dell'export. La copertura descrive record osservati, con
 giugno parziale. Il report solo storico non richiede la policy POS nativa dei
 report misti. LIVE_REOPEN_PENDING sul successore; qualifica Win7 fisica e
 periferiche NOT_RUN/BLOCKED_TARGET, CSV ingresso BLOCKED_INPUT.
+
+</details>
 
 Lo stato effettivo della task e dei gate è nel
 [registro di esecuzione](plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md).

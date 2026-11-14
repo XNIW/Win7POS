@@ -337,6 +337,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         internal sealed class Fixture : IDisposable
         {
+            internal const string SyntheticShopId="10000000-0000-4000-8000-000000003019";
             private static string _smokeTemplate, _smokeTemplateHash;
             private static FileStream _smokeTemplateHold;
             internal static bool ReuseEmptySchemaForSmoke { get; set; }
@@ -391,7 +392,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var response = AuthorizationLeaseWpfSmoke.BuildResponse(true);
                 // Real history endpoints use UUID identities. Keep the older
                 // authorization-only fixture unchanged outside this history fixture.
-                response.Shop.ShopId = "10000000-0000-4000-8000-000000003019";
+                response.Shop.ShopId = SyntheticShopId;
                 response.Device.ShopDeviceId = "20000000-0000-4000-8000-000000003019";
                 response.Staff.StaffId = "30000000-0000-4000-8000-000000003019";
                 // A delegated manager keeps permission-removal probes meaningful: no local admin bypass.
@@ -410,7 +411,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal OperatorSession Session => Operator;
             internal Win7POS.Core.Reports.SalesReportAuthorityStamp Authority => Factory.AuthorityStamp;
             internal static Task<Fixture> CreateAsync(string data, string name) => CreateAsync(data);
-            internal static async Task<Fixture> CreateAsync(string data)
+            internal static Task<Fixture> CreateAsync(string data)=>CreateAsync(data,false);
+            internal static Task<Fixture> CreatePersistentAsync(string data)=>CreateAsync(data,true);
+            private static async Task<Fixture> CreateAsync(string data,bool persistent)
             {
                 var setup = Stopwatch.StartNew();
                 var f = new Fixture { Root = Path.Combine(data, "B." + Guid.NewGuid().ToString("N").Substring(0, 10)) }; Directory.CreateDirectory(f.Root);
@@ -422,10 +425,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var users = new UserRepository(f.Factory);
                 await users.UpsertRemoteStaffMirrorAsync(new RemoteStaffMirrorInput { Credential = "2468", CredentialVersion = response.Staff.CredentialVersion, DisplayName = response.Staff.DisplayName, RemoteRoleKey = response.Staff.RoleKey, RemoteShopId = f.ShopId, RemoteStaffId = response.Staff.StaffId, ShopCode = f.ShopCode, StaffCode = response.Staff.StaffCode });
                 Interlocked.Add(ref _mirrorMs, setup.ElapsedMilliseconds); setup.Restart();
-                f._store = new PosTrustedDeviceStore(FixtureTicks, TimeSpan.TicksPerSecond, FixtureClockDomain); f._store.Clear(); f._store.SaveFirstLogin(response, "qa-history-session-" + Guid.NewGuid().ToString("N"), receiptClock);
+                f._store = persistent?new PosTrustedDeviceStore():new PosTrustedDeviceStore(FixtureTicks, TimeSpan.TicksPerSecond, FixtureClockDomain); f._store.Clear();
+                if(persistent)
+                {
+                    response.ServerTime=DateTimeOffset.UtcNow.ToString("O",CultureInfo.InvariantCulture);
+                    response.Session.ExpiresAt=PosOnlineContract.PersistentLocalAuthorizationExpiryUtc;
+                    response.EffectiveOfflineAuthorizationExpiresAt=response.Session.ExpiresAt;
+                    f._store.SaveFirstLogin(response,"qa-history-session-"+Guid.NewGuid().ToString("N"));
+                }
+                else f._store.SaveFirstLogin(response, "qa-history-session-" + Guid.NewGuid().ToString("N"), receiptClock);
                 if (!f._store.TryRead(out var trusted) || !PosOnlineSyncSupervisorHost.TryCreateGeneration(trusted, out f.Generation)) throw new InvalidOperationException("qa_history_trust_setup_failed");
-                f._expiryTicks = checked(receiptClock.MonotonicTimestamp + (DateTimeOffset.Parse(trusted.EffectiveOfflineAuthorizationExpiresAt, CultureInfo.InvariantCulture) - DateTimeOffset.Parse(trusted.LastOkServerAt, CultureInfo.InvariantCulture)).Ticks);
-                f.Operator = new OperatorSession(users, new SecurityRepository(f.Factory), new PosOfflineAuthorizationLeaseGuard(f._store, FixtureNow, FixtureTicks, TimeSpan.TicksPerSecond));
+                f._expiryTicks = persistent?long.MaxValue:checked(receiptClock.MonotonicTimestamp + (DateTimeOffset.Parse(trusted.EffectiveOfflineAuthorizationExpiresAt, CultureInfo.InvariantCulture) - DateTimeOffset.Parse(trusted.LastOkServerAt, CultureInfo.InvariantCulture)).Ticks);
+                f.Operator = new OperatorSession(users, new SecurityRepository(f.Factory), persistent?new PosOfflineAuthorizationLeaseGuard(f._store,()=>DateTimeOffset.UtcNow):new PosOfflineAuthorizationLeaseGuard(f._store, FixtureNow, FixtureTicks, TimeSpan.TicksPerSecond));
                 var username = await users.FindTrustedRemoteStaffUsernameAsync(f.ShopId, f.ShopCode, response.Staff.StaffId, response.Staff.StaffCode, response.Staff.CredentialVersion);
                 if (await f.Operator.LoginAsync(username, "2468") != LoginResult.Success) throw new InvalidOperationException("qa_history_login_failed");
                 Interlocked.Add(ref _loginMs, setup.ElapsedMilliseconds); Interlocked.Increment(ref _fixtureCount);
@@ -434,7 +445,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             internal int LocalWriteRequests;
             private readonly Dictionary<string,HistoricalSalesImportPlan> _decisionPlans=new Dictionary<string,HistoricalSalesImportPlan>(StringComparer.Ordinal);
-            internal PosWorkflowService CreateWorkflow(string rejection = null,bool allNewHistoryFixture=false,bool initialBaseline=true)
+            internal PosWorkflowService CreateWorkflow(string rejection = null,bool allNewHistoryFixture=false,bool initialBaseline=true,
+                Func<HistoricalCloudResult> qualifiedConfig=null)
             {
                 if(initialBaseline)HistoricalPublicationAdmissionFixture.ConfirmInitialBaselineAsync(Factory,Operator,Generation,
                     "90000000-0000-4000-8000-000000003019",CancellationToken.None).GetAwaiter().GetResult();
@@ -461,6 +473,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     ct.ThrowIfCancellationRequested(); actor.DemandCurrent();
                     if (actor.Trusted.ShopId != ShopId) throw new InvalidOperationException("qa_history_cloud_scope_invalid");
+                    if(operation=="qualified_config")
+                    {
+                        var config=qualifiedConfig?.Invoke()??new HistoricalQualifiedConfigFixture(ShopId).Read();
+                        return Task.FromResult(PosOnlineResult<HistoricalCloudResponse>.Ok(new HistoricalCloudResponse
+                        {Ok=true,ShopId=actor.Trusted.ShopId,DeviceId=actor.Trusted.ShopDeviceId,SessionId=actor.Trusted.PosSessionId,Result=config}));
+                    }
                     if (operation == "authority")
                     {
                         if (rejection == "offline") throw new InvalidOperationException("qa_history_cloud_offline");
@@ -505,6 +523,25 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (observed == current) return;
                     current = observed;
                 }
+            }
+            internal async Task<string> RenewSamePrincipalV6ForTestingAsync()
+            {
+                var permissions=Operator.CurrentUser.PermissionCodes.ToArray();Operator.Logout();
+                var response=FreshFixtureResponse(out _);response.Session.PosSessionId=Guid.NewGuid().ToString("D");
+                response.LocalAuthorizationPolicy=PosOnlineContract.PersistentLocalAuthorizationPolicy;
+                response.Session.ExpiresAt=PosOnlineContract.PersistentLocalAuthorizationExpiryUtc;
+                response.EffectiveOfflineAuthorizationExpiresAt=response.Session.ExpiresAt;
+                // The earlier expiry probes deliberately use the bounded-lease
+                // compatibility store. A fresh ordinary online v6 login uses
+                // the production persistent store and its own receipt clock.
+                response.ServerTime=DateTimeOffset.UtcNow.ToString("O",CultureInfo.InvariantCulture);
+                _store=new PosTrustedDeviceStore();
+                _store.SaveFirstLogin(response,"qa-history-v6-relogin-"+Guid.NewGuid().ToString("N"));
+                if(!_store.TryRead(out var trusted)||!trusted.PersistentLocalAuthorization||trusted.TrustedStateFormatVersion!=6||!PosOnlineSyncSupervisorHost.TryCreateGeneration(trusted,out Generation))
+                    throw new InvalidOperationException("qa_history_v6_relogin_failed");
+                var username=await new UserRepository(Factory).FindTrustedRemoteStaffUsernameAsync(ShopId,ShopCode,response.Staff.StaffId,response.Staff.StaffCode,response.Staff.CredentialVersion);
+                if(await Operator.LoginAsync(username,"2468")!=LoginResult.Success)throw new InvalidOperationException("qa_history_v6_relogin_failed");
+                Operator.CurrentUser.PermissionCodes=permissions;_expiryTicks=long.MaxValue;return trusted.PosSessionId;
             }
             internal void ChangeShopForTesting()
             {

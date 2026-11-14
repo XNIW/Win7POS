@@ -164,7 +164,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public string TotalAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(TotalAmount) : PosLocalization.T("historyReport.notAvailable");
         /// <summary>KPI in alto: da _currentHeaderSummary (Giornaliero / riga selezionata / righe spuntate).</summary>
-        public string CashAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.CashAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
+        public string CashAmountDisplay => NativeReportComponentAvailable ? MoneyClp.FormatDisplay(_currentHeaderSummary?.CashAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
         public string CardAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.CardAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
         public string GrossSalesAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.GrossAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
         public string RefundsAmountDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(_currentHeaderSummary?.RefundsAmount ?? 0) : PosLocalization.T("historyReport.notAvailable");
@@ -337,7 +337,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string PeriodNetDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodNetAmount) : PosLocalization.T("historyReport.notAvailable");
         public string PeriodGrossDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodGrossAmount) : PosLocalization.T("historyReport.notAvailable");
         public string PeriodRefundsDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodRefundsAmount) : PosLocalization.T("historyReport.notAvailable");
-        public string PeriodCashDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodCashAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string PeriodCashDisplay => NativeReportComponentAvailable ? MoneyClp.FormatDisplay(PeriodCashAmount) : PosLocalization.T("historyReport.notAvailable");
         public string PeriodCardDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(PeriodCardAmount) : PosLocalization.T("historyReport.notAvailable");
         public string PeriodTicketAverageDisplay => FormatNativeAverage(_periodNativePositiveSalesClp, PeriodSalesCount);
 
@@ -354,7 +354,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string MarkedNetDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedNetAmount) : PosLocalization.T("historyReport.notAvailable");
         public string MarkedGrossDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedGrossAmount) : PosLocalization.T("historyReport.notAvailable");
         public string MarkedRefundsDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedRefundsAmount) : PosLocalization.T("historyReport.notAvailable");
-        public string MarkedCashDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedCashAmount) : PosLocalization.T("historyReport.notAvailable");
+        public string MarkedCashDisplay => NativeReportComponentAvailable ? MoneyClp.FormatDisplay(MarkedCashAmount) : PosLocalization.T("historyReport.notAvailable");
         public string MarkedCardDisplay => ReportNumbersVisible ? MoneyClp.FormatDisplay(MarkedCardAmount) : PosLocalization.T("historyReport.notAvailable");
         public string MarkedTicketAverageDisplay => FormatNativeAverage(HistoryRows.Where(row => row.IsMarked).Aggregate(0L, (sum,row) => checked(sum + row.NativePositiveSalesClp)), MarkedSalesCount);
         public bool HasMarkedRows => MarkedCount > 0;
@@ -384,9 +384,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get
             {
-                if (HistoryRowCount == 0) return PosLocalization.T("reports.historyNone");
-                if (MarkedCount > 0) return PosLocalization.F("reports.historySelected", HistoryRowCount, MarkedCount);
-                return PosLocalization.F("reports.historyLoaded", HistoryRowCount);
+                if (HistoryRowCount == 0) return PosLocalization.T("historyReport.noRecordedData");
+                if (MarkedCount > 0) return PosLocalization.F("historyReport.recordedDaysSelected", HistoryRowCount, MarkedCount);
+                return PosLocalization.F("historyReport.recordedDays", HistoryRowCount);
             }
         }
 
@@ -1015,7 +1015,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             (CancelReportCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ImportHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (ConfigureReportTimePolicyCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ToggleFiscalPrintedModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
@@ -1185,6 +1184,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public sealed class HistoryRow : INotifyPropertyChanged
         {
+            public bool NativeComponentAvailable { get; set; }=true;
+            public string NativeReceiptCountText=>NativeComponentAvailable?SalesCount.ToString(CultureInfo.CurrentCulture):PosLocalization.T("historyReport.notAvailable");
             public long NativePositiveSalesClp { get; set; }
             public long HistoricalMovementCount { get; set; }
             private bool _isMarked;

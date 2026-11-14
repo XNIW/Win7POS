@@ -77,11 +77,11 @@ internal static class AuthenticatedHistoryServiceHarness
             var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
             var state=await a.Fixture.Service.ReadDatasetAsync(ct);
             var assignments=ReadAssignments(a,analysis);
-            var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,state.DatasetId,state.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
             var expected=analysis.AcceptedTransactions.Where(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19).Select(ToFact).ToArray();
             Demand(expected.Length>0,"history_test_new_source_missing");
-            _phase="source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,baselineCount=before.Length,sourceSha=Hash(await File.ReadAllBytesAsync(source)),expected},ct);
+            _phase="source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,baselineCount=before.Length,sourcePath=source,sourceSha=Hash(await File.ReadAllBytesAsync(source)),qualificationSubjects=QualificationSubjects(analysis),expected},ct);
             await WaitSignal("allow_local_apply",ct);
+            var plan=await QualifiedPlan(a,new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,state.DatasetId,state.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start"),ct);
             _phase="local_apply";var authority=await a.Request("authority",new(),ct);
             using var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,plan.OperationId);
             using var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct);
@@ -121,12 +121,38 @@ internal static class AuthenticatedHistoryServiceHarness
             return new HistoricalMerchantAssignment(group.First(),binding.Scope,binding.Id,binding.Evidence);
         }).ToArray();
     }
+    static object[] QualificationSubjects(HistoricalSalesImportAnalysis analysis)
+    {
+        return HistoricalQualificationResolver.CreateSubjects(analysis).Select(subject=>
+        {
+            var ids=analysis.Files.Where(f=>f.Sha256==subject.FileSha256).Select(f=>f.FileId).ToHashSet(StringComparer.Ordinal);
+            var merchant=analysis.AcceptedTransactions.First(t=>ids.Contains(t.Source.FileId)&&HistoricalMerchantAssignment.MerchantKey(t.Merchant)==subject.AliasKey).Merchant;
+            return (object)new{fileSha256=subject.FileSha256,aliasKey=subject.AliasKey,profile=subject.Profile.ToString(),parserVersion=subject.ParserVersion,
+                fromTicks=subject.FromTicks.ToString(CultureInfo.InvariantCulture),toTicks=subject.ToTicks.ToString(CultureInfo.InvariantCulture),
+                sourceIdentity=new{local=merchant.Local,seller=merchant.Seller,sellerId=merchant.SellerId,localNumber=merchant.LocalNumber,rut=merchant.Rut,hasEvidence=merchant.HasEvidence}};
+        }).ToArray();
+    }
+    static async Task<HistoricalSalesImportPlan> QualifiedPlan(Session session,HistoricalSalesImportPlan original,CancellationToken ct,bool canonicalNewScope=false)
+    {
+        var raw=await session.Request("qualified_config",new(),ct);
+        var context=HistoricalQualificationResponseMapper.RequireContext(raw,_scope.shopId);
+        var resolved=HistoricalQualificationResolver.Resolve(_scope.shopId,HistoricalQualificationResolver.CreateSubjects(original.Analysis),context.Evidence);
+        Demand(resolved.CanPrepare,"history_test_qualified_input_missing");
+        var starts=resolved.Evidence.Where(e=>e.Kind==HistoricalEvidenceKind.NativeStart).Select(e=>e.NativeStartTicks!.Value).Distinct().ToArray();
+        Demand(starts.Length==1&&starts[0]==638712864000000000,"history_test_qualified_native_start");
+        var reference="qualified:"+context.ConfigDigest+":"+resolved.Fingerprint;
+        var assignments=original.Assignments.Select(a=>new HistoricalMerchantAssignment(original.Analysis.AcceptedTransactions.First(t=>HistoricalMerchantAssignment.MerchantKey(t.Merchant)==a.AliasKey).Merchant,
+            canonicalNewScope?resolved.Merchants[a.AliasKey]:a.ScopeId,a.BindingId,reference)).ToArray();
+        return new HistoricalSalesImportPlan(original.OperationId,original.ShopId,original.DatasetId,original.DataRevision,original.RestoreEpoch,original.Analysis,assignments,
+            new DateTime(starts[0],DateTimeKind.Unspecified),reference,original.CorrectionApprovals,
+            new HistoricalQualifiedInputSelection(context.ConfigDigest,resolved.Fingerprint,resolved.Evidence.Select(e=>e.Id)));
+    }
     static async Task DuplicateAndUndo(Session a,Session b,string source,HistoricalSalesOperationReceipt first,Fact[] baseline,Fact[] published,CancellationToken ct)
     {
         _phase="duplicate";
         var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
         var state=await a.Fixture.Service.ReadDatasetAsync(ct);
-        var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,state.DatasetId,state.DataRevision,0,analysis,ReadAssignments(a,analysis),new DateTime(2025,1,1),"Synthetic service harness approved start");
+        var plan=await QualifiedPlan(a,new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,state.DatasetId,state.DataRevision,0,analysis,ReadAssignments(a,analysis),new DateTime(2025,1,1),"Synthetic service harness approved start"),ct);
         using(var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,plan.OperationId))
         using(var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct))
         {
@@ -147,13 +173,13 @@ internal static class AuthenticatedHistoryServiceHarness
         var correctionAnalysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{corrected},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
         var expected=correctionAnalysis.AcceptedTransactions.Where(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19).Select(ToFact).ToArray();
         Demand(expected.Length==1&&expected[0].Key!=published.Single(x=>x.Id==expected[0].Id).Key,"history_test_correction_source");
-        await SaveState(new{phase=_phase,nonce=_scope.nonce,sourceSha=Hash(await File.ReadAllBytesAsync(corrected)),expected},ct);await WaitSignal("allow_correction_apply",ct);
+        await SaveState(new{phase=_phase,nonce=_scope.nonce,sourcePath=corrected,sourceSha=Hash(await File.ReadAllBytesAsync(corrected)),qualificationSubjects=QualificationSubjects(correctionAnalysis),expected},ct);await WaitSignal("allow_correction_apply",ct);
         _phase="correction";state=await a.Fixture.Service.ReadDatasetAsync(ct);operation=Guid.NewGuid().ToString("N");
         var assignments=ReadAssignments(a,correctionAnalysis);
         var tentative=new HistoricalSalesImportPlan(operation,_scope.shopId,state.DatasetId,state.DataRevision,0,correctionAnalysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
         var preview=await a.Fixture.Service.PreviewAsync(tentative,ct);
         Demand(preview.ConflictCount==0&&preview.CorrectionCount==1&&preview.Corrections.Count==1&&!preview.CorrectionsTruncated,"history_test_correction_preview");
-        var correction=new HistoricalSalesImportPlan(operation,_scope.shopId,state.DatasetId,state.DataRevision,0,correctionAnalysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start",new[]{preview.Corrections[0].Approve("Synthetic correction after verified Undo")});
+        var correction=await QualifiedPlan(a,new HistoricalSalesImportPlan(operation,_scope.shopId,state.DatasetId,state.DataRevision,0,correctionAnalysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start",new[]{preview.Corrections[0].Approve("Synthetic correction after verified Undo")}),ct);
         using(var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,correction.OperationId))
         using(var draft=await a.Fixture.Service.PreparePublicationDraftAsync(correction,a.Generation.ShopDeviceId,ct))
         {
@@ -232,12 +258,12 @@ internal static class AuthenticatedHistoryServiceHarness
     {
         _phase="fault_source_ready";var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
         var expected=analysis.AcceptedTransactions.Where(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19).Select(ToFact).ToArray();Demand(expected.Length==1,"history_test_fault_source");
-        await SaveState(new{phase=_phase,nonce=_scope.nonce,sourceSha=Hash(await File.ReadAllBytesAsync(source)),expected},ct);await WaitSignal("allow_fault_apply",ct);
+        await SaveState(new{phase=_phase,nonce=_scope.nonce,sourcePath=source,sourceSha=Hash(await File.ReadAllBytesAsync(source)),qualificationSubjects=QualificationSubjects(analysis),expected},ct);await WaitSignal("allow_fault_apply",ct);
         _phase="lost_ack";var before=a.Facts();var dataset=await a.Fixture.Service.ReadDatasetAsync(ct);
         // Hold the real lost-ACK state until the next process. The original
         // automatic lane is drained; recovery resumes via a new supervisor.
         await a.DrainAutomatic(ct);
-        var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,dataset.DatasetId,dataset.DataRevision,0,analysis,ReadAssignments(a,analysis),new DateTime(2025,1,1),"Synthetic service harness approved start");
+        var plan=await QualifiedPlan(a,new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,dataset.DatasetId,dataset.DataRevision,0,analysis,ReadAssignments(a,analysis),new DateTime(2025,1,1),"Synthetic service harness approved start"),ct);
         using(var publicationUse=HistoricalPublicationOperationUse.Begin(a.Fixture.Db.Factory,plan.OperationId))
         using(var draft=await a.Fixture.Service.PreparePublicationDraftAsync(plan,a.Generation.ShopDeviceId,ct))
         {
@@ -304,7 +330,8 @@ internal static class AuthenticatedHistoryServiceHarness
         _phase="conflict_mapping_plan";
         var assignments=analysis.AcceptedTransactions.Select(t=>t.Merchant).GroupBy(HistoricalMerchantAssignment.MerchantKey).Select((g,i)=>new HistoricalMerchantAssignment(g.First(),"conflict-scope-"+i,"conflict-binding-"+i,"Synthetic independent mapping")).ToArray();
         var plan=new HistoricalSalesImportPlan(Guid.NewGuid().ToString("N"),_scope.shopId,before.DatasetId,before.DataRevision,0,analysis,assignments,new DateTime(2025,1,1),"Synthetic service harness approved start");
-        _phase="conflict_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourceSha=Hash(await File.ReadAllBytesAsync(source)),operation=Guid.Parse(plan.OperationId).ToString("D")},ct);await WaitSignal("allow_conflict_prepare",ct);
+        _phase="conflict_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourcePath=source,sourceSha=Hash(await File.ReadAllBytesAsync(source)),qualificationSubjects=QualificationSubjects(analysis),operation=Guid.Parse(plan.OperationId).ToString("D")},ct);await WaitSignal("allow_conflict_prepare",ct);
+        plan=await QualifiedPlan(b,plan,ct,canonicalNewScope:true);
         _phase="conflict_preparation";var denied=false;object? denial=null;
         using(var publicationUse=HistoricalPublicationOperationUse.Begin(b.Fixture.Db.Factory,plan.OperationId))
         using(var draft=await b.Fixture.Service.PreparePublicationDraftAsync(plan,b.Generation.ShopDeviceId,ct))
@@ -323,7 +350,7 @@ internal static class AuthenticatedHistoryServiceHarness
     {
         var source=NewSource(a.Fixture);var analysis=new HistoricalSalesImportAnalyzer().Analyze(new[]{source},new HistoricalSalesImportOptions{LegacyClpConfirmed=true});
         var expected=analysis.AcceptedTransactions.Where(t=>t.ExternalId.StartsWith("8",StringComparison.Ordinal)&&t.ExternalId.Length==19).Select(ToFact).ToArray();Demand(expected.Length>0,"history_test_web_source_missing");
-        _phase="web_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourcePath=source,sourceSha=Hash(await File.ReadAllBytesAsync(source)),expected},ct);
+        _phase="web_source_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,sourcePath=source,sourceSha=Hash(await File.ReadAllBytesAsync(source)),qualificationSubjects=QualificationSubjects(analysis),expected},ct);
         await WaitSignal("admin_frozen",ct);_phase="freeze_ack";
         var exportA=await a.AcknowledgeFreeze(ct);var exportB=await b.AcknowledgeFreeze(ct);
         await SaveState(new{phase="freeze_acknowledged",nonce=_scope.nonce,exports=new[]{exportA,exportB}},ct);await WaitSignal("frozen_sources_reconciled",ct);
