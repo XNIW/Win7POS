@@ -41,6 +41,7 @@ public sealed class ArticleMutationMigrationTests
             HistoricalOutcomeSchema.Apply(connection, transaction);
             HistoricalBaselineSchema.Apply(connection, transaction);
             HistoricalLegacyBaselineSchema.Apply(connection, transaction);
+            HistoricalBaselineRetrySchema.Apply(connection, transaction);
             transaction.Commit();
         }
 
@@ -82,7 +83,7 @@ public sealed class ArticleMutationMigrationTests
             SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(detector),
             "Fresh schema does not satisfy the current migration invariant.");
         Assert.AreEqual(
-            "0021-historical-legacy-baseline",
+            "0022-historical-baseline-retry",
             SchemaMigrationRegistry.Latest.MigrationId);
     }
 

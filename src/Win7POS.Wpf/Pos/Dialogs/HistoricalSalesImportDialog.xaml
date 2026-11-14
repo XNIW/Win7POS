@@ -46,6 +46,8 @@
      <StackPanel Margin="12">
       <TextBlock Text="{Binding PublicationStatus}" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
       <TextBlock Text="{Binding ReceptionStatus}" TextWrapping="Wrap" Margin="0,0,0,16" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock Text="{Binding BaselineStatus}" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
+      <Button Content="{loc:Loc history.baselineRetry}" Command="{Binding RetryBaselineCommand}" Visibility="{Binding BaselineRetryVisibility}" MinHeight="42" HorizontalAlignment="Left" Margin="0,0,0,12" AutomationProperties.Name="{loc:Loc history.baselineRetry}"/>
       <TextBlock Text="{loc:Loc history.technicalConsole}" TextWrapping="Wrap" Margin="0,0,0,16"/>
       <TextBlock Text="{loc:Loc history.cloudSyncInstructions}" TextWrapping="Wrap" Margin="0,20,0,12"/>
       <Button Content="{loc:Loc history.cloudSync}" Command="{Binding SyncCloudCommand}" MinHeight="42" HorizontalAlignment="Left" AutomationProperties.Name="{loc:Loc history.cloudSync}"/>
