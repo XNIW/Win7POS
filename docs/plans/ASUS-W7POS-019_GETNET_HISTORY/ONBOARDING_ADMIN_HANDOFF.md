@@ -1,7 +1,24 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
-## Stato corrente — 20261112T205249Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato corrente — 20261114T075849Z, stessa ASUS-W7POS-019 ACTIVE
+
+Server `efb6ec1` / main `8e46610` consegnato con due migrazioni verificate e Cloudflare al 100%; 24 binding preservati. Nessun ruolo, PIN, ledger o stato della baseline modificato dal rollout.
+
+Windows `6f12a08` / main `1c7a921` hanno lo stesso tree: CI 16/16, Security, Release di 41 file, QA e ASUS Integrated12/Final60 PASS. Worker efb: 99 file SQL / 5420 assert, 12/12 prove autenticate, volume di 25947 righe sintetico con gateway HTTP e SQL reali in 96.541 s, Host Windows 5/5 PASS. La prova di volume usa Node 24; non è una prova Cloudflare live. Budget 120 s e limiti invariati.
+
+Installazione cassa/Worker pronta con backup coerente di 17 file / 3 database / 115 conteggi e manifest validati; preimage protetta del servizio BLOCKED_UAC. Nessun aggiornamento locale avviato e nessun nonce operativo consumato. Restano installati la cassa 248/v6 e il precedente Worker; nuova UI reale, recupero della STESSA baseline, receipt/revisione/ACK/replica e continuità nuova versione NOT_RUN. Le run automatiche del nuovo main Windows sono distinte dai PASS del payload 6f e vengono seguite senza dispatch duplicati.
+
+Legacy: 25947 movimenti riconciliati, filtro dal 12 giugno: 2577 movimenti; nessuna nuova importazione per questa differenza. Getnet C MISSING: tre moderni non applicati. Win7 fisico BLOCKED_TARGET, periferiche NOT_RUN, DPI 100/125 USER_DEFERRED; scala 200% conservata. Nessun DONE globale.
+
+[Unica matrice corrente: requisito → codice/SHA → prova → installato → stato → residuo](https://github.com/XNIW/Win7POS/blob/codex/asus019-review-checkpoint/docs/plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md#matrice-finale-asus-w7pos-019).
+<!-- ASUS019_COMPOSED_CURRENT_END -->
+
+<details>
+<summary>Checkpoint precedente 20261112T205249Z conservato come storia</summary>
+
+<!-- ASUS019_COMPOSED_HISTORY_20261112T205249Z_START -->
+## Stato storico — 20261112T205249Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Prova e risultato corrente |
 | --- | --- |
@@ -27,12 +44,14 @@ Storico reale: il normale background ha preparato un archivio/backup con hash ve
 Win7 fisico BLOCKED_TARGET; periferiche NOT_RUN; Getnet C MISSING e tre moderni non applicati. DPI200%/2880×1800 conservati,100/125 USER_DEFERRED. Nessun Apply/Undo/reimport reale, articolo, vendita di prova o cancellazione di profilo/code. FAIL intermedi e ricevute storiche conservati, nessuna soglia/assert/pin indebolita. Nessun DONE globale.
 
 Advisors dopo DDL conservati come inventario: [RLS senza policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy), [search_path](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), [RPC anonime](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), [RPC autenticate](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) e [protezione password](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). Nessun finding di execute pubblico per la nuova V4; permessi live verificati separatamente. Policy estranee non modificate.
-<!-- ASUS019_COMPOSED_CURRENT_END -->
+<!-- ASUS019_COMPOSED_HISTORY_20261112T205249Z_END -->
+
+</details>
 
 <details>
 <summary>Checkpoint precedente182455Z conservato come storia</summary>
 
-## Stato corrente — 20261112T182455Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato storico — 20261112T182455Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Prova e risultato corrente |
 | --- | --- |
@@ -59,7 +78,7 @@ Advisors dopo DDL conservati come inventario: [RLS senza policy](https://supabas
 <details>
 <summary>Checkpoint precedente175420Z conservato come storia</summary>
 
-## Stato corrente — 20261112T175420Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato storico — 20261112T175420Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Prova e risultato corrente |
 | --- | --- |
@@ -86,7 +105,7 @@ Advisors dopo DDL conservati come inventario: [RLS senza policy](https://supabas
 <details>
 <summary>Checkpoint precedente153827Z conservato come storia</summary>
 
-## Stato corrente — 20261112T153827Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato storico — 20261112T153827Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Sorgente / prova | Esito attribuito |
 | --- | --- | --- |
@@ -325,7 +344,7 @@ fisico restano separate; il test Core/Data non attesta WPF o periferiche.
 
 </details>
 
-<!-- ASUS019_CURRENT_START -->
+<!-- ASUS019_HISTORY_20261111T124944Z_START -->
 ## Qualifiche precedenti — evidence conservate
 
 Due consegne: cassa quotidiana e storico bilaterale. EXECUTION ACTIVE.
@@ -359,12 +378,12 @@ gate commerciale o manutenzione backup attraversa HTTP. Nessuna nuova coda/timer
 La prova con risposte controllate e distinta da server/Worker/browser reali.
 Non esporre la v2 incompleta e non dichiarare DONE prima dei gate critici.
 Checkpoint UTC 2026-11-11T12:49:44.409904+00:00.
-<!-- ASUS019_CURRENT_END -->
+<!-- ASUS019_HISTORY_20261111T124944Z_END -->
 
 <details>
 <summary>Checkpoint precedente conservato al 20261111T012245Z</summary>
 
-## Convergenza corrente — stessa Execution ASUS-W7POS-019
+## Convergenza storica — stessa Execution ASUS-W7POS-019
 
 Addendum di convergenza recepito: due consegne, cassa quotidiana e storico
 bilaterale. Nessuna funzione nuova; la precedente matrice di altri domini resta
@@ -423,7 +442,7 @@ Checkpoint UTC 2026-11-10T23:54:20.160630+00:00.
 <details>
 <summary>Checkpoint precedente 10 novembre 22:27 UTC, conservato alla convergenza</summary>
 
-## Stato corrente — Execution bilaterale attiva, checkpoint 10 novembre 22:27 UTC
+## Stato storico — Execution bilaterale attiva, checkpoint 10 novembre 22:27 UTC
 
 Admin151/43f668df + diff: lettore movimenti nominativo, filtri per data commerciale,
 cursore vincolato a dataset/revisione/filtro, totali globali filtrati e importi
@@ -478,7 +497,7 @@ Stessa ASUS019 ACTIVE: nessun merge o DONE; risultati Windows non attestano mobi
 <details>
 <summary>Checkpoint precedente 10 novembre 21:00 UTC, conservato</summary>
 
-## Stato corrente —5d8e704 qualificato, consegna reale aperta
+## Stato storico —5d8e704 qualificato, consegna reale aperta
 
 Stessa ASUS019/R3 ACTIVE: Windows-All15/15 PASS (Core1745, functional22,
 crash5, smoke8/52, load11), quattro workflow exact-SHA SUCCESS, pacchetto41/QA40
@@ -494,7 +513,7 @@ Dettagli e riferimenti: [report canonico](../../reports/ASUS_W7POS_019_RETRY_E2E
 Le sezioni sotto sono checkpoint storici, non lo stato corrente. Nessun DONE.
 
 </details>
-## Raccordo corrente — a8286c6 qualificato e installato, 9 novembre 2026
+## Raccordo storico — a8286c6 qualificato e installato, 9 novembre 2026
 
 Windows codice/pacchetto a8286c669a7c0d8ec4f82e1e7a31fc1b5d46eed3,
 versione1.0.0-dev.a8286c669a7c, installato41/41 con profilo/trust conservati.
@@ -623,7 +642,7 @@ head137afa5e OPEN/ACTIVE osservata, nessun lavoro mobile eseguito.
 [Esiti e responsabilità correnti](../../reports/ASUS_W7POS_019_RETRY_E2E_RESULT.md).
 I raccordi successivi sotto sono storia, inclusi review/consenso pendenti.
 
-## Raccordo corrente — 8 novembre 2026
+## Raccordo storico — 8 novembre 2026
 
 Windows `1823697f1f0c965fb8fd9d85259a862160f12c59` consegnato e installato
 su Windows11,41/41 file identici e versione registro verificata. Retry ora

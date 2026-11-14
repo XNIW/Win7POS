@@ -1,7 +1,53 @@
 # ASUS-W7POS-019 execution ledger
 
-<!-- ASUS019_DELIVERY_COMPOSITION_START -->
-## Composizione candidata — stessa ASUS-W7POS-019 ACTIVE
+<!-- ASUS019_COMPOSED_CURRENT_START -->
+## Stato corrente — 20261114T075849Z, stessa ASUS-W7POS-019 ACTIVE
+
+Server `efb6ec1` / main `8e46610` consegnato con due migrazioni verificate e Cloudflare al 100%; 24 binding preservati. Nessun ruolo, PIN, ledger o stato della baseline modificato dal rollout.
+
+Windows `6f12a08` / main `1c7a921` hanno lo stesso tree: CI 16/16, Security, Release di 41 file, QA e ASUS Integrated12/Final60 PASS. Worker efb: 99 file SQL / 5420 assert, 12/12 prove autenticate, volume di 25947 righe sintetico con gateway HTTP e SQL reali in 96.541 s, Host Windows 5/5 PASS. La prova di volume usa Node 24; non è una prova Cloudflare live. Budget 120 s e limiti invariati.
+
+Installazione cassa/Worker pronta con backup coerente di 17 file / 3 database / 115 conteggi e manifest validati; preimage protetta del servizio BLOCKED_UAC. Nessun aggiornamento locale avviato e nessun nonce operativo consumato. Restano installati la cassa 248/v6 e il precedente Worker; nuova UI reale, recupero della STESSA baseline, receipt/revisione/ACK/replica e continuità nuova versione NOT_RUN. Le run automatiche del nuovo main Windows sono distinte dai PASS del payload 6f e vengono seguite senza dispatch duplicati.
+
+Legacy: 25947 movimenti riconciliati, filtro dal 12 giugno: 2577 movimenti; nessuna nuova importazione per questa differenza. Getnet C MISSING: tre moderni non applicati. Win7 fisico BLOCKED_TARGET, periferiche NOT_RUN, DPI 100/125 USER_DEFERRED; scala 200% conservata. Nessun DONE globale.
+
+[Unica matrice corrente: requisito → codice/SHA → prova → installato → stato → residuo](https://github.com/XNIW/Win7POS/blob/codex/asus019-review-checkpoint/docs/plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md#matrice-finale-asus-w7pos-019).
+<!-- ASUS019_COMPOSED_CURRENT_END -->
+
+<!-- ASUS019_FINAL_MATRIX_START -->
+## Matrice finale ASUS-W7POS-019
+
+Checkpoint20261114T075849Z. Stessa Execution ACTIVE; questa matrice distingue qualifica del candidato, consegna e prova reale. I rapporti privati conservano anche FAIL/TIMEOUT/NOT_RUN precedenti. Nessun PASS della nuova cassa è attribuito al vecchio installato.
+
+Il timeout reale precedente si è fermato a 6000 oggetti / 0 movimenti senza diagnostiche di fase: la sua ripartizione resta UNKNOWN. Dal codice precedente si deducono 260 chunk seriali per il volume osservato, non una causa live già provata. La pipeline qualificata usa vettori v2 atomici di massimo 4 chunk canonici da 200, una sola fase, fence/nonce/hash invariati. Nel volume sintetico rappresentativo sono 66 vettori logici/67 richieste wire con un replay ACK perso: 96.541 s complessivi, floor additivo di rete 77.156 s, RSS 266559488 B. Stage objects 39.938 s e stage movements 52.232 s comprendono attese RPC; SQL originale 10.038 s esclude il replay duplicato. Lettura/validazione 40.584 s contiene 39.538 s di attese RPC e non si somma ai tempi sovrapposti. Queste sono misure Node 24+HTTP+PostgreSQL/PostgREST di test; il costo Cloudflare reale resta da osservare al retry autorizzato. Non sono stati alzati 120 s globali/15 s richiesta, 200 righe canoniche, heap 640 MiB o hard limit 1 GiB.
+
+| Requisito | Codice / SHA | Prova | Installato / consegnato | Stato | Residuo preciso |
+| --- | --- | --- | --- | --- | --- |
+| PUT archivio e fonte immutata | Fix f467be7 acquisito e incluso in efb | Archivio originale 869952 B verificato; riconciliazione privata già acquisita | Server include fix; nessun nuovoZIP o rianalisi economica | PASS | Conservare stessa fonte e operazione |
+| Deadline, cancellazione, ACK perso, fence, staging atomico | migration-worker/local-export-reader/gateway/daemon efb6ec1 | Own43563028572: 99 file SQL / 5420 assert, Auth 12/12, volume di 25947 righe/96.541s; runtime receipt38162c5d… | Server consegnato; dedicated sender nuovo non installato | PASS | Prestazioni Cloudflare live NOT_RUN; vecchio timeout non reinterpretato |
+| Server qualificato e migrazioni additive | efb6ec1 / main8e46610, treec8c38ac | OwnCI/CF PASS; postmain43565745592/43565745580 PASS; due postcheck catalogo/ACL/preservazione PASS | Migrazioni20261114064923 e20261114064948; CF5dbfd5b2-59ce-4c95-a7a7-57d30c7045b1, deploymentd214df0c-db1d-4def-a69f-1a98d2aca43d al100%;24binding/runtime preservati | PASS | Nessuna nuova prova di pubblicazione finanziaria da questo deploy |
+| Master reale, delega esplicita e configurazione qualificata scoped/revocabile | Workbench/QualificationPanel/API/SQL efb; DTO/resolver6f12a08 | Auth12 e WPF/HTTP integrati; scope shop/esercente/file/parser/intervallo, revoca e versioni controllati | Backend pubblicato; nuova WPF NOT_RUN installata | PASS | Nessun Master dedotto da1001/full_access/badge; nessuna qualifica reale C inventata; ruoli invariati |
+| Guided UI, KnownFiles attivi e report senza falsi zeri | WPF6f12a08, tree d979f803…; DailyReport e import VM/servizi | Own43561964226:1903Core,24/24Functional, Smoke8/52, Load1/11, Foundation5/5, CloudSync1/1; nuovi guided/web, geometria22misure e cleanup naturali | Installato ancora248; nuovo codice in release6f | PASS | Nuova UI effettivamente installata e navigazione reale NOT_RUN; catalogo vuoto non autorizza vendite |
+| Gate Windows e artefatto consegnabile | Source6f12a08, merge1c7a921 treeidentico | Security43561964038 PASS; Release43562025056 verificata41 file / 110 checksum; QA 40; Integrated 733.502 s e Final 3622.104 s PASS; budget63970e30… invariato | Setup5bab803f…; WPF5310126d… pronti; applicazione installata ancora248/dec0d531… | PASS | CI/Security/Release automatiche main1c7 distinte e inizialmente in corso; vecchio main92 LoadFAIL resta storico, causaUNKNOWN |
+| Backup coerente e aggiornamento della cassa | Script cash1ae0f88e… / manifestebe1069b… | Backup fresco17 file / 3 database, integrityok/FK0,115 conteggi, raw e copie SQLite coerenti; profilo invariato dopo entrambe le prove; ValidateOnly PASS | Nessun installer avviato; Start link/profilo da ricontrollare dopo installazione | BLOCKED | Consenso UAC umano per piano4bbc85c5…; nessun autostart POS o ripristino automatico dei DB |
+| Worker dedicato qualificato e aggiornamento in-place | Runtimeefb, CJS651763d7…; Hostpackagef0651887… | Runtime receipt38162c5d… verificata indipendentemente; host43564553875,5/5 reali su fixture Windows; updater privato 20/20 e review statica | Vecchio host7c/runtime612 ancora presente; nuovo servizio non consegnato | BLOCKED | Preimage protetta PENDING_UAC, zero stop/copy/registro/nonce; mantenere Node, DPAPI, identità, ACL file/cartelle e6parametri; cambia solo WorkerSha256 oltre4file; DACL SCM non verificata separatamente |
+| Baseline reale e sincronizzazione bilaterale | Stesso run originale; baseline_recover → local_baseline_recovery_v2 → flowresume → freshreview/apply con chiavi originali | Ultima lettura06:49Z: failed/attempt1/history_worker_timeout,6000oggetti/0movimenti, writerlocal/epoch1/rev0, ledgercanonico0; SQL/authfixture mostrano recupero e POSA/B↔Web senza echo | Ultima copia locale completa25947 conservata; nessun retry live dopo qualifica | FAIL | Dopo consegna e accesso umano: retry canonico della STESSA baseline, preparazione→review/apply→receipt→revisione→ACK→replica; niente SQLreset/reimport/nuovo dataset o vendita di prova |
+| Continuità del servizio reale separata dal timeout run | Host/daemon efb con diagnostiche redatte512KiB e uscita/cancellazione | Host 5/5 e test deadline/ACK PASS; servizio precedente osservato running,36 eventi SCM7031 storici, causaUNKNOWN | Nuovo host non installato; running vecchio non prova continuità | NOT_RUN | Osservare nuova versione e causa di eventuale uscita durante operazione reale; non trasformare recovery automatico in PASS |
+| Autorizzazione v6 e PIN senza scadenza | Contratti auth invariati nel delta;3corpi v6 byteidentici dopo DDL | Installato248: due accessi online/riapertura/navigazione attestati; PIN expiry NULL e credential version 1 preservati; nuovi test own6f PASS | v6 conservata; offline/reboot reali nuovi non attestati | PASS | Nuovo Start/PIN manuali dopo installazione; revoca e cambio manuale restano validi; nessun nuovo limite introdotto |
+| Riconciliazione e provenienza Getnet | Ledger legacy esistente e oracoli privati acquisiti | 25947identità/ticks/lordo/netto/commissioni/IVA senza mismatch; filtro12 giugno: 2577; agosto8233/7833/400 verificato privatamente | Legacy già registrato; moderni non applicati | PASS | Non sommare copia locale e canonica; date mancanti/mesi non forniti restano sconosciuti, non zero |
+| Interpretazione temporale Getnet C | Resolver/API/UX negano Apply senza prova provider qualificata | ExportZ e campo offset acquisiti; ricerca ufficiale/collegata limitata non ha fornito definizione indipendente; richiesta precisa già in scheda privata | Nessuna qualifica C o Apply dei3moderni | BLOCKED | Dettaglio/voucher Getnet della transazione agosto indicata, con data/ora vendita e riferimento corrispondente; non dedurre semantica dal soloZ/offset |
+| Windows7 SP1, periferiche e DPI | POSnet48/x86, nessuna dipendenza Win10+ aggiunta al POS; Node 24 è host dedicato separato | Qualifica ASUS su Windows11/200%/2880×1800; targetWin7 dichiarato non disponibile | Win7 fisico/periferiche non attestati; scala 200% conservata | BLOCKED | Win7BLOCKED_TARGET, perifericheNOT_RUN; DPI 100/125USER_DEFERRED, nessuna nuova richiesta; nessuna estensione mobile |
+
+Prove private principali: `C:/Dev/U19ImportUx6f12Cart01/asus-qualification-complete.private.json`, `C:/Dev/U19ImportUx6f12Delivery01/assembly.private.json`, `C:/Dev/U19ImportUx6f12Delivery01/validation-result.private.json`, `C:/Dev/U19MasterHistory01/rollout-efb8e01/rollout-verified.private.json`, `C:/Dev/U19MasterHistory01/postcheck-DDL2.private.json`, `C:/Dev/U19QualifiedEfbRuntime01/runtime-qualification.json`, `C:/Dev/U19QualifiedEfbHost01/complete.private.json`. Nessuna riga finanziaria o credenziale è riportata in questa matrice.
+
+Prossimo passo: un solo consenso Windows sul desktop protetto per la manutenzione già autorizzata e validata; poi Start/PIN umano e prova della nuova UI. Baseline incompleta, UI nuova non consegnata, C mancante e target fisico non attestato impediscono REVIEW/DONE globale.
+<!-- ASUS019_FINAL_MATRIX_END -->
+
+<details>
+<summary>Contesto ASUS019 precedente al riepilogo consolidato, conservato come storia</summary>
+
+<!-- ASUS019_DELIVERY_COMPOSITION_HISTORY_START -->
+## Composizione storica candidata — checkpoint ASUS-W7POS-019
 
 Il ramo codex/asus019-delivery-offline-history integra il client storico
 1f8ceaa62cdb4fad47852b55f69e933b8fa3aa54 con offline reopen
@@ -39,12 +85,12 @@ prove autenticazione/riapertura e nuova ASUS Integrated12/Final60 sul suo SHA.
 I PASS dei componenti non si trasferiscono. Nessun DONE globale. Dopo il
 freeze eseguire i gate remoti senza caricare l'ASUS durante la misura fe.
 Le sezioni seguenti conservano il contesto dei componenti alle rispettive date.
-<!-- ASUS019_DELIVERY_COMPOSITION_END -->
+<!-- ASUS019_DELIVERY_COMPOSITION_HISTORY_END -->
 
 <details>
 <summary>Contesto del componente offline fe069a1 conservato integralmente</summary>
 
-## 11 novembre — successore offline separato dalla cassa installata
+## Checkpoint storico 11 novembre — successore offline separato dalla cassa installata
 
 La causa reale del carrello bloccato era l'EXE2ad42ca ancora installato. Nessuna
 nuova riscrittura della cassa: consegnato d1b2bc3 già qualificato,installerSHA
@@ -97,8 +143,14 @@ Run autenticata43124933306 avviata dopo correzione,nessun retry live reale.
 
 </details>
 
-<!-- ASUS019_COMPOSED_CURRENT_START -->
-## Stato corrente — 20261112T205249Z, stessa ASUS-W7POS-019 ACTIVE
+
+</details>
+
+<details>
+<summary>Checkpoint precedente 20261112T205249Z conservato come storia</summary>
+
+<!-- ASUS019_COMPOSED_HISTORY_20261112T205249Z_START -->
+## Stato storico — 20261112T205249Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Prova e risultato corrente |
 | --- | --- |
@@ -124,12 +176,14 @@ Storico reale: il normale background ha preparato un archivio/backup con hash ve
 Win7 fisico BLOCKED_TARGET; periferiche NOT_RUN; Getnet C MISSING e tre moderni non applicati. DPI200%/2880×1800 conservati,100/125 USER_DEFERRED. Nessun Apply/Undo/reimport reale, articolo, vendita di prova o cancellazione di profilo/code. FAIL intermedi e ricevute storiche conservati, nessuna soglia/assert/pin indebolita. Nessun DONE globale.
 
 Advisors dopo DDL conservati come inventario: [RLS senza policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy), [search_path](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), [RPC anonime](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), [RPC autenticate](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) e [protezione password](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). Nessun finding di execute pubblico per la nuova V4; permessi live verificati separatamente. Policy estranee non modificate.
-<!-- ASUS019_COMPOSED_CURRENT_END -->
+<!-- ASUS019_COMPOSED_HISTORY_20261112T205249Z_END -->
+
+</details>
 
 <details>
 <summary>Checkpoint precedente182455Z conservato come storia</summary>
 
-## Stato corrente — 20261112T182455Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato storico — 20261112T182455Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Prova e risultato corrente |
 | --- | --- |
@@ -156,7 +210,7 @@ Advisors dopo DDL conservati come inventario: [RLS senza policy](https://supabas
 <details>
 <summary>Checkpoint precedente175420Z conservato come storia</summary>
 
-## Stato corrente — 20261112T175420Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato storico — 20261112T175420Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Prova e risultato corrente |
 | --- | --- |
@@ -183,7 +237,7 @@ Advisors dopo DDL conservati come inventario: [RLS senza policy](https://supabas
 <details>
 <summary>Checkpoint precedente153827Z conservato come storia</summary>
 
-## Stato corrente — 20261112T153827Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato storico — 20261112T153827Z, stessa ASUS-W7POS-019 ACTIVE
 
 | Ambito | Sorgente / prova | Esito attribuito |
 | --- | --- | --- |
@@ -422,7 +476,7 @@ fisico restano separate; il test Core/Data non attesta WPF o periferiche.
 
 </details>
 
-<!-- ASUS019_CURRENT_START -->
+<!-- ASUS019_HISTORY_20261111T124944Z_START -->
 ## Qualifiche precedenti — evidence conservate
 
 Due consegne: cassa quotidiana e storico bilaterale. EXECUTION ACTIVE.
@@ -456,12 +510,12 @@ gate commerciale o manutenzione backup attraversa HTTP. Nessuna nuova coda/timer
 La prova con risposte controllate e distinta da server/Worker/browser reali.
 Non esporre la v2 incompleta e non dichiarare DONE prima dei gate critici.
 Checkpoint UTC 2026-11-11T12:49:44.409904+00:00.
-<!-- ASUS019_CURRENT_END -->
+<!-- ASUS019_HISTORY_20261111T124944Z_END -->
 
 <details>
 <summary>Checkpoint precedente conservato al 20261111T012245Z</summary>
 
-## Convergenza corrente — stessa Execution ASUS-W7POS-019
+## Convergenza storica — stessa Execution ASUS-W7POS-019
 
 Addendum di convergenza recepito: due consegne, cassa quotidiana e storico
 bilaterale. Nessuna funzione nuova; la precedente matrice di altri domini resta
@@ -520,7 +574,7 @@ Checkpoint UTC 2026-11-10T23:54:20.160630+00:00.
 <details>
 <summary>Checkpoint precedente 10 novembre 22:27 UTC, conservato alla convergenza</summary>
 
-## Stato corrente — Execution bilaterale attiva, checkpoint 10 novembre 22:27 UTC
+## Stato storico — Execution bilaterale attiva, checkpoint 10 novembre 22:27 UTC
 
 Admin151/43f668df + diff: lettore movimenti nominativo, filtri per data commerciale,
 cursore vincolato a dataset/revisione/filtro, totali globali filtrati e importi
@@ -575,7 +629,7 @@ Stessa ASUS019 ACTIVE: nessun merge o DONE; risultati Windows non attestano mobi
 <details>
 <summary>Checkpoint precedente 10 novembre 21:00 UTC, conservato</summary>
 
-## Stato corrente — Execution bilaterale attiva, consegna Windows separata
+## Stato storico — Execution bilaterale attiva, consegna Windows separata
 
 PR136/149c978: CI42884098486 e Security42884098503 SUCCESS,15/15 passi e
 functional22/22. WPF42889661815 e Release42889654511 SUCCESS. Scaricati/verificati
@@ -874,7 +928,7 @@ See [current report and closure matrix](../../reports/ASUS_W7POS_019_RETRY_E2E_R
 
 ## Previous checkpoints retained as history
 
-## Current checkpoint — 2026-11-08, qualified successor
+## Historical checkpoint — 2026-11-08, qualified successor
 
 Windows code/package `1823697f1f0c965fb8fd9d85259a862160f12c59` is
 SOFTWARE_DELIVERED; overall BLOCKED_EXTERNAL. The documentation commit is
@@ -1557,7 +1611,7 @@ body unchanged. V3 with current real lease returns ok/shop_scoped/done/0counts.
 No Worker or Windows code change. App launch rejected by tool policy, no process
 and no new pull verified; explicit authorization pending, no alternative launcher.
 No Getnet apply/sale/reset/revocation. New report holds evidence and next step.
-# Addendum corrente: pubblicazione automatica dello storico
+# Addendum storico: pubblicazione automatica dello storico
 
 Mandato utente 10 novembre, stessa ASUS-W7POS-019 ACTIVE. Il contratto e la
 sequenza del nuovo delta sono in [CLOUD-CONTINUATION](CLOUD-CONTINUATION.md).
@@ -1568,7 +1622,7 @@ NOT_RUN. Nessun import/annullamento originale, rollout o cutover implicito.
 <details>
 <summary>Checkpoint precedente conservato — stato prima del nuovo addendum bilaterale</summary>
 
-## Stato corrente — candidato finale qualificato, installazione in attesa
+## Stato storico — candidato finale qualificato, installazione in attesa
 
 ASUS019/R3 ACTIVE. Sorgente pubblicata `5d8e704b2d0027c4ee1d5a9f4cb6b10842b85b54`, fingerprint
 `2adbcf2a3244638d25e00897ecffa8af9972c6e0c3315b0566c3dc669d29b2dd` invariato prima/dopo la canonica.
