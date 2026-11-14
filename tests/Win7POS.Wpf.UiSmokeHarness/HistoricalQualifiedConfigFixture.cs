@@ -17,12 +17,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
     internal sealed class HistoricalQualifiedConfigFixture
     {
         private readonly string _shop;
+        private readonly string _dataset;
         private readonly HistoricalQualifiedEvidenceDto[] _proofs;
         private int _documentRevision;
         internal int Reads { get; private set; }
-        internal HistoricalQualifiedConfigFixture(string shop,HistoricalSalesImportAnalysis analysis=null)
+        internal HistoricalQualifiedConfigFixture(string shop,HistoricalSalesImportAnalysis analysis=null,
+            string datasetId="90000000-0000-4000-8000-000000003019")
         {
-            _shop=shop;var proofs=new List<HistoricalQualifiedEvidenceDto>();
+            _shop=shop;_dataset=datasetId;var proofs=new List<HistoricalQualifiedEvidenceDto>();
             var subjects=analysis==null?Array.Empty<HistoricalQualificationSubject>():HistoricalQualificationResolver.CreateSubjects(analysis).ToArray();
             foreach(var group in subjects.GroupBy(s=>s.Profile+"|"+s.AliasKey,StringComparer.Ordinal))
             {
@@ -56,7 +58,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 QualificationConfigDigest=Hash(Json(_proofs)),QualifiedEvidence=_proofs,
                 QualificationLocalScopeBindings=Array.Empty<HistoricalLocalScopeBindingDto>(),
                 QualificationRuntime=new HistoricalQualificationRuntimeDto
-                {DatasetId="90000000-0000-4000-8000-000000003019",WriterEpoch="1",WriterAuthority="local"}
+                {DatasetId=_dataset,WriterEpoch="1",WriterAuthority="local"}
             };
         }
         internal void Revoke(HistoricalEvidenceKind kind)
