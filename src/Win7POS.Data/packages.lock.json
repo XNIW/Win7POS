@@ -85,9 +85,9 @@
       },
       "System.Text.Encoding.CodePages": {
         "type": "Direct",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "rt1G/LdKC6oc3xPyQhMn5vRTp9iTTt1BS9Dx/67TpW9KWgFJ39lyEz0y4CbDksx7iTZEfgG61UsQMoGEXEpF4A==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "awY96r6mK0XalK9GakPsQnh81A3sEoieD42x2VxH2gK9qdE3VYXU3bRuwPOIdqCFJpJdagUJouYapQfTykHTQA==",
         "dependencies": {
           "System.Memory": "4.6.3",
           "System.Runtime.CompilerServices.Unsafe": "6.1.2"
