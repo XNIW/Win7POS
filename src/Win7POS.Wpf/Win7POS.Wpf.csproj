@@ -32,7 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.16" />
+    <PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.17" />
     <ProjectReference Include="..\Win7POS.Core\Win7POS.Core.csproj" />
     <ProjectReference Include="..\Win7POS.Data\Win7POS.Data.csproj" />
   </ItemGroup>
