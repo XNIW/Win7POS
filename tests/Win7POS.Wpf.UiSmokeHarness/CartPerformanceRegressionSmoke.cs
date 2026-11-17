@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -123,6 +124,8 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
                 host = new Window { Content = view, Width = 1024, Height = 768, ShowInTaskbar = false };
                 host.Show();
                 await WaitAsync(() => loaded && !vm.IsBusy, "real view initialization");
+                phase = "cart mode persistence dispatcher progress";
+                await VerifyCartModePersistenceAsync(vm);
                 phase = "child environment failure is terminal";
                 var environmentDirectory = Path.Combine(Path.GetDirectoryName(PosDbOptions.Default().DbPath), "environment-gate-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(environmentDirectory);
@@ -452,6 +455,115 @@ INSERT INTO product_meta(barcode,stock_qty) SELECT barcode,10000 FROM products W
             {
                 host?.Close(); vm?.Dispose(); OperatorSessionHolder.Current = previous;
                 if (scannerHardware != null && priorHardware != null) await scannerHardware.SaveAsync(priorHardware, "qa_fixture", () => { });
+            }
+        }
+
+        private static async Task VerifyCartModePersistenceAsync(PosViewModel vm)
+        {
+            var service = (PosWorkflowService)typeof(PosViewModel).GetField("_service", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(vm);
+            var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+            await vm.SetCartViewModeAsync(CartViewMode.Rows);
+            await DrainAsync();
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            var callerThread = Thread.CurrentThread.ManagedThreadId;
+            var ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var beginHold = new ManualResetEventSlim();
+            using var releaseEarly = new ManualResetEventSlim();
+            using var observer = new BoundedDispatcherObservation(dispatcher);
+            long releasedTick = 0;
+            var writerThread = 0;
+            var writer = Task.Run(() =>
+            {
+                try
+                {
+                    writerThread = Thread.CurrentThread.ManagedThreadId;
+                    using var connection = factory.Open();
+                    using var transaction = connection.BeginTransaction();
+                    ready.TrySetResult(true);
+                    if (!beginHold.Wait(5000)) throw new TimeoutException("cart mode diagnostic was not armed");
+                    // The owned writer, never the dispatcher, releases the lock.
+                    // This is a causal contention fixture, not a performance budget.
+                    releaseEarly.Wait(750);
+                    transaction.Rollback();
+                    Interlocked.Exchange(ref releasedTick, Stopwatch.GetTimestamp());
+                }
+                catch (Exception error) { ready.TrySetException(error); throw; }
+            });
+            try
+            {
+                Require(await Task.WhenAny(ready.Task, Task.Delay(5000)) == ready.Task, "cart mode writer did not acquire lock");
+                await ready.Task;
+                long markerTick = 0;
+                var markerThread = 0;
+                var marker = dispatcher.InvokeAsync(() =>
+                {
+                    markerThread = Thread.CurrentThread.ManagedThreadId;
+                    markerTick = Stopwatch.GetTimestamp();
+                }, DispatcherPriority.Input);
+                var started = Stopwatch.GetTimestamp();
+                beginHold.Set();
+                var save = vm.SetCartViewModeAsync(CartViewMode.Grid);
+                var returned = Stopwatch.GetTimestamp();
+                var saves = new[] { save, vm.SetCartViewModeAsync(CartViewMode.Rows),
+                    vm.SetCartViewModeAsync(CartViewMode.Grid), vm.SetCartViewModeAsync(CartViewMode.Rows) };
+                await marker.Task;
+                // A settings writer must not occupy the independent cart workflow gate.
+                vm.BarcodeInput = "PERF0001";
+                Require(vm.AddBarcodeCommand.CanExecute(null), "cart mode write disabled scanner");
+                vm.AddBarcodeCommand.Execute(null);
+                await WaitAsync(() => !vm.IsBusy && vm.CartItems.Count == 1 && vm.CartItems[0].Quantity == 1,
+                    "scanner did not progress during cart mode persistence");
+                var cartCompletedTick = Stopwatch.GetTimestamp();
+                await Task.WhenAll(saves);
+                await writer;
+                await DrainAsync();
+                var state = observer.Snapshot();
+                var progressed = markerTick < Interlocked.Read(ref releasedTick);
+                var cartProgressed = cartCompletedTick < Interlocked.Read(ref releasedTick);
+                var persisted = await service.GetCartViewModeAsync();
+                var line = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "CART_MODE_PERSISTENCE caller_thread={0}; writer_thread={1}; marker_thread={2}; call_return_ms={3:F3}; marker_ms={4:F3}; writer_release_ms={5:F3}; marker_before_release={6}; scroll_maximum_wait_ms={7:F3}; cart_before_release={8}; persisted={9}",
+                    callerThread, writerThread, markerThread, (returned - started) * 1000d / Stopwatch.Frequency,
+                    (markerTick - started) * 1000d / Stopwatch.Frequency,
+                    (Interlocked.Read(ref releasedTick) - started) * 1000d / Stopwatch.Frequency,
+                    progressed, state.ScrollMaximumWaitMs, cartProgressed, persisted);
+                Console.WriteLine(line);
+                File.WriteAllText(Path.Combine(Path.GetDirectoryName(PosDbOptions.Default().DbPath), "cart-mode-persistence.txt"), line);
+                Require(writerThread != callerThread && markerThread == callerThread, "cart mode diagnostic thread ownership mismatch");
+                Require(progressed, "cart mode persistence blocked the dispatcher until SQLite writer release");
+                Require(cartProgressed, "cart mode writer held the independent cart workflow gate");
+                Require(persisted == "rows" && vm.CartViewMode == CartViewMode.Rows, "earlier cart mode write overwrote the last choice");
+
+                var row = vm.CartItems[0];
+                using (var connection = factory.Open())
+                    connection.Execute($@"CREATE TRIGGER qa_cart_mode_write_failure BEFORE UPDATE ON app_settings
+WHEN NEW.key = '{AppSettingKeys.PosCartViewMode}' AND NEW.value = 'grid'
+BEGIN SELECT RAISE(ABORT, 'synthetic_cart_mode_write_failure'); END;");
+                try
+                {
+                    var failed = vm.SetCartViewModeAsync(CartViewMode.Grid);
+                    var latest = vm.SetCartViewModeAsync(CartViewMode.Rows);
+                    await Task.WhenAll(failed, latest);
+                    Require(vm.StatusMessage == Win7POS.Wpf.Localization.PosLocalization.Current.Text("settings.cartView.saveError"),
+                        "cart mode write error was not reported");
+                    Require(await service.GetCartViewModeAsync() == "rows" && vm.CartViewMode == CartViewMode.Rows,
+                        "cart mode failure stranded the next write");
+                    Require(vm.CartItems.Count == 1 && ReferenceEquals(vm.CartItems[0], row) && row.Quantity == 1,
+                        "cart mode persistence failure changed the cart");
+                    Console.WriteLine("CART_MODE_PERSISTENCE recovery=PASS; latest_choice=rows; cart_identity_preserved=True; quantity=1");
+                }
+                finally
+                {
+                    using var connection = factory.Open();
+                    connection.Execute("DROP TRIGGER qa_cart_mode_write_failure;");
+                }
+            }
+            finally
+            {
+                beginHold.Set(); releaseEarly.Set();
+                await writer;
+                await vm.SetCartViewModeAsync(CartViewMode.Rows);
+                vm.ApplyDiscountSnapshot(await service.ClearCartAsync());
             }
         }
     }

@@ -76,6 +76,7 @@ namespace Win7POS.Wpf.Pos
 
         private readonly FileLogger _logger = new FileLogger("PosWorkflowService");
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _cartViewModeWriteGate = new SemaphoreSlim(1, 1);
         private readonly object _printerDiscoverySync = new object();
         private Task<IReadOnlyList<InstalledPrinterInfo>> _printerDiscoveryTask;
         private IReadOnlyList<InstalledPrinterInfo> _lastPrinterDiscovery = new List<InstalledPrinterInfo>();
@@ -180,9 +181,19 @@ namespace Win7POS.Wpf.Pos
                 .ConfigureAwait(false);
         }
 
-        public Task SetCartViewModeAsync(string value)
+        public async Task SetCartViewModeAsync(string value)
         {
-            return _settings.SetStringAsync(AppSettingKeys.PosCartViewMode, value);
+            // SQLite async APIs can block their caller. Serialize only this
+            // preference so a delayed write neither blocks input nor holds the cart gate.
+            await _cartViewModeWriteGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await Task.Run(() => _settings.SetStringAsync(AppSettingKeys.PosCartViewMode, value)).ConfigureAwait(false);
+            }
+            finally
+            {
+                _cartViewModeWriteGate.Release();
+            }
         }
 
         public Task<IReadOnlyList<ProductDetailsRow>> GetCartProductDetailsAsync(
