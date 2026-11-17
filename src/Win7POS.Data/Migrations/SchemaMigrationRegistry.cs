@@ -322,7 +322,15 @@ postcondition=current-structural-schema",
                     "cb203678ef8ed61b30d97767bc46767eff29760356c0d14321c01f3b12bce85b",
                     "1.0.0",
                     "Additive immutable source inclusion metadata; no legacy financial row or published migration is rewritten.",
-                    true,HistoricalLegacyBaselineSchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalLegacyBaseline)
+                    true,HistoricalLegacyBaselineSchema.Apply,IsPostHistoricalLegacyBaselineSchemaStructurallyValid,IsRecognizedHistoricalLegacyBaseline),
+                new SchemaMigration(
+                    "0022-historical-baseline-retry",
+                    "Persist explicit failed-baseline retry intents and accept only original-operation recovery acknowledgements.",
+                    "0022-historical-baseline-retry/v1\n" + HistoricalBaselineRetrySchema.Sql,
+                    "ca3a95b0f4be7758f30fbf8024d371dd96d30bdf877aa4406dd15dc17c5a607f",
+                    "1.0.0",
+                    "Additive retry evidence and narrow ACK-backed flow transition; old failures and source identities remain immutable.",
+                    true,HistoricalBaselineRetrySchema.Apply,IsCurrentSchemaStructurallyValid,IsRecognizedHistoricalBaselineRetry)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -351,6 +359,8 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+            => IsPostHistoricalLegacyBaselineSchemaStructurallyValid(detector) && HistoricalBaselineRetrySchema.IsSatisfied(detector);
+        private static bool IsPostHistoricalLegacyBaselineSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalBaselineFlowSchemaStructurallyValid(detector) && HistoricalLegacyBaselineSchema.IsSatisfied(detector);
         private static bool IsPostHistoricalBaselineFlowSchemaStructurallyValid(LegacySchemaDetector detector)
             => IsPostHistoricalOutcomeSchemaStructurallyValid(detector) && HistoricalBaselineSchema.IsSatisfied(detector);
@@ -430,11 +440,20 @@ WHERE f.flow_id IS NULL OR f.state<>'applied' OR f.shop_id<>m.shop_id OR f.local
         private static bool IsRecognizedHistoricalLegacyBaseline(LegacySchemaDetector detector)
         {
             if(!detector.TableExists("historical_legacy_baseline_operation"))return false;
-            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalBaselineFlow(detector)
+            if(!IsPostHistoricalLegacyBaselineSchemaStructurallyValid(detector)||!IsRecognizedHistoricalBaselineFlow(detector)
                 ||!detector.NoRows(@"SELECT 1 FROM historical_legacy_baseline_operation b
 LEFT JOIN historical_baseline_flow f ON f.flow_id=b.flow_id LEFT JOIN historical_import_operation op ON op.operation_id=b.operation_id
 WHERE f.flow_id IS NULL OR op.operation_id IS NULL OR f.shop_id<>op.shop_id OR f.local_dataset_id<>op.dataset_id LIMIT 1")
                 ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Legacy baseline inclusion evidence is incomplete or inconsistent.");
+            return true;
+        }
+
+        private static bool IsRecognizedHistoricalBaselineRetry(LegacySchemaDetector detector)
+        {
+            if(!detector.TableExists("historical_baseline_retry"))return false;
+            if(!IsCurrentSchemaStructurallyValid(detector)||!IsRecognizedHistoricalLegacyBaseline(detector)
+                ||!detector.NoRows("SELECT 1 FROM historical_baseline_retry WHERE state='acknowledged' LIMIT 1")
+                ||!detector.NoRows("PRAGMA foreign_key_check;"))throw new InvalidDataException("Historical baseline retry evidence is incomplete or inconsistent.");
             return true;
         }
 

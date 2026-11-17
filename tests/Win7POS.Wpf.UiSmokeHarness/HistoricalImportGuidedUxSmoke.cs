@@ -20,6 +20,7 @@ using Win7POS.Core.Import;
 using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Data.Import;
+using Win7POS.Data.Online;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos;
@@ -58,6 +59,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     else
                     {
                     await probe.RunCaseAsync("operation_states",probe.OperationStatesAsync);
+                    await probe.RunCaseAsync("failed_baseline_retry",probe.FailedBaselineRetryAsync);
                     await probe.RunCaseAsync("late_authority",probe.LateAnalysisAfterAuthorityChangeAsync);
                     await probe.RunCaseAsync("late_qualified_response",probe.LateQualifiedResponseAsync);
                     await probe.RunCaseAsync("qualified_preview_scope",probe.QualifiedPreviewAndScopeAsync);
@@ -66,7 +68,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                     var required=web?new[]{"server_denied_never_publishes_analysis","web_prepare_pending_is_terminal_without_commit","web_review_uses_http_and_only_web_proofs",
                         "active_local_owner_does_not_bypass_web_review","web_lost_ack_retains_single_financial_write","web_receipt_recovery_never_recommits",
-                        "web_duplicate_review_is_noop","missing_web_proofs_block_without_csharp_fallback"}:new[]{"new_file_clears_import_status","refresh_terminates_working",
+                        "web_duplicate_review_is_noop","missing_web_proofs_block_without_csharp_fallback"}:new[]{"new_file_clears_import_status","refresh_terminates_working","retry_requires_explicit_command","retry_lost_ack_preserves_single_intent","retry_stale_generation_retains_readable_local_history","nonretryable_baseline_has_no_retry_action",
                         "modern_clp_does_not_require_legacy_checkbox","unresolved_time_keeps_preview_and_blocks_confirm",
                         "declined_only_is_terminal_and_not_income","late_authority_callback_cannot_publish",
                         "late_qualified_response_cannot_publish",
@@ -188,7 +190,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             using(var f=await HistoricalSalesFoundationRunner.Fixture.CreateAsync(_data))
             {
-                var service=f.CreateWorkflow("offline");
+                var service=f.CreateWorkflow("offline",initialBaseline:false);
                 using(var model=new HistoricalSalesImportViewModel(service,f.Operator))
                 {
                     var owner=new Window{Width=1024,Height=768,ShowInTaskbar=false};owner.Show();
@@ -223,6 +225,51 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Capture("guided-import-declined-synthetic",dialog);
                         dialog.UpdateLayout();
                         Check("guided_dialog_fits_current_work_area",OperatorDialogGeometrySmoke.SurfaceFitsWorkArea(dialog));
+                    }
+                    finally{dialog.Close();owner.Close();}
+                }
+            }
+        }
+
+        private async Task FailedBaselineRetryAsync()
+        {
+            foreach(var reason in new[]{"baseline_job_failed","baseline_review_denied"})
+            using(var f=await HistoricalSalesFoundationRunner.Fixture.CreateAsync(_data))
+            {
+                var service=f.CreateWorkflow("offline",initialBaseline:false);
+                var state=await f.Service.ReadDatasetAsync(_token);
+                await new OnlineSyncGenerationRepository(f.Factory).ActivateAndRecoverAsync(f.Generation,1);
+                Action demand=()=>f.Factory.AccessContext.DemandPath(f.Factory.DbPath);
+                var capture=typeof(OperatorSession).GetMethod("CaptureHistoricalCloudExportGuard",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+                var guard=(HistoricalCloudExportGuard)capture.Invoke(f.Operator,new object[]{f.ShopId,state.DatasetId,state.DataRevision,f.Factory.AuthorityStamp.RestoreEpoch,demand});
+                var exportRoot=Path.Combine(Path.GetTempPath(),"r-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(exportRoot);
+                var archive=Path.Combine(exportRoot,"failed-history.w7history.zip");
+                var exported=await new HistoricalCloudExporter(f.Factory).ExportBaselineAsync(archive,Path.Combine(exportRoot,"failed-history.db"),guard,Guid.Parse(state.RestoreLineageId).ToString("D"),_token);
+                var store=new HistoricalBaselineStore(f.Factory,f.Generation,demand);
+                var flow=await store.SavePreparedAsync(exported,"90000000-0000-4000-8000-000000003019",1,guard,_token);
+                await store.SaveUploadAsync(flow.FlowId,Guid.NewGuid().ToString("D"),_token);await store.SaveReadyAsync(flow.FlowId,_token);
+                await store.SaveRunAsync(flow.FlowId,Guid.NewGuid().ToString("D"),_token);await store.MarkAttentionAsync(flow.FlowId,reason,_token);
+                var facts=f.State();
+                long IntentCount(){using(var read=f.Factory.Open())return read.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_baseline_retry");}
+                using(var model=new HistoricalSalesImportViewModel(service,f.Operator))
+                {
+                    var owner=new Window{Width=1024,Height=768,ShowInTaskbar=false};owner.Show();var dialog=new HistoricalSalesImportDialog(model){Owner=owner};
+                    try
+                    {
+                        dialog.Show();await PumpAsync();await SelectTabAsync(dialog,1);
+                        await InvokeAsync(dialog,model.RefreshBatchesCommand,()=>!model.IsBusy);await SelectTabAsync(dialog,2);
+                        Check("failed_baseline_does_not_claim_replica_complete",model.ReceptionStatus==T("baselineReceptionPending")&&model.BaselineStatus==T("baselineInterrupted"));
+                        if(reason!="baseline_job_failed")
+                        {Check("nonretryable_baseline_has_no_retry_action",!model.RetryBaselineCommand.CanExecute(null)&&model.BaselineRetryVisibility==Visibility.Collapsed);continue;}
+                        Check("retry_requires_explicit_command",IntentCount()==0&&model.RetryBaselineCommand.CanExecute(null));
+                        await InvokeAsync(dialog,model.RetryBaselineCommand,()=>!model.IsBusy);
+                        Check("retry_lost_ack_preserves_single_intent",IntentCount()==1&&!model.RetryBaselineCommand.CanExecute(null)&&model.TransferStatus==T("baselineRetryRequested")&&model.BaselineStatus==T("baselineRetryPending")&&f.State()==facts);
+                        Capture("guided-baseline-retry-pending-synthetic",dialog);
+                        var old=f.Generation;var next=new OnlineSyncGeneration(Guid.NewGuid().ToString("D"),Guid.NewGuid().ToString("D"),old.ShopDeviceId,old.ShopId,old.ShopCode,old.StaffId,old.StaffCredentialVersion);
+                        await new OnlineSyncGenerationRepository(f.Factory).ActivateAndRecoverAsync(next,2);
+                        await SelectTabAsync(dialog,1);await InvokeAsync(dialog,model.RefreshBatchesCommand,()=>!model.IsBusy);
+                        Check("retry_stale_generation_retains_readable_local_history",model.BatchesStatus==T("operationComplete")&&!model.RetryBaselineCommand.CanExecute(null)&&IntentCount()==1&&f.State()==facts);
+                        f.Operator.Logout();await PumpAsync();Check("retry_authority_loss_hides_action",!model.RetryBaselineCommand.CanExecute(null)&&model.BaselineRetryVisibility==Visibility.Collapsed&&model.BaselineStatus.Length==0);
                     }
                     finally{dialog.Close();owner.Close();}
                 }

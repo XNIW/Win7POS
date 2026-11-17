@@ -65,6 +65,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private long _inputVersion, _operationInputVersion, _authorityGeneration;
         private bool _importFinished, _populatingMerchants;
         private string _publicationStatus="",_receptionStatus="";
+        private HistoricalBaselineRetryStatus _baselineStatus;
         private DateTime? _nativeStart;
         private HistoricalSalesBatch _selectedBatch;
         private long _readVersion;
@@ -88,7 +89,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             CancelCommand = new HistoryCommand(() => { _operation?.Cancel(); return Task.CompletedTask; }, () => IsBusy);
             AddGroupCommand = new HistoryCommand(() => { AddGroup(); return Task.CompletedTask; }, () => !IsBusy && CanImport);
             PrepareCloudCommand = new HistoryCommand(PrepareCloudAsync,()=>!IsBusy&&_permissions.Has(PermissionCodes.RegisterImportHistory));
-            SyncCloudCommand = new HistoryCommand(()=>ExecuteAsync(async ct=>{await _service.SynchronizeHistoricalCloudAsync(_session,PosWorkflowService.HistoricalCloudBuildIdentity,ct);DemandPublication(ct,PermissionCodes.RegisterViewAll);Status=T("cloudSynced");},PermissionCodes.RegisterViewAll,area:2),()=>!IsBusy&&_permissions.Has(PermissionCodes.RegisterViewAll));
+            SyncCloudCommand = new HistoryCommand(()=>ExecuteAsync(async ct=>{await _service.SynchronizeHistoricalCloudAsync(_session,PosWorkflowService.HistoricalCloudBuildIdentity,ct);DemandPublication(ct,PermissionCodes.RegisterViewAll);var cloud=await _service.ReadHistoricalCloudStateAsync(_session,ct);DemandPublication(ct,PermissionCodes.RegisterViewAll);UpdateReceptionStatus(cloud);await RefreshBaselineStatusAsync(ct);Status=T(_baselineStatus?.State!=null&&_baselineStatus.State!="applied"?"cloudCheckedIncomplete":"cloudSynced");},PermissionCodes.RegisterViewAll,area:2),()=>!IsBusy&&_permissions.Has(PermissionCodes.RegisterViewAll));
+            RetryBaselineCommand = new HistoryCommand(()=>ExecuteAsync(async ct=>{await _service.RequestHistoricalBaselineRetryAsync(_session,ct);DemandPublication(ct,PermissionCodes.RegisterImportHistory);await RefreshBaselineStatusAsync(ct);Status=T("baselineRetryRequested");},PermissionCodes.RegisterImportHistory,area:2),()=>CanRetryBaseline);
             _session.SessionChanged += OnSessionChanged;
             PosOnlineSyncRevocationLatch.AuthorizationStateChanged += OnSessionChanged;
             _service.ReportSnapshotCoordinator.SnapshotChanged += OnHistoricalSnapshotChanged;
@@ -120,7 +122,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool ShowImportConfirmation => SelectedTabIndex==0;
         public Visibility ImportConfirmationVisibility => ShowImportConfirmation?Visibility.Visible:Visibility.Collapsed;
         public string PublicationStatus => ImportReadAuthorityCurrent?_publicationStatus:"";
-        public string ReceptionStatus => ImportReadAuthorityCurrent?_receptionStatus:"";
+        public string ReceptionStatus => ImportReadAuthorityCurrent?(_baselineStatus?.State!=null&&_baselineStatus.State!="applied"?T("baselineReceptionPending"):_receptionStatus):"";
+        public string BaselineStatus => !ImportReadAuthorityCurrent||_baselineStatus?.State==null?"":T(_baselineStatus.RetryPending?"baselineRetryPending":_baselineStatus.State=="applied"?"baselineReady":_baselineStatus.State=="needs_attention"?"baselineInterrupted":"baselinePreparing");
+        public bool CanRetryBaseline => !IsBusy&&ImportReadAuthorityCurrent&&_permissions.Has(PermissionCodes.RegisterImportHistory)&&_baselineStatus?.CanRequestRetry==true;
+        public Visibility BaselineRetryVisibility => ImportReadAuthorityCurrent&&_permissions.Has(PermissionCodes.RegisterImportHistory)&&(_baselineStatus?.CanRequestRetry==true||_baselineStatus?.RetryPending==true)?Visibility.Visible:Visibility.Collapsed;
         public bool ImportReadAuthorityCurrent => Volatile.Read(ref _publicationAuthorityCurrent) &&
             _readVersion == _session.CurrentOperatorAuthorityVersion &&
             _readAuthority?.IsCurrentInMemory == true;
@@ -150,6 +155,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand AddGroupCommand { get; }
         public ICommand PrepareCloudCommand { get; }
         public ICommand SyncCloudCommand { get; }
+        public ICommand RetryBaselineCommand { get; }
+        private void UpdateReceptionStatus(HistoricalReplicaState cloud)
+        {
+            _receptionStatus=cloud?.PublishedRevision==null?T("noCompleteCopy"):string.Format(CultureInfo.CurrentCulture,T("receptionState"),
+                cloud.PublishedRevision.Value,cloud.LastSuccessUtcMs.HasValue?DateTimeOffset.FromUnixTimeMilliseconds(cloud.LastSuccessUtcMs.Value).ToLocalTime().ToString("g",CultureInfo.CurrentCulture):T("notConfirmed"),
+                string.IsNullOrEmpty(cloud.StaleReason)&&cloud.PublishedRevision.Value>=cloud.ServerRevision?T("copyCurrent"):T("copyRetained"));Changed(nameof(ReceptionStatus));
+        }
+        private async Task RefreshBaselineStatusAsync(CancellationToken ct)
+        {
+            var baseline=await _service.ReadHistoricalBaselineStatusAsync(_session,ct).ConfigureAwait(true);
+            DemandPublication(ct,PermissionCodes.RegisterViewAll);_baselineStatus=baseline;
+            Changed(nameof(BaselineStatus));Changed(nameof(ReceptionStatus));Changed(nameof(CanRetryBaseline));Changed(nameof(BaselineRetryVisibility));UpdateCommands();
+        }
         private async Task PrepareCloudAsync()
         {
             await ExecuteAsync(async ct=>
@@ -443,9 +461,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     var cloud=await _service.ReadHistoricalCloudStateAsync(_session,operation.Token).ConfigureAwait(true);
                     DemandPublication(operation.Token,permission);
                     ObserveHistoryWriter(cloud?.WriterAuthority,cloud?.EverWeb!=0&&cloud?.WriterAuthority=="local");
-                    _receptionStatus=cloud?.PublishedRevision==null?T("noCompleteCopy"):string.Format(CultureInfo.CurrentCulture,T("receptionState"),
-                        cloud.PublishedRevision.Value,cloud.LastSuccessUtcMs.HasValue?DateTimeOffset.FromUnixTimeMilliseconds(cloud.LastSuccessUtcMs.Value).ToLocalTime().ToString("g",CultureInfo.CurrentCulture):T("notConfirmed"),
-                        string.IsNullOrEmpty(cloud.StaleReason)&&cloud.PublishedRevision.Value>=cloud.ServerRevision?T("copyCurrent"):T("copyRetained"));Changed(nameof(ReceptionStatus));
+                    UpdateReceptionStatus(cloud);
+                    await RefreshBaselineStatusAsync(operation.Token).ConfigureAwait(true);
                 }
                 await work(operation.Token).ConfigureAwait(true);
                 DemandPublication(operation.Token,permission);
@@ -463,7 +480,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         Interlocked.Increment(ref _authorityGeneration);Interlocked.Increment(ref _inputVersion);
                         Volatile.Write(ref _publicationAuthorityCurrent,false);_readAuthority=null;
                         Interlocked.Exchange(ref _refreshRequested,0);InvalidateAnalysis();Batches.Clear();SelectedBatch=null;Shop="";
-                        _publicationStatus="";_receptionStatus="";Changed(nameof(PublicationStatus));Changed(nameof(ReceptionStatus));
+                        _publicationStatus="";_receptionStatus="";_baselineStatus=null;Changed(nameof(PublicationStatus));Changed(nameof(ReceptionStatus));Changed(nameof(BaselineStatus));Changed(nameof(BaselineRetryVisibility));
                         for(var deniedArea=0;deniedArea<3;deniedArea++)SetStatus(deniedArea,T("authorizationChanged"));
                     }
                     Status=OperationFailure(e);
@@ -529,6 +546,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             var code=(error as HistoricalCloudRequestException)?.Code??(error is InvalidOperationException?error.Message:"");
             var key=(error as HistoricalCloudRequestException)?.Denied==true?"operationAccessDenied":
+                code=="history_baseline_attention_required"?"baselineInterrupted":code=="history_baseline_retry_pending"?"baselineRetryPending":
+                code=="history_baseline_retry_conflict"||code=="history_baseline_retry_unavailable"?"baselineRetryUnavailable":
                 code=="history_cloud_initial_sync_required"?"initialSyncRequired":code=="history_cloud_writer_closed"||code=="history_local_writer_closed"?"localWriterClosed":
                 code=="auth_denied"||code=="history_cloud_access_denied"?"operationAccessDenied":
                 code=="history_resnapshot_required"||code=="historical_plan_stale"||code=="history_review_changed"?"reviewStale":
@@ -580,7 +599,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _operation?.Cancel(); _readAuthority = null; InvalidateAnalysis(); Batches.Clear(); SelectedBatch = null; Shop = "";
                 _historyWriterAuthority="local";_cloudLocalWriterClosed=false;
                 Changed(nameof(CanImport));Changed(nameof(LocalHistoryWriterClosed));Changed(nameof(HistoryWriteNotice));
-                _publicationStatus="";_receptionStatus="";Changed(nameof(PublicationStatus));Changed(nameof(ReceptionStatus));
+                _publicationStatus="";_receptionStatus="";_baselineStatus=null;Changed(nameof(PublicationStatus));Changed(nameof(ReceptionStatus));Changed(nameof(BaselineStatus));Changed(nameof(BaselineRetryVisibility));
                 for(var area=0;area<3;area++)SetStatus(area,T("authorizationChanged"));Changed(nameof(ImportReadAuthorityCurrent)); UpdateCommands();
             }));
         }
@@ -589,7 +608,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             Changed(nameof(CanEdit));
             Changed(nameof(ImportStepText));Changed(nameof(ShowImportConfirmation));Changed(nameof(ImportConfirmationVisibility));
             Changed(nameof(CanApproveCorrections));
-            foreach (var c in new[] { SelectCommand, AnalyzeCommand, PreviewCommand, ApplyCommand, RefreshBatchesCommand, UndoCommand, CancelCommand, AddGroupCommand, ViewReceiptCommand,PrepareCloudCommand,SyncCloudCommand }) (c as HistoryCommand)?.Refresh();
+            Changed(nameof(CanRetryBaseline));Changed(nameof(BaselineRetryVisibility));
+            foreach (var c in new[] { SelectCommand, AnalyzeCommand, PreviewCommand, ApplyCommand, RefreshBatchesCommand, UndoCommand, CancelCommand, AddGroupCommand, ViewReceiptCommand,PrepareCloudCommand,SyncCloudCommand,RetryBaselineCommand }) (c as HistoryCommand)?.Refresh();
         }
         private void Changed([CallerMemberName] string name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         public event PropertyChangedEventHandler PropertyChanged;

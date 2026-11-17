@@ -47,7 +47,26 @@ namespace Win7POS.Data.Import
                 var prepared=await _prepare(context,state,ct).ConfigureAwait(false);_demand();
                 await _store.SavePreparedAsync(prepared.Receipt,context.DatasetId,epoch,prepared.Guard,ct).ConfigureAwait(false);return true;
             }
-            if(flow.State=="needs_attention")return false;
+            if(flow.State=="needs_attention")
+            {
+                if(flow.ReasonCode!="baseline_job_failed"||flow.ReviewDigest!=null||flow.ReceiptJson!=null)
+                    throw new HistoricalCloudRequestException("history_baseline_attention_required",false,false);
+                var retry=await _store.ContinuePendingFailedRetryAsync(flow.FlowId,ct).ConfigureAwait(false);
+                if(retry==null)throw new HistoricalCloudRequestException("history_baseline_attention_required",false,false);
+                HistoricalCloudResult acknowledgement;
+                try
+                {
+                    acknowledgement=await Request("recover",new HistoricalCloudPayload{RecoveryRequestKey=retry.RequestId,RunId=flow.RunId,
+                        ApplyRequestKey=flow.ApplyRequestId,PreviousReviewDigest=retry.PreviousReviewDigest,RetryFailed=true,
+                        PreviousRecoveryRequestKey=retry.PreviousRecoveryRequestId},ct).ConfigureAwait(false);
+                }
+                catch(HistoricalCloudRequestException error) when(!error.Retryable)
+                {
+                    await _store.RejectFailedRetryAsync(retry.RequestId,error.Code,ct).ConfigureAwait(false);throw;
+                }
+                await _store.ResolveFailedRetryAsync(retry.RequestId,acknowledgement.BaselineRecoveryAckJson,acknowledgement.BaselineReceiptJson,ct).ConfigureAwait(false);
+                return true;
+            }
             if(flow.State=="applied")
             {
                 var receipt=HistoricalBaselineReceipt.Read(flow.ReceiptJson,flow);

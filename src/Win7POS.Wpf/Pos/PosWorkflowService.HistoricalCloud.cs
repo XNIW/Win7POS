@@ -61,6 +61,20 @@ namespace Win7POS.Wpf.Pos
             var shop=await _officialShopSnapshots.GetAsync().ConfigureAwait(false);var actor=session.CaptureHistoricalCloudActor(shop?.ShopId);
             return await new HistoricalReplicaStore(_factory,actor.DemandCurrent).ReadAsync(actor.Trusted.ShopId,ct).ConfigureAwait(false);
         }
+        public async Task<HistoricalBaselineRetryStatus> ReadHistoricalBaselineStatusAsync(OperatorSession session,CancellationToken ct)
+        {
+            var shop=await _officialShopSnapshots.GetAsync().ConfigureAwait(false);var actor=session.CaptureHistoricalCloudActor(shop?.ShopId);
+            if(!Online.PosOnlineSyncSupervisorHost.TryCreateGeneration(actor.Trusted,out var generation))return new HistoricalBaselineRetryStatus();
+            return await new HistoricalBaselineStore(_factory,generation,actor.DemandCurrent).ReadRetryStatusAsync(ct).ConfigureAwait(false);
+        }
+        public async Task RequestHistoricalBaselineRetryAsync(OperatorSession session,CancellationToken ct)
+        {
+            var permissions=new PermissionService(session);permissions.Demand(Win7POS.Core.Security.PermissionCodes.RegisterImportHistory,"history.baselineRetry");
+            var shop=await _officialShopSnapshots.GetAsync().ConfigureAwait(false);var actor=session.CaptureHistoricalCloudActor(shop?.ShopId);
+            if(!Online.PosOnlineSyncSupervisorHost.TryCreateGeneration(actor.Trusted,out var generation))throw new OnlineSyncGenerationChangedException();
+            await new HistoricalBaselineStore(_factory,generation,actor.DemandCurrent).PrepareFailedRetryAsync(ct).ConfigureAwait(false);
+            actor.DemandCurrent();SignalHistoricalPublication();
+        }
         private readonly SemaphoreSlim _historicalReplicaTurn = new SemaphoreSlim(1,1);
         /// <summary>Diagnostic entry to the same bounded replica turn; no commercial maintenance.</summary>
         public async Task SynchronizeHistoricalCloudAsync(OperatorSession session,string clientBuildSha,CancellationToken ct)

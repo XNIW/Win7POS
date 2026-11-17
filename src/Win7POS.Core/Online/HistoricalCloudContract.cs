@@ -69,6 +69,8 @@ namespace Win7POS.Core.Online
         [DataMember(Name="recovery_request_key",EmitDefaultValue=false)] public string RecoveryRequestKey { get; set; }
         [DataMember(Name="apply_request_key",EmitDefaultValue=false)] public string ApplyRequestKey { get; set; }
         [DataMember(Name="previous_review_digest",EmitDefaultValue=false)] public string PreviousReviewDigest { get; set; }
+        [DataMember(Name="retry_failed",EmitDefaultValue=false)] public bool? RetryFailed { get; set; }
+        [DataMember(Name="previous_recovery_request_key",EmitDefaultValue=false)] public string PreviousRecoveryRequestKey { get; set; }
     }
     [DataContract]
     public sealed class HistoricalCloudQualification

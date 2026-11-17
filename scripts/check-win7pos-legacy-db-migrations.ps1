@@ -44,12 +44,14 @@ $migrationFiles = @(
     "src/Win7POS.Data/Import/HistoricalPreparationSchema.cs",
     "src/Win7POS.Data/Import/HistoricalOutcomeSchema.cs",
     "src/Win7POS.Data/Import/HistoricalBaselineSchema.cs",
-    "src/Win7POS.Data/Import/HistoricalLegacyBaselineSchema.cs"
+    "src/Win7POS.Data/Import/HistoricalLegacyBaselineSchema.cs",
+    "src/Win7POS.Data/Import/HistoricalBaselineRetrySchema.cs"
 )
 $testFiles = @(
     "tests/Win7POS.Core.Tests/Data/MigrationRunnerTests.cs",
     "tests/Win7POS.Core.Tests/Data/LegacyMigrationFixtureTests.cs",
-    "tests/Win7POS.Core.Tests/Data/MigrationBackupRestoreTests.cs"
+    "tests/Win7POS.Core.Tests/Data/MigrationBackupRestoreTests.cs",
+    "tests/Win7POS.Core.Tests/Persistence/HistoricalBaselineRetryMigrationTests.cs"
 )
 $fixtureFiles = @(
     "legacy_initial_minimal.sql",
@@ -77,6 +79,7 @@ $initializer = Read-RepoText "src/Win7POS.Data/DbInitializer.cs"
 $runnerTests = Read-RepoText "tests/Win7POS.Core.Tests/Data/MigrationRunnerTests.cs"
 $fixtureTests = Read-RepoText "tests/Win7POS.Core.Tests/Data/LegacyMigrationFixtureTests.cs"
 $backupTests = Read-RepoText "tests/Win7POS.Core.Tests/Data/MigrationBackupRestoreTests.cs"
+$retryTests = Read-RepoText "tests/Win7POS.Core.Tests/Persistence/HistoricalBaselineRetryMigrationTests.cs"
 
 Require-Text $runner 'CREATE TABLE schema_migrations\s*\(\s*migration_id TEXT PRIMARY KEY,\s*checksum TEXT NOT NULL,\s*description TEXT NOT NULL,\s*applied_at TEXT NOT NULL,\s*app_version TEXT NULL' `
     "migration ledger has the required immutable metadata shape"
@@ -107,7 +110,9 @@ Require-Text $registry 'IsPostHistoricalPreparationSchemaStructurallyValid\(dete
 Require-Text $registry 'IsPostHistoricalPublicationSchemaStructurallyValid\(detector\) && HistoricalPreparationSchema\.IsSatisfied\(detector\)' "current schema retains outbox invariants before validating the preparation journal"
 Require-Text $registry 'IsPostHistoricalSchemaStructurallyValid\(detector\) && HistoricalCloudSchema\.IsSatisfied\(detector\)' "current schema retains historical invariants before validating the cloud cache"
 Require-Text $registry 'HistoricalBaselineSchema\.Apply,\s*IsPostHistoricalBaselineFlowSchemaStructurallyValid,\s*IsRecognizedHistoricalBaselineFlow' "baseline flow retains its frozen invariant and explicit baseline recognizer"
-Require-Text $registry 'HistoricalLegacyBaselineSchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalLegacyBaseline' "legacy baseline inclusion requires the latest invariant and explicit baseline recognizer"
+Require-Text $registry 'HistoricalLegacyBaselineSchema\.Apply,\s*IsPostHistoricalLegacyBaselineSchemaStructurallyValid,\s*IsRecognizedHistoricalLegacyBaseline' "legacy baseline inclusion retains its frozen invariant and explicit baseline recognizer"
+Require-Text $registry 'HistoricalBaselineRetrySchema\.Apply,\s*IsCurrentSchemaStructurallyValid,\s*IsRecognizedHistoricalBaselineRetry' "explicit baseline retry requires the latest invariant and explicit baseline recognizer"
+Require-Text $registry 'IsPostHistoricalLegacyBaselineSchemaStructurallyValid\(detector\) && HistoricalBaselineRetrySchema\.IsSatisfied\(detector\)' "current schema retains legacy inclusion invariants before validating explicit retry evidence"
 Require-Text $registry 'IsPostHistoricalBaselineFlowSchemaStructurallyValid\(detector\) && HistoricalLegacyBaselineSchema\.IsSatisfied\(detector\)' "current schema retains the frozen baseline invariant before legacy inclusion metadata"
 Require-Text $registry 'IsPostHistoricalOutcomeSchemaStructurallyValid\(detector\) && HistoricalBaselineSchema\.IsSatisfied\(detector\)' "current schema retains the frozen outcome invariant before baseline metadata"
 Require-Text $registry 'IsCanonicalRegistry' "special ledgerless recognition is restricted to the canonical registry"
@@ -154,7 +159,8 @@ $expectedIds = @(
     "0018-historical-preparation-journal",
     "0019-historical-outcome-witnesses",
     "0020-historical-baseline-flow",
-    "0021-historical-legacy-baseline"
+    "0021-historical-legacy-baseline",
+    "0022-historical-baseline-retry"
 )
 if (($ids -join "|") -ne ($expectedIds -join "|")) {
     Fail "registry is not the expected append-only ordered migration sequence"
@@ -184,7 +190,8 @@ $expectedChecksums = @(
     "2f02c30616730d50bc23c37e123a97407753b693f25c7f6bf0326e0e79160712",
     "bf92dccf130c3e072f58e38e5347269ff08ec7f277fe121071a53427eb4534ee",
     "867efdd62d2e328de0cc3267d11978156dfd08205b26a4326f545475facb48d1",
-    "cb203678ef8ed61b30d97767bc46767eff29760356c0d14321c01f3b12bce85b"
+    "cb203678ef8ed61b30d97767bc46767eff29760356c0d14321c01f3b12bce85b",
+    "ca3a95b0f4be7758f30fbf8024d371dd96d30bdf877aa4406dd15dc17c5a607f"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or
@@ -196,7 +203,7 @@ if (-not $failed) { Pass "published ID-to-checksum mapping is pinned in registry
 
 $trueBeforeApplyCount = [regex]::Matches(
     $registry,
-    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply|HistoricalCloudSchema\.Apply|HistoricalPublicationSchema\.Apply|HistoricalPreparationSchema\.Apply|HistoricalOutcomeSchema\.Apply|HistoricalBaselineSchema\.Apply|HistoricalLegacyBaselineSchema\.Apply)').Count
+    'true,\s*(?:DbInitializer\.|CatalogImportPlanSchema\.Apply|HistoricalSalesSchema\.Apply|HistoricalCloudSchema\.Apply|HistoricalPublicationSchema\.Apply|HistoricalPreparationSchema\.Apply|HistoricalOutcomeSchema\.Apply|HistoricalBaselineSchema\.Apply|HistoricalLegacyBaselineSchema\.Apply|HistoricalBaselineRetrySchema\.Apply)').Count
 if ($trueBeforeApplyCount -ne $expectedIds.Count) {
     Fail "every published PR-B migration must require a pre-migration backup"
 }
@@ -245,6 +252,9 @@ Require-Text $backupTests 'VerifiedPreMigrationBackup_CanBeRestoredAndUpgradedTo
 Require-Text $backupTests 'RestoreWithAuthenticLatestLedgerButMissingReceiptColumn_RollsBackLiveDatabase' "restore rejects an authentic latest ledger with missing current schema"
 Require-Text $backupTests 'InvalidForeignKeySource_IsRejectedBeforeLedgerMutation' "invalid backup sources are tested fail-closed"
 Require-Text $backupTests 'BackupIntegrityValidationFailure_LeavesLedgerUntouched' "invalid backup integrity results are tested fail-closed"
+Require-Text $retryTests 'BaselineRetryMigration_Populated0021AddsOnly0022AfterVerifiedBackup' "retry migration preserves the populated published baseline and takes a verified backup"
+Require-Text $retryTests 'BaselineRetryMigration_DdlOrPostconditionFailureRestoresOldTriggerLedgerAndFacts' "retry migration failure restores the original trigger, ledger and domain facts"
+Require-Text $retryTests 'BaselineRetryMigration_LedgerlessAdoptionRequiresCanonicalShapeAndNoUnfinishedAck' "retry ledgerless adoption rejects incomplete schema or acknowledgement evidence"
 Require-Text $fixtureTests 'ReadFixtureDomainEvidence' "fixture tests preserve seeded domain rows"
 Require-Text $fixtureTests 'ReadBlockedOutboxTimestamps' "repeatable outbox reconciliation does not churn canonical blocked rows"
 Require-Text $fixtureTests 'AssertPostPr7MainWasBootstrappedWithoutReapplying' "post-PR7 ledgerless fixture bootstraps without replay"

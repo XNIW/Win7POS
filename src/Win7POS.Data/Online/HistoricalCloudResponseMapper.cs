@@ -12,7 +12,8 @@ namespace Win7POS.Data.Online
             if(response?.Success!=true)
             {
                 if(response?.Code=="history_resnapshot_required")throw new HistoricalCloudResnapshotRequiredException();
-                throw new HistoricalCloudRequestException(response?.Code,response?.Denied==true,response?.Retryable==true);
+                throw new HistoricalCloudRequestException(response?.Code,response?.Denied==true,response?.Retryable==true||
+                    (response?.Denied!=true&&response?.Code=="history_baseline_retry_pending"));
             }
             var body=response.Value;
             if(body?.Ok!=true||body.ShopId!=shopId||body.DeviceId!=deviceId||body.SessionId!=sessionId||body.Result==null)

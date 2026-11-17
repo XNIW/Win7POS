@@ -110,6 +110,7 @@ CREATE VIEW historical_baseline_report_movements AS
         internal static void Apply(SqliteConnection c,SqliteTransaction t)=>c.Execute(Sql,transaction:t);
         internal static bool IsSatisfied(LegacySchemaDetector d)
         {
+            if(d.TableExists("historical_baseline_retry"))return HistoricalBaselineRetrySchema.MatchesCompleteBaseline(d);
             if(!d.HasCanonicalTableDefinitions(Sql,"historical_baseline_flow","historical_baseline_read_mode","historical_baseline_recovery"))return false;
             const string query="SELECT type||'|'||name||'|'||sql FROM sqlite_master WHERE name LIKE 'historical_baseline_%' OR name LIKE '%_historical_baseline_%' ORDER BY type,name";
             using var expected=new SqliteConnection("Data Source=:memory:");expected.Open();expected.Execute(Sql);

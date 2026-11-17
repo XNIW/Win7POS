@@ -20,6 +20,9 @@ public sealed class HistoricalCloudResponseMappingTests
     }
     [TestMethod]
     [DataRow("history_cloud_writer_closed",409,false,false,true)]
+    [DataRow("history_baseline_retry_pending",409,false,true,false)]
+    [DataRow("history_baseline_retry_conflict",409,false,false,false)]
+    [DataRow("history_idempotency_conflict",409,false,false,false)]
     [DataRow("history_cloud_access_denied",403,true,false,false)]
     [DataRow("auth_denied",403,true,false,false)]
     [DataRow("history_cloud_unavailable",503,false,true,false)]

@@ -20,6 +20,8 @@ public sealed partial class HistoricalBaselineStoreTests
         internal readonly string Upload=Guid.NewGuid().ToString("D"),Run=Guid.NewGuid().ToString("D");
         internal string? Ack;
         internal string ContextEpoch="1",ContextAuthority="local",ContextSnapshot="80000000-0000-4000-8000-000000003019";
+        internal string RunState="review_ready";
+        internal bool RetryPending,RetryDenied;
         internal readonly Dictionary<string,string> RecoveryAcks=new();internal int RecoveryCalls;
         internal BaselineTransport(HistoricalCloudExportTests.Fixture f,OnlineSyncGeneration g){F=f;G=g;}
         internal HistoricalBaselineSynchronizer Client()=>new(F.Db.Factory,G,()=>{},Request,async(_,state,ct)=>{
@@ -43,14 +45,15 @@ public sealed partial class HistoricalBaselineStoreTests
             if(operation=="baseline_upload_ready"||operation=="baseline_upload_status")return new(){UploadId=Upload,State=UploadVerified?"verified":"uploaded",
                 FileName=Path.GetFileName(flow!.ArchivePath),Sha256=flow.ArchiveSha256,ByteLength=new FileInfo(flow.ArchivePath).Length.ToString()};
             if(operation=="baseline_start"){StartCalls++;Assert.AreEqual(flow!.StartRequestId,p.RequestKey);return new(){RunId=Run,State="queued"};}
-            if(operation=="baseline_status")return new(){RunId=Run,State="review_ready"};
+            if(operation=="baseline_status")return new(){RunId=Run,State=RunState};
             if(operation=="baseline_review")
             {Assert.AreEqual(G.PosSessionId,flow!.RunSessionId);return new(){RunId=Run,CanApply=ReviewAllowed,ReviewDigest=new string(RecoveryAcks.Count==0?'a':'b',64)};}
             if(operation=="baseline_receipt"){Assert.AreEqual(flow!.ApplyRequestId,p.RequestKey);return new(){BaselineReceiptJson=Ack};}
             if(operation=="baseline_recover")
             {
-                RecoveryCalls++;var pending=(await Store(F,G).ReadPendingRecoveryAsync(flow!.FlowId,ct))!;
+                RecoveryCalls++;var pending=(p.RetryFailed==true?await Store(F,G).ContinuePendingFailedRetryAsync(flow!.FlowId,ct):await Store(F,G).ReadPendingRecoveryAsync(flow!.FlowId,ct))!;
                 Assert.AreEqual(pending.RequestId,p.RecoveryRequestKey);Assert.AreEqual(flow.ApplyRequestId,p.ApplyRequestKey);Assert.AreEqual(pending.PreviousReviewDigest,p.PreviousReviewDigest);
+                if(p.RetryFailed==true){Assert.AreEqual(pending.PreviousRecoveryRequestId,p.PreviousRecoveryRequestKey);if(RetryPending)throw new HistoricalCloudRequestException("history_baseline_retry_pending",false,true);if(RetryDenied)throw new HistoricalCloudRequestException("history_baseline_retry_conflict",false,false);RunState="review_ready";}
                 if(Verified)return new(){BaselineRecoveryAckJson=RecoveryAck(flow,pending,G,true),BaselineReceiptJson=Ack};
                 if(!RecoveryAcks.TryGetValue(pending.RequestId,out var raw)){raw=RecoveryAck(flow,pending,G);RecoveryAcks.Add(pending.RequestId,raw);}
                 if(LoseRecovery){LoseRecovery=false;throw new HistoricalCloudRequestException("history_timeout",false,true);}
@@ -125,7 +128,8 @@ public sealed partial class HistoricalBaselineStoreTests
         using var f=await HistoricalCloudExportTests.Fixture.CreateAsync();var g=Generation();await Prepare(f,g);var t=new BaselineTransport(f,g){UploadVerified=false,ReviewAllowed=false};
         await t.Client().RunAsync(default);await t.Client().RunAsync(default);Assert.IsFalse(await t.Client().RunAsync(default));Assert.AreEqual(0,t.StartCalls);
         t.UploadVerified=true;Assert.IsTrue(await t.Client().RunAsync(default));Assert.IsFalse(await t.Client().RunAsync(default));
-        Assert.AreEqual("needs_attention",(await Store(f,g).ReadAsync(Server,1,default))!.State);Assert.AreEqual(0,t.ApplyCalls);Assert.IsFalse(await t.Client().RunAsync(default));
+        Assert.AreEqual("needs_attention",(await Store(f,g).ReadAsync(Server,1,default))!.State);Assert.AreEqual(0,t.ApplyCalls);
+        Assert.AreEqual("history_baseline_attention_required",(await Assert.ThrowsAsync<HistoricalCloudRequestException>(()=>t.Client().RunAsync(default))).Code);
     }
     [TestMethod]
     public async Task BaselineSynchronizer_UnknownServerBaselineCannotAdoptMissingLocalIntentOrExportAgain()

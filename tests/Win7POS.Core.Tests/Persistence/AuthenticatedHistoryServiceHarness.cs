@@ -29,7 +29,7 @@ internal static class AuthenticatedHistoryServiceHarness
         public string clientSha{get;set;}="";public string shopId{get;set;}="";public string staffId{get;set;}="";
         public int credentialVersion{get;set;}public Actor actorA{get;set;}=new();public Actor actorB{get;set;}=new();
         public Actor recoveryApplyActor{get;set;}=new();public Actor recoverySessionsActor{get;set;}=new();
-        public bool extendedCases{get;set;}
+        public bool extendedCases{get;set;}public bool failedBaselineRecovery{get;set;}
         public bool faultCases{get;set;}public bool adminOrigin{get;set;}public bool conflictCases{get;set;}public bool recoveryRaces{get;set;}public RestartCheckpoint? restart{get;set;}
     }
     sealed class Fact
@@ -71,6 +71,7 @@ internal static class AuthenticatedHistoryServiceHarness
             if(_scope.restart!=null)return await ResumeAfterLostAck(_scope.restart,ct);
             await using var a=await Session.Create(_scope.actorA,true);await using var b=await Session.Create(_scope.actorB,false);
             var original=a.LocalFacts();Demand(original.Length>0&&b.LocalFacts().Length==0,"history_test_initial_ledger");
+            if(_scope.failedBaselineRecovery)await FailedBaselineRoundtrip(a,original,ct);
             _phase="initial_baseline";await a.Until(a.HasBaseline,ct);await b.Until(b.HasBaseline,ct);await a.Turn(ct);
             var before=a.Facts();Same(original,before);Same(before,b.Facts());a.NoNative();b.NoNative();
             if(_scope.recoveryRaces)await RecoveryRaceSources(a,b,before,ct);
@@ -304,6 +305,42 @@ internal static class AuthenticatedHistoryServiceHarness
         if(_scope.adminOrigin)await AdminOrigin(a,b,checkpoint.wanted,ct);
         Console.WriteLine("authenticated_history_restarted_pass");return 0;
     }
+    static async Task FailedBaselineRoundtrip(Session a,Fact[] original,CancellationToken ct)
+    {
+        var store=new HistoricalBaselineStore(a.Fixture.Db.Factory,a.Generation,a.Demand);
+        var client=a.BaselineClient();var ready=await a.PrepareBaselineTo("upload_ready",ct);
+        object Descriptor(HistoricalBaselineFlow f)=>new{schema="asus019-failed-baseline-v1",nonce=_scope.nonce,shopId=_scope.shopId,
+            deviceId=a.Generation.ShopDeviceId,originalSessionId=a.Generation.PosSessionId,runId=f.RunId,uploadId=f.UploadId,
+            startRequestKey=f.StartRequestId,applyRequestKey=f.ApplyRequestId,archiveSha=f.ArchiveSha256,manifestSha=f.ManifestSha256};
+        _phase="failed_baseline_upload_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,descriptor=Descriptor(ready)},ct);
+        await WaitSignal(_phase+"_observed",ct);
+        var started=await a.PrepareBaselineTo("run_started",ct);
+        _phase="failed_baseline_ready";await SaveState(new{phase=_phase,nonce=_scope.nonce,descriptor=Descriptor(started)},ct);
+        await WaitSignal(_phase+"_observed",ct);
+        Demand(!await client.RunAsync(ct),"history_test_failed_baseline_not_observed");
+        var failed=await a.ReadBaseline(ct);Demand(failed?.State=="needs_attention"&&failed.ReasonCode=="baseline_job_failed"&&failed.ReviewDigest==null,"history_test_failed_baseline_not_blocked");
+        try{await client.RunAsync(ct);throw new InvalidOperationException("history_test_failed_baseline_blind_retry");}
+        catch(HistoricalCloudRequestException e)when(e.Code=="history_baseline_attention_required"&&!e.Retryable){}
+        using(var read=a.Fixture.Db.Factory.Open())Demand(read.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_baseline_retry")==0,"history_test_failed_baseline_auto_intent");
+        var retry=await store.PrepareFailedRetryAsync(ct);Demand(retry.RequestId==(await store.PrepareFailedRetryAsync(ct)).RequestId,"history_test_failed_baseline_duplicate_intent");
+        await a.Until(a.HasBaseline,ct);var applied=(await a.ReadBaseline(ct))!;
+        Demand(applied.FlowId==started.FlowId&&applied.RunId==started.RunId&&applied.UploadId==started.UploadId&&applied.ApplyRequestId==started.ApplyRequestId&&applied.StartRequestId==started.StartRequestId&&applied.ArchiveSha256==started.ArchiveSha256&&applied.BackupSha256==started.BackupSha256&&applied.ReasonCode=="baseline_job_failed","history_test_failed_baseline_identity_changed");
+        Same(original,a.LocalFacts());Same(original,a.Facts());a.NoNative();
+        long intentCount;string intentState;using(var read=a.Fixture.Db.Factory.Open())
+        {
+            intentCount=read.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_baseline_retry");
+            intentState=read.ExecuteScalar<string>("SELECT state FROM historical_baseline_retry WHERE request_id=@id",new{id=retry.RequestId})!;
+        }
+        Demand(intentCount==1&&intentState=="consumed","history_test_failed_baseline_intent_not_consumed");
+        var replica=await new HistoricalReplicaStore(a.Fixture.Db.Factory,a.Demand,a.Generation).ReadAsync(_scope.shopId,ct);
+        Demand(replica?.PublishedRevision!=null,"history_test_failed_baseline_replica_missing");
+        _phase="failed_baseline_recovered";
+        await SaveState(new{phase=_phase,nonce=_scope.nonce,status="PASS_FAILED_BASELINE_RECOVERY",descriptor=Descriptor(applied),
+            retryRequestKey=retry.RequestId,intentState,intentCount,receiptSha256=Hash(Encoding.UTF8.GetBytes(applied.ReceiptJson)),
+            replicaRevision=replica!.PublishedRevision!.Value.ToString(CultureInfo.InvariantCulture),count=original.Length,
+            factsSha=Hash(Encoding.UTF8.GetBytes(string.Join("\n",original.Select(f=>f.Key).OrderBy(x=>x,StringComparer.Ordinal))))},ct);
+        await WaitSignal(_phase+"_observed",ct);
+    }
     static async Task RecoveryRaceSources(Session a,Session b,Fact[] wanted,CancellationToken ct)
     {
         var actors=new[]{_scope.recoveryApplyActor,_scope.recoverySessionsActor};
@@ -464,21 +501,29 @@ internal static class AuthenticatedHistoryServiceHarness
         }
         internal async Task PullUntil(Func<bool> ready,CancellationToken ct){for(var i=0;i<80;i++){await new HistoricalReplicaSynchronizer(new HistoricalReplicaStore(Fixture.Db.Factory,Demand,Generation),Demand,Request).RunAsync(_scope.shopId,_scope.clientSha,ct);if(ready())return;await Task.Delay(250,ct);}throw new InvalidOperationException("history_test_pull_before_ack_timeout");}
         internal Task DrainAutomatic(CancellationToken ct)=>_supervisor.StopAsync().WaitAsync(TimeSpan.FromSeconds(10),ct);
-        internal async Task<HistoricalBaselineFlow> PrepareUncommittedBaseline(CancellationToken ct)
+        internal Task<HistoricalBaselineFlow> ReadBaseline(CancellationToken ct)=>new HistoricalBaselineStore(Fixture.Db.Factory,Generation,Demand).ReadAsync(_server,_epoch,ct);
+        internal HistoricalBaselineSynchronizer BaselineClient()
         {
-            var store=new HistoricalBaselineStore(Fixture.Db.Factory,Generation,Demand);
             async Task Upload(string url,HistoricalBaselineFlow flow,CancellationToken token)
             {
                 using var uploader=new HistoricalBaselineUploader(_options);var code=await uploader.UploadAsync(url,flow,new OnlineSyncRequestCredentials(Generation,_actor.deviceToken,_actor.sessionToken,"synthetic-service-harness"),Demand,token);
                 AuthenticatedHistoryServiceHarness.Demand(string.IsNullOrEmpty(code),"history_test_recovery_upload_failed");
             }
-            var client=new HistoricalBaselineSynchronizer(Fixture.Db.Factory,Generation,Demand,Request,_prepareBaseline,Upload);HistoricalBaselineFlow? current=null;
+            return new HistoricalBaselineSynchronizer(Fixture.Db.Factory,Generation,Demand,Request,_prepareBaseline,Upload);
+        }
+        internal async Task<HistoricalBaselineFlow> PrepareBaselineTo(string expected,CancellationToken ct)
+        {
+            var client=BaselineClient();
             for(var i=0;i<80;i++)
             {
-                current=await store.ReadAsync(_server,_epoch,ct);if(current?.State=="run_started")break;
+                var current=await ReadBaseline(ct);if(current?.State==expected)return current;
                 AuthenticatedHistoryServiceHarness.Demand(current==null||current.State!="needs_attention","history_test_recovery_baseline_attention");await client.RunAsync(ct);await Task.Delay(250,ct);
             }
-            AuthenticatedHistoryServiceHarness.Demand(current?.State=="run_started","history_test_recovery_baseline_not_started");
+            throw new InvalidOperationException("history_test_recovery_baseline_not_started");
+        }
+        internal async Task<HistoricalBaselineFlow> PrepareUncommittedBaseline(CancellationToken ct)
+        {
+            var store=new HistoricalBaselineStore(Fixture.Db.Factory,Generation,Demand);var current=await PrepareBaselineTo("run_started",ct);
             var ready=false;for(var i=0;i<80;i++)
             {
                 var status=await Request("baseline_status",new(){RunId=current!.RunId},ct);if(status.State=="review_ready"){ready=true;break;}

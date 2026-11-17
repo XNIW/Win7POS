@@ -81,6 +81,27 @@ function Test-QaPublicAssertionId([string]$Id,[string]$RepoRoot) {
     return $line -gt 0 -and $line -le [IO.File]::ReadAllLines($file).Length
 }
 
+function Test-QaPublicObservationId([string]$Id,[string]$AssertionId,[string]$ScenarioId,[string]$RepoRoot) {
+    if($Id -cin @('scenario_success','product_image_profile_dpapi_isolated','shared_unchanged','plaintext_secrets','offline_authority_cloned','supervisor_profile_injected','cleanup_exact','staging_diagnostic_redacted','net48_request_serialization','net48_json_stringify_response','net48_storage_error_mapping','net48_code128_roundtrip','worker_alive_after_shutdown','producer_p95_us','producer_max_us')){return $true}
+    # New UI observations must be literal identifiers at the exact recorded
+    # assertion in a known harness source. Runtime text and arbitrary source
+    # files are never an observation registry. Sidecar identity is checked first.
+    if($Id -cnotmatch '^[a-z][a-z0-9_]{0,95}$' -or $AssertionId -cnotmatch '^QA_([A-Za-z0-9_]+)_L([0-9]+)$'){return $false}
+    $stem=$Matches[1];$line=[int]$Matches[2]
+    $expected=switch -CaseSensitive ($ScenarioId) {
+        'HISTORY_IMPORT_GUIDED_UX' {'HistoricalImportGuidedUxSmoke'}
+        'HISTORY_WEB_IMPORT_UX' {'HistoricalImportGuidedUxSmoke'}
+        'OPERATOR_DIALOG_GEOMETRY' {'OperatorDialogGeometrySmoke'}
+        default {''}
+    }
+    if(-not $expected -or $stem -cne $expected -or -not(Test-QaPublicAssertionId $AssertionId $RepoRoot)){return $false}
+    $source=[IO.File]::ReadAllLines((Join-Path $RepoRoot ('tests/Win7POS.Wpf.UiSmokeHarness/'+$stem+'.cs')))[$line-1]
+    $literal=[regex]::Escape($Id)
+    if($stem -ceq 'HistoricalImportGuidedUxSmoke'){return $source -cmatch ('\bCheck\s*\(\s*"'+$literal+'"\s*,')}
+    return ($source -cmatch ('\bRequire\s*\(.*?,\s*"'+$literal+'"\s*\)\s*;')) -or
+        ($source -cmatch '\bRecordAssertion\s*\(' -and $source -cmatch ('\bobservationId\s*:\s*"'+$literal+'"\s*[,)]'))
+}
+
 function Get-QaTypedDiagnostics {
     param([Parameter(Mandatory)]$Report,[Parameter(Mandatory)][string]$RepoRoot)
     $events=[Collections.Generic.List[object]]::new()
@@ -120,7 +141,7 @@ function Get-QaTypedDiagnostics {
                         if($event.sequence -ne $sequence++ -or $event.stepId -cne $row.name){throw 'qa_public_diagnostic_identity_invalid'}
                         if($event.status -cnotin (Get-QaPublicCatalog).statuses -or $event.checkpoint -cnotin @('assertion','starting','completed','unavailable') -or $event.code -cnotin (Get-QaPublicCatalog).codes){throw 'qa_public_diagnostic_privacy_rejected'}
                         if((Test-QaPublicField $event 'scenarioId') -and $null -ne $event.scenarioId -and $event.scenarioId -cnotin (Get-QaPublicCatalog).functional){throw 'qa_public_diagnostic_privacy_rejected'}
-                        if((Test-QaPublicField $event 'observationId') -and $event.observationId -cnotin @('scenario_success','product_image_profile_dpapi_isolated','shared_unchanged','plaintext_secrets','offline_authority_cloned','supervisor_profile_injected','cleanup_exact','staging_diagnostic_redacted','net48_request_serialization','net48_json_stringify_response','net48_storage_error_mapping','net48_code128_roundtrip','worker_alive_after_shutdown','producer_p95_us','producer_max_us')){throw 'qa_public_diagnostic_privacy_rejected'}
+                        if((Test-QaPublicField $event 'observationId') -and -not(Test-QaPublicObservationId $event.observationId $event.assertionId $(if(Test-QaPublicField $event 'scenarioId'){$event.scenarioId}else{$null}) $RepoRoot)){throw 'qa_public_diagnostic_privacy_rejected'}
                         $null=ConvertTo-QaPublicScalar $event.expected;$null=ConvertTo-QaPublicScalar $event.actual
                         $sourceKnown=Test-QaPublicAssertionId $event.assertionId $RepoRoot
                         $dto=[ordered]@{stepId=$event.stepId;scenarioId=$(if(Test-QaPublicField $event 'scenarioId'){$event.scenarioId}else{$null});assertionId=$(if($sourceKnown){$event.assertionId}else{$null});status=$event.status;expected=$event.expected;actual=$event.actual;checkpoint=$event.checkpoint;code=$event.code;sequence=$event.sequence;diagnosticCompleteness=$(if($sourceKnown){$sidecar.diagnosticCompleteness}else{'partial'})}
@@ -310,7 +331,7 @@ function Publish-QaPublicBundle {
         if(Test-QaPublicField $event 'sequence'){$diagnosis.sequence=ConvertTo-QaPublicScalar $event.sequence}
         if(Test-QaPublicField $event 'durationMs'){$diagnosis.durationMs=ConvertTo-QaPublicScalar $event.durationMs}
         if(Test-QaPublicField $event 'observationId'){
-            if($event.observationId -cnotin @('scenario_success','product_image_profile_dpapi_isolated','shared_unchanged','plaintext_secrets','offline_authority_cloned','supervisor_profile_injected','cleanup_exact','staging_diagnostic_redacted','net48_request_serialization','net48_json_stringify_response','net48_storage_error_mapping','net48_code128_roundtrip','worker_alive_after_shutdown','producer_p95_us','producer_max_us')){throw 'qa_public_diagnostic_privacy_rejected'}
+            if(-not(Test-QaPublicObservationId $event.observationId $assertion $scenario ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))))){throw 'qa_public_diagnostic_privacy_rejected'}
             $diagnosis.observationId=$event.observationId
         }
         $safeDiagnostics+=$diagnosis
