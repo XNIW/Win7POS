@@ -1,17 +1,19 @@
 # ASUS-W7POS-019 — Handoff Admin / onboarding
 
 <!-- ASUS019_COMPOSED_CURRENT_START -->
-## Stato corrente — 20261114T075849Z, stessa ASUS-W7POS-019 ACTIVE
+## Stato corrente — 2026-11-17T18:11:17Z, stessa ASUS-W7POS-019 ACTIVE
 
-Server `efb6ec1` / main `8e46610` consegnato con due migrazioni verificate e Cloudflare al 100%; 24 binding preservati. Nessun ruolo, PIN, ledger o stato della baseline modificato dal rollout.
+Restano installati cassa `6f12a08` e Worker `efb6ec1`. Primo accesso online, riepilogo legacy, ritorno al carrello vuoto e chiusura normale PASS; secondo avvio e riapertura offline reali NOT_RUN. La continuità Worker conserva il FAIL degli 11 arresti SCM, distinto dal primo controllo limitato riuscito.
 
-Windows `6f12a08` / main `1c7a921` hanno lo stesso tree: CI 16/16, Security, Release di 41 file, QA e ASUS Integrated12/Final60 PASS. Worker efb: 99 file SQL / 5420 assert, 12/12 prove autenticate, volume di 25947 righe sintetico con gateway HTTP e SQL reali in 96.541 s, Host Windows 5/5 PASS. La prova di volume usa Node 24; non è una prova Cloudflare live. Budget 120 s e limiti invariati.
+Cassa `c4015dd`, unita in main `c5bbd14` con tree identico, qualificata: CI, Security, Release e QA PASS; ASUS Integrated12 e Final60 PASS, con chiusura naturale. La Release candidata già verificata resta distinta dalle run automatiche postmerge riportate nella matrice.
 
-Installazione cassa/Worker pronta con backup coerente di 17 file / 3 database / 115 conteggi e manifest validati; preimage protetta del servizio BLOCKED_UAC. Nessun aggiornamento locale avviato e nessun nonce operativo consumato. Restano installati la cassa 248/v6 e il precedente Worker; nuova UI reale, recupero della STESSA baseline, receipt/revisione/ACK/replica e continuità nuova versione NOT_RUN. Le run automatiche del nuovo main Windows sono distinte dai PASS del payload 6f e vengono seguite senza dispatch duplicati.
+Server `c30d51d`, main `b246aa5` con tree identico, pubblicato: migrazione additiva e postcheck verificati, Cloudflare al 100% con 24 binding conservati. Qualifica propria: SQL 100 file/5487 asserzioni, composto autenticato 13/13, volume entro 120 secondi e Host 5/5 PASS. Il deploy usa l’artifact C30 qualificato, non quello ricostruito da main.
 
-Legacy: 25947 movimenti riconciliati, filtro dal 12 giugno: 2577 movimenti; nessuna nuova importazione per questa differenza. Getnet C MISSING: tre moderni non applicati. Win7 fisico BLOCKED_TARGET, periferiche NOT_RUN, DPI 100/125 USER_DEFERRED; scala 200% conservata. Nessun DONE globale.
+Backup fresco di 17 file, 3 database e 115 conteggi verificato; manifest assemblati e ValidateOnly PASS. Preflight protetta e presenza per UAC pendenti; nuova installazione NOT_RUN, nonce non consumato. La STESSA baseline resta failed, senza receipt/revisione/ACK/replica: recupero reale ancora NOT_RUN.
 
-[Unica matrice corrente: requisito → codice/SHA → prova → installato → stato → residuo](https://github.com/XNIW/Win7POS/blob/codex/asus019-review-checkpoint/docs/plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md#matrice-finale-asus-w7pos-019).
+Getnet C MISSING, tre moderni non applicati; Win7 fisico BLOCKED_TARGET, periferiche NOT_RUN, DPI 100/125 USER_DEFERRED e 200% conservato. POS v6 e PIN senza scadenza preservati. Kit Win7 c401 verificato, hardware non qualificato. Nessun DONE globale.
+
+[Dettagli e residui nell’unica matrice corrente](https://github.com/XNIW/Win7POS/blob/codex/asus019-review-checkpoint/docs/plans/ASUS-W7POS-019_GETNET_HISTORY/EXECUTION.md#matrice-finale-asus-w7pos-019).
 <!-- ASUS019_COMPOSED_CURRENT_END -->
 
 <details>
