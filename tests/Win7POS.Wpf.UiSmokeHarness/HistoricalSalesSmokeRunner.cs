@@ -151,6 +151,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     try
                     {
                         dialog.Show();
+                        while (model.IsBusy || !model.ImportReadAuthorityCurrent || string.IsNullOrEmpty(model.PublicationStatus))
+                        { deadline.Token.ThrowIfCancellationRequested(); await Dispatcher.Yield(DispatcherPriority.Background); }
                         await model.AnalyzeFilesForTestingAsync(SourceFiles());
                         // Reuse one real dialog/analysis: reject a stale review,
                         // then re-review and commit once with reentry denied.
@@ -411,6 +413,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 using (var import = new HistoricalSalesImportViewModel(service, f.Operator))
                 {
                     report.DateText = "2000-01-02"; report.ReportOriginIndex = 2; await report.ReloadAnalyticalAsync();
+                    var initialRead = System.Diagnostics.Stopwatch.StartNew();
+                    while (initialRead.ElapsedMilliseconds < 3000 && (import.IsBusy || !import.ImportReadAuthorityCurrent || string.IsNullOrEmpty(import.PublicationStatus)))
+                        await Task.Delay(10);
+                    if (import.IsBusy || !import.ImportReadAuthorityCurrent || string.IsNullOrEmpty(import.PublicationStatus)) return false;
                     var source = WriteModern(f.Root, "expiry-analysis", new[] { HistoricalSalesFixtureWriter.ModernRow("expiry-input", 1000) });
                     await import.AnalyzeFilesForTestingAsync(new[] { source });
                     var loaded = report.ReportNumbersVisible && report.NetAmount == 1000 && import.ImportReadAuthorityCurrent && !string.IsNullOrEmpty(import.Summary);
@@ -720,6 +726,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         try
                         {
                             await PumpAsync(); deadline.Token.ThrowIfCancellationRequested();
+                            while (model.IsBusy || !model.ImportReadAuthorityCurrent || string.IsNullOrEmpty(model.PublicationStatus))
+                            { deadline.Token.ThrowIfCancellationRequested(); await Dispatcher.Yield(DispatcherPriority.Background); }
                             var select=Descendants<Button>(dialog).Single(button=>ReferenceEquals(button.Command,model.SelectCommand));
                             var analyze=Descendants<Button>(dialog).Single(button=>ReferenceEquals(button.Command,model.AnalyzeCommand));
                             var selections=0;model.SelectFilesForTesting=_=>{selections++;return SourceFiles();};
