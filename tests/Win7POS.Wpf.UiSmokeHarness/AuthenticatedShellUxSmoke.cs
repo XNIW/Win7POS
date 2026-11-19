@@ -176,6 +176,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                         import = shell.OwnedWindows.OfType<HistoricalSalesImportDialog>().Single();
                                         await Dispatcher.Yield(DispatcherPriority.ContextIdle);
                                         check("import_geometry_" + close, OperatorDialogGeometrySmoke.SurfaceFitsWorkArea(import));
+                                        // Opening now performs an authorized read. Close only after
+                                        // the existing busy guard enables the actual close control.
+                                        await WaitCatalogRetryUiAsync(() => import.DataContext is HistoricalSalesImportViewModel model &&
+                                            !model.IsBusy && model.ImportReadAuthorityCurrent && !string.IsNullOrEmpty(model.PublicationStatus), deadline.Token);
                                         if (close == 0) Program.HarnessWindow.FindVisualDescendants<Button>(import).Single(b => b.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                                         else if (close == 1) SystemCommands.CloseWindow(import);
                                         else
@@ -486,6 +490,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         ReferenceEquals(Keyboard.FocusedElement,focused) && ReferenceEquals(reportView.DataContext,report) &&
                         ReferenceEquals(view,ShellField<PosView>(shell,"PosViewControl")) && model.Total==total &&
                         ReferenceEquals(model.SelectedCartItem,selected) && model.BarcodeInput=="UNSENT-CODE" && box.SelectionStart==2 && box.SelectionLength==4);
+                    await WaitCatalogRetryUiAsync(()=>import.DataContext is HistoricalSalesImportViewModel history &&
+                        !history.IsBusy && history.ImportReadAuthorityCurrent && !string.IsNullOrEmpty(history.PublicationStatus),token);
                     import.Close();childDone.TrySetResult(true);
                 }catch(Exception error){childDone.TrySetException(error);}
                 finally{if(import?.IsVisible==true)import.Close();}

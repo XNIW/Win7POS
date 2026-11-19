@@ -38,6 +38,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             using var report=new DailyReportViewModel(service,permissions:new PermissionService(f.Operator),session:f.Operator);
             using var import=new HistoricalSalesImportViewModel(service,f.Operator);
             report.ReportOriginIndex=2;report.SelectedTabIndex=1;report.HistoryFromText="2000-01-02";report.HistoryToText="2000-01-03";
+            var initialRead=Stopwatch.StartNew();
+            while(initialRead.ElapsedMilliseconds<3000&&(import.IsBusy||!import.ImportReadAuthorityCurrent||string.IsNullOrEmpty(import.PublicationStatus)))await Task.Delay(10);
+            if(import.IsBusy||!import.ImportReadAuthorityCurrent||string.IsNullOrEmpty(import.PublicationStatus))return false;
             await report.ReloadAnalyticalAsync();await import.RefreshBatchesForTestingAsync();
             var recordedDay=new DateTime(2000,1,2);
             var unknownDay=new DateTime(2000,1,3);

@@ -215,6 +215,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         await UntilAsync(() => workspace.OwnedWindows.OfType<HistoricalSalesImportDialog>().Any(), token);
                         import = workspace.OwnedWindows.OfType<HistoricalSalesImportDialog>().Single();
                         await Dispatcher.Yield(DispatcherPriority.ContextIdle); import.UpdateLayout(); Measure(import, "import-empty-" + scenario);
+                        await UntilAsync(() => import.DataContext is HistoricalSalesImportViewModel model &&
+                            !model.IsBusy && model.ImportReadAuthorityCurrent && !string.IsNullOrEmpty(model.PublicationStatus), token);
                         import.Activate(); import.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
                         var first = Keyboard.FocusedElement;
                         (first as UIElement)?.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
