@@ -100,6 +100,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (Volatile.Read(ref _publicationAuthorityCurrent) && !ImportReadAuthorityCurrent) OnSessionChanged();
             }, _dispatcher);
             _readExpiryTimer.Start();
+            // Queue the first read through the existing authority/lifetime guard.
+            // Opening the dialog must not depend on a later sync notification.
+            Interlocked.Exchange(ref _refreshRequested, 1);
+            ScheduleHistoricalRefresh();
         }
         public Window OwnerWindow { get; set; }
         internal Func<Window,IReadOnlyList<string>> SelectFilesForTesting { get; set; }

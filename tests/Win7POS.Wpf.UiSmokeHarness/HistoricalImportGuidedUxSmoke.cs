@@ -69,6 +69,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var required=web?new[]{"server_denied_never_publishes_analysis","web_prepare_pending_is_terminal_without_commit","web_review_uses_http_and_only_web_proofs",
                         "active_local_owner_does_not_bypass_web_review","web_lost_ack_retains_single_financial_write","web_receipt_recovery_never_recommits",
                         "web_duplicate_review_is_noop","missing_web_proofs_block_without_csharp_fallback"}:new[]{"new_file_clears_import_status","refresh_terminates_working","retry_requires_explicit_command","retry_lost_ack_preserves_single_intent","retry_stale_generation_retains_readable_local_history","nonretryable_baseline_has_no_retry_action",
+                        "initial_status_loads_without_refresh","initial_status_read_does_not_request_retry","disposed_initial_refresh_cannot_publish","revoked_initial_refresh_cannot_publish",
                         "modern_clp_does_not_require_legacy_checkbox","unresolved_time_keeps_preview_and_blocks_confirm",
                         "declined_only_is_terminal_and_not_income","late_authority_callback_cannot_publish",
                         "late_qualified_response_cannot_publish",
@@ -197,7 +198,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var dialog=new HistoricalSalesImportDialog(model){Owner=owner};
                     try
                     {
-                        dialog.Show();await PumpAsync();
+                        dialog.Show();await PumpAsync();await UntilAsync(()=>!model.IsBusy);
                         await SelectTabAsync(dialog,2);
                         await InvokeAsync(dialog,model.SyncCloudCommand,()=>!model.IsBusy);
                         var transferFailure=model.TransferStatus;
@@ -251,13 +252,31 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 await store.SaveRunAsync(flow.FlowId,Guid.NewGuid().ToString("D"),_token);await store.MarkAttentionAsync(flow.FlowId,reason,_token);
                 var facts=f.State();
                 long IntentCount(){using(var read=f.Factory.Open())return read.ExecuteScalar<long>("SELECT COUNT(*) FROM historical_baseline_retry");}
+                using(var discarded=new HistoricalSalesImportViewModel(service,f.Operator))
+                {
+                    var callbacks=0;discarded.PropertyChanged+=(_,__)=>callbacks++;
+                    discarded.Dispose();await PumpAsync();
+                    Check("disposed_initial_refresh_cannot_publish",callbacks==0&&!discarded.IsBusy&&!discarded.ImportReadAuthorityCurrent&&
+                        discarded.PublicationStatus.Length==0&&discarded.ReceptionStatus.Length==0&&discarded.BaselineStatus.Length==0&&
+                        !discarded.RetryBaselineCommand.CanExecute(null)&&IntentCount()==0&&f.LocalWriteRequests==0&&f.State()==facts);
+                }
                 using(var model=new HistoricalSalesImportViewModel(service,f.Operator))
                 {
                     var owner=new Window{Width=1024,Height=768,ShowInTaskbar=false};owner.Show();var dialog=new HistoricalSalesImportDialog(model){Owner=owner};
                     try
                     {
-                        dialog.Show();await PumpAsync();await SelectTabAsync(dialog,1);
-                        await InvokeAsync(dialog,model.RefreshBatchesCommand,()=>!model.IsBusy);await SelectTabAsync(dialog,2);
+                        dialog.Show();await SelectTabAsync(dialog,2);
+                        await UntilAsync(()=>!model.IsBusy&&model.ImportReadAuthorityCurrent&&model.PublicationStatus.Length>0&&
+                            model.ReceptionStatus.Length>0&&model.BaselineStatus.Length>0);
+                        var initialStatuses=new Dictionary<string,string>{
+                            {nameof(model.PublicationStatus),model.PublicationStatus},{nameof(model.ReceptionStatus),model.ReceptionStatus},
+                            {nameof(model.BaselineStatus),model.BaselineStatus}};
+                        Check("initial_status_loads_without_refresh",initialStatuses.All(expected=>
+                        {
+                            var text=Descendants<TextBlock>(dialog).Single(t=>BindingPath(t,TextBlock.TextProperty)==expected.Key);
+                            return text.IsVisible&&text.Text==expected.Value;
+                        }));
+                        Check("initial_status_read_does_not_request_retry",IntentCount()==0&&f.LocalWriteRequests==0&&f.State()==facts);
                         Check("failed_baseline_does_not_claim_replica_complete",model.ReceptionStatus==T("baselineReceptionPending")&&model.BaselineStatus==T("baselineInterrupted"));
                         if(reason!="baseline_job_failed")
                         {Check("nonretryable_baseline_has_no_retry_action",!model.RetryBaselineCommand.CanExecute(null)&&model.BaselineRetryVisibility==Visibility.Collapsed);continue;}
@@ -269,7 +288,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         await new OnlineSyncGenerationRepository(f.Factory).ActivateAndRecoverAsync(next,2);
                         await SelectTabAsync(dialog,1);await InvokeAsync(dialog,model.RefreshBatchesCommand,()=>!model.IsBusy);
                         Check("retry_stale_generation_retains_readable_local_history",model.BatchesStatus==T("operationComplete")&&!model.RetryBaselineCommand.CanExecute(null)&&IntentCount()==1&&f.State()==facts);
-                        f.Operator.Logout();await PumpAsync();Check("retry_authority_loss_hides_action",!model.RetryBaselineCommand.CanExecute(null)&&model.BaselineRetryVisibility==Visibility.Collapsed&&model.BaselineStatus.Length==0);
+                        using(var revoked=new HistoricalSalesImportViewModel(service,f.Operator))
+                        {
+                            var beganRead=false;revoked.PropertyChanged+=(_,e)=>{if(e.PropertyName==nameof(revoked.IsBusy)&&revoked.IsBusy)beganRead=true;};
+                            f.Operator.Logout();await PumpAsync();
+                            Check("revoked_initial_refresh_cannot_publish",!beganRead&&!revoked.IsBusy&&!revoked.ImportReadAuthorityCurrent&&
+                                revoked.PublicationStatus.Length==0&&revoked.ReceptionStatus.Length==0&&revoked.BaselineStatus.Length==0&&
+                                !revoked.RetryBaselineCommand.CanExecute(null)&&revoked.BaselineRetryVisibility==Visibility.Collapsed&&IntentCount()==1&&f.State()==facts);
+                        }
+                        Check("retry_authority_loss_hides_action",!model.RetryBaselineCommand.CanExecute(null)&&model.BaselineRetryVisibility==Visibility.Collapsed&&model.BaselineStatus.Length==0);
                     }
                     finally{dialog.Close();owner.Close();}
                 }
@@ -291,7 +318,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var dialog=new HistoricalSalesImportDialog(model){Owner=owner};
                     try
                     {
-                        dialog.Show();await PumpAsync();
+                        dialog.Show();await PumpAsync();await UntilAsync(()=>!model.IsBusy);
                         var source=Source(f.Root,"guided-late",HistoricalSalesFixtureWriter.ModernRow("guided-late",1000));
                         await ChooseAsync(dialog,model,source);
                         var button=Descendants<Button>(dialog).Single(b=>ReferenceEquals(b.Command,model.AnalyzeCommand));
@@ -328,7 +355,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var dialog=new HistoricalSalesImportDialog(model){Owner=owner};
                     try
                     {
-                        dialog.Show();await PumpAsync();
+                        dialog.Show();await PumpAsync();await UntilAsync(()=>!model.IsBusy);
                         await ChooseAsync(dialog,model,source);await AnalyzeAsync(dialog,model);
                         Check("already_imported_file_has_no_second_write",model.ImportStatus==T("alreadyImported")&&model.ImportStepText==T("stepResult")&&!model.ApplyCommand.CanExecute(null)&&f.State()==before&&f.LocalWriteRequests==0);
                         await f.UndoAsync(registered);await PumpAsync();await UntilAsync(()=>!model.IsBusy);
@@ -363,7 +390,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var dialog=new HistoricalSalesImportDialog(model){Owner=owner};
                     try
                     {
-                        dialog.Show();await PumpAsync();await ChooseAsync(dialog,model,source);
+                        dialog.Show();await PumpAsync();await UntilAsync(()=>!model.IsBusy);await ChooseAsync(dialog,model,source);
                         var button=Descendants<Button>(dialog).Single(b=>ReferenceEquals(b.Command,model.AnalyzeCommand));
                         Check("metadata_read_starts_from_enabled_control",button.IsEnabled&&button.IsVisible);
                         ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
@@ -396,7 +423,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var dialog=new HistoricalSalesImportDialog(model){Owner=owner};
                     try
                     {
-                        dialog.Show();await PumpAsync();await ChooseAsync(dialog,model,source);await AnalyzeAsync(dialog,model);
+                        dialog.Show();await PumpAsync();await UntilAsync(()=>!model.IsBusy);await ChooseAsync(dialog,model,source);await AnalyzeAsync(dialog,model);
                         Check("qualified_modern_preview_uses_server_evidence",!model.LegacyClpConfirmed&&model.ImportStatus==T("analysisReady")&&
                             model.RequirementsText==T("requirementsReady")&&model.PreviewCommand.CanExecute(null)&&config.Reads==1);
                         Check("ordinary_import_has_no_technical_proof_editors",!Descendants<CheckBox>(dialog).Any(c=>BindingPath(c,CheckBox.IsCheckedProperty)=="LegacyClpConfirmed")&&
@@ -455,7 +482,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         var from=report.HistoryFromText;var to=report.HistoryToText;
                         using(var model=new HistoricalSalesImportViewModel(service,f.Operator))
                         {
-                            var dialog=new HistoricalSalesImportDialog(model){Owner=owner};dialog.Show();await PumpAsync();dialog.Close();await PumpAsync();
+                            var dialog=new HistoricalSalesImportDialog(model){Owner=owner};dialog.Show();await PumpAsync();await UntilAsync(()=>!model.IsBusy);dialog.Close();await PumpAsync();
                             Check("closing_import_preserves_owner_session_and_filters",owner.IsVisible&&report.HistoryFromText==from&&report.HistoryToText==to&&f.Operator.TryGetAuthorizationBoundUser(out _));
                         }
                     }
